@@ -64,7 +64,9 @@ def schematic(kind, *, ax=None, highlight=None, accent=None):
         raise ValueError(f"unknown schematic kind: {kind!r}; known: {sorted(_TRAINS)}")
     planes = _TRAINS[kind]
     plane_keys = [key for key, *_ in planes]
-    if highlight is not None and highlight.lower() not in plane_keys:
+    if highlight is not None and (
+        not isinstance(highlight, str) or highlight.lower() not in plane_keys
+    ):
         raise ValueError(
             f"unknown highlight {highlight!r} for kind {kind!r}; "
             f"known planes: {plane_keys}"

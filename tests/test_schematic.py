@@ -23,6 +23,11 @@ def test_schematic_unknown_highlight_raises():
         schematic("imager", highlight="nope")
 
 
+def test_schematic_non_string_highlight_raises_value_error():
+    with pytest.raises(ValueError, match="highlight"):
+        schematic("imager", highlight=3)
+
+
 def _envelope_facecolor():
     res = schematic("coronagraph")
     facecolor = tuple(np.ravel(res.artists["fill"].get_facecolor()))
