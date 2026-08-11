@@ -24,6 +24,8 @@ from eyepiece._version import __version__
 from eyepiece.anim import animate, record
 from eyepiece.images import compare_row, imshow_diverging, imshow_log, show_field
 from eyepiece.layout import (
+    Frame,
+    SourceStyles,
     extent_arcsec,
     extent_au,
     extent_lod,
@@ -38,8 +40,10 @@ from eyepiece.schematic import schematic
 from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
 
 __all__ = [
+    "Frame",
     "MosaicResult",
     "PlotResult",
+    "SourceStyles",
     "__version__",
     "animate",
     "compare_row",

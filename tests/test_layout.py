@@ -34,3 +34,18 @@ def test_label_lod_sets_both_axes():
     layout.label_lod(ax)
     assert "lambda" in ax.get_xlabel() or r"\lambda" in ax.get_xlabel()
     plt.close(fig)
+
+
+def test_source_styles_stable_and_distinct():
+    from eyepiece.layout import SourceStyles
+
+    s = SourceStyles(["star", "b", "c"])
+    assert s["b"]["color"] != s["c"]["color"]
+    assert s["b"] == SourceStyles(["star", "b", "c"])["b"]
+
+
+def test_frame_extents_agree():
+    from eyepiece.layout import Frame
+
+    f = Frame(half_fov_lod=8.0)
+    assert f.extent_lod() == (-8.0, 8.0, -8.0, 8.0)

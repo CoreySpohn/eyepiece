@@ -16,9 +16,21 @@ Two extent families are provided:
 - ``extent_arcsec`` / ``extent_au`` convert through the optional
   ``hwoutils`` dependency (the ``eyepiece[hwo]`` extra); import it lazily
   inside the function body so plain ``import eyepiece`` never pulls in jax.
+
+``SourceStyles`` and ``Frame`` are the coordination-as-data mechanisms for
+the library's driving use case: several panels of the same scene (a
+trajectory, a detector image, a spectrum) staying visually consistent
+because the caller passes the same small object to each primitive, rather
+than each panel re-deriving its own colors or extent.
 """
 
+from dataclasses import dataclass, field
+
 import numpy as np
+
+from eyepiece import _style
+
+_MARKERS = ("o", "s", "D", "^", "v", "P")
 
 
 def extent_lod(u_lod):
@@ -134,3 +146,106 @@ def label_au(ax):
     """
     ax.set_xlabel(r"$x$ [AU]")
     ax.set_ylabel(r"$y$ [AU]")
+
+
+class SourceStyles:
+    """Stable per-source color and marker assignment.
+
+    Each name is assigned a color from the active palette
+    (``_style.color(i)``, in declaration order) and a marker cycling
+    through a fixed sequence, so a caller that hands the same
+    ``SourceStyles`` to several panels draws a given source identically in
+    every one of them. Colors resolve through ``_style`` at construction
+    time, so two instances built from the same names -- even across
+    separate calls -- agree exactly; nothing here depends on set or dict
+    iteration order or any other source of nondeterminism.
+
+    Args:
+        names: Source names, in the order colors and markers are
+            assigned.
+
+    Example::
+
+        styles = SourceStyles(["star", "b", "c"])
+        ax.scatter(x, y, color=styles["b"]["color"], marker=styles["b"]["marker"])
+    """
+
+    def __init__(self, names):
+        """Assign each name its color and marker, in declaration order.
+
+        Args:
+            names: Source names, in the order colors and markers are
+                assigned.
+        """
+        self._styles = {
+            name: {"color": _style.color(i), "marker": _MARKERS[i % len(_MARKERS)]}
+            for i, name in enumerate(names)
+        }
+
+    def __getitem__(self, name):
+        """Style dict for `name`.
+
+        Args:
+            name: A name passed to the constructor.
+
+        Returns:
+            A `{"color": str, "marker": str}` dict.
+        """
+        return self._styles[name]
+
+
+@dataclass(frozen=True)
+class Frame:
+    """Shared field-of-view extent for panels of the same scene.
+
+    Several panels of one scene (a trajectory view, a detector image, a
+    schematic) each call their own extent method against the same
+    `Frame`, so a single field-of-view choice stays visually consistent
+    between them instead of each panel deriving its own half-width.
+
+    Attributes:
+        half_fov_lod: Half the field of view, in lambda/D, measured to the
+            pixel edge -- the same edge convention `extent_lod_from_pixels`
+            uses, not a pixel center.
+        pixscale_lod: Optional pixel scale in lambda/D per pixel, carried
+            for callers that need to map an array index onto this frame.
+            Not used by `extent_lod` or `extent_arcsec` themselves.
+    """
+
+    half_fov_lod: float
+    pixscale_lod: float | None = field(default=None, kw_only=True)
+
+    def extent_lod(self):
+        """Pixel-edge extent in lambda/D.
+
+        Returns:
+            A `(left, right, bottom, top)` tuple of floats:
+            `(-half_fov_lod, half_fov_lod, -half_fov_lod, half_fov_lod)`.
+        """
+        half = float(self.half_fov_lod)
+        return (-half, half, -half, half)
+
+    def extent_arcsec(self, wavelength_nm, diameter_m):
+        """Pixel-edge extent in arcseconds at a wavelength and diameter.
+
+        Args:
+            wavelength_nm: Wavelength in nanometers.
+            diameter_m: Telescope diameter in meters.
+
+        Returns:
+            A `(left, right, bottom, top)` tuple of floats, in arcseconds.
+
+        Raises:
+            ImportError: If `hwoutils` is not installed. Install the
+                `eyepiece[hwo]` extra to enable this method.
+        """
+        try:
+            from hwoutils import conversions
+        except ImportError:
+            raise ImportError(
+                "Frame.extent_arcsec needs hwoutils: pip install eyepiece[hwo]"
+            ) from None
+        half = float(
+            conversions.lambda_d_to_arcsec(self.half_fov_lod, wavelength_nm, diameter_m)
+        )
+        return (-half, half, -half, half)
