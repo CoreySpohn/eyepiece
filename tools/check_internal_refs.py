@@ -28,6 +28,11 @@ PATTERNS = [
     r"deep-thoughts",
     # Underscored ALL-CAPS markdown names are internal working documents.
     r"\b[A-Z0-9]+(?:_[A-Z0-9]+)+\.md\b",
+    # Project spike/script homes and decision-history vocabulary.
+    r"physicaloptix-[a-z]+",
+    r"eac1_dlux",
+    r"(?i)\bgreenfield\b",
+    r"Tier[- ][GR]\b",
 ]
 
 COMPILED = [(pattern, re.compile(pattern)) for pattern in PATTERNS]
