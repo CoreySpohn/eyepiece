@@ -35,7 +35,8 @@ entry per panel, in panel order):
         per panel).
 """
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 
 ARTIST_KEYS = frozenset(
     {
@@ -54,7 +55,7 @@ ARTIST_KEYS = frozenset(
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class PlotResult:
     """Result of a single-axes plotting primitive.
 
@@ -70,7 +71,7 @@ class PlotResult:
 
     ax: object
     artists: dict
-    update: object = field(default=None)
+    update: Callable | None = None
 
     @property
     def fig(self):
@@ -78,7 +79,7 @@ class PlotResult:
         return self.ax.figure
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class MosaicResult:
     """Result of a multi-panel plotting primitive.
 
@@ -95,7 +96,7 @@ class MosaicResult:
 
     axes: object
     artists: dict
-    update: object = field(default=None)
+    update: Callable | None = None
 
     @property
     def fig(self):
