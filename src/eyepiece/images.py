@@ -249,3 +249,214 @@ def compare_row(
     artists["cbar"] = cb
 
     return MosaicResult(axes=axes, artists=artists)
+
+
+def _decade(values):
+    """Power-of-ten exponent of a panel's peak, for a scale annotation.
+
+    Args:
+        values: Array-like of real values.
+
+    Returns:
+        `floor(log10(max(abs(values))))` as an int, or 0 when the peak is
+        zero or non-finite.
+    """
+    peak = float(np.max(np.abs(values)))
+    if not np.isfinite(peak) or peak == 0.0:
+        return 0
+    return int(np.floor(np.log10(peak)))
+
+
+def _decade_panel(ax, data, name, cmap, extent, peak_all, zero_ratio, signed):
+    """Draw one auto-decade-scaled panel with a machine-zero-aware title.
+
+    Rescales `data` by its own power-of-ten peak so a field with tiny
+    values (e.g. the residual imaginary part of a real, symmetric pupil,
+    which sits near float64 machine zero) stays readable, and annotates the
+    title with the scale factor applied. A panel that is identically zero
+    is labeled as such rather than rescaled by an undefined factor, and a
+    panel far below the field-wide peak (but not exactly zero) is flagged
+    as machine noise rather than shown as if it were real structure.
+
+    Args:
+        ax: Axes to draw into.
+        data: 2D array-like for this panel.
+        name: Panel name used in the title.
+        cmap: Resolved Colormap for this panel.
+        extent: `(left, right, bottom, top)` passed to `imshow`.
+        peak_all: The field-wide peak amplitude, for the machine-zero test.
+        zero_ratio: A panel peak below `zero_ratio * peak_all` (and not
+            exactly zero) is labeled machine zero.
+        signed: Whether the panel data can be negative (Real/Imaginary) or
+            is non-negative by construction (Amplitude).
+
+    Returns:
+        A `(AxesImage, Colorbar, Text)` tuple.
+    """
+    panel_peak = float(np.max(np.abs(data)))
+    if panel_peak == 0.0:
+        vmin = -1.0 if signed else 0.0
+        im = ax.imshow(
+            np.zeros_like(data),
+            cmap=cmap,
+            vmin=vmin,
+            vmax=1.0,
+            extent=extent,
+            interpolation="nearest",
+        )
+        title = ax.set_title(f"{name}\n= 0 exactly")
+    else:
+        exp = _decade(data)
+        scale = 10.0**exp
+        lim = panel_peak / scale
+        vmin = -lim if signed else 0.0
+        im = ax.imshow(
+            data / scale,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=lim,
+            extent=extent,
+            interpolation="nearest",
+        )
+        title_str = rf"{name}  [$\times 10^{{{exp}}}$]"
+        if panel_peak < zero_ratio * peak_all:
+            title_str += "\n<- machine zero"
+        title = ax.set_title(title_str)
+
+    cax = ax.inset_axes([1.02, 0.0, 0.04, 1.0])
+    cb = ax.figure.colorbar(im, cax=cax)
+    return im, cb, title
+
+
+def show_field(
+    field,
+    *,
+    fig=None,
+    axes=None,
+    extent=None,
+    label=None,
+    mask=None,
+    amp_cmap=None,
+    signed_cmap=None,
+    phase_cmap=None,
+):
+    """Draw a complex field as Real / Imaginary over Amplitude / Phase.
+
+    The four panels are laid out as::
+
+        [[ Real,      Imaginary ],
+         [ Amplitude, Phase     ]]
+
+    The Real, Imaginary, and Amplitude panels are each auto-decade-scaled
+    to their own peak (see `_decade_panel`), so a field with tiny values --
+    the focal-plane imaginary part of a real, symmetric pupil comes out
+    around 1e-16, which is float64 machine zero and an exact theorem being
+    confirmed, not a small number -- stays readable instead of looking like
+    a blank panel.
+
+    Phase is undefined where there is no light, so it is masked rather than
+    rendered as numerical noise: `mask` (a pupil, say) marks where the field
+    has support, defaulting to wherever the amplitude clears a small
+    fraction of its peak.
+
+    Args:
+        field: 2D array-like of complex values.
+        fig: A Figure or SubFigure to build the 2x2 panel block inside.
+            None (with `axes` also None) creates a new figure. Ignored when
+            `axes` is given.
+        axes: A `(2, 2)` array of Axes to draw into. None creates the grid
+            from `fig` (or a new figure when `fig` is also None).
+        extent: `(left, right, bottom, top)` passed to every panel's
+            `imshow`.
+        label: Optional bold panel-block label placed above the Real panel.
+        mask: Boolean array-like, same shape as `field`, marking where
+            phase is defined. None derives it from the amplitude.
+        amp_cmap: Colormap override for the Amplitude panel; None uses the
+            semantic "intensity" cmap.
+        signed_cmap: Colormap override for the Real/Imaginary panels; None
+            uses the semantic "residual" cmap.
+        phase_cmap: Colormap override for the Phase panel; None uses the
+            semantic "phase" cmap.
+
+    Returns:
+        A `MosaicResult` whose `axes` is the `(2, 2)` grid above, with
+        `artists["image"]`, `artists["cbar"]`, and `artists["title"]` each
+        a list of four, in `[Real, Imaginary, Amplitude, Phase]` order.
+    """
+    zero_ratio = 1e-10
+    field = np.asarray(field)
+    amp = np.abs(field)
+    peak = float(amp.max())
+    if mask is None:
+        mask = amp > max(peak * 1e-8, np.finfo(float).tiny)
+    mask = np.asarray(mask).astype(bool)
+
+    if axes is not None:
+        axes = np.asarray(axes)
+    elif fig is not None:
+        axes = np.asarray(fig.subplots(2, 2))
+    else:
+        _, axes = plt.subplots(2, 2, layout="constrained")
+
+    resolved_signed_cmap = _style.cmap("residual", signed_cmap)
+    resolved_amp_cmap = _style.cmap("intensity", amp_cmap)
+    resolved_phase_cmap = _style.cmap("phase", phase_cmap).with_extremes(
+        bad=axes[1, 1].get_facecolor()
+    )
+
+    ims = []
+    cbs = []
+    titles = []
+
+    for ax, data, name in (
+        (axes[0, 0], field.real, "Real"),
+        (axes[0, 1], field.imag, "Imaginary"),
+    ):
+        im, cb, title = _decade_panel(
+            ax, data, name, resolved_signed_cmap, extent, peak, zero_ratio, True
+        )
+        ims.append(im)
+        cbs.append(cb)
+        titles.append(title)
+
+    im, cb, title = _decade_panel(
+        axes[1, 0], amp, "Amplitude", resolved_amp_cmap, extent, peak, zero_ratio, False
+    )
+    ims.append(im)
+    cbs.append(cb)
+    titles.append(title)
+
+    phase = np.ma.masked_where(~mask, np.angle(field))
+    im = axes[1, 1].imshow(
+        phase,
+        cmap=resolved_phase_cmap,
+        vmin=-np.pi,
+        vmax=np.pi,
+        extent=extent,
+        interpolation="nearest",
+    )
+    title = axes[1, 1].set_title("Phase")
+    cax = axes[1, 1].inset_axes([1.02, 0.0, 0.04, 1.0])
+    cb = axes[1, 1].figure.colorbar(im, cax=cax, label="rad")
+    ims.append(im)
+    cbs.append(cb)
+    titles.append(title)
+
+    for ax in axes.ravel():
+        if extent is None:
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+    if label:
+        axes[0, 0].text(
+            -0.18,
+            1.28,
+            label,
+            transform=axes[0, 0].transAxes,
+            fontweight="bold",
+            ha="left",
+            va="bottom",
+        )
+
+    artists = {"image": ims, "cbar": cbs, "title": titles}
+    return MosaicResult(axes=axes, artists=artists)
