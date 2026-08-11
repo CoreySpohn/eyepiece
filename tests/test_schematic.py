@@ -1,6 +1,8 @@
 """Optical-train rail smoke + highlight."""
 
+import hwostyle
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 
 from eyepiece.schematic import schematic
@@ -19,3 +21,18 @@ def test_schematic_draws_and_highlights():
 def test_schematic_unknown_highlight_raises():
     with pytest.raises(ValueError, match="highlight"):
         schematic("imager", highlight="nope")
+
+
+def _envelope_facecolor():
+    res = schematic("coronagraph")
+    facecolor = tuple(np.ravel(res.artists["fill"].get_facecolor()))
+    plt.close(res.fig)
+    return facecolor
+
+
+def test_schematic_neutrals_follow_the_mode():
+    hwostyle.use("dark")
+    dark_envelope = _envelope_facecolor()
+    with hwostyle.light():
+        light_envelope = _envelope_facecolor()
+    assert dark_envelope != light_envelope

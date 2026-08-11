@@ -38,6 +38,18 @@ def test_corner_overlay_into_existing_axes():
     plt.close(base.fig)
 
 
+def test_corner_overlay_wraps_the_palette_past_its_end():
+    rng = np.random.default_rng(4)
+    datasets = [
+        {"a": rng.normal(size=30), "b": rng.normal(size=30)} for _ in range(8)
+    ]  # palettes hold six colors
+    res = corner_overlay(datasets, ["a", "b"])
+    scatters = res.artists["scatter"]
+    assert len(scatters) == 8
+    assert np.allclose(scatters[6].get_facecolor(), scatters[0].get_facecolor())
+    plt.close(res.fig)
+
+
 def test_hist_vs_pdf_keys():
     s = np.random.default_rng(3).normal(size=1000)
     pdf = lambda x: np.exp(-(x**2) / 2) / np.sqrt(2 * np.pi)  # noqa: E731

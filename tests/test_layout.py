@@ -44,6 +44,14 @@ def test_source_styles_stable_and_distinct():
     assert s["b"] == SourceStyles(["star", "b", "c"])["b"]
 
 
+def test_source_styles_wraps_the_palette_past_its_end():
+    from eyepiece.layout import SourceStyles
+
+    s = SourceStyles([f"s{k}" for k in range(8)])  # palettes hold six colors
+    assert s["s6"]["color"] == s["s0"]["color"]
+    assert s["s6"]["marker"] == s["s0"]["marker"]
+
+
 def test_frame_extents_agree():
     from eyepiece.layout import Frame
 

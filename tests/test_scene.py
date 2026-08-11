@@ -1,5 +1,6 @@
 """trail depth cues, sky_fan semantics, fading_track alpha ramp."""
 
+import hwostyle
 import matplotlib.collections
 import matplotlib.pyplot as plt
 import numpy as np
@@ -51,6 +52,31 @@ def test_sky_fan_data_errorbar_is_a_single_collection():
     assert isinstance(collection, matplotlib.collections.Collection)
     collection.set_alpha(0.5)  # a tuple has no setters; this must not raise
     plt.close(res.fig)
+
+
+def test_sky_fan_wraps_the_palette_past_its_end():
+    t = np.linspace(0, 1, 10)
+    tracks = [(np.cos(t) + k, np.sin(t)) for k in range(8)]  # palettes hold six
+    res = sky_fan(tracks)
+    lines = res.artists["lines"]
+    assert lines[6].get_color() == lines[0].get_color()
+    plt.close(res.fig)
+
+
+def _iwa_disk_facecolor():
+    t = np.linspace(0, 1, 10)
+    res = sky_fan([(np.cos(t), np.sin(t))], iwa=0.3)
+    facecolor = tuple(np.ravel(res.artists["ellipse"].get_facecolor()))
+    plt.close(res.fig)
+    return facecolor
+
+
+def test_sky_fan_neutrals_follow_the_mode():
+    hwostyle.use("dark")
+    dark_disk = _iwa_disk_facecolor()
+    with hwostyle.light():
+        light_disk = _iwa_disk_facecolor()
+    assert dark_disk != light_disk
 
 
 def test_trail_3d_positions_on_2d_axes_raises():

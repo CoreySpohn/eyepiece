@@ -196,6 +196,11 @@ def sky_fan(
         Always sets the axes' aspect to `"equal"`, including on a
         caller-supplied `ax` -- a sky chart should not distort RA/Dec (or
         whatever two coordinates `tracks` carries).
+
+        The scenery that is not a track -- the IWA disk, the central-star
+        marker, the epoch errorbars -- is drawn in neutral tones read from
+        the active rcParams at call time, so it stays legible against a
+        light or a dark background instead of fixing one gray for both.
     """
     n = len(tracks)
     resolved_weights = list(weights) if weights is not None else [1.0] * n
@@ -219,11 +224,11 @@ def sky_fan(
     if iwa is not None:
         theta = np.linspace(0, 2 * np.pi, 200)
         xc, yc = iwa * np.cos(theta), iwa * np.sin(theta)
-        (ellipse,) = ax.fill(xc, yc, color="0.85", zorder=2, lw=0)
-        ax.plot(xc, yc, color="0.6", lw=0.8, zorder=3)
+        (ellipse,) = ax.fill(xc, yc, color=_style.neutral(0.15), zorder=2, lw=0)
+        ax.plot(xc, yc, color=_style.neutral(0.4), lw=0.8, zorder=3)
         artists["ellipse"] = ellipse
 
-    ax.plot(0, 0, marker="*", color="0.2", markersize=10, zorder=4)
+    ax.plot(0, 0, marker="*", color=_style.neutral(0.8), markersize=10, zorder=4)
 
     if data is not None:
         x_obs, y_obs, err = data
@@ -233,7 +238,7 @@ def sky_fan(
             xerr=np.asarray(err),
             yerr=np.asarray(err),
             fmt="o",
-            color="0.2",
+            color=_style.neutral(0.8),
             markersize=4,
             lw=1.0,
             zorder=5,

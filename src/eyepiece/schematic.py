@@ -40,20 +40,25 @@ def schematic(kind, *, ax=None, highlight=None, accent=None):
         highlight: Plane key to draw in the accent color, matched
             case-insensitively (`"pupil"`, `"focal"`, and for
             `"coronagraph"` also `"fpm"`, `"lyot"`). None leaves every
-            plane in the neutral color. A name that is not one of `kind`'s
+            plane in the neutral color. Anything that is not one of `kind`'s
             plane keys raises `ValueError` rather than silently matching
             nothing.
         accent: Highlight color override; None uses `_style.color(1)`.
 
     Returns:
         A `PlotResult` with artists `"fill"` (the beam-envelope
-        `PolyCollection`), `"lines"` (list of per-plane marker `Line2D`s,
-        drawn together on one axes), and `"text"` (list of per-plane label
-        `Text`s), the last two in plane order.
+        `PolyCollection`), `"lines"` (the list of per-plane marker `Line2D`
+        artists, drawn together on one axes), and `"text"` (the list of
+        per-plane label `Text` artists), the last two in plane order.
 
     Raises:
         ValueError: If `kind` is not a known train, or `highlight` is not
             one of that train's plane keys.
+
+    Note:
+        Every tone but the accent is neutral scenery resolved from the
+        active rcParams at call time, so the rail reads on a light or a
+        dark background rather than fixing one gray for both.
     """
     if kind not in _TRAINS:
         raise ValueError(f"unknown schematic kind: {kind!r}; known: {sorted(_TRAINS)}")
@@ -82,12 +87,14 @@ def schematic(kind, *, ax=None, highlight=None, accent=None):
         + [wide if p[3] else tight for p in planes]
         + [tight if not planes[-1][3] else wide]
     )
+    beam = _style.neutral(0.45)
+    faint = _style.neutral(0.25)
     xf = np.linspace(0.02, 0.99, 400)
     hf = np.interp(xf, xs, hs)
-    fill = ax.fill_between(xf, y0 - hf, y0 + hf, color="0.55", alpha=0.20, lw=0)
-    ax.plot(xf, y0 + hf, color="0.55", lw=0.7)
-    ax.plot(xf, y0 - hf, color="0.55", lw=0.7)
-    ax.plot([0.02, 0.99], [y0, y0], color="0.75", lw=0.6, ls=":")
+    fill = ax.fill_between(xf, y0 - hf, y0 + hf, color=beam, alpha=0.20, lw=0)
+    ax.plot(xf, y0 + hf, color=beam, lw=0.7)
+    ax.plot(xf, y0 - hf, color=beam, lw=0.7)
+    ax.plot([0.02, 0.99], [y0, y0], color=faint, lw=0.6, ls=":")
 
     # A lens just after every plane but the last: a pupil-plane lens forms
     # the next focal plane, a lens after a focal-plane mask re-collimates to
@@ -100,8 +107,8 @@ def schematic(kind, *, ax=None, highlight=None, accent=None):
                 (xm, y0),
                 0.026,
                 2 * max(hm, 0.06) * 0.95,
-                facecolor="0.75",
-                edgecolor="0.3",
+                facecolor=faint,
+                edgecolor=_style.neutral(0.7),
                 lw=0.7,
                 zorder=3,
             )
@@ -113,18 +120,19 @@ def schematic(kind, *, ax=None, highlight=None, accent=None):
             (planes[-1][2] + 0.015, y0 - 0.055),
             0.035,
             0.11,
-            facecolor="0.2",
+            facecolor=_style.neutral(0.8),
             edgecolor="none",
             zorder=3,
         )
     )
 
     highlight_key = highlight.lower() if highlight is not None else None
+    plain = _style.neutral(0.55)
     lines = []
     texts = []
     for key, label, xp, is_pupil in planes:
         on = highlight_key is not None and key == highlight_key
-        color = accent_color if on else "0.45"
+        color = accent_color if on else plain
         hp = max(wide if is_pupil else tight, 0.13)
         (line,) = ax.plot(
             [xp, xp],
