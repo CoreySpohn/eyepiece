@@ -49,9 +49,37 @@ def test_neutral_follows_mode_switch():
 def test_zero_style_falls_back_to_light():
     code = (
         "from eyepiece import _style; "
-        "print(_style.mode(), _style.cmap('intensity') is not None)"
+        "print(_style.mode(), _style.cmap('intensity') is not None, _style.color(0))"
     )
     out = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     )
-    assert out.stdout.split() == ["light", "True"]
+    parts = out.stdout.split()
+    assert parts[:2] == ["light", "True"]
+    matplotlib_defaults = {
+        "#1f77b4",
+        "#ff7f0e",
+        "#2ca02c",
+        "#d62728",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#7f7f7f",
+        "#bcbd22",
+        "#17becf",
+    }
+    assert parts[2] not in matplotlib_defaults
+
+
+def test_zero_style_with_customized_cycle_follows_it():
+    code = (
+        "import matplotlib; from cycler import cycler; "
+        "matplotlib.rcParams['axes.prop_cycle'] = "
+        "cycler(color=['#ff0000', '#00ff00', '#0000ff']); "
+        "from eyepiece import _style; "
+        "print(_style.mode(), _style.color(0), _style.color(1), _style.color(3))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert out.stdout.split() == ["light", "#ff0000", "#00ff00", "#ff0000"]

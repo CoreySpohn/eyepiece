@@ -9,7 +9,7 @@ goes through the `hwostyle` module attribute at call time, so a later
 
 import hwostyle
 import matplotlib
-from matplotlib.colors import to_rgb
+from matplotlib.colors import to_hex, to_rgb
 
 _LIGHT_CMAPS = None
 _LIGHT_PALETTE = None
@@ -67,17 +67,46 @@ def cmap(name, override=None):
     return _as_colormap(getattr(source, name))
 
 
+def _factory_default_cycle():
+    """True when the active property cycle is still matplotlib's factory default.
+
+    Cyclers compare by value, so a user cycle that happens to equal the
+    factory default (same colors, same order) reads as "not customized"
+    here; that is treated as acceptable, since a cycle indistinguishable
+    from the default should get the same fallback as never touching it.
+    """
+    return (
+        matplotlib.rcParams["axes.prop_cycle"]
+        == matplotlib.rcParamsDefault["axes.prop_cycle"]
+    )
+
+
+def _cycle_colors():
+    return [to_hex(c) for c in matplotlib.rcParams["axes.prop_cycle"].by_key()["color"]]
+
+
 def color(i, override=None):
     """Palette color by cycle index, honoring the active mode.
 
-    The index wraps around the palette: a palette holds only a handful of
-    colors (six in the default families), while a caller can hand a
-    primitive an unbounded number of tracks or datasets, so index `i`
-    resolves to `i % len(palette)` rather than running off the end.
+    The index wraps around the color source: a palette or property cycle
+    holds only a handful of colors, while a caller can hand a primitive an
+    unbounded number of tracks or datasets, so index `i` resolves to
+    `i % len(source)` rather than running off the end.
+
+    With a hwostyle mode active, the source is the mode's palette, as
+    always. With no mode active, the source follows the matplotlib
+    environment the caller is already in, the same call-time philosophy
+    `neutral()` uses for rcParams: if `axes.prop_cycle` has been
+    customized (via `plt.style.use(...)`, a direct rcParams edit, and so
+    on), those colors are used. Only when the property cycle is still
+    matplotlib's untouched factory default does this fall back to the
+    hwostyle light palette -- "zero style" on bare matplotlib should still
+    produce brand-quality colors, and matplotlib's default `C0`-`C9` cycle
+    is banned by the brand rules even in this fallback case.
 
     Args:
-        i: Index into the active palette's color cycle. Indices at or past
-            the palette length wrap back to its start.
+        i: Index into the active color source. Indices at or past the
+            source's length wrap back to its start.
         override: A color; wins when not None.
 
     Returns:
@@ -85,7 +114,13 @@ def color(i, override=None):
     """
     if override is not None:
         return override
-    source = hwostyle.palette if hwostyle.current_mode() else _light_palette()
+    if hwostyle.current_mode():
+        source = hwostyle.palette
+        return source[i % len(source)]
+    if _factory_default_cycle():
+        source = _light_palette()
+        return source[i % len(source)]
+    source = _cycle_colors()
     return source[i % len(source)]
 
 
