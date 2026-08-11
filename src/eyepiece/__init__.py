@@ -33,6 +33,7 @@ from eyepiece.layout import (
     label_lod,
 )
 from eyepiece.output import save_fig
+from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
 
 __all__ = [
     "MosaicResult",
@@ -40,10 +41,14 @@ __all__ = [
     "__version__",
     "animate",
     "compare_row",
+    "corner",
+    "corner_overlay",
+    "cov_ellipse",
     "extent_arcsec",
     "extent_au",
     "extent_lod",
     "extent_lod_from_pixels",
+    "hist_vs_pdf",
     "imshow_diverging",
     "imshow_log",
     "label_arcsec",
