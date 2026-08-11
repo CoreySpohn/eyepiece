@@ -202,7 +202,8 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
         fig: The Figure to rasterize each frame from.
         *paths: One output path per sink. The suffix picks the writer:
             .mp4 (ffmpeg), .gif (Pillow), .html (a self-contained player
-            with the frames embedded).
+            with the frames embedded). A path's parent directories are
+            created if they do not exist, as `save_fig` does.
         fps: Frames per second recorded into every sink.
         dpi: Rasterization dpi applied to every sink. None gives each sink
             the default for its suffix (.gif 85, .html 100, .mp4 120),
@@ -224,6 +225,7 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
         stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
         writers = [_make_writer(p, fps, extra_ffmpeg_args) for p in paths]
         for writer, path in zip(writers, paths, strict=True):
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
             stack.enter_context(writer.saving(fig, str(path), _sink_dpi(path, dpi)))
         yield _Recorder(fig, writers)
 
@@ -382,7 +384,7 @@ def animate(fig, draw, frames, *, fps=10, n_frames=None):
         def draw(fig, k):
             result.update(frames_data[k])
 
-        animate(fig, draw, len(frames_data), fps=10).save("out.gif")
+        animate(result.fig, draw, len(frames_data), fps=10).save("out.gif")
 
     Args:
         fig: The Figure to rasterize.

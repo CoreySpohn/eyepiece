@@ -38,6 +38,15 @@ def test_record_multi_sink_one_pass(tmp_path):
     plt.close(fig)
 
 
+def test_record_creates_missing_parent_directories(tmp_path):
+    fig, _ = _fig_line()
+    out = tmp_path / "runs" / "today" / "a.gif"
+    with record(fig, out, fps=5) as rec:
+        rec.hold(2)
+    assert out.stat().st_size > 0
+    plt.close(fig)
+
+
 def test_record_hold_repeats_frames(tmp_path):
     fig, line = _fig_line()
     with record(fig, tmp_path / "h.html", fps=5) as rec:
