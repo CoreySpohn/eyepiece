@@ -40,7 +40,7 @@ from eyepiece.layout import (
 )
 from eyepiece.output import save_fig
 from eyepiece.scene import fading_track, sky_fan, trail
-from eyepiece.schematic import schematic
+from eyepiece.schematic import rail, schematic
 from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
 
 __all__ = [
@@ -67,6 +67,7 @@ __all__ = [
     "label_arcsec",
     "label_au",
     "label_lod",
+    "rail",
     "record",
     "save_fig",
     "schematic",
