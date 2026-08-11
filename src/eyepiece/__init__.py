@@ -33,6 +33,8 @@ from eyepiece.layout import (
     label_lod,
 )
 from eyepiece.output import save_fig
+from eyepiece.scene import fading_track, sky_fan, trail
+from eyepiece.schematic import schematic
 from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
 
 __all__ = [
@@ -48,6 +50,7 @@ __all__ = [
     "extent_au",
     "extent_lod",
     "extent_lod_from_pixels",
+    "fading_track",
     "hist_vs_pdf",
     "imshow_diverging",
     "imshow_log",
@@ -56,5 +59,8 @@ __all__ = [
     "label_lod",
     "record",
     "save_fig",
+    "schematic",
     "show_field",
+    "sky_fan",
+    "trail",
 ]
