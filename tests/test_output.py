@@ -32,8 +32,7 @@ def test_dark_mode_png_is_not_white(tmp_path):
         corner = plt.imread(path)[0, 0, :3]
         assert corner.max() < 0.5  # black-ish, not white
     finally:
-        hwostyle.use("light")
-        plt.close("all")
+        plt.close("all")  # the mode itself is restored by the autouse fixture
 
 
 def test_suffix_and_return(tmp_path):
