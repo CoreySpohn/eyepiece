@@ -71,5 +71,7 @@ def test_flat_namespace():
         "animate",
         "extent_lod",
         "PlotResult",
+        "ARTIST_KEYS",
+        "PRESETS",
     ):
         assert hasattr(eyepiece, name), name

@@ -4,8 +4,12 @@ eyepiece provides a small set of pure functions for rendering, comparing,
 and animating simulated images (point spread functions, coronagraph
 detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
-(``images``, ``layout``, ``output``, ``anim``) are internal organization
-and are not part of the public API.
+(``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
+``schematic``) are internal organization and are not part of the public
+API. The two vocabularies a caller reads against are exported alongside
+the functions: ``ARTIST_KEYS``, the key set a result's ``artists`` dict
+draws from, and ``PRESETS``, the measured fps/dpi pairs for the usual
+animation destinations.
 
 Example::
 
@@ -19,9 +23,9 @@ matplotlib's global state at import time; style is applied explicitly by
 the caller (see ``eyepiece._style``), not captured when this package loads.
 """
 
-from eyepiece._result import MosaicResult, PlotResult
+from eyepiece._result import ARTIST_KEYS, MosaicResult, PlotResult
 from eyepiece._version import __version__
-from eyepiece.anim import animate, record
+from eyepiece.anim import PRESETS, animate, record
 from eyepiece.images import compare_row, imshow_diverging, imshow_log, show_field
 from eyepiece.layout import (
     Frame,
@@ -40,6 +44,8 @@ from eyepiece.schematic import schematic
 from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
 
 __all__ = [
+    "ARTIST_KEYS",
+    "PRESETS",
     "Frame",
     "MosaicResult",
     "PlotResult",
