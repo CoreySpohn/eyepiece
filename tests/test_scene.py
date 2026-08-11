@@ -1,7 +1,9 @@
 """trail depth cues, sky_fan semantics, fading_track alpha ramp."""
 
+import matplotlib.collections
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 from eyepiece.scene import fading_track, sky_fan, trail
 
@@ -38,6 +40,24 @@ def test_sky_fan_weights_scale_alpha():
     lines = res.artists["lines"]
     assert lines[0].get_alpha() > lines[1].get_alpha()
     plt.close(res.fig)
+
+
+def test_sky_fan_data_errorbar_is_a_single_collection():
+    t = np.linspace(0, 1, 20)
+    tracks = [(np.cos(t), np.sin(t))]
+    data = (np.array([0.1, 0.2]), np.array([0.05, 0.15]), np.array([0.01, 0.02]))
+    res = sky_fan(tracks, data=data)
+    collection = res.artists["collection"]
+    assert isinstance(collection, matplotlib.collections.Collection)
+    collection.set_alpha(0.5)  # a tuple has no setters; this must not raise
+    plt.close(res.fig)
+
+
+def test_trail_3d_positions_on_2d_axes_raises():
+    fig, ax = plt.subplots()
+    with pytest.raises(ValueError, match="3D"):
+        trail(_orbit3d(), ax=ax)
+    plt.close(fig)
 
 
 def test_fading_track_alpha_ramps():

@@ -40,21 +40,30 @@ def schematic(kind, *, ax=None, highlight=None, accent=None):
         highlight: Plane key to draw in the accent color, matched
             case-insensitively (`"pupil"`, `"focal"`, and for
             `"coronagraph"` also `"fpm"`, `"lyot"`). None leaves every
-            plane in the neutral color.
+            plane in the neutral color. A name that is not one of `kind`'s
+            plane keys raises `ValueError` rather than silently matching
+            nothing.
         accent: Highlight color override; None uses `_style.color(1)`.
 
     Returns:
         A `PlotResult` with artists `"fill"` (the beam-envelope
-        `PolyCollection`), `"line"` (list of per-plane marker `Line2D`s),
-        and `"text"` (list of per-plane label `Text`s), the last two in
-        plane order.
+        `PolyCollection`), `"lines"` (list of per-plane marker `Line2D`s,
+        drawn together on one axes), and `"text"` (list of per-plane label
+        `Text`s), the last two in plane order.
 
     Raises:
-        ValueError: If `kind` is not a known train.
+        ValueError: If `kind` is not a known train, or `highlight` is not
+            one of that train's plane keys.
     """
     if kind not in _TRAINS:
         raise ValueError(f"unknown schematic kind: {kind!r}; known: {sorted(_TRAINS)}")
     planes = _TRAINS[kind]
+    plane_keys = [key for key, *_ in planes]
+    if highlight is not None and highlight.lower() not in plane_keys:
+        raise ValueError(
+            f"unknown highlight {highlight!r} for kind {kind!r}; "
+            f"known planes: {plane_keys}"
+        )
 
     created = ax is None
     if created:
@@ -137,4 +146,4 @@ def schematic(kind, *, ax=None, highlight=None, accent=None):
         lines.append(line)
         texts.append(text)
 
-    return PlotResult(ax=ax, artists={"fill": fill, "line": lines, "text": texts})
+    return PlotResult(ax=ax, artists={"fill": fill, "lines": lines, "text": texts})

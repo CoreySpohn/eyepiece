@@ -1,4 +1,4 @@
-"""Trajectory and sky-plane primitives: depth-cued paths, orbit fans, fading tracks.
+"""Trajectory and sky-plane primitives: paths, weighted fans, fading tracks.
 
 `trail` draws a 2D or 3D trajectory with markers whose size and layering cue
 depth on the 3D path; the mechanism is deliberately generic, taking any
@@ -119,6 +119,11 @@ def trail(xyz, *, ax=None, style=None, marker_scale=25.0, trail_kw=None):
     if created:
         subplot_kw = {"projection": "3d"} if is_3d else None
         _, ax = plt.subplots(subplot_kw=subplot_kw, layout="constrained")
+    elif is_3d and getattr(ax, "name", None) != "3d":
+        raise ValueError(
+            'trail got (N, 3) xyz but a non-3D ax; pass a projection="3d" '
+            "axes (or ax=None to let trail create one) for 3D positions."
+        )
 
     color = _style.color(0, style)
     lkw = {"color": color, "lw": 1.5, **(trail_kw or {})}
@@ -175,15 +180,22 @@ def sky_fan(
             `tracks`; drawn as a shaded disk with an edge.
         data: Optional `(x, y, err)` tuple of array-likes for observed
             epochs, drawn as symmetric errorbars.
-        fan_kw: Extra kwargs passed to each track's `ax.plot` call, applied
-            last; `"alpha"` overrides the base alpha the per-track weight
-            scales (default 0.25).
+        fan_kw: Extra kwargs passed to each track's `ax.plot` call, folded
+            in and applied last -- a caller-supplied `"color"` or
+            `"zorder"` wins over the per-track default, and `"alpha"`
+            overrides the base alpha the per-track weight scales (default
+            0.25), not the final per-track alpha directly.
 
     Returns:
         A `PlotResult` with artist `"lines"` (list of per-track `Line2D`,
         one per track). Also has `"ellipse"` (the IWA disk `Polygon`) when
-        `iwa` is given, and `"collection"` (the epoch errorbar's error-bar
+        `iwa` is given, and `"collection"` (the epoch errorbar's y-error
         `LineCollection`) when `data` is given.
+
+    Note:
+        Always sets the axes' aspect to `"equal"`, including on a
+        caller-supplied `ax` -- a sky chart should not distort RA/Dec (or
+        whatever two coordinates `tracks` carries).
     """
     n = len(tracks)
     resolved_weights = list(weights) if weights is not None else [1.0] * n
@@ -192,16 +204,15 @@ def sky_fan(
     if created:
         _, ax = plt.subplots(layout="constrained")
 
-    kw = {"lw": 0.7, "alpha": 0.25, **(fan_kw or {})}
+    kw = {"lw": 0.7, "zorder": 1, "alpha": 0.25, **(fan_kw or {})}
     base_alpha = kw.pop("alpha")
 
     lines = []
     for k, (x, y) in enumerate(tracks):
         c = _style.color(k, colors[k] if colors is not None else None)
         line_alpha = min(1.0, base_alpha * (0.35 + resolved_weights[k]))
-        (line,) = ax.plot(
-            np.asarray(x), np.asarray(y), color=c, alpha=line_alpha, zorder=1, **kw
-        )
+        line_kw = {"color": c, "alpha": line_alpha, **kw}
+        (line,) = ax.plot(np.asarray(x), np.asarray(y), **line_kw)
         lines.append(line)
     artists = {"lines": lines}
 
@@ -227,7 +238,10 @@ def sky_fan(
             lw=1.0,
             zorder=5,
         )
-        artists["collection"] = errbar.lines[2]
+        # errbar.lines[2] is (xerr_collection, yerr_collection) since both
+        # xerr and yerr are always passed above; take the y-error one as
+        # the single representative Collection artist.
+        artists["collection"] = errbar.lines[2][1]
 
     ax.set_aspect("equal")
     return PlotResult(ax=ax, artists=artists)
