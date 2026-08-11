@@ -69,6 +69,11 @@ def _resolve_ffmpeg():
     optional dependency, imported here and only here so that plain
     `import eyepiece` never requires it).
 
+    Every candidate is checked with `shutil.which` before it is returned,
+    the configured one included: a stale rcParams path would otherwise be
+    handed straight to `subprocess`, turning an actionable error into a bare
+    FileNotFoundError from a failed launch.
+
     Returns:
         The path or bare name to run ffmpeg with.
 
@@ -76,8 +81,10 @@ def _resolve_ffmpeg():
         RuntimeError: If no ffmpeg can be found, naming both fixes.
     """
     configured = matplotlib.rcParams.get("animation.ffmpeg_path", "ffmpeg")
-    if configured != "ffmpeg" or shutil.which("ffmpeg"):
+    if shutil.which(configured):
         return configured
+    if shutil.which("ffmpeg"):
+        return "ffmpeg"
     try:
         import imageio_ffmpeg
     except ImportError:
@@ -99,7 +106,11 @@ def _make_writer(path, fps, extra_ffmpeg_args):
         fps: Frames per second baked into the output.
         extra_ffmpeg_args: Extra ffmpeg command-line arguments, appended
             after the even-dimension crop filter. Ignored by the non-mp4
-            writers, which take no such arguments.
+            writers, which take no such arguments. Passing a `-vf` of your
+            own REPLACES the crop rather than adding to it, because ffmpeg
+            honors only the last `-vf`, which brings the odd-dimension h264
+            failure back; write the crop into your own filter chain if you
+            need one.
 
     Returns:
         An unopened `MovieWriter`.
@@ -197,7 +208,10 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
             the default for its suffix (.gif 85, .html 100, .mp4 120),
             which is usually what mixed output wants.
         extra_ffmpeg_args: Extra ffmpeg arguments for mp4 sinks, appended
-            after the even-dimension crop filter.
+            after the even-dimension crop filter. A `-vf` of your own
+            replaces that crop instead of adding to it (ffmpeg honors the
+            last `-vf` only), which reopens the odd-dimension h264 failure;
+            include the crop in your own filter chain if you need one.
 
     Yields:
         A recorder with `.frame()` and `.hold(n)`.
@@ -316,7 +330,8 @@ class _Animation:
         frames = self._frame_iter()
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "animation.html"
-            with record(self.fig, path, fps=fps or self.fps, dpi=dpi) as rec:
+            rate = self.fps if fps is None else fps
+            with record(self.fig, path, fps=rate, dpi=dpi) as rec:
                 for ctx in frames:
                     self.draw(self.fig, ctx)
                     rec.frame()
