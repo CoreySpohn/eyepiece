@@ -60,3 +60,25 @@ def test_diverging_symmetric():
     im = res.artists["image"]
     assert im.norm.vmin == -im.norm.vmax
     plt.close(res.fig)
+
+
+def test_compare_row_single_image():
+    res = compare_row([_img()])
+    assert res.axes.shape == (1,)
+    assert len(res.artists["image"]) == 1
+    plt.close(res.fig)
+
+
+def test_compare_row_handed_axes_does_not_steal_sibling_space():
+    fig, axes = plt.subplots(1, 3)
+    compare_row([_img(), _img()], axes=axes[:2])
+    fig.canvas.draw()
+    w2 = axes[2].get_position().width
+    w0 = axes[0].get_position().width
+    assert w2 == pytest.approx(w0, rel=0.01)
+    plt.close(fig)
+
+
+def test_compare_row_empty_raises():
+    with pytest.raises(ValueError, match="at least one image"):
+        compare_row([])

@@ -40,7 +40,11 @@ def imshow_log(
     zero-valued or negative pixel is silently lifted to `floor` rather than
     raising inside `LogNorm`. Returned `.update` re-applies the same floor
     and calls `set_data` on the existing `AxesImage`, never creating a new
-    artist.
+    artist. A later `.update(new_image)` call with values outside the norm
+    built from the FIRST image is not an error: those pixels render clipped
+    to the colormap's end colors and the norm itself is not rescaled. Call
+    `imshow_log` again (or build the norm from the full data range up front
+    via `vmin`/`vmax`) if the range is expected to change.
 
     Args:
         image: 2D array-like of intensities.
@@ -175,10 +179,13 @@ def compare_row(
     `LogNorm`.
 
     Args:
-        images: Sequence of 2D array-likes, one per panel.
+        images: Sequence of 2D array-likes, one per panel. At least one
+            image is required.
         titles: Optional sequence of per-panel titles, same length as
             `images`.
-        axes: Sequence of Axes to draw into, one per panel. None creates a
+        axes: Axes to draw into, one per panel: either a sequence of Axes
+            or a single bare Axes (only valid for a one-image call), both
+            normalized to a 1D array via `numpy.atleast_1d`. None creates a
             new figure with `len(images)` panels in a row.
         norm: `"log"`, `"linear"`, or `"diverging"` -- which shared norm to
             build.
@@ -190,17 +197,29 @@ def compare_row(
         cbar_label: Label for the shared colorbar.
 
     Returns:
-        A `MosaicResult` with `artists["image"]` a list of `AxesImage`, one
-        per panel, and `artists["cbar"]` the single shared colorbar.
+        A `MosaicResult` whose `axes` is always a 1D array of length
+        `len(images)` (never a 2D block, regardless of panel count), with
+        `artists["image"]` a list of `AxesImage`, one per panel, and
+        `artists["cbar"]` the single shared colorbar.
+
+    Raises:
+        ValueError: If `images` is empty.
     """
+    if len(images) == 0:
+        raise ValueError("compare_row needs at least one image")
+
     images = [np.asarray(img, dtype=float) for img in images]
     if norm == "log":
         images = [np.clip(img, floor, None) for img in images]
 
     created = axes is None
     if created:
-        fig, axes = plt.subplots(1, len(images), layout="constrained")
+        fig, panel_axes = plt.subplots(
+            1, len(images), layout="constrained", squeeze=False
+        )
+        axes = panel_axes[0]
     else:
+        axes = np.atleast_1d(axes)
         fig = axes[0].figure
 
     shared_norm = _shared_norm(images, norm, floor)
