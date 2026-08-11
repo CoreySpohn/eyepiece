@@ -83,3 +83,47 @@ def test_zero_style_with_customized_cycle_follows_it():
         [sys.executable, "-c", code], capture_output=True, text=True, check=True
     )
     assert out.stdout.split() == ["light", "#ff0000", "#00ff00", "#ff0000"]
+
+
+def test_zero_style_with_style_sheet_cycle_follows_it():
+    code = (
+        "import matplotlib.pyplot as plt; plt.style.use('dark_background'); "
+        "from eyepiece import _style; "
+        "print(_style.mode(), _style.color(0))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    parts = out.stdout.split()
+    assert parts[0] == "light"
+    assert parts[1] == "#8dd3c7"
+
+
+def test_zero_style_with_colorless_cycle_falls_back_to_light():
+    code = (
+        "import matplotlib; from cycler import cycler; "
+        "matplotlib.rcParams['axes.prop_cycle'] = cycler(linestyle=['-', '--', ':']); "
+        "from eyepiece import _style; "
+        "print(_style.mode(), _style.color(0))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    parts = out.stdout.split()
+    assert parts[0] == "light"
+    assert parts[1] == _style._light_palette()[0]
+
+
+def test_zero_style_with_empty_color_list_falls_back_to_light():
+    code = (
+        "import matplotlib; from cycler import cycler; "
+        "matplotlib.rcParams['axes.prop_cycle'] = cycler(color=[]); "
+        "from eyepiece import _style; "
+        "print(_style.mode(), _style.color(0))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    parts = out.stdout.split()
+    assert parts[0] == "light"
+    assert parts[1] == _style._light_palette()[0]

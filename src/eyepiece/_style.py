@@ -82,7 +82,14 @@ def _factory_default_cycle():
 
 
 def _cycle_colors():
-    return [to_hex(c) for c in matplotlib.rcParams["axes.prop_cycle"].by_key()["color"]]
+    """Hex colors of the active property cycle, or [] if it defines none.
+
+    A cycler need not carry a "color" key at all -- matplotlib documents
+    linestyle-only and marker-only cycles -- and even a "color" key can be
+    set to an empty list. Both mean the same thing: no color preference.
+    """
+    colors = matplotlib.rcParams["axes.prop_cycle"].by_key().get("color", [])
+    return [to_hex(c) for c in colors]
 
 
 def color(i, override=None):
@@ -102,7 +109,11 @@ def color(i, override=None):
     matplotlib's untouched factory default does this fall back to the
     hwostyle light palette -- "zero style" on bare matplotlib should still
     produce brand-quality colors, and matplotlib's default `C0`-`C9` cycle
-    is banned by the brand rules even in this fallback case.
+    is banned by the brand rules even in this fallback case. A customized
+    cycle that carries no colors at all (e.g. one that only cycles
+    `linestyle` or `marker`, or a `color` key explicitly set to an empty
+    list) expresses no color preference either, so it takes the same
+    light-palette fallback as the factory default.
 
     Args:
         i: Index into the active color source. Indices at or past the
@@ -120,7 +131,7 @@ def color(i, override=None):
     if _factory_default_cycle():
         source = _light_palette()
         return source[i % len(source)]
-    source = _cycle_colors()
+    source = _cycle_colors() or _light_palette()
     return source[i % len(source)]
 
 
