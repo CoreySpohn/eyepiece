@@ -32,8 +32,11 @@ def test_colorbar_does_not_steal_sibling_space():
     fig, axes = plt.subplots(1, 2)
     imshow_log(_img(), ax=axes[0])
     fig.canvas.draw()
-    w0 = axes[0].get_position().width
-    w1 = axes[1].get_position().width
+    # original=True reports the gridspec slot BEFORE aspect="equal" shrinks
+    # the box to fit the image data -- the post-adjustment get_position()
+    # legitimately differs between panels even when neither stole space.
+    w0 = axes[0].get_position(original=True).width
+    w1 = axes[1].get_position(original=True).width
     assert w0 == pytest.approx(w1, rel=0.01)
     plt.close(fig)
 
@@ -73,8 +76,11 @@ def test_compare_row_handed_axes_does_not_steal_sibling_space():
     fig, axes = plt.subplots(1, 3)
     compare_row([_img(), _img()], axes=axes[:2])
     fig.canvas.draw()
-    w2 = axes[2].get_position().width
-    w0 = axes[0].get_position().width
+    # original=True reports the gridspec slot BEFORE aspect="equal" shrinks
+    # the box to fit the image data -- the post-adjustment get_position()
+    # legitimately differs between panels even when neither stole space.
+    w2 = axes[2].get_position(original=True).width
+    w0 = axes[0].get_position(original=True).width
     assert w2 == pytest.approx(w0, rel=0.01)
     plt.close(fig)
 
