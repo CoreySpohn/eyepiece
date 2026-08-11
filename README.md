@@ -29,10 +29,59 @@ standalone plotting library.
 - **Not a data pipeline.** Aggregating or transforming simulation output
   before plotting is the caller's job.
 
+## What is in it
+
+Every name below is importable straight from `eyepiece`; the submodules that
+implement them are internal organization.
+
+- **Images.** `imshow_log` (log scale clipped to a floor, so a zero-valued
+  pixel cannot break the norm), `imshow_diverging` (symmetric norm about
+  zero), `show_field` (amplitude and phase panels of a complex field), and
+  `compare_row` (several images sharing one norm and colorbar).
+- **Distributions.** `corner`, `corner_overlay` (a second sample set laid
+  over an existing triangle plot), `hist_vs_pdf`, and `cov_ellipse`.
+- **Scenes.** `trail` (a 2D or 3D trajectory with depth-cued markers),
+  `sky_fan` (weighted candidate sky tracks with an inner-working-angle disk),
+  `fading_track`, and `schematic` (a miniature optical-train rail with one
+  plane picked out).
+- **Layout.** Pixel-edge extent helpers (`extent_lod`, `extent_arcsec`,
+  `extent_au`, ...) with matching axis labelers, plus `Frame` and
+  `SourceStyles` for keeping several panels of one scene consistent.
+- **Output.** `save_fig` for a styled write to disk, `record` and `animate`
+  for animation, and `PRESETS` of measured fps/dpi pairs.
+
+## Usage
+
+```python
+import eyepiece as ep
+
+result = ep.imshow_log(psf, extent=ep.extent_lod_from_pixels(psf.shape[0], 0.5))
+ep.label_lod(result.ax)
+ep.save_fig(result.fig, "psf")
+```
+
+Every primitive returns a small result object carrying the axes it drew on
+and the artists it made (keyed by the `ARTIST_KEYS` vocabulary), so a caller
+can keep working on the figure without hunting for the objects again. An
+image primitive also returns an `.update` that redraws with new data through
+the same transform, which is what makes animation a few lines:
+
+```python
+frames = [cube[k] for k in range(len(cube))]
+result = ep.imshow_log(frames[0])
+
+
+def draw(fig, k):
+    result.update(frames[k])
+
+
+ep.animate(result.fig, draw, len(frames), fps=10).save("run.mp4", "run.gif")
+```
+
 ## Status
 
-eyepiece is in early development. The package currently exposes only its
-version; the plotting and animation API is under active construction.
+eyepiece is young: the primitives above are implemented and tested, and the
+public API may still shift before 1.0.
 
 ## Installation
 

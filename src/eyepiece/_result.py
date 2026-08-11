@@ -12,8 +12,8 @@ holds either a single matplotlib artist or, for a multi-panel primitive
 that draws the same kind of artist once per panel, a list of them (one
 entry per panel, in panel order):
 
-    image: the `AxesImage` from `imshow`/`pcolormesh` (or a list of one
-        per panel for a mosaic primitive).
+    image: the `AxesImage` from `imshow` (or a list of one per panel for
+        a mosaic primitive).
     cbar: the `Colorbar` attached to an image or scalar mappable (or a
         list of one per panel).
     line: a single `Line2D` (or a list of one per panel).
@@ -21,14 +21,15 @@ entry per panel, in panel order):
         multi-curve plot), as distinct from `line`'s one-per-panel list.
     fill: the `PolyCollection` from `fill_between`/`fill_betweenx` (or a
         list of one per panel).
-    hist: the `BarContainer` (or patch list) from `hist` (or a list of
-        one per panel).
+    hist: the `BarContainer` from a filled `hist`, or the patch list a
+        `histtype="step"` one returns (or a list of one per panel).
     scatter: the `PathCollection` from `scatter` (or a list of one per
         panel).
     ellipse: an `Ellipse` (or other `Patch`) artist marking a region
         (or a list of one per panel).
-    collection: a generic `Collection` artist not covered by a more
-        specific key above (or a list of one per panel).
+    collection: a `Collection` artist not covered by a more specific key
+        above -- an errorbar's `LineCollection`, or the `QuadMesh` that
+        `pcolormesh` and `hist2d` draw (or a list of one per panel).
     text: a `Text` artist placed as an annotation, not the title (or a
         list of one per panel).
     title: the `Text` artist returned by `set_title` (or a list of one

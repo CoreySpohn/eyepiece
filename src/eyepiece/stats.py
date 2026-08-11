@@ -73,10 +73,18 @@ def corner(
     Returns:
         A `MosaicResult` whose `axes` is the `(n, n)` grid, upper triangle
         hidden via `set_visible(False)`. `artists["hist"]` is the list of
-        diagonal `BarContainer`s and `artists["collection"]` the list of
-        lower-triangle `QuadMesh`es, each in row-major `(i, j)` order with
-        `j <= i`. `artists["line"]` collects the truth guide lines, when
-        `truths` is given.
+        diagonal step-histogram patch lists (a `histtype="step"` histogram
+        returns a list of `Polygon`, not a `BarContainer`) and
+        `artists["collection"]` the list of lower-triangle density meshes,
+        each a `QuadMesh`, in row-major `(i, j)` order with `j <= i`.
+        `artists["line"]` collects the truth guide lines, when `truths` is
+        given.
+
+    Note:
+        Unlike every other primitive here, `corner` takes no `ax` or `axes`
+        argument: it always creates its own figure. To draw into axes you
+        already have -- a `corner` result's own grid included -- use
+        `corner_overlay(..., axes=...)`.
     """
     labels = labels or {}
     if params is None:
@@ -158,9 +166,10 @@ def corner_overlay(
         upper-triangle cell hosts the dataset legend and is made visible
         (with its ticks and spines turned off) for that purpose, even when
         it was hidden by an earlier `corner` call. `artists["scatter"]` is
-        the list of lower-triangle `PathCollection`s and `artists["hist"]`
-        the list of diagonal step-histogram patch lists, in the order drawn
-        (dataset-major, then row-major `(i, j)` with `j <= i`).
+        the list of lower-triangle `PathCollection` artists and
+        `artists["hist"]` the list of diagonal step-histogram patch lists
+        (each a list of `Polygon`, as `histtype="step"` draws), in the order
+        drawn (dataset-major, then row-major `(i, j)` with `j <= i`).
     """
     labels = labels or {}
     if params is None:
@@ -228,8 +237,8 @@ def hist_vs_pdf(
         hist_kw: Extra kwargs passed to `ax.hist`, applied last.
 
     Returns:
-        A `PlotResult` with artists `"hist"` (the `BarContainer`) and
-        `"line"` (the PDF `Line2D`).
+        A `PlotResult` with artists `"hist"` (the `BarContainer` of filled
+        bars) and `"line"` (the PDF `Line2D`).
     """
     data = np.asarray(samples)
     created = ax is None
