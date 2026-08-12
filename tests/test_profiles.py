@@ -3,7 +3,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.colors import to_rgba
+from matplotlib.layout_engine import ConstrainedLayoutEngine
 
+from eyepiece import _style
 from eyepiece.profiles import plot_contrast_curve, plot_radial, radial_profile_plot
 
 
@@ -26,7 +29,8 @@ def test_plot_radial_keys_and_handed_ax():
 def test_plot_radial_creates_own_figure():
     r, values = _profile()
     res = plot_radial(r, values)
-    assert res.ax.figure is not None
+    assert len(res.fig.axes) == 1
+    assert isinstance(res.fig.get_layout_engine(), ConstrainedLayoutEngine)
     plt.close(res.fig)
 
 
@@ -173,10 +177,9 @@ def test_plot_contrast_curve_annotations_independent_per_axes():
 
 
 def test_plot_contrast_curve_first_call_without_markers_does_not_poison_later_calls():
-    # Reproduced regression (F5 review, Critical 1a): a first call with NO
-    # markers must not permanently block a later call on the same ax that
-    # DOES ask for markers -- the guard tracks what was drawn, not merely
-    # whether the function ran before.
+    # Regression: a first call with NO markers must not permanently block a
+    # later call on the same ax that DOES ask for markers -- the guard
+    # tracks what was drawn, not merely whether the function ran before.
     r, contrast = _profile()
     fig, ax = plt.subplots()
     plot_contrast_curve(r, contrast, ax=ax)
@@ -191,10 +194,10 @@ def test_plot_contrast_curve_first_call_without_markers_does_not_poison_later_ca
 
 
 def test_plot_contrast_curve_redraws_annotations_after_ax_clear():
-    # Reproduced regression (F5 review, Critical 1b): ax.clear() detaches
-    # the previously drawn annotation artists but does not touch this
-    # module's cached state attribute (a plain Python attribute survives
-    # clear()). A call after clear() must redraw, not silently no-op.
+    # Regression: ax.clear() detaches the previously drawn annotation
+    # artists but does not touch this module's cached state attribute (a
+    # plain Python attribute survives clear()). A call after clear() must
+    # redraw, not silently no-op.
     r, contrast = _profile()
     fig, ax = plt.subplots()
     plot_contrast_curve(r, contrast, ax=ax, iwa=1.0, owa=8.0)
@@ -220,6 +223,106 @@ def test_plot_contrast_curve_marker_kinds_annotate_independently():
     assert res2.artists["text"][0].get_text() == "OWA"
     assert len(ax.patches) == 2
     assert len(ax.texts) == 2
+    plt.close(fig)
+
+
+def test_plot_contrast_curve_shading_reaches_axes_edge_after_a_wider_curve():
+    # The shaded regions mark separations the instrument cannot see, so
+    # they have to reach the edge of the axes no matter what the x limits
+    # end up being. Shading between the limits READ AT CALL TIME leaves the
+    # far side unshaded once a second, wider curve moves them -- a reader
+    # would take the unshaded gap for working range.
+    fig, ax = plt.subplots(layout="constrained")
+    r = np.linspace(0.5, 20.0, 50)
+    res = plot_contrast_curve(r, 1e-8 * np.exp(-r), ax=ax, iwa=1.0, owa=15.0)
+    iwa_fill, owa_fill = res.artists["fill"]
+
+    wide = np.linspace(0.5, 60.0, 50)
+    plot_contrast_curve(wide, 1e-8 * np.exp(-wide / 5.0), ax=ax)
+    fig.canvas.draw()
+
+    left, right = ax.get_xlim()
+    assert right > 20.0  # the second curve really did widen the limits
+    assert iwa_fill.get_x() <= left
+    assert owa_fill.get_x() + owa_fill.get_width() >= right
+    ax_box = ax.get_window_extent()
+    assert iwa_fill.get_window_extent().x0 <= ax_box.x0
+    assert owa_fill.get_window_extent().x1 >= ax_box.x1
+    plt.close(fig)
+
+
+def test_plot_contrast_curve_shading_does_not_drive_autoscale():
+    # The annotation must not set the data range: a span reaching the axes
+    # edge cannot be allowed to push the edge further out in turn.
+    r, contrast = _profile()
+    fig_bare, ax_bare = plt.subplots(layout="constrained")
+    plot_contrast_curve(r, contrast, ax=ax_bare)
+    fig_bare.canvas.draw()
+    expected = ax_bare.get_xlim()
+
+    fig, ax = plt.subplots(layout="constrained")
+    plot_contrast_curve(r, contrast, ax=ax, iwa=1.0, owa=8.0)
+    fig.canvas.draw()
+    assert ax.get_xlim() == pytest.approx(expected)
+    plt.close(fig_bare)
+    plt.close(fig)
+
+
+def test_plot_contrast_curve_successive_calls_cycle_the_palette():
+    r, contrast = _profile()
+    fig, ax = plt.subplots()
+    res1 = plot_contrast_curve(r, contrast, ax=ax, label="a")
+    res2 = plot_contrast_curve(r, contrast * 0.5, ax=ax, label="b")
+    c1 = to_rgba(res1.artists["line"].get_color())
+    c2 = to_rgba(res2.artists["line"].get_color())
+    assert c1 != c2
+    assert c1 == to_rgba(_style.color(0))
+    assert c2 == to_rgba(_style.color(1))
+    plt.close(fig)
+
+
+def test_plot_contrast_curve_explicit_color_wins_without_advancing_the_cycle():
+    r, contrast = _profile()
+    fig, ax = plt.subplots()
+    res1 = plot_contrast_curve(r, contrast, ax=ax, color="red")
+    res2 = plot_contrast_curve(r, contrast * 0.5, ax=ax)
+    assert res1.artists["line"].get_color() == "red"
+    assert to_rgba(res2.artists["line"].get_color()) == to_rgba(_style.color(0))
+    plt.close(fig)
+
+
+def test_plot_contrast_curve_floors_continue_the_same_cycle():
+    r, contrast = _profile()
+    floors = [(r, contrast * 0.5, "floor")]
+    fig, ax = plt.subplots()
+    res1 = plot_contrast_curve(r, contrast, ax=ax, floors=floors)
+    res2 = plot_contrast_curve(r, contrast * 0.5, ax=ax)
+    assert to_rgba(res1.artists["lines"][0].get_color()) == to_rgba(_style.color(1))
+    # the second curve takes the next free color, not the floor's
+    assert to_rgba(res2.artists["line"].get_color()) == to_rgba(_style.color(2))
+    plt.close(fig)
+
+
+def test_plot_radial_successive_calls_cycle_the_palette():
+    r, values = _profile()
+    fig, ax = plt.subplots()
+    res1 = plot_radial(r, values, ax=ax)
+    res2 = plot_radial(r, values * 0.5, ax=ax)
+    c1 = to_rgba(res1.artists["line"].get_color())
+    c2 = to_rgba(res2.artists["line"].get_color())
+    assert c1 != c2
+    assert c1 == to_rgba(_style.color(0))
+    assert c2 == to_rgba(_style.color(1))
+    plt.close(fig)
+
+
+def test_plot_radial_explicit_color_wins_without_advancing_the_cycle():
+    r, values = _profile()
+    fig, ax = plt.subplots()
+    res1 = plot_radial(r, values, ax=ax, color="red")
+    res2 = plot_radial(r, values * 0.5, ax=ax)
+    assert res1.artists["line"].get_color() == "red"
+    assert to_rgba(res2.artists["line"].get_color()) == to_rgba(_style.color(0))
     plt.close(fig)
 
 
@@ -268,7 +371,8 @@ def test_plot_contrast_curve_xlabel_ylabel_applied_when_given():
 def test_plot_contrast_curve_creates_own_figure():
     r, contrast = _profile()
     res = plot_contrast_curve(r, contrast)
-    assert res.ax.figure is not None
+    assert len(res.fig.axes) == 1
+    assert isinstance(res.fig.get_layout_engine(), ConstrainedLayoutEngine)
     plt.close(res.fig)
 
 

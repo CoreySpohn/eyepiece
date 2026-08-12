@@ -16,6 +16,17 @@ compare two curves -- draws each call's own curve every time but the
 IWA/OWA shading, labels, and floor curves only once. See the "Annotations
 draw once per axes" note on `plot_contrast_curve` for the mechanism.
 
+Colors cycle per axes: since two calls on one axes is the normal usage,
+every curve this module draws without an explicit `color` takes the next
+color of the active palette, counted per axes, so a second call is
+distinguishable from the first instead of repeating `color(0)`. The
+counter is shared by `plot_radial`, `plot_contrast_curve`, and the floor
+curves, and lives in the same per-axes state dict as the annotation
+tracking (`ax._eyepiece_profile_state`, named by the module-level
+`_STATE_ATTR` constant). An explicit `color` wins and does not advance the
+counter -- a caller who names every color should not shift the palette for
+the calls that did not.
+
 Axis labels: `plot_radial` and `plot_contrast_curve` are unit-agnostic --
 `r` may be lambda/D, arcsec, AU, or pixels, and neither function can know
 which, so both only take an optional `xlabel`/`ylabel` and never guess one.
@@ -26,9 +37,38 @@ still overridable by an explicit `xlabel`.
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Rectangle
 
 from eyepiece import _style
 from eyepiece._result import PlotResult
+
+_STATE_ATTR = "_eyepiece_profile_state"
+
+
+def _state(ax):
+    """The per-axes state dict for `ax`, created on first use.
+
+    Holds `"annotations"` (drawn-annotation artists, keyed by marker kind)
+    and `"color_index"` (the palette position the next unnamed color takes).
+    """
+    state = getattr(ax, _STATE_ATTR, None)
+    if state is None:
+        state = {"annotations": {}, "color_index": 0}
+        setattr(ax, _STATE_ATTR, state)
+    return state
+
+
+def _next_color(ax, override=None):
+    """Next palette color for `ax`, advancing its per-axes color index.
+
+    An `override` wins and leaves the index alone; see the module docstring.
+    """
+    if override is not None:
+        return override
+    state = _state(ax)
+    color = _style.color(state["color_index"])
+    state["color_index"] += 1
+    return color
 
 
 def plot_radial(
@@ -50,7 +90,9 @@ def plot_radial(
         values: 1D array-like of profile values, same length as `r`.
         ax: Axes to draw into. None creates a new figure and axes.
         label: Optional legend label for the curve.
-        color: Line color override; None uses `_style.color(0)`.
+        color: Line color override; None takes the next color of the axes'
+            palette cycle, so a second call on the same axes is drawn in a
+            different color (see the module docstring).
         log: Whether to set a log y-scale.
         line_kw: Extra kwargs passed to `ax.plot`, applied last.
         xlabel: Optional x-axis label. None sets no label -- `r`'s units
@@ -68,7 +110,7 @@ def plot_radial(
     if created:
         _, ax = plt.subplots(layout="constrained")
 
-    lkw = {"color": _style.color(0, color), "label": label, **(line_kw or {})}
+    lkw = {"color": _next_color(ax, color), "label": label, **(line_kw or {})}
     (line,) = ax.plot(r_arr, v_arr, **lkw)
 
     if log:
@@ -79,9 +121,6 @@ def plot_radial(
         ax.set_ylabel(ylabel)
 
     return PlotResult(ax=ax, artists={"line": line})
-
-
-_ANNOTATIONS_ATTR = "_eyepiece_contrast_annotations"
 
 
 def _still_attached(artists, ax):
@@ -99,9 +138,47 @@ def _still_attached(artists, ax):
     return bool(artists) and all(a.axes is ax for a in artists)
 
 
-def _span_kw(span_kw):
-    """Default `axvspan` kwargs for IWA/OWA shading, with `span_kw` applied last."""
-    return {"color": _style.neutral(0.2), "alpha": 0.5, "zorder": 0, **(span_kw or {})}
+_SPAN_OUTER = 1e9
+
+
+def _span(ax, inner, outer_sign, span_kw):
+    """Shade from `inner` to the axes edge, permanently.
+
+    The shading marks a region the instrument cannot see, so it has to
+    reach the edge of the axes whatever the x limits turn out to be -- and
+    they are not known here: autoscaling runs at draw time, and a second
+    curve drawn later legitimately widens them. Reading `ax.get_xlim()`
+    and shading between those numbers would freeze the annotation at the
+    limits of the moment, leaving unshaded axes on the excluded side.
+
+    So the region is a `Rectangle` whose y runs 0 to 1 in axes coordinates
+    (`ax.get_xaxis_transform()`) and whose x runs from `inner` to
+    `_SPAN_OUTER` past it, in data coordinates, on the side `outer_sign`
+    picks (-1 for an inner working angle, +1 for an outer one). It is
+    added with `add_artist` rather than `add_patch`, which keeps it out of
+    the data limits: the x range of a contrast curve should be set by the
+    data, not by an annotation reaching a billion units off-screen. The
+    axes clips it to its own box on every draw, so it always reaches the
+    edge and never overshoots it. `add_artist` still sets the artist's
+    `.axes`, so `_still_attached` reads it exactly as it reads a patch.
+
+    Args:
+        ax: Axes to draw into.
+        inner: Data x coordinate of the edge facing the visible region.
+        outer_sign: -1 to extend left of `inner`, +1 to extend right.
+        span_kw: Extra `Rectangle` kwargs, applied last.
+
+    Returns:
+        The `Rectangle`.
+    """
+    kw = {"color": _style.neutral(0.2), "alpha": 0.5, "zorder": 0, **(span_kw or {})}
+    width = outer_sign * _SPAN_OUTER
+    x0 = inner if width > 0 else inner + width
+    rect = Rectangle(
+        (x0, 0.0), abs(width), 1.0, transform=ax.get_xaxis_transform(), **kw
+    )
+    ax.add_artist(rect)
+    return rect
 
 
 def plot_contrast_curve(
@@ -133,11 +210,11 @@ def plot_contrast_curve(
     `iwa`/`owa`/`floors` would exactly duplicate the first call's
     annotations, so this function tracks, per `ax` and per marker KIND
     (`"iwa"`, `"owa"`, `"floors"`, tracked independently of each other),
-    the artists it already drew for that kind. The state lives in a dict
-    stamped directly onto `ax` (named by the module-level
-    `_ANNOTATIONS_ATTR` constant), so it is visible on the object a reader
-    already has in hand (`ax._eyepiece_contrast_annotations`) and can
-    never leak between different axes or figures.
+    the artists it already drew for that kind. That record lives under
+    `"annotations"` in the per-axes state dict stamped directly onto `ax`
+    (named by the module-level `_STATE_ATTR` constant), so it is visible on
+    the object a reader already has in hand (`ax._eyepiece_profile_state`)
+    and can never leak between different axes or figures.
 
     A kind is skipped only when it was both drawn before AND its artists
     are still attached to `ax` (see `_still_attached`); this is what keeps
@@ -161,20 +238,25 @@ def plot_contrast_curve(
         contrast: 1D array-like of contrast values, same length as `r`.
         ax: Axes to draw into. None creates a new figure and axes.
         iwa: Inner working angle, in the same units as `r`. None omits the
-            marker. Shaded from the axes' current left x-limit to `iwa`.
+            marker. Everything left of `iwa` is shaded, out to the left
+            edge of the axes however the limits later change (see `_span`).
         owa: Outer working angle, in the same units as `r`. None omits the
-            marker. Shaded from `owa` to the axes' current right x-limit.
+            marker. Everything right of `owa` is shaded, out to the right
+            edge of the axes.
         floors: Optional iterable of `(r, y, label)` reference-floor
             curves -- a fundamental limit typically sitting below the main
             curve in value (photon noise, speckle residuals, and the
-            like) -- each drawn as its own dashed line.
+            like) -- each drawn as its own dashed line, in the next
+            palette colors after the main curve's.
         label: Optional legend label for the main curve.
-        color: Main curve color override; None uses `_style.color(0)`.
+        color: Main curve color override; None takes the next color of the
+            axes' palette cycle, so a second call on the same axes is drawn
+            in a different color (see the module docstring).
         log: Whether to set a log y-scale.
         line_kw: Extra kwargs passed to `ax.plot` for the main curve,
             applied last.
-        span_kw: Extra kwargs passed to `ax.axvspan` for the IWA/OWA
-            shading, applied last.
+        span_kw: Extra kwargs passed to the IWA/OWA shading `Rectangle`,
+            applied last.
         floor_kw: Extra kwargs passed to `ax.plot` for every floor curve,
             applied last.
         xlabel: Optional x-axis label. None sets no label -- `r`'s units
@@ -187,14 +269,14 @@ def plot_contrast_curve(
         drawn on every call. `artists["lines"]` is the list of floor
         curves' `Line2D`, in `floors` order -- present only on the call
         that actually draws them (see above). `artists["fill"]` is the
-        list of `axvspan` shading regions actually drawn THIS call, in
-        `[iwa, owa]` order when both are new this call -- `axvspan`
-        returns a `Rectangle` patch rather than the `fill_between`-style
-        `PolyCollection` the `"fill"` key's docstring names as the usual
-        case, which `ARTIST_KEYS` allows: it is a convention, not an
-        enforced schema, and `Rectangle` is the closest documented key for
-        a shaded region. `artists["text"]` (same this-call-only condition)
-        is the matching list of "IWA"/"OWA" label `Text` artists. Any of
+        list of shading regions actually drawn THIS call, in `[iwa, owa]`
+        order when both are new this call -- each is a `Rectangle` patch
+        rather than the `fill_between`-style `PolyCollection` the `"fill"`
+        key's docstring names as the usual case, which `ARTIST_KEYS`
+        allows: it is a convention, not an enforced schema, and
+        `Rectangle` is the closest documented key for a shaded region.
+        `artists["text"]` (same this-call-only condition) is the matching
+        list of "IWA"/"OWA" label `Text` artists. Any of
         `"lines"`/`"fill"`/`"text"` is absent from a call that draws
         nothing new for that kind.
     """
@@ -204,18 +286,14 @@ def plot_contrast_curve(
     if created:
         _, ax = plt.subplots(layout="constrained")
 
-    lkw = {"color": _style.color(0, color), "label": label, **(line_kw or {})}
+    lkw = {"color": _next_color(ax, color), "label": label, **(line_kw or {})}
     (line,) = ax.plot(r_arr, c_arr, **lkw)
     artists = {"line": line}
 
-    state = getattr(ax, _ANNOTATIONS_ATTR, None)
-    if state is None:
-        state = {}
-        setattr(ax, _ANNOTATIONS_ATTR, state)
+    drawn = _state(ax)["annotations"]
 
-    if iwa is not None and not _still_attached(state.get("iwa"), ax):
-        left, _right = ax.get_xlim()
-        fill = ax.axvspan(left, iwa, **_span_kw(span_kw))
+    if iwa is not None and not _still_attached(drawn.get("iwa"), ax):
+        fill = _span(ax, iwa, -1, span_kw)
         text = ax.text(
             iwa,
             1.02,
@@ -224,13 +302,12 @@ def plot_contrast_curve(
             ha="center",
             va="bottom",
         )
-        state["iwa"] = [fill, text]
+        drawn["iwa"] = [fill, text]
         artists.setdefault("fill", []).append(fill)
         artists.setdefault("text", []).append(text)
 
-    if owa is not None and not _still_attached(state.get("owa"), ax):
-        _left, right = ax.get_xlim()
-        fill = ax.axvspan(owa, right, **_span_kw(span_kw))
+    if owa is not None and not _still_attached(drawn.get("owa"), ax):
+        fill = _span(ax, owa, 1, span_kw)
         text = ax.text(
             owa,
             1.02,
@@ -239,22 +316,22 @@ def plot_contrast_curve(
             ha="center",
             va="bottom",
         )
-        state["owa"] = [fill, text]
+        drawn["owa"] = [fill, text]
         artists.setdefault("fill", []).append(fill)
         artists.setdefault("text", []).append(text)
 
-    if floors is not None and not _still_attached(state.get("floors"), ax):
+    if floors is not None and not _still_attached(drawn.get("floors"), ax):
         lines = []
-        for i, (f_r, f_y, f_label) in enumerate(floors):
+        for f_r, f_y, f_label in floors:
             fkw = {
-                "color": _style.color(i + 1),
+                "color": _next_color(ax),
                 "ls": "--",
                 "label": f_label,
                 **(floor_kw or {}),
             }
             (fl,) = ax.plot(f_r, f_y, **fkw)
             lines.append(fl)
-        state["floors"] = lines
+        drawn["floors"] = lines
         if lines:
             artists["lines"] = lines
 
@@ -311,7 +388,8 @@ def radial_profile_plot(
         nbins: Number of radial bins. None uses `hwoutils`' own default.
         ax: Axes to draw into. None creates a new figure and axes.
         label: Optional legend label for the curve.
-        color: Line color override; None uses `_style.color(0)`.
+        color: Line color override, forwarded to `plot_radial`; None takes
+            the next color of the axes' palette cycle.
         log: Whether to set a log y-scale.
         line_kw: Extra kwargs passed to `ax.plot`, applied last.
         xlabel: Optional x-axis label override. None uses the default
