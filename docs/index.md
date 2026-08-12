@@ -147,6 +147,9 @@ viz-convention
 gallery/images
 gallery/stats
 gallery/profiles
+gallery/scene
+gallery/animation
+gallery/one-scene-n-views
 ```
 
 ```{toctree}
