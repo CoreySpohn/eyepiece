@@ -54,7 +54,15 @@ def _finish_cell(ax, i, j, n, params, labels):
 
 
 def corner(
-    samples, params=None, *, truths=None, labels=None, color=None, bins=30, title=None
+    samples,
+    params=None,
+    *,
+    truths=None,
+    labels=None,
+    color=None,
+    bins=30,
+    title=None,
+    axes=None,
 ):
     """Draw a triangle plot: 1D histograms on the diagonal, 2D density below.
 
@@ -68,7 +76,12 @@ def corner(
             A parameter missing from `labels` falls back to its own name.
         color: Histogram/density color override; None uses `_style.color(0)`.
         bins: Bin count for both the 1D and 2D histograms.
-        title: Optional figure suptitle.
+        title: Optional figure suptitle. Applied only when `corner` creates
+            its own figure (`axes` is None); ignored when the caller
+            supplies `axes`, since a figure-level suptitle would touch
+            state outside the axes handed in.
+        axes: An `(n, n)` array of Axes to draw into. None creates a new
+            figure and hides its upper triangle.
 
     Returns:
         A `MosaicResult` whose `axes` is the `(n, n)` grid, upper triangle
@@ -79,12 +92,6 @@ def corner(
         each a `QuadMesh`, in row-major `(i, j)` order with `j <= i`.
         `artists["line"]` collects the truth guide lines, when `truths` is
         given.
-
-    Note:
-        Unlike every other primitive here, `corner` takes no `ax` or `axes`
-        argument: it always creates its own figure. To draw into axes you
-        already have -- a `corner` result's own grid included -- use
-        `corner_overlay(..., axes=...)`.
     """
     labels = labels or {}
     if params is None:
@@ -96,7 +103,7 @@ def corner(
     truth_color = _style.color(1)
     cmap = _style.cmap("intensity")
 
-    _, fig, axes = _corner_axes(n, None)
+    created, fig, axes = _corner_axes(n, axes)
     _hide_upper(axes, n)
 
     hists = []
@@ -129,7 +136,7 @@ def corner(
                         )
             _finish_cell(ax, i, j, n, params, labels)
 
-    if title:
+    if title and created:
         fig.suptitle(title)
 
     artists = {"hist": hists, "collection": density}
