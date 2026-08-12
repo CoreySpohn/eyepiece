@@ -301,8 +301,8 @@ class Animation:
     Attributes:
         fig: The bound Figure, rasterized by every render.
         draw: The per-frame draw callable, `draw(fig, ctx)`.
-        fps: Playback rate baked into `.save` and `.video`, and the
-            default for `.jshtml`.
+        fps: Default playback rate for `.save`, `.jshtml`, and `.video`,
+            each of which takes an `fps` of its own to override it.
         frames: The frame source, coerced from an int to a `range`.
         n_frames: The frame count, if it is known: measured from `frames`
             when that has a length, else the `n_frames` passed to
@@ -351,13 +351,14 @@ class Animation:
             self._consumed = True
         return iter(self.frames)
 
-    def save(self, *paths, dpi=None):
+    def save(self, *paths, dpi=None, fps=None):
         """Render every frame once, into every path.
 
         Args:
             *paths: Output paths, one per sink; see `record`.
             dpi: Rasterization dpi for every sink. None gives each sink the
                 default for its suffix.
+            fps: Playback rate override; None keeps the animation's own.
 
         Returns:
             The list of `pathlib.Path` written, in the order given.
@@ -367,7 +368,8 @@ class Animation:
                 generator.
         """
         frames = self._frame_iter()
-        with record(self.fig, *paths, fps=self.fps, dpi=dpi) as rec:
+        rate = self.fps if fps is None else fps
+        with record(self.fig, *paths, fps=rate, dpi=dpi) as rec:
             for ctx in frames:
                 self.draw(self.fig, ctx)
                 rec.frame()
@@ -414,12 +416,13 @@ class Animation:
         plt.close(self.fig)
         return html
 
-    def video(self, path, dpi=100):
+    def video(self, path, dpi=100, fps=None):
         """Render to a video file and return something a notebook can show.
 
         Args:
             path: Output path; the suffix picks the writer, as in `record`.
             dpi: Rasterization dpi.
+            fps: Playback rate override; None keeps the animation's own.
 
         Returns:
             An `IPython.display.Video` carrying the embedded file when
@@ -429,7 +432,7 @@ class Animation:
             RuntimeError: If the frame source is an exhausted one-shot
                 generator, or if an mp4 is requested without ffmpeg.
         """
-        self.save(path, dpi=dpi)
+        self.save(path, dpi=dpi, fps=fps)
         try:
             from IPython.display import Video
         except ImportError:

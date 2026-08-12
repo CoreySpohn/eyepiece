@@ -136,6 +136,38 @@ def test_presets_are_the_measured_values():
     }
 
 
+def test_a_preset_splats_into_every_renderer(tmp_path):
+    # the whole point of PRESETS being fps/dpi pairs is that they splat, so
+    # every renderer has to accept both keys -- save and video took only dpi
+    # until 0.1.1, which made `anim.save(p, **PRESETS["talk"])` a TypeError
+    fig, line = _fig_line()
+
+    def draw(fig_, k):
+        line.set_data([0, k], [0, 0])
+
+    anim = animate(fig, draw, 3, fps=2)
+    anim.save(tmp_path / "a.gif", **PRESETS["gif"])
+    anim.video(tmp_path / "b.gif", **PRESETS["gif"])
+    assert "animation" in anim.jshtml(**PRESETS["jshtml"]).lower()
+
+
+def test_fps_override_reaches_the_written_frames(tmp_path):
+    fig, line = _fig_line()
+
+    def draw(fig_, k):
+        line.set_data([0, k], [0, 0])
+
+    anim = animate(fig, draw, 3, fps=2)
+    anim.save(tmp_path / "own.gif")
+    anim.save(tmp_path / "override.gif", fps=10)
+    # a gif stores its delay in centiseconds, so read these as 2 and 10 fps
+    with Image.open(tmp_path / "own.gif") as im:
+        assert im.info["duration"] == 500  # the animation's own 2 fps
+    with Image.open(tmp_path / "override.gif") as im:
+        assert im.info["duration"] == 100  # 10 fps, not 2
+    plt.close(fig)
+
+
 def test_default_dpi_is_per_suffix(tmp_path):
     assert _sink_dpi(tmp_path / "a.gif", None) == 85
     assert _sink_dpi(tmp_path / "a.html", None) == 100
