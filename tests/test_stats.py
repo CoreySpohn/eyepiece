@@ -75,11 +75,11 @@ def test_corner_axes_wrong_shape_raises():
 
 
 def test_corner_axes_none_truths_scenario_structure():
-    # Structural regression lock for the axes=None path (replaces a
-    # one-time PNG-hash proof against the pre-axes= implementation; see the
-    # F7 fix report for that proof's evidence). Hash equality is brittle
-    # across platforms/matplotlib versions, so this asserts on the artist
-    # counts, visibility, and geometry a regression would actually break.
+    # Structural regression lock for the axes=None path, replacing a
+    # one-time comparison of rendered PNG hashes against the pre-axes=
+    # implementation. Hash equality is brittle across platforms and
+    # matplotlib versions, so this asserts on the artist counts,
+    # visibility, and geometry a regression would actually break.
     res = corner(_samples(), ["a", "b", "c"], truths={"a": 0.0, "b": 5.0})
     assert res.axes.shape == (3, 3)
     assert len(res.artists["hist"]) == 3  # one diagonal histogram per param
@@ -132,14 +132,21 @@ def test_corner_title_with_handed_axes_raises():
 
 
 def test_corner_handed_axes_does_not_steal_sibling_space():
-    fig, axes = plt.subplots(2, 3, layout="constrained")
+    # Deliberately NOT a constrained-layout figure: under constrained
+    # layout the original position IS the gridspec slot and the engine
+    # re-aligns the whole grid on every draw, so both widths stay equal
+    # even when a panel really does take space from its neighbors (a
+    # colorbar attached to one cell, say). Without a layout engine the
+    # width comparison discriminates, which is the point of the test.
+    fig, axes = plt.subplots(2, 3)
+    n_axes_before = len(fig.axes)
     corner(_samples(), ["a", "b"], axes=axes[:, :2])
     fig.canvas.draw()
-    # original=True reports the gridspec slot BEFORE aspect adjustments --
-    # see the analogous compare_row geometry test for why.
+    # original=True reports the gridspec slot BEFORE aspect adjustments
     w_sibling = axes[0, 2].get_position(original=True).width
     w_target = axes[0, 0].get_position(original=True).width
     assert w_sibling == pytest.approx(w_target, rel=0.01)
+    assert len(fig.axes) == n_axes_before  # no axes stolen from the figure
     plt.close(fig)
 
 
