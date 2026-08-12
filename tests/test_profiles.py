@@ -65,6 +65,22 @@ def test_plot_radial_line_kw_routes_to_plot():
     plt.close(res.fig)
 
 
+def test_plot_radial_sets_no_label_unless_asked():
+    r, values = _profile()
+    res = plot_radial(r, values)
+    assert res.ax.get_xlabel() == ""
+    assert res.ax.get_ylabel() == ""
+    plt.close(res.fig)
+
+
+def test_plot_radial_xlabel_ylabel_applied_when_given():
+    r, values = _profile()
+    res = plot_radial(r, values, xlabel="separation", ylabel="value")
+    assert res.ax.get_xlabel() == "separation"
+    assert res.ax.get_ylabel() == "value"
+    plt.close(res.fig)
+
+
 def test_plot_contrast_curve_draws_curve():
     r, contrast = _profile()
     res = plot_contrast_curve(r, contrast)
@@ -156,6 +172,99 @@ def test_plot_contrast_curve_annotations_independent_per_axes():
     plt.close(fig)
 
 
+def test_plot_contrast_curve_first_call_without_markers_does_not_poison_later_calls():
+    # Reproduced regression (F5 review, Critical 1a): a first call with NO
+    # markers must not permanently block a later call on the same ax that
+    # DOES ask for markers -- the guard tracks what was drawn, not merely
+    # whether the function ran before.
+    r, contrast = _profile()
+    fig, ax = plt.subplots()
+    plot_contrast_curve(r, contrast, ax=ax)
+    res2 = plot_contrast_curve(r, contrast * 0.5, ax=ax, iwa=1.0, owa=8.0)
+    assert "fill" in res2.artists
+    assert "text" in res2.artists
+    assert len(res2.artists["fill"]) == 2
+    assert len(res2.artists["text"]) == 2
+    assert len(ax.patches) == 2
+    assert len(ax.texts) == 2
+    plt.close(fig)
+
+
+def test_plot_contrast_curve_redraws_annotations_after_ax_clear():
+    # Reproduced regression (F5 review, Critical 1b): ax.clear() detaches
+    # the previously drawn annotation artists but does not touch this
+    # module's cached state attribute (a plain Python attribute survives
+    # clear()). A call after clear() must redraw, not silently no-op.
+    r, contrast = _profile()
+    fig, ax = plt.subplots()
+    plot_contrast_curve(r, contrast, ax=ax, iwa=1.0, owa=8.0)
+    ax.clear()
+    res = plot_contrast_curve(r, contrast, ax=ax, iwa=1.0, owa=8.0)
+    assert "fill" in res.artists
+    assert "text" in res.artists
+    assert len(ax.patches) == 2
+    assert len(ax.texts) == 2
+    plt.close(fig)
+
+
+def test_plot_contrast_curve_marker_kinds_annotate_independently():
+    # IWA and OWA are tracked as independent kinds: a first call giving
+    # only iwa, then a second giving only owa, must end with BOTH drawn --
+    # not just the one from whichever call happened to run the annotation
+    # block first.
+    r, contrast = _profile()
+    fig, ax = plt.subplots()
+    res1 = plot_contrast_curve(r, contrast, ax=ax, iwa=1.0)
+    res2 = plot_contrast_curve(r, contrast * 0.5, ax=ax, owa=8.0)
+    assert res1.artists["text"][0].get_text() == "IWA"
+    assert res2.artists["text"][0].get_text() == "OWA"
+    assert len(ax.patches) == 2
+    assert len(ax.texts) == 2
+    plt.close(fig)
+
+
+def test_plot_contrast_curve_line_kw_routes_to_plot():
+    r, contrast = _profile()
+    res = plot_contrast_curve(r, contrast, line_kw={"linestyle": ":"})
+    assert res.artists["line"].get_linestyle() == ":"
+    plt.close(res.fig)
+
+
+def test_plot_contrast_curve_span_kw_routes_to_axvspan():
+    r, contrast = _profile()
+    res = plot_contrast_curve(r, contrast, iwa=1.0, span_kw={"alpha": 0.9})
+    assert res.artists["fill"][0].get_alpha() == pytest.approx(0.9)
+    plt.close(res.fig)
+
+
+def test_plot_contrast_curve_floor_kw_routes_to_plot():
+    r, contrast = _profile()
+    floors = [(r, contrast * 0.5, "floor")]
+    # "ls" (not "linestyle") -- the default floor kwargs already set "ls",
+    # and matplotlib rejects being handed both spellings of the same alias
+    # at once, so overriding via the alias already in use is what a caller
+    # actually has to do here.
+    res = plot_contrast_curve(r, contrast, floors=floors, floor_kw={"ls": "-."})
+    assert res.artists["lines"][0].get_linestyle() == "-."
+    plt.close(res.fig)
+
+
+def test_plot_contrast_curve_sets_no_label_unless_asked():
+    r, contrast = _profile()
+    res = plot_contrast_curve(r, contrast)
+    assert res.ax.get_xlabel() == ""
+    assert res.ax.get_ylabel() == ""
+    plt.close(res.fig)
+
+
+def test_plot_contrast_curve_xlabel_ylabel_applied_when_given():
+    r, contrast = _profile()
+    res = plot_contrast_curve(r, contrast, xlabel="separation", ylabel="contrast")
+    assert res.ax.get_xlabel() == "separation"
+    assert res.ax.get_ylabel() == "contrast"
+    plt.close(res.fig)
+
+
 def test_plot_contrast_curve_creates_own_figure():
     r, contrast = _profile()
     res = plot_contrast_curve(r, contrast)
@@ -170,18 +279,32 @@ def test_plot_contrast_curve_default_log_yscale():
     plt.close(res.fig)
 
 
-def test_plot_contrast_curve_handed_ax_does_not_steal_sibling_space():
+def test_plot_contrast_curve_handed_ax_only_draws_into_its_own_axes():
+    # plot_contrast_curve never sets aspect and adds no colorbar/inset, so
+    # the get_position(original=True) idiom used elsewhere in this library
+    # (which exists to catch aspect="equal"-driven constrained-layout
+    # reflow from image primitives) cannot discriminate here: this module
+    # sets no aspect and adds no colorbar, so original and active
+    # positions are identical before and after regardless of correctness.
+    # A bare "sibling position unchanged" assertion does not hold either:
+    # under a real constrained-layout figure, the "IWA"/"OWA" text this
+    # module draws sits just outside axes[0]'s box, and a CORRECT
+    # implementation legitimately makes the constrained-layout engine
+    # reflow margins (and so the sibling's slot) to make room for it. What
+    # this module actually guarantees on the handed-ax path is structural,
+    # not positional: it draws only into the given ax, creating no new
+    # Axes and attaching no artist to a different one -- exactly the kind
+    # of bug a leaked/misdirected annotation-state reference could cause.
     r, contrast = _profile()
-    fig, axes = plt.subplots(1, 2)
+    fig, axes = plt.subplots(1, 2, layout="constrained")
+    n_axes_before = len(fig.axes)
     floors = [(r, contrast * 0.5, "floor")]
     plot_contrast_curve(r, contrast, ax=axes[0], iwa=1.0, owa=8.0, floors=floors)
     fig.canvas.draw()
-    # original=True reports the gridspec slot BEFORE anything else adjusts
-    # it -- the geometry rule is that a primitive handed an ax never alters
-    # a sibling axes' slot.
-    w0 = axes[0].get_position(original=True).width
-    w1 = axes[1].get_position(original=True).width
-    assert w0 == pytest.approx(w1, rel=0.01)
+    assert len(fig.axes) == n_axes_before
+    assert len(axes[1].patches) == 0
+    assert len(axes[1].texts) == 0
+    assert len(axes[1].lines) == 0
     plt.close(fig)
 
 
@@ -221,4 +344,47 @@ def test_radial_profile_plot_forwards_plot_kwargs():
     res = radial_profile_plot(img, 1.0, color="red", log=True)
     assert res.artists["line"].get_color() == "red"
     assert res.ax.get_yscale() == "log"
+    plt.close(res.fig)
+
+
+def test_radial_profile_plot_default_xlabel_is_lod_mathtext():
+    try:
+        import hwoutils  # noqa: F401
+    except ImportError:
+        pytest.skip("hwoutils not installed")
+    img = _image()
+    res = radial_profile_plot(img, 1.0)
+    assert res.ax.get_xlabel() == r"$r$ [$\lambda/D$]"
+    plt.close(res.fig)
+
+
+def test_radial_profile_plot_xlabel_override_wins():
+    try:
+        import hwoutils  # noqa: F401
+    except ImportError:
+        pytest.skip("hwoutils not installed")
+    img = _image()
+    res = radial_profile_plot(img, 1.0, xlabel="custom")
+    assert res.ax.get_xlabel() == "custom"
+    plt.close(res.fig)
+
+
+def test_radial_profile_plot_forwards_center_and_nbins():
+    try:
+        import hwoutils  # noqa: F401
+    except ImportError:
+        pytest.skip("hwoutils not installed")
+    from hwoutils import radial
+
+    img = _image()
+    expected_sep, expected_profile = radial.radial_profile(
+        img, 1.0, center=(3.0, 3.0), nbins=5
+    )
+    res = radial_profile_plot(img, 1.0, center=(3.0, 3.0), nbins=5)
+    np.testing.assert_allclose(
+        res.artists["line"].get_xdata(), np.asarray(expected_sep)
+    )
+    np.testing.assert_allclose(
+        res.artists["line"].get_ydata(), np.asarray(expected_profile)
+    )
     plt.close(res.fig)
