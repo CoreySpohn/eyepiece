@@ -31,6 +31,8 @@ import numpy as np
 import eyepiece as ep
 
 hwostyle.use("dark")
+# Docs-build only, to keep the baked page images small. A real figure script
+# keeps the style library's 300 dpi print policy and omits this line.
 plt.rcParams["savefig.dpi"] = 120
 
 N = 128
