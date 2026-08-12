@@ -63,22 +63,31 @@ needs to be readable at all.
 
 The cue is the marker size, scaled by `(1 + cos(viewer_angle)) / 2`, so a
 point on the far side of the path nearly vanishes while the near side keeps
-the full `marker_scale`. The camera angles come from the axes itself, which
-is why a 3D path passed to a plain axes raises rather than silently
+almost the full `marker_scale`. The camera angles come from the axes itself,
+which is why a 3D path passed to a plain axes raises rather than silently
 flattening: `trail` would have no viewing direction to work from. The
 scatter collection's `zorder` is set from the path's mean distance along
 that same view axis, so several `trail` calls on one 3D axes stack in the
 right order rather than in call order.
 
+Because those angles are read off the axes when the call is made, the view
+is set first, and the view is what decides how much of the range the cue
+actually uses. A path seen face-on puts every point at nearly the same
+angle, so the markers come out nearly uniform, which is the right answer for
+a path showing the viewer no depth. A view nearer to edge-on drives the size
+from one end of the range to the other, and the view below is chosen to do
+exactly that.
+
 ```{code-cell} python
-path = loop(1.4, 0.25, 55.0, 20.0, n=52)
+path = loop(1.4, 0.25, 55.0, 20.0, n=36)
 
 fig = plt.figure(figsize=(7.8, 3.4), layout="constrained")
 ax_flat = fig.add_subplot(1, 2, 1)
 ax_deep = fig.add_subplot(1, 2, 2, projection="3d")
+ax_deep.view_init(elev=30, azim=10)
 
 flat = ep.trail(path[:, :2], ax=ax_flat, marker_scale=14.0)
-deep = ep.trail(path, ax=ax_deep, marker_scale=70.0)
+deep = ep.trail(path, ax=ax_deep, marker_scale=80.0)
 
 ax_flat.set_aspect("equal")
 ax_flat.set_xlabel("$x$ [AU]")

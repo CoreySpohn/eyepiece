@@ -188,10 +188,10 @@ chain has to include the crop in it.
 ## Presets
 
 `PRESETS` holds measured frame rate and dpi pairs for the usual
-destinations. An entry splats straight into `record`, which takes both `fps`
-and `dpi`, while an animation built by `animate` takes its frame rate at
-binding time and its dpi at render time, so a preset reaches it one value at
-a time.
+destinations. An entry splats straight into `record` and into `.jshtml`,
+both of which take an `fps` and a `dpi`. An animation otherwise carries the
+frame rate it was bound with, so `.save` and `.video` take a dpi alone and a
+preset reaches them one value at a time.
 
 ```{code-cell} python
 for name, settings in ep.PRESETS.items():
