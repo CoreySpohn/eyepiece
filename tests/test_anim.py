@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+import eyepiece
 from eyepiece.anim import PRESETS, _make_writer, _sink_dpi, animate, record
 
 
@@ -67,6 +68,17 @@ def test_animate_does_not_clear(tmp_path):
     animate(fig, draw, 3, fps=5).save(tmp_path / "n.gif")
     assert len(fig.axes) == n_axes_before
     assert len(fig.axes[0].lines) == 1
+    plt.close(fig)
+
+
+def test_animate_returns_public_animation_type(tmp_path):
+    fig, line = _fig_line()
+
+    def draw(fig_, k):
+        line.set_data([0, k], [0, 0])
+
+    anim = animate(fig, draw, 3, fps=5)
+    assert isinstance(anim, eyepiece.Animation)
     plt.close(fig)
 
 
@@ -173,6 +185,55 @@ def test_record_scopes_its_rcparam_overrides(tmp_path, caplog):
     # -- matplotlib scopes the bbox itself once saving() is under way, which
     # makes every later observable identical with or without the override.
     assert not [r for r in caplog.records if "savefig.bbox" in r.getMessage()]
+    plt.close(fig)
+
+
+def test_record_freezes_layout_engine_after_first_frame(tmp_path):
+    fig, ax = plt.subplots(layout="constrained")
+    ax.plot([], [])
+    original_engine = fig.get_layout_engine()
+    with record(fig, tmp_path / "a.gif", fps=5) as rec:
+        rec.frame()
+        frozen_engine = fig.get_layout_engine()
+        # frame 1 forced a real solve, then locked it: the engine object
+        # itself changes identity, so a re-solve on frame 2 cannot occur
+        assert frozen_engine is not original_engine
+        rec.frame()
+        assert fig.get_layout_engine() is frozen_engine
+    plt.close(fig)
+
+
+def test_record_restores_layout_engine_after_normal_exit(tmp_path):
+    fig, ax = plt.subplots(layout="constrained")
+    ax.plot([], [])
+    original_engine = fig.get_layout_engine()
+    with record(fig, tmp_path / "a.gif", fps=5) as rec:
+        rec.hold(2)
+        assert fig.get_layout_engine() is not original_engine
+    assert fig.get_layout_engine() is original_engine
+    plt.close(fig)
+
+
+def test_record_restores_layout_engine_after_exception(tmp_path):
+    fig, ax = plt.subplots(layout="constrained")
+    ax.plot([], [])
+    original_engine = fig.get_layout_engine()
+    with pytest.raises(ValueError, match="boom"):
+        with record(fig, tmp_path / "a.gif", fps=5) as rec:
+            rec.frame()
+            raise ValueError("boom")
+    assert fig.get_layout_engine() is original_engine
+    plt.close(fig)
+
+
+def test_record_with_no_layout_engine_records_without_error(tmp_path):
+    fig, _ = _fig_line()
+    assert fig.get_layout_engine() is None
+    with record(fig, tmp_path / "a.gif", fps=5) as rec:
+        rec.hold(2)
+        assert fig.get_layout_engine() is None
+    assert fig.get_layout_engine() is None
+    assert (tmp_path / "a.gif").stat().st_size > 0
     plt.close(fig)
 
 

@@ -29,6 +29,15 @@ The mechanics this module does own, each closing a specific trap:
   bbox varies the frame size from frame to frame, which breaks a writer's
   fixed-size pipe. It is applied through `matplotlib.rc_context`, so it is
   scoped to the recording and never leaks into the caller's rcParams.
+- A constrained-layout figure has its layout engine frozen right after the
+  first frame is drawn, and the freeze is scoped to the recording exactly
+  like the `savefig.bbox` override: `record` restores whatever engine the
+  figure had when the caller's own context exits. Constrained layout
+  re-solves on every draw, which can shift axes between frames or resize
+  the canvas outright -- the same trap `savefig.bbox` closes, from the
+  other direction. Locking the engine after frame one, instead of at
+  `record`'s entry, means the freeze captures a layout solved against real
+  content rather than an empty figure.
 - Every grab passes `facecolor=fig.get_facecolor()`, so a dark-mode figure
   is not written onto a white background by savefig's own default.
 - mp4 sinks get `-vf crop=trunc(iw/2)*2:trunc(ih/2)*2`. h264 rejects odd
@@ -159,16 +168,25 @@ class _Recorder:
     def __init__(self, fig, writers):
         self.fig = fig
         self.writers = writers
+        self._layout_frozen = False
 
     def frame(self):
         """Grab the figure exactly as it stands now, into every open sink.
 
         The figure's own facecolor is passed to each grab so a dark figure
         is not rasterized onto savefig's white default.
+
+        The first call also freezes the figure's layout engine, once this
+        frame's content has actually been drawn: see `record` for why the
+        freeze waits here instead of happening at `record`'s entry.
         """
         facecolor = self.fig.get_facecolor()
         for writer in self.writers:
             writer.grab_frame(facecolor=facecolor)
+        if not self._layout_frozen:
+            self.fig.canvas.draw()
+            self.fig.set_layout_engine("none")
+            self._layout_frozen = True
 
     def hold(self, n):
         """Repeat the current figure for `n` frames, to dwell on a moment.
@@ -189,6 +207,18 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
     simulation stepping forward, say) rather than from a frame index. The
     figure is never cleared: mutate its artists between `frame()` calls, or
     call `ax.clear()` yourself for redraw-style animation.
+
+    If `fig` has a constrained-layout engine, its layout is frozen the
+    moment the first `frame()` call finishes drawing, and restored to
+    whatever it was before this call once the `with` block exits -- on
+    the exception path too, the same as the writer cleanup this context
+    manager already guarantees. A figure with no layout engine, or one
+    the caller already froze, records normally: freezing is a no-op on
+    top of "none" already, and restoring puts the exact same state back.
+    The engine is captured before the `savefig.bbox` override and the
+    writers are set up, so it unwinds last, after every writer has
+    finished and the rcParams overrides are back -- the freeze outlives
+    everything it was protecting.
 
     Example::
 
@@ -222,6 +252,7 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
         RuntimeError: If an mp4 sink is requested and no ffmpeg is found.
     """
     with ExitStack() as stack:
+        stack.callback(fig.set_layout_engine, fig.get_layout_engine())
         stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
         writers = [_make_writer(p, fps, extra_ffmpeg_args) for p in paths]
         for writer, path in zip(writers, paths, strict=True):
@@ -238,10 +269,39 @@ def _is_one_shot(frames):
         return False
 
 
-class _Animation:
-    """A figure, a draw function, and a frame source; see `animate`."""
+class Animation:
+    """A figure, a draw function, and a frame source, bound but not yet run.
+
+    Build one with `animate`; nothing is rendered until `.save`, `.jshtml`,
+    or `.video` is called. Every one of those renders by walking `frames`
+    from the start, calling `draw(fig, ctx)` once per item and grabbing a
+    frame right after -- they all route through `record`, so a recording's
+    scoped mechanics (rcParams overrides, layout freeze) apply the same way
+    whether you call `.save` directly or one of the other two.
+
+    Whether a second render is possible depends on what `frames` was: a
+    sequence or an int can be walked again for free, a bare generator or
+    iterator raises RuntimeError on the second render, and a zero-argument
+    callable is called again to produce a fresh iterator. See `animate` for
+    the full breakdown.
+
+    Attributes:
+        fig: The bound Figure, rasterized by every render.
+        draw: The per-frame draw callable, `draw(fig, ctx)`.
+        fps: Playback rate baked into `.save` and `.video`, and the
+            default for `.jshtml`.
+        frames: The frame source, coerced from an int to a `range`.
+        n_frames: The frame count, if it is known: measured from `frames`
+            when that has a length, else the `n_frames` passed to
+            `animate`, else None.
+    """
 
     def __init__(self, fig, draw, frames, fps, n_frames):
+        """Bind the figure, draw function, and frame source; see `animate`.
+
+        Not meant to be called directly -- use `animate`, which fills in
+        `n_frames` from `frames` when it is not given explicitly.
+        """
         self.fig = fig
         self.draw = draw
         self.fps = fps
@@ -402,7 +462,7 @@ def animate(fig, draw, frames, *, fps=10, n_frames=None):
             of its own (a generator or callable); otherwise it is measured.
 
     Returns:
-        An animation object with `.save(*paths, dpi=None)`,
+        An `Animation` with `.save(*paths, dpi=None)`,
         `.jshtml(dpi=100, fps=None)`, and `.video(path, dpi=100)`.
     """
-    return _Animation(fig, draw, frames, fps=fps, n_frames=n_frames)
+    return Animation(fig, draw, frames, fps=fps, n_frames=n_frames)

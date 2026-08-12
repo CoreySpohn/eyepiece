@@ -25,7 +25,7 @@ the caller (see ``eyepiece._style``), not captured when this package loads.
 
 from eyepiece._result import ARTIST_KEYS, MosaicResult, PlotResult
 from eyepiece._version import __version__
-from eyepiece.anim import PRESETS, animate, record
+from eyepiece.anim import PRESETS, Animation, animate, record
 from eyepiece.images import (
     compare_row,
     imshow_diverging,
@@ -54,6 +54,7 @@ __all__ = [
     "ARTIST_KEYS",
     "GLYPHS",
     "PRESETS",
+    "Animation",
     "Frame",
     "MosaicResult",
     "PlotResult",
