@@ -102,9 +102,9 @@ def plot_contrast_curve(
         owa: Outer working angle, in the same units as `r`. None omits the
             marker. Shaded from `owa` to the axes' current right x-limit.
         floors: Optional iterable of `(r, y, label)` reference-floor
-            curves, each drawn as its own dashed line beneath the main
-            curve (in draw order, not z-order -- see `floor_kw` to
-            override the z-order if that distinction matters).
+            curves -- a fundamental limit typically sitting below the main
+            curve in value (photon noise, speckle residuals, and the
+            like) -- each drawn as its own dashed line.
         label: Optional legend label for the main curve.
         color: Main curve color override; None uses `_style.color(0)`.
         log: Whether to set a log y-scale.
@@ -121,9 +121,14 @@ def plot_contrast_curve(
         a given `ax`, and only when `floors` is given) is the list of
         floor curves' `Line2D`, in `floors` order. `artists["fill"]`
         (only on the first call, one entry per marker actually given) is
-        the list of `axvspan` shading patches, in `[iwa, owa]` order.
-        `artists["text"]` (same first-call-only condition) is the
-        matching list of "IWA"/"OWA" label `Text` artists.
+        the list of `axvspan` shading regions, in `[iwa, owa]` order --
+        `axvspan` returns a `Rectangle` patch rather than the
+        `fill_between`-style `PolyCollection` the `"fill"` key's
+        docstring names as the usual case, which `ARTIST_KEYS` allows: it
+        is a convention, not an enforced schema, and `Rectangle` is the
+        closest documented key for a shaded region. `artists["text"]`
+        (same first-call-only condition) is the matching list of
+        "IWA"/"OWA" label `Text` artists.
     """
     r_arr = np.asarray(r, dtype=float)
     c_arr = np.asarray(contrast, dtype=float)
