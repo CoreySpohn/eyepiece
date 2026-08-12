@@ -84,6 +84,9 @@ def test_corner_axes_none_truths_scenario_structure():
     assert res.axes.shape == (3, 3)
     assert len(res.artists["hist"]) == 3  # one diagonal histogram per param
     assert len(res.artists["collection"]) == 3  # 3 lower-triangle density cells
+    # the QuadMesh's array is (bins, bins) -- catches a mesh-resolution
+    # regression that a mere collection count would miss.
+    assert res.artists["collection"][0].get_array().shape == (30, 30)
     # truth lines: diagonal cells for a, b (1 each); off-diagonal (a, b) both
     # in truths (2); off-diagonal (a, c) only a in truths (1); off-diagonal
     # (b, c) only b in truths (1); diagonal c not in truths (0) -> 6 total.
