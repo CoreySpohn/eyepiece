@@ -507,7 +507,17 @@ _RATIO_CLIP_PERCENTILE = 99.0
 
 
 def triptych(
-    a, b, *, mode="ratio", a_b_norm="log", titles=None, axes=None, ratio_clip=None
+    a,
+    b,
+    *,
+    mode="ratio",
+    a_b_norm="log",
+    titles=None,
+    axes=None,
+    ratio_clip=None,
+    extent=None,
+    imshow_kw=None,
+    cbar_kw=None,
 ):
     """Draw A, B, and a panel comparing them, side by side.
 
@@ -551,7 +561,10 @@ def triptych(
         mode: `"ratio"` or `"residual"`; see above.
         a_b_norm: `"log"` or `"linear"` -- the norm A and B share, passed
             through to `compare_row`'s `norm`. Independent of the
-            comparison panel's own norm.
+            comparison panel's own norm. `compare_row` also takes
+            `"diverging"`, but a triptych does not: the comparison panel is
+            already the diverging one, and rejecting the value now leaves
+            room to accept it later, which the reverse would not.
         titles: Optional length-3 sequence of panel titles. None uses
             `("A", "B", "B / A")` for `mode="ratio"` or
             `("A", "B", "B - A")` for `mode="residual"`.
@@ -560,6 +573,13 @@ def triptych(
         ratio_clip: Fixed clip value for the ratio panel's norm, which
             then spans `[1 - ratio_clip, 1 + ratio_clip]`. None derives it
             from the data (see above). Ignored when `mode="residual"`.
+        extent: `(left, right, bottom, top)` passed to all three panels'
+            `imshow`, so a triptych can carry axis units the way every
+            other image primitive here can.
+        imshow_kw: Extra kwargs passed to all three panels' `ax.imshow`,
+            applied last, exactly as in `compare_row`.
+        cbar_kw: Extra kwargs passed to both colorbars' `fig.colorbar`,
+            applied last, exactly as in `compare_row`.
 
     Returns:
         A `MosaicResult` whose `axes` is the length-3 array of panels
@@ -568,10 +588,21 @@ def triptych(
         `Colorbar`: the A/B shared one and the comparison panel's own.
 
     Raises:
-        ValueError: If `mode` is not `"ratio"` or `"residual"`.
+        ValueError: If `mode` is not `"ratio"` or `"residual"`, if
+            `a_b_norm` is not `"log"` or `"linear"`, or if `axes` or
+            `titles` is given with anything other than three entries. Every
+            check runs before anything is drawn.
     """
     if mode not in ("ratio", "residual"):
         raise ValueError(f"unknown mode: {mode!r}")
+    if a_b_norm not in ("log", "linear"):
+        raise ValueError(f"unknown a_b_norm: {a_b_norm!r}; use 'log' or 'linear'")
+    if axes is not None:
+        axes = np.atleast_1d(axes)
+        if axes.size != 3:
+            raise ValueError(f"triptych needs 3 axes, got {axes.size}")
+    if titles is not None and len(titles) != 3:
+        raise ValueError(f"triptych needs 3 titles, got {len(titles)}")
 
     a_arr = np.asarray(a, dtype=float)
     b_arr = np.asarray(b, dtype=float)
@@ -582,11 +613,15 @@ def triptych(
 
     if axes is None:
         _, axes = plt.subplots(1, 3, layout="constrained")
-    else:
-        axes = np.atleast_1d(axes)
 
     ab_result = compare_row(
-        [a_arr, b_arr], titles=list(titles[:2]), axes=axes[:2], norm=a_b_norm
+        [a_arr, b_arr],
+        titles=list(titles[:2]),
+        axes=axes[:2],
+        norm=a_b_norm,
+        extent=extent,
+        imshow_kw=imshow_kw,
+        cbar_kw=cbar_kw,
     )
 
     if mode == "ratio":
@@ -607,14 +642,20 @@ def triptych(
             safe_ratio,
             cmp_norm,
             _style.cmap("residual"),
-            None,
+            extent,
             True,
             None,
-            None,
-            None,
+            imshow_kw,
+            cbar_kw,
         )
     else:
-        cmp_result = imshow_diverging(b_arr - a_arr, ax=axes[2])
+        cmp_result = imshow_diverging(
+            b_arr - a_arr,
+            ax=axes[2],
+            extent=extent,
+            imshow_kw=imshow_kw,
+            cbar_kw=cbar_kw,
+        )
         cmp_im = cmp_result.artists["image"]
         cmp_cb = cmp_result.artists["cbar"]
 

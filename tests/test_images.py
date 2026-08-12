@@ -100,11 +100,10 @@ def test_compare_row_new_params_in_signature():
 
 
 def test_compare_row_defaults_unchanged_created_figure():
-    # Structural regression lock (replaces a one-time PNG-hash proof
-    # against commit 8c47f45; see the F7 fix report for that proof's
-    # evidence). Hash equality is brittle across platforms/matplotlib
-    # versions, so this asserts on the norm, counts, titles, and cmap a
-    # regression to compare_row's defaults would actually break.
+    # Structural regression lock, replacing a one-time comparison of
+    # rendered PNG hashes. Hash equality is brittle across platforms and
+    # matplotlib versions, so this asserts on the norm, counts, titles, and
+    # cmap a regression to compare_row's defaults would actually break.
     a, b = _img(), _img(1e-10, 1e-5)
     res = compare_row(
         [a, b], titles=["A", "B"], vmin=None, vmax=None, imshow_kw=None, cbar_kw=None
@@ -248,6 +247,25 @@ def test_triptych_ratio_norm_centered_on_one():
     plt.close(res.fig)
 
 
+def test_triptych_ratio_default_clip_is_the_99th_percentile():
+    # Pins the magnitude of the default clip, not just that the norm is
+    # centered on 1: the percentile constant sets how much of every default
+    # ratio panel is saturated, so a silent change to it must land red.
+    rng = np.random.default_rng(5)
+    a = rng.uniform(1.0, 2.0, (16, 16))
+    b = a * rng.uniform(0.5, 1.5, (16, 16))
+    res = triptych(a, b, mode="ratio")
+    deviation = np.abs(b / a - 1.0)
+    expected = float(np.percentile(deviation, 99.0))
+    norm = res.artists["image"][2].norm
+    assert norm.vmax == pytest.approx(1.0 + expected)
+    assert norm.vmin == pytest.approx(1.0 - expected)
+    # another percentile would give a materially different clip on this
+    # data, so the assertion above really does pin the 99th
+    assert float(np.percentile(deviation, 50.0)) < 0.8 * expected
+    plt.close(res.fig)
+
+
 def test_triptych_ratio_tight_clip_is_overridable():
     a, b = _img(), _img(1e-10, 1e-5)
     res = triptych(a, b, mode="ratio", ratio_clip=0.5)
@@ -314,6 +332,56 @@ def test_triptych_axes_draws_into_caller_axes():
     assert res.axes[0] is axes[0]
     assert res.axes[1] is axes[1]
     assert res.axes[2] is axes[2]
+    plt.close(fig)
+
+
+def test_triptych_extent_reaches_all_three_panels():
+    a, b = _img(), _img(1e-10, 1e-5)
+    for mode in ("ratio", "residual"):
+        res = triptych(a, b, mode=mode, extent=(-2, 2, -2, 2))
+        for im in res.artists["image"]:
+            assert tuple(im.get_extent()) == (-2, 2, -2, 2)
+        plt.close(res.fig)
+
+
+def test_triptych_imshow_kw_overrides_interpolation_on_all_panels():
+    a, b = _img(), _img(1e-10, 1e-5)
+    for mode in ("ratio", "residual"):
+        res = triptych(a, b, mode=mode, imshow_kw={"interpolation": "bilinear"})
+        for im in res.artists["image"]:
+            assert im.get_interpolation() == "bilinear"
+        plt.close(res.fig)
+
+
+def test_triptych_cbar_kw_reaches_both_colorbars():
+    a, b = _img(), _img(1e-10, 1e-5)
+    res = triptych(a, b, mode="ratio", cbar_kw={"extend": "both"})
+    for cb in res.artists["cbar"]:
+        assert cb.extend == "both"
+    plt.close(res.fig)
+
+
+def test_triptych_wrong_axes_count_raises_before_drawing():
+    fig, axes = plt.subplots(1, 3)
+    with pytest.raises(ValueError, match="needs 3 axes"):
+        triptych(_img(), _img(), axes=axes[:2])
+    assert all(len(ax.images) == 0 for ax in axes)  # nothing was drawn
+    plt.close(fig)
+
+
+def test_triptych_wrong_titles_count_raises_before_drawing():
+    fig, axes = plt.subplots(1, 3)
+    with pytest.raises(ValueError, match="needs 3 titles"):
+        triptych(_img(), _img(), axes=axes, titles=["X", "Y"])
+    assert all(len(ax.images) == 0 for ax in axes)
+    plt.close(fig)
+
+
+def test_triptych_unknown_a_b_norm_raises():
+    fig, axes = plt.subplots(1, 3)
+    with pytest.raises(ValueError, match="unknown a_b_norm"):
+        triptych(_img(), _img(), axes=axes, a_b_norm="diverging")
+    assert all(len(ax.images) == 0 for ax in axes)
     plt.close(fig)
 
 
