@@ -8,9 +8,13 @@ figure; redraw by calling the primitive again or, where offered, `.update`.
 `ARTIST_KEYS` is the fixed, documented vocabulary a primitive's `.artists`
 dict draws its keys from. It is a convention, not an enforced schema: a
 primitive is free to populate only the keys it actually draws. Each key
-holds either a single matplotlib artist or, for a multi-panel primitive
-that draws the same kind of artist once per panel, a list of them (one
-entry per panel, in panel order):
+holds either a single matplotlib artist or a list of them. A list usually
+means one entry per panel, in panel order, from a multi-panel primitive
+drawing the same kind of artist in each. `lines` is the standing exception,
+defined below as several artists on ONE axes; `fill` and `text` are read
+the same way when a single-axes primitive draws several (the IWA and OWA
+shading regions and their labels on one contrast curve, or a rail's plane
+labels). The key names the KIND of artist, not how many axes are involved:
 
     image: the `AxesImage` from `imshow` (or a list of one per panel for
         a mosaic primitive).
@@ -19,8 +23,9 @@ entry per panel, in panel order):
     line: a single `Line2D` (or a list of one per panel).
     lines: a list of `Line2D` artists drawn together on one axes (e.g. a
         multi-curve plot), as distinct from `line`'s one-per-panel list.
-    fill: the `PolyCollection` from `fill_between`/`fill_betweenx` (or a
-        list of one per panel).
+    fill: the `PolyCollection` from `fill_between`/`fill_betweenx`, or a
+        `Rectangle` for a shaded band (a list of one per panel, or of
+        several drawn together on one axes).
     hist: the `BarContainer` from a filled `hist`, or the patch list a
         `histtype="step"` one returns (or a list of one per panel).
     scatter: the `PathCollection` from `scatter` (or a list of one per
@@ -30,8 +35,8 @@ entry per panel, in panel order):
     collection: a `Collection` artist not covered by a more specific key
         above -- an errorbar's `LineCollection`, or the `QuadMesh` that
         `pcolormesh` and `hist2d` draw (or a list of one per panel).
-    text: a `Text` artist placed as an annotation, not the title (or a
-        list of one per panel).
+    text: a `Text` artist placed as an annotation, not the title (a list
+        of one per panel, or of several drawn together on one axes).
     title: the `Text` artist returned by `set_title` (or a list of one
         per panel).
 """

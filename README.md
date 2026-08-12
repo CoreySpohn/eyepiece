@@ -45,12 +45,13 @@ implement them are internal organization.
 - **Profiles.** `plot_radial` (a precomputed radial profile line),
   `plot_contrast_curve` (a contrast curve with inner/outer working angle
   shading and reference floor curves, drawn once per axes even across
-  repeated calls), and `radial_profile_plot` (computes the profile via
-  `hwoutils` and plots it in one call, under the `[hwo]` extra).
+  repeated calls, with each curve taking the next palette color so two
+  calls on one axes are distinguishable), and `radial_profile_plot`
+  (computes the profile via `hwoutils` and plots it in one call, under the
+  `[hwo]` extra).
 - **Scenes.** `trail` (a 2D or 3D trajectory with depth-cued markers),
   `sky_fan` (weighted candidate sky tracks with an inner-working-angle disk),
-  `fading_track`, and `schematic` (a miniature optical-train rail with one
-  plane picked out).
+  and `fading_track`.
 - **Schematics.** `rail` (an optical-train diagram built from a plain
   `(label, glyph)` element list, over the `GLYPHS` vocabulary), and
   `schematic`, a preset wrapper over `rail` for the imager and coronagraph
@@ -58,9 +59,11 @@ implement them are internal organization.
 - **Layout.** Pixel-edge extent helpers (`extent_lod`, `extent_arcsec`,
   `extent_au`, ...) with matching axis labelers, plus `Frame` and
   `SourceStyles` for keeping several panels of one scene consistent.
-- **Output.** `save_fig` for a styled write to disk, `record` and `animate`
-  for animation, the public `Animation` type they both return, and
-  `PRESETS` of measured fps/dpi pairs.
+- **Output.** `save_fig` for a styled write to disk, `record` (a context
+  manager that opens every sink at once and takes frames from a loop the
+  caller drives) and `animate` (which binds a figure, a draw function, and a
+  frame source into the public `Animation` type it returns), and `PRESETS`
+  of measured fps/dpi pairs.
 
 ## Usage
 
