@@ -5,8 +5,8 @@ and animating simulated images (point spread functions, coronagraph
 detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
-``schematic``) are internal organization and are not part of the public
-API. The vocabularies a caller reads against are exported alongside the
+``schematic``, ``profiles``) are internal organization and are not part of
+the public API. The vocabularies a caller reads against are exported alongside the
 functions: ``ARTIST_KEYS``, the key set a result's ``artists`` dict draws
 from; ``PRESETS``, the measured fps/dpi pairs for the usual animation
 destinations; and ``GLYPHS``, the optical-element names ``rail`` draws.
@@ -45,6 +45,7 @@ from eyepiece.layout import (
     label_lod,
 )
 from eyepiece.output import save_fig
+from eyepiece.profiles import plot_contrast_curve, plot_radial, radial_profile_plot
 from eyepiece.scene import fading_track, sky_fan, trail
 from eyepiece.schematic import GLYPHS, rail, schematic
 from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
@@ -74,6 +75,9 @@ __all__ = [
     "label_arcsec",
     "label_au",
     "label_lod",
+    "plot_contrast_curve",
+    "plot_radial",
+    "radial_profile_plot",
     "rail",
     "record",
     "save_fig",
