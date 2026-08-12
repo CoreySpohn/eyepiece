@@ -12,6 +12,8 @@ than a colormap deferred to draw time, so the ramp is visible to
 introspection on the returned artist.
 """
 
+from collections.abc import Mapping
+
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
@@ -87,6 +89,21 @@ def _viewer_orth_dist(r_v, r_o):
     return np.linalg.norm(r_v) - scalar_proj
 
 
+def _resolve_style(style):
+    """Split a `style` argument into a `(color, marker)` pair.
+
+    `style` is either a plain color or a `SourceStyles` entry -- the
+    mapping with `"color"` and `"marker"` keys. Accepting the entry is what
+    lets the linked-views case read the way it should:
+    `trail(track, style=styles[name])` puts a source on the trajectory
+    panel in the same color AND the same marker it carries everywhere else,
+    with no unpacking at the call site.
+    """
+    if isinstance(style, Mapping):
+        return _style.color(0, style.get("color")), style.get("marker")
+    return _style.color(0, style), None
+
+
 def trail(xyz, *, ax=None, style=None, marker_scale=25.0, trail_kw=None):
     """Draw a trajectory as a connected path with per-point markers.
 
@@ -102,7 +119,10 @@ def trail(xyz, *, ax=None, style=None, marker_scale=25.0, trail_kw=None):
         xyz: `(N, 2)` or `(N, 3)` array-like of positions.
         ax: Axes to draw into. None creates a new figure; a 3D `xyz`
             creates a `projection="3d"` axes, a 2D one a plain axes.
-        style: Color override; None uses `_style.color(0)`.
+        style: Either a color override or a `SourceStyles` entry (a
+            mapping with `"color"` and `"marker"`). An entry also sets the
+            marker, so one source looks the same here as in every other
+            panel. None uses `_style.color(0)`.
         marker_scale: Marker size at full illumination for the 3D depth
             cue, and the fixed marker size on a 2D path.
         trail_kw: Extra kwargs passed to the connecting-line `ax.plot`
@@ -125,7 +145,7 @@ def trail(xyz, *, ax=None, style=None, marker_scale=25.0, trail_kw=None):
             "axes (or ax=None to let trail create one) for 3D positions."
         )
 
-    color = _style.color(0, style)
+    color, marker = _resolve_style(style)
     lkw = {"color": color, "lw": 1.5, **(trail_kw or {})}
 
     if is_3d:
@@ -144,12 +164,17 @@ def trail(xyz, *, ax=None, style=None, marker_scale=25.0, trail_kw=None):
             positions[:, 2],
             s=sizes,
             color=color,
+            marker=marker or "o",
             zorder=-float(np.mean(orth_dist)),
         )
     else:
         (line,) = ax.plot(positions[:, 0], positions[:, 1], **lkw)
         scatter = ax.scatter(
-            positions[:, 0], positions[:, 1], s=marker_scale, color=color
+            positions[:, 0],
+            positions[:, 1],
+            s=marker_scale,
+            color=color,
+            marker=marker or "o",
         )
 
     return PlotResult(ax=ax, artists={"line": line, "scatter": scatter})

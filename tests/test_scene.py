@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from eyepiece.layout import SourceStyles
 from eyepiece.scene import fading_track, sky_fan, trail
 
 
@@ -91,4 +92,32 @@ def test_fading_track_alpha_ramps():
     res = fading_track(np.column_stack([t, t**2]))
     colors = res.artists["collection"].get_colors()
     assert colors[0, 3] < colors[-1, 3]
+    plt.close(res.fig)
+
+
+def test_trail_accepts_a_source_styles_entry():
+    # the linked-views case is the whole reason this library exists, and its
+    # two halves have to compose: `trail(track, style=styles[name])` was a
+    # ValueError from inside matplotlib until `style` learned the mapping
+    styles = SourceStyles(["star", "b", "c"])
+    track = np.stack(
+        [np.cos(np.linspace(0, 6, 24)), np.sin(np.linspace(0, 6, 24))], axis=-1
+    )
+    res = trail(track, style=styles["c"])
+    assert res.artists["line"].get_color() == styles["c"]["color"]
+    # the marker travels too: same source, same glyph, in every panel.
+    # Compared against a reference scatter, because a PathCollection stores
+    # the marker path with its transform already applied.
+    reference = res.ax.scatter([0], [0], marker=styles["c"]["marker"])
+    assert np.array_equal(
+        res.artists["scatter"].get_paths()[0].vertices,
+        reference.get_paths()[0].vertices,
+    )
+    plt.close(res.fig)
+
+
+def test_trail_still_takes_a_plain_color():
+    track = np.zeros((5, 2))
+    res = trail(track, style="#123456")
+    assert res.artists["line"].get_color() == "#123456"
     plt.close(res.fig)
