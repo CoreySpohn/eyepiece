@@ -20,6 +20,24 @@ from eyepiece import _style
 from eyepiece._result import MosaicResult, PlotResult
 
 
+def _hide_index_ticks(axes, extent):
+    """Drop the tick labels when the axes carry no physical coordinates.
+
+    Without an `extent`, an image's axes are raw array indices, which are
+    almost never what the reader is meant to measure -- they add a frame of
+    numbers to a picture whose units live in the colorbar. `show_field` has
+    applied this rule since it was ported; every image primitive here
+    applies it too, so the whole module answers "no extent" the same way.
+
+    Pass an `extent` to get real coordinates and their ticks back.
+    """
+    if extent is not None:
+        return
+    for ax in np.atleast_1d(np.asarray(axes, dtype=object)).ravel():
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+
 def imshow_log(
     image,
     *,
@@ -78,6 +96,7 @@ def imshow_log(
         data, norm=norm, cmap=_style.cmap("intensity", cmap), extent=extent, **kw
     )
     artists = {"image": im}
+    _hide_index_ticks(ax, extent)
 
     if colorbar:
         cax = ax.inset_axes([1.02, 0.0, 0.04, 1.0])
@@ -165,8 +184,15 @@ def imshow_diverging(
     artists = {"image": im}
     if cb is not None:
         artists["cbar"] = cb
+    _hide_index_ticks(ax, extent)
 
-    return PlotResult(ax=ax, artists=artists)
+    def update(new_image):
+        # the symmetric norm is deliberately NOT refitted: an animated
+        # residual or OPD map has to keep one scale across frames, or the
+        # colors stop meaning the same thing from frame to frame
+        im.set_data(np.asarray(new_image, dtype=float))
+
+    return PlotResult(ax=ax, artists=artists, update=update)
 
 
 def _shared_norm(images, kind, floor, vmin=None, vmax=None):
@@ -280,6 +306,7 @@ def compare_row(
         if titles is not None:
             ax.set_title(titles[i])
         ims.append(im)
+    _hide_index_ticks(axes, extent)
 
     artists = {"image": ims}
     if created:
@@ -660,6 +687,7 @@ def triptych(
         cmp_cb = cmp_result.artists["cbar"]
 
     axes[2].set_title(titles[2])
+    _hide_index_ticks(axes, extent)
 
     artists = {
         "image": [*ab_result.artists["image"], cmp_im],

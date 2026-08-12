@@ -7,7 +7,13 @@ import numpy as np
 import pytest
 
 from eyepiece import _style
-from eyepiece.images import compare_row, imshow_diverging, imshow_log, triptych
+from eyepiece.images import (
+    compare_row,
+    imshow_diverging,
+    imshow_log,
+    show_field,
+    triptych,
+)
 
 
 def _img(lo=1e-12, hi=1e-6):
@@ -397,3 +403,59 @@ def test_triptych_handed_axes_does_not_steal_sibling_space():
     w0 = axes[0].get_position(original=True).width
     assert w3 == pytest.approx(w0, rel=0.01)
     plt.close(fig)
+
+
+def _axes_of(result):
+    return [result.ax] if hasattr(result, "ax") else list(np.ravel(result.axes))
+
+
+def test_every_image_primitive_hides_index_ticks_without_extent():
+    # array indices are not a measurement, and show_field has dropped them
+    # since it was ported -- the rest of the module has to answer "no extent"
+    # the same way, or the same figure gains ticks by choice of primitive
+    img = np.abs(np.random.default_rng(0).normal(size=(8, 8))) + 1e-6
+    results = [
+        imshow_log(img),
+        imshow_diverging(img - img.mean()),
+        compare_row([img, img]),
+        triptych(img, img * 2),
+        show_field(img + 1j * img),
+    ]
+    for result in results:
+        for ax in _axes_of(result):
+            assert ax.get_xticks().size == 0
+            assert ax.get_yticks().size == 0
+        plt.close(result.fig)
+
+
+def test_every_image_primitive_keeps_ticks_with_an_extent():
+    # the flip side: an extent means the axes carry real coordinates, and
+    # those ticks are the whole point of passing it
+    img = np.abs(np.random.default_rng(1).normal(size=(8, 8))) + 1e-6
+    extent = (-4.0, 4.0, -4.0, 4.0)
+    results = [
+        imshow_log(img, extent=extent),
+        imshow_diverging(img - img.mean(), extent=extent),
+        compare_row([img, img], extent=extent),
+        triptych(img, img * 2, extent=extent),
+        show_field(img + 1j * img, extent=extent),
+    ]
+    for result in results:
+        for ax in _axes_of(result):
+            assert ax.get_xticks().size > 0, result
+        plt.close(result.fig)
+
+
+def test_imshow_diverging_updates_in_place_on_a_fixed_scale():
+    # animating a residual or OPD map is a normal case, so this primitive
+    # needs the same update hook imshow_log has -- and the symmetric norm
+    # must NOT refit per frame, or the colors change meaning mid-animation
+    first = np.linspace(-1.0, 1.0, 16).reshape(4, 4)
+    res = imshow_diverging(first)
+    assert res.update is not None
+    norm = res.artists["image"].norm
+    vmin, vmax = norm.vmin, norm.vmax
+    res.update(first * 0.1)
+    assert np.allclose(res.artists["image"].get_array(), first * 0.1)
+    assert (norm.vmin, norm.vmax) == (vmin, vmax)
+    plt.close(res.fig)
