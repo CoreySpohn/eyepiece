@@ -13,6 +13,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.layout_engine import TightLayoutEngine
 from PIL import Image
 
 import eyepiece
@@ -234,6 +235,23 @@ def test_record_with_no_layout_engine_records_without_error(tmp_path):
         assert fig.get_layout_engine() is None
     assert fig.get_layout_engine() is None
     assert (tmp_path / "a.gif").stat().st_size > 0
+    plt.close(fig)
+
+
+def test_record_restore_installs_no_engine_under_autolayout(tmp_path):
+    # set_layout_engine(None) is not "no engine": matplotlib consults
+    # figure.autolayout (and figure.constrained_layout.use) and installs
+    # whichever they name. A figure that had no engine must therefore have
+    # its restore SKIPPED, not replayed with None, or the exit hands back a
+    # tight-layout engine the figure never had.
+    fig, _ = _fig_line()
+    assert fig.get_layout_engine() is None
+    with matplotlib.rc_context({"figure.autolayout": True}):
+        with record(fig, tmp_path / "a.gif", fps=5) as rec:
+            rec.hold(2)
+            engine_during = fig.get_layout_engine()
+        assert fig.get_layout_engine() is engine_during
+        assert not isinstance(fig.get_layout_engine(), TightLayoutEngine)
     plt.close(fig)
 
 

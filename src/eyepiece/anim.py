@@ -214,7 +214,10 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
     the exception path too, the same as the writer cleanup this context
     manager already guarantees. A figure with no layout engine, or one
     the caller already froze, records normally: freezing is a no-op on
-    top of "none" already, and restoring puts the exact same state back.
+    top of "none" already, and a figure that had no engine is left with
+    no engine (the restore is skipped rather than replaying `None`
+    through `set_layout_engine`, which would consult the autolayout
+    rcParams and install an engine the figure never had).
     The engine is captured before the `savefig.bbox` override and the
     writers are set up, so it unwinds last, after every writer has
     finished and the rcParams overrides are back -- the freeze outlives
@@ -251,8 +254,18 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
         ValueError: If a path has an unsupported suffix.
         RuntimeError: If an mp4 sink is requested and no ffmpeg is found.
     """
+    saved_engine = fig.get_layout_engine()
+
+    def restore_engine():
+        # set_layout_engine(None) does not mean "no engine": matplotlib
+        # reads figure.autolayout / figure.constrained_layout.use and
+        # installs whichever they ask for, so replaying a saved None would
+        # give a figure that had no engine one it never had.
+        if saved_engine is not None:
+            fig.set_layout_engine(saved_engine)
+
     with ExitStack() as stack:
-        stack.callback(fig.set_layout_engine, fig.get_layout_engine())
+        stack.callback(restore_engine)
         stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
         writers = [_make_writer(p, fps, extra_ffmpeg_args) for p in paths]
         for writer, path in zip(writers, paths, strict=True):
