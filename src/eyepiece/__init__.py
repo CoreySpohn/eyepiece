@@ -26,7 +26,13 @@ the caller (see ``eyepiece._style``), not captured when this package loads.
 from eyepiece._result import ARTIST_KEYS, MosaicResult, PlotResult
 from eyepiece._version import __version__
 from eyepiece.anim import PRESETS, animate, record
-from eyepiece.images import compare_row, imshow_diverging, imshow_log, show_field
+from eyepiece.images import (
+    compare_row,
+    imshow_diverging,
+    imshow_log,
+    show_field,
+    triptych,
+)
 from eyepiece.layout import (
     Frame,
     SourceStyles,
@@ -75,4 +81,5 @@ __all__ = [
     "show_field",
     "sky_fan",
     "trail",
+    "triptych",
 ]

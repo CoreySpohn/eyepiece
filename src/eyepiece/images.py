@@ -90,6 +90,27 @@ def imshow_log(
     return PlotResult(ax=ax, artists=artists, update=update)
 
 
+def _diverging_draw(
+    ax, data, norm, resolved_cmap, extent, colorbar, cbar_label, imshow_kw, cbar_kw
+):
+    """Draw one image + inset colorbar under an already-built diverging norm.
+
+    Shared by `imshow_diverging` and `triptych`'s ratio panel, which builds
+    a norm centered on 1 rather than 0 but otherwise draws identically.
+
+    Returns:
+        An `(AxesImage, Colorbar | None)` tuple; the colorbar is None when
+        `colorbar` is False.
+    """
+    kw = {"interpolation": "nearest", "origin": "lower", **(imshow_kw or {})}
+    im = ax.imshow(data, norm=norm, cmap=resolved_cmap, extent=extent, **kw)
+    cb = None
+    if colorbar:
+        cax = ax.inset_axes([1.02, 0.0, 0.04, 1.0])
+        cb = ax.figure.colorbar(im, cax=cax, label=cbar_label, **(cbar_kw or {}))
+    return im, cb
+
+
 def imshow_diverging(
     image,
     *,
@@ -130,24 +151,35 @@ def imshow_diverging(
         vlim = max(abs(float(np.nanmin(data))), abs(float(np.nanmax(data))))
     norm = Normalize(vmin=-vlim, vmax=vlim)
 
-    kw = {"interpolation": "nearest", "origin": "lower", **(imshow_kw or {})}
-    im = ax.imshow(
-        data, norm=norm, cmap=_style.cmap("residual", cmap), extent=extent, **kw
+    im, cb = _diverging_draw(
+        ax,
+        data,
+        norm,
+        _style.cmap("residual", cmap),
+        extent,
+        colorbar,
+        cbar_label,
+        imshow_kw,
+        cbar_kw,
     )
     artists = {"image": im}
-
-    if colorbar:
-        cax = ax.inset_axes([1.02, 0.0, 0.04, 1.0])
-        cb = ax.figure.colorbar(im, cax=cax, label=cbar_label, **(cbar_kw or {}))
+    if cb is not None:
         artists["cbar"] = cb
 
     return PlotResult(ax=ax, artists=artists)
 
 
-def _shared_norm(images, kind, floor):
-    """Build one norm from the min/max across all images in `images`."""
-    lo = min(float(np.nanmin(img)) for img in images)
-    hi = max(float(np.nanmax(img)) for img in images)
+def _shared_norm(images, kind, floor, vmin=None, vmax=None):
+    """Build one norm from the min/max across all images in `images`.
+
+    `vmin`/`vmax` pin either end instead of deriving it from the data;
+    either may be given alone to pin one end while the other is still
+    derived. For `kind="diverging"` the (pinned or derived) lo/hi are
+    folded into the single symmetric `vlim` the diverging norm always
+    uses -- a pin still yields a symmetric norm, never an asymmetric one.
+    """
+    lo = min(float(np.nanmin(img)) for img in images) if vmin is None else vmin
+    hi = max(float(np.nanmax(img)) for img in images) if vmax is None else vmax
     if kind == "log":
         lo = max(lo, floor)
         return LogNorm(vmin=lo, vmax=hi)
@@ -169,6 +201,10 @@ def compare_row(
     extent=None,
     cmap=None,
     cbar_label=None,
+    vmin=None,
+    vmax=None,
+    imshow_kw=None,
+    cbar_kw=None,
 ):
     """Draw a row of images sharing one norm and one colorbar.
 
@@ -195,6 +231,17 @@ def compare_row(
         cmap: Colormap override; None uses the semantic "intensity" cmap
             (or "residual" when `norm="diverging"`).
         cbar_label: Label for the shared colorbar.
+        vmin: Pins the shared norm's lower bound instead of deriving it
+            from the data across all panels. May be given alone to pin
+            only the lower bound while the upper bound is still derived.
+            For `norm="diverging"` this still yields a symmetric norm
+            (see `_shared_norm`), never an asymmetric one.
+        vmax: Pins the shared norm's upper bound instead of deriving it
+            from the data. May be given alone.
+        imshow_kw: Extra kwargs passed to each panel's `ax.imshow`, applied
+            last.
+        cbar_kw: Extra kwargs passed to the shared colorbar's
+            `fig.colorbar`, applied last.
 
     Returns:
         A `MosaicResult` whose `axes` is always a 1D array of length
@@ -222,30 +269,24 @@ def compare_row(
         axes = np.atleast_1d(axes)
         fig = axes[0].figure
 
-    shared_norm = _shared_norm(images, norm, floor)
+    shared_norm = _shared_norm(images, norm, floor, vmin=vmin, vmax=vmax)
     semantic_cmap = "residual" if norm == "diverging" else "intensity"
     resolved_cmap = _style.cmap(semantic_cmap, cmap)
 
+    kw = {"interpolation": "nearest", "origin": "lower", **(imshow_kw or {})}
     ims = []
     for i, (ax, img) in enumerate(zip(axes, images, strict=True)):
-        im = ax.imshow(
-            img,
-            norm=shared_norm,
-            cmap=resolved_cmap,
-            extent=extent,
-            interpolation="nearest",
-            origin="lower",
-        )
+        im = ax.imshow(img, norm=shared_norm, cmap=resolved_cmap, extent=extent, **kw)
         if titles is not None:
             ax.set_title(titles[i])
         ims.append(im)
 
     artists = {"image": ims}
     if created:
-        cb = fig.colorbar(ims[-1], ax=axes, label=cbar_label)
+        cb = fig.colorbar(ims[-1], ax=axes, label=cbar_label, **(cbar_kw or {}))
     else:
         cax = axes[-1].inset_axes([1.02, 0.0, 0.04, 1.0])
-        cb = fig.colorbar(ims[-1], cax=cax, label=cbar_label)
+        cb = fig.colorbar(ims[-1], cax=cax, label=cbar_label, **(cbar_kw or {}))
     artists["cbar"] = cb
 
     return MosaicResult(axes=axes, artists=artists)
@@ -459,4 +500,128 @@ def show_field(
         )
 
     artists = {"image": ims, "cbar": cbs, "title": titles}
+    return MosaicResult(axes=axes, artists=artists)
+
+
+_RATIO_CLIP_PERCENTILE = 99.0
+
+
+def triptych(
+    a, b, *, mode="ratio", a_b_norm="log", titles=None, axes=None, ratio_clip=None
+):
+    """Draw A, B, and a panel comparing them, side by side.
+
+    A and B are drawn with `compare_row` under one shared norm and one
+    shared colorbar (`a_b_norm`, `"log"` or `"linear"`), so the two are
+    directly comparable rather than merely rescaled to look alike. The
+    third, comparison panel is independent of that shared norm and depends
+    on `mode`::
+
+        mode="ratio":    b / a, on a diverging norm centered on 1 (not 0).
+        mode="residual": b - a, on the symmetric-about-0 norm
+                          `imshow_diverging` already builds; reused
+                          directly rather than reimplemented.
+
+    Ratio orientation: `b / a` reads "how does B compare to A", matching
+    the left-to-right A, B, comparison layout -- a ratio above 1 means B
+    exceeds A at that pixel.
+
+    Division-by-zero guard: a raw `b / a` is undefined wherever `a` is
+    exactly zero (+-inf where b is nonzero, nan where b is also zero).
+    Both are replaced before display rather than left to render
+    undefined: nan (0/0) becomes 1.0, "no change", since neither value
+    carries information about the other; +-inf becomes the panel's own
+    clip bound (1 +/- clip, see below), so it renders fully saturated at
+    the diverging colormap's extreme rather than raising or breaking the
+    norm.
+
+    Tight diverging clip: a raw ratio panel is often dominated by a
+    handful of pixels where `a` is tiny, which would blow the norm out to
+    a range where the interesting structure near 1.0 is invisible. The
+    default clip is symmetric about 1: `clip` is the `_RATIO_CLIP_PERCENTILE`
+    (99th) percentile of `abs(ratio - 1)` over the finite ratio values, so
+    the norm spans `[1 - clip, 1 + clip]` -- wide enough to show the bulk
+    of the panel without letting a handful of outliers wash out real
+    structure. Pass `ratio_clip` to override this rule with a fixed value.
+
+    Args:
+        a: 2D array-like, the first panel (the reference/"before").
+        b: 2D array-like, the second panel (the comparison/"after"), same
+            shape as `a`.
+        mode: `"ratio"` or `"residual"`; see above.
+        a_b_norm: `"log"` or `"linear"` -- the norm A and B share, passed
+            through to `compare_row`'s `norm`. Independent of the
+            comparison panel's own norm.
+        titles: Optional length-3 sequence of panel titles. None uses
+            `("A", "B", "B / A")` for `mode="ratio"` or
+            `("A", "B", "B - A")` for `mode="residual"`.
+        axes: Length-3 sequence of Axes to draw into. None creates a new
+            figure via `plt.subplots(1, 3, layout="constrained")`.
+        ratio_clip: Fixed clip value for the ratio panel's norm, which
+            then spans `[1 - ratio_clip, 1 + ratio_clip]`. None derives it
+            from the data (see above). Ignored when `mode="residual"`.
+
+    Returns:
+        A `MosaicResult` whose `axes` is the length-3 array of panels
+        (A, B, comparison), with `artists["image"]` the list of three
+        `AxesImage` in that order and `artists["cbar"]` the list of two
+        `Colorbar`: the A/B shared one and the comparison panel's own.
+
+    Raises:
+        ValueError: If `mode` is not `"ratio"` or `"residual"`.
+    """
+    if mode not in ("ratio", "residual"):
+        raise ValueError(f"unknown mode: {mode!r}")
+
+    a_arr = np.asarray(a, dtype=float)
+    b_arr = np.asarray(b, dtype=float)
+
+    if titles is None:
+        comparison_title = "B / A" if mode == "ratio" else "B - A"
+        titles = ("A", "B", comparison_title)
+
+    if axes is None:
+        _, axes = plt.subplots(1, 3, layout="constrained")
+    else:
+        axes = np.atleast_1d(axes)
+
+    ab_result = compare_row(
+        [a_arr, b_arr], titles=list(titles[:2]), axes=axes[:2], norm=a_b_norm
+    )
+
+    if mode == "ratio":
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ratio = b_arr / a_arr
+        finite = ratio[np.isfinite(ratio)]
+        if ratio_clip is not None:
+            clip = float(ratio_clip)
+        elif finite.size:
+            clip = float(np.percentile(np.abs(finite - 1.0), _RATIO_CLIP_PERCENTILE))
+        else:
+            clip = 1.0
+        clip = max(clip, 1e-6)
+        safe_ratio = np.nan_to_num(ratio, nan=1.0, posinf=1.0 + clip, neginf=1.0 - clip)
+        cmp_norm = Normalize(vmin=1.0 - clip, vmax=1.0 + clip)
+        cmp_im, cmp_cb = _diverging_draw(
+            axes[2],
+            safe_ratio,
+            cmp_norm,
+            _style.cmap("residual"),
+            None,
+            True,
+            None,
+            None,
+            None,
+        )
+    else:
+        cmp_result = imshow_diverging(b_arr - a_arr, ax=axes[2])
+        cmp_im = cmp_result.artists["image"]
+        cmp_cb = cmp_result.artists["cbar"]
+
+    axes[2].set_title(titles[2])
+
+    artists = {
+        "image": [*ab_result.artists["image"], cmp_im],
+        "cbar": [ab_result.artists["cbar"], cmp_cb],
+    }
     return MosaicResult(axes=axes, artists=artists)
