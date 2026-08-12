@@ -140,6 +140,11 @@ def _still_attached(artists, ax):
 
 _SPAN_OUTER = 1e9
 
+# IWA/OWA labels sit just INSIDE the top of the axes. Above it (the obvious
+# place) is exactly where `set_title` draws, so any titled contrast curve --
+# which is most of them -- collided with its own annotations.
+_LABEL_Y = 0.98
+
 
 def _span(ax, inner, outer_sign, span_kw):
     """Shade from `inner` to the axes edge, permanently.
@@ -296,11 +301,11 @@ def plot_contrast_curve(
         fill = _span(ax, iwa, -1, span_kw)
         text = ax.text(
             iwa,
-            1.02,
+            _LABEL_Y,
             "IWA",
             transform=ax.get_xaxis_transform(),
             ha="center",
-            va="bottom",
+            va="top",
         )
         drawn["iwa"] = [fill, text]
         artists.setdefault("fill", []).append(fill)
@@ -310,11 +315,11 @@ def plot_contrast_curve(
         fill = _span(ax, owa, 1, span_kw)
         text = ax.text(
             owa,
-            1.02,
+            _LABEL_Y,
             "OWA",
             transform=ax.get_xaxis_transform(),
             ha="center",
-            va="bottom",
+            va="top",
         )
         drawn["owa"] = [fill, text]
         artists.setdefault("fill", []).append(fill)

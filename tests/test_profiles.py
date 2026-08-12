@@ -103,6 +103,40 @@ def test_plot_contrast_curve_iwa_owa_markers():
     plt.close(res.fig)
 
 
+def test_plot_contrast_curve_markers_clear_the_title():
+    # the markers used to sit at y=1.02 in axes coords, which is exactly where
+    # set_title draws -- so every titled contrast curve overlapped its own
+    # annotations. The title here is deliberately wide enough to span the
+    # axes, which is what makes it reach a marker near the left edge.
+    r, contrast = _profile()
+    res = plot_contrast_curve(r, contrast, iwa=1.0, owa=8.0)
+    title = res.ax.set_title(
+        "On-axis stellar leakage: ~1e-11 (true) vs ~1e-6 (single-MFT)"
+    )
+    res.fig.canvas.draw()
+    renderer = res.fig.canvas.get_renderer()
+    title_box = title.get_window_extent(renderer)
+    for text in res.artists["text"]:
+        box = text.get_window_extent(renderer)
+        assert not title_box.overlaps(box), f"{text.get_text()} collides with the title"
+    plt.close(res.fig)
+
+
+def test_plot_contrast_curve_markers_stay_inside_the_axes():
+    # the invariant behind the fix, independent of any particular title:
+    # the markers belong inside the axes, not in the band above it.
+    r, contrast = _profile()
+    res = plot_contrast_curve(r, contrast, iwa=1.0, owa=8.0)
+    res.fig.canvas.draw()
+    renderer = res.fig.canvas.get_renderer()
+    axes_top = res.ax.get_window_extent(renderer).y1
+    for text in res.artists["text"]:
+        assert text.get_window_extent(renderer).y1 <= axes_top, (
+            f"{text.get_text()} is drawn above the axes, where the title lives"
+        )
+    plt.close(res.fig)
+
+
 def test_plot_contrast_curve_iwa_only():
     r, contrast = _profile()
     res = plot_contrast_curve(r, contrast, iwa=1.0)
