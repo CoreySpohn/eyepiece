@@ -142,6 +142,15 @@ viz-convention
 
 ```{toctree}
 :maxdepth: 2
+:caption: Gallery
+
+gallery/images
+gallery/stats
+gallery/profiles
+```
+
+```{toctree}
+:maxdepth: 2
 :caption: API Reference
 :hidden:
 
