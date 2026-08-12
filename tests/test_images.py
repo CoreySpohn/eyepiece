@@ -1,34 +1,18 @@
 """Image primitives: floor, geometry rule, update path, shared-norm row."""
 
-import hashlib
 import inspect
-import io
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
+from eyepiece import _style
 from eyepiece.images import compare_row, imshow_diverging, imshow_log, triptych
 
 
 def _img(lo=1e-12, hi=1e-6):
     rng = np.random.default_rng(0)
     return rng.uniform(lo, hi, (8, 8))
-
-
-def _hash_fig(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=80)
-    return hashlib.sha256(buf.getvalue()).hexdigest()
-
-
-# Captured from compare_row on commit 8c47f45, the last commit before
-# vmin/vmax/imshow_kw/cbar_kw existed, via _hash_fig() on these exact
-# scenarios. Regenerate only if compare_row's rendered output is
-# intentionally changing.
-_GOLDEN_CREATED_LOG = "e2835bddbe0b1367fd08a656b14ff4aaaf260d8179a21eabf496222907d80b8c"
-_GOLDEN_HANDED_AXES = "04de2d635fd78707c01bf3cc0b7262c6a298fbda76cf2e1a8734e37d4809ad64"
-_GOLDEN_DIVERGING = "a5087ba800cf021e7dcf029c0ce1f1b322fa5ae98970025488c5d14883e2cb74"
 
 
 def test_imshow_log_floor_and_keys():
@@ -116,21 +100,61 @@ def test_compare_row_new_params_in_signature():
 
 
 def test_compare_row_defaults_unchanged_created_figure():
+    # Structural regression lock (replaces a one-time PNG-hash proof
+    # against commit 8c47f45; see the F7 fix report for that proof's
+    # evidence). Hash equality is brittle across platforms/matplotlib
+    # versions, so this asserts on the norm, counts, titles, and cmap a
+    # regression to compare_row's defaults would actually break.
     a, b = _img(), _img(1e-10, 1e-5)
     res = compare_row(
         [a, b], titles=["A", "B"], vmin=None, vmax=None, imshow_kw=None, cbar_kw=None
     )
-    assert _hash_fig(res.fig) == _GOLDEN_CREATED_LOG
+    assert res.axes.shape == (2,)
+    assert len(res.artists["image"]) == 2
+    assert res.artists["image"][0].norm is res.artists["image"][1].norm
+    floor = 1e-20
+    clipped = [np.clip(a, floor, None), np.clip(b, floor, None)]
+    expected_vmin = max(
+        min(float(np.nanmin(clipped[0])), float(np.nanmin(clipped[1]))), floor
+    )
+    expected_vmax = max(float(np.nanmax(clipped[0])), float(np.nanmax(clipped[1])))
+    norm = res.artists["image"][0].norm
+    assert norm.vmin == pytest.approx(expected_vmin)
+    assert norm.vmax == pytest.approx(expected_vmax)
+    assert res.axes[0].get_title() == "A"
+    assert res.axes[1].get_title() == "B"
+    assert res.artists["image"][0].get_interpolation() == "nearest"
+    assert res.artists["image"][0].get_cmap().name == _style.cmap("intensity").name
+    assert len(res.fig.axes) == 3  # 2 image panels + 1 shared colorbar axes
     plt.close(res.fig)
 
 
 def test_compare_row_defaults_unchanged_handed_axes():
     a, b = _img(), _img(1e-10, 1e-5)
     fig, axes = plt.subplots(1, 3)
-    compare_row(
+    n_axes_before = len(fig.axes)
+    res = compare_row(
         [a, b], axes=axes[:2], vmin=None, vmax=None, imshow_kw=None, cbar_kw=None
     )
-    assert _hash_fig(fig) == _GOLDEN_HANDED_AXES
+    assert len(axes[0].images) == 1
+    assert len(axes[1].images) == 1
+    assert axes[0].images[0].norm is axes[1].images[0].norm
+    floor = 1e-20
+    clipped = [np.clip(a, floor, None), np.clip(b, floor, None)]
+    expected_vmin = max(
+        min(float(np.nanmin(clipped[0])), float(np.nanmin(clipped[1]))), floor
+    )
+    expected_vmax = max(float(np.nanmax(clipped[0])), float(np.nanmax(clipped[1])))
+    norm = axes[0].images[0].norm
+    assert norm.vmin == pytest.approx(expected_vmin)
+    assert norm.vmax == pytest.approx(expected_vmax)
+    assert len(axes[2].images) == 0  # untouched sibling
+    assert axes[2].get_title() == ""
+    assert res.artists["cbar"].mappable is axes[1].images[0]
+    # the colorbar's axes is an inset child of the last handed axes, not a
+    # new top-level sibling in fig.axes
+    assert res.artists["cbar"].ax in axes[1].child_axes
+    assert len(fig.axes) == n_axes_before
     plt.close(fig)
 
 
@@ -140,7 +164,13 @@ def test_compare_row_defaults_unchanged_diverging_norm():
     res = compare_row(
         [c, d], norm="diverging", vmin=None, vmax=None, imshow_kw=None, cbar_kw=None
     )
-    assert _hash_fig(res.fig) == _GOLDEN_DIVERGING
+    norm = res.artists["image"][0].norm
+    assert res.artists["image"][0].norm is res.artists["image"][1].norm
+    assert norm.vmin == pytest.approx(-3.0)
+    assert norm.vmax == pytest.approx(3.0)
+    assert res.artists["image"][0].get_cmap().name == _style.cmap("residual").name
+    assert res.axes[0].get_title() == ""
+    assert res.axes[1].get_title() == ""
     plt.close(res.fig)
 
 

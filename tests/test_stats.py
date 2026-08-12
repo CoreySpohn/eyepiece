@@ -1,12 +1,11 @@
 """corner parity essentials, hist-vs-pdf, cov ellipse."""
 
-import hashlib
-import io
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.colors import to_rgba
 
+from eyepiece import _style
 from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
 
 
@@ -17,22 +16,6 @@ def _samples(n=500):
         "b": rng.normal(5, 2, n),
         "c": rng.uniform(size=n),
     }
-
-
-def _hash_fig(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=80)
-    return hashlib.sha256(buf.getvalue()).hexdigest()
-
-
-# Captured from corner() on commit 15cead4 (the last commit before axes=
-# existed), via _hash_fig() on these exact scenarios in a detached git
-# worktree checked out at that commit. Proves axes=None is byte-identical
-# to the pre-change implementation. Regenerate only if corner's rendered
-# output is intentionally changing.
-_GOLDEN_TRUTHS = "bd2f85c984890e453832cc99ef9daaf7e403467e427b0664556cabdd3dfbe4b6"
-_GOLDEN_LABELS = "a94f1aab75d2ad958eb1f7af7f5abacabfc44d002df6f620c9ecd77be0db7c87"
-_GOLDEN_TITLE = "1509a7ebe890c1f6e1ff3c8dc60bb049e2f04343e07ba14fb167960b883c42db"
 
 
 def test_corner_triangle_shape():
@@ -71,12 +54,16 @@ def test_corner_overlay_wraps_the_palette_past_its_end():
 
 def test_corner_axes_draws_into_handed_axes():
     fig, axes = plt.subplots(2, 2, layout="constrained")
+    axes[0, 1].set_visible(True)  # opposite of corner's hidden-upper contract
     n_axes_before = len(fig.axes)
     res = corner(_samples(), ["a", "b"], axes=axes)
     assert res.fig is fig
     assert len(fig.axes) == n_axes_before
     assert len(res.artists["hist"]) == 2
     assert len(axes[1, 0].collections) == 1  # the 2D density mesh
+    # corner hides the upper triangle unconditionally, even when it did not
+    # create the axes and the cell was pre-set visible.
+    assert not axes[0, 1].get_visible()
     plt.close(fig)
 
 
@@ -87,35 +74,57 @@ def test_corner_axes_wrong_shape_raises():
     plt.close(fig)
 
 
-def test_corner_axes_none_matches_pre_change_implementation():
-    # Proves the additive guarantee empirically: these hashes were captured
-    # by rendering the same scenarios against commit 15cead4 (pre-axes=) in
-    # a detached git worktree. A byte-identical PNG means axes=None is
-    # exactly what corner() drew before this change, not merely "looks the
-    # same".
+def test_corner_axes_none_truths_scenario_structure():
+    # Structural regression lock for the axes=None path (replaces a
+    # one-time PNG-hash proof against the pre-axes= implementation; see the
+    # F7 fix report for that proof's evidence). Hash equality is brittle
+    # across platforms/matplotlib versions, so this asserts on the artist
+    # counts, visibility, and geometry a regression would actually break.
     res = corner(_samples(), ["a", "b", "c"], truths={"a": 0.0, "b": 5.0})
-    assert _hash_fig(res.fig) == _GOLDEN_TRUTHS
+    assert res.axes.shape == (3, 3)
+    assert len(res.artists["hist"]) == 3  # one diagonal histogram per param
+    assert len(res.artists["collection"]) == 3  # 3 lower-triangle density cells
+    # truth lines: diagonal cells for a, b (1 each); off-diagonal (a, b) both
+    # in truths (2); off-diagonal (a, c) only a in truths (1); off-diagonal
+    # (b, c) only b in truths (1); diagonal c not in truths (0) -> 6 total.
+    assert len(res.artists["line"]) == 6
+    for i, j in [(0, 1), (0, 2), (1, 2)]:
+        assert not res.axes[i, j].get_visible()  # upper triangle hidden
+    for i in range(3):
+        assert res.axes[i, i].get_visible()  # diagonal shown
+    for i, j in [(1, 0), (2, 0), (2, 1)]:
+        assert res.axes[i, j].get_visible()  # lower triangle shown
+    expected_hist_color = to_rgba(_style.color(0))
+    expected_truth_color = to_rgba(_style.color(1))
+    assert to_rgba(res.artists["hist"][0][0].get_edgecolor()) == expected_hist_color
+    assert to_rgba(res.artists["line"][0].get_color()) == expected_truth_color
+    assert res.artists["collection"][0].get_cmap().name == _style.cmap("intensity").name
     plt.close(res.fig)
 
+
+def test_corner_axes_none_labels_scenario_structure():
     res = corner(_samples(), ["a", "b"], labels={"a": "alpha [au]"})
-    assert _hash_fig(res.fig) == _GOLDEN_LABELS
-    plt.close(res.fig)
-
-    res = corner(_samples(), ["a", "b"], title="posterior")
-    assert _hash_fig(res.fig) == _GOLDEN_TITLE
+    assert res.axes[1, 0].get_xlabel() == "alpha [au]"  # overridden
+    assert res.axes[1, 0].get_ylabel() == "b"  # falls back to its own name
+    assert res.axes[1, 1].get_xlabel() == "b"  # bottom-row diagonal cell
+    # non-bottom-row cells get their tick text cleared, not the ticks removed
+    assert all(t.get_text() == "" for t in res.axes[0, 0].get_xticklabels())
     plt.close(res.fig)
 
 
 def test_corner_title_applies_to_own_created_figure():
+    # Also serves as the structural regression lock for the title scenario
+    # that used to be covered by a PNG-hash comparison.
     res = corner(_samples(), ["a", "b"], title="posterior")
     assert res.fig.get_suptitle() == "posterior"
     plt.close(res.fig)
 
 
-def test_corner_title_ignored_with_handed_axes():
+def test_corner_title_with_handed_axes_raises():
     fig, axes = plt.subplots(2, 2, layout="constrained")
-    corner(_samples(), ["a", "b"], axes=axes, title="posterior")
-    assert fig.get_suptitle() == ""
+    with pytest.raises(ValueError, match="title is not supported when axes"):
+        corner(_samples(), ["a", "b"], axes=axes, title="posterior")
+    assert fig.get_suptitle() == ""  # the figure is untouched by the raise
     plt.close(fig)
 
 

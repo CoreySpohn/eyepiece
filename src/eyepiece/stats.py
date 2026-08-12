@@ -76,12 +76,14 @@ def corner(
             A parameter missing from `labels` falls back to its own name.
         color: Histogram/density color override; None uses `_style.color(0)`.
         bins: Bin count for both the 1D and 2D histograms.
-        title: Optional figure suptitle. Applied only when `corner` creates
-            its own figure (`axes` is None); ignored when the caller
-            supplies `axes`, since a figure-level suptitle would touch
-            state outside the axes handed in.
-        axes: An `(n, n)` array of Axes to draw into. None creates a new
-            figure and hides its upper triangle.
+        title: Optional figure suptitle, applied when `corner` creates its
+            own figure. Mutually exclusive with `axes`: passing both raises
+            `ValueError`, since a caller-supplied grid may share its figure
+            with other content that a suptitle would overwrite.
+        axes: An `(n, n)` array of Axes to draw into. `corner` hides the
+            upper triangle via `set_visible(False)` unconditionally,
+            whether it created the axes or was handed them. None creates a
+            new figure.
 
     Returns:
         A `MosaicResult` whose `axes` is the `(n, n)` grid, upper triangle
@@ -92,7 +94,15 @@ def corner(
         each a `QuadMesh`, in row-major `(i, j)` order with `j <= i`.
         `artists["line"]` collects the truth guide lines, when `truths` is
         given.
+
+    Raises:
+        ValueError: If both `title` and `axes` are given.
     """
+    if title is not None and axes is not None:
+        raise ValueError(
+            "title is not supported when axes is provided; a caller-supplied "
+            "grid may share the figure with other content"
+        )
     labels = labels or {}
     if params is None:
         params = list(samples)
@@ -103,7 +113,7 @@ def corner(
     truth_color = _style.color(1)
     cmap = _style.cmap("intensity")
 
-    created, fig, axes = _corner_axes(n, axes)
+    _, fig, axes = _corner_axes(n, axes)
     _hide_upper(axes, n)
 
     hists = []
@@ -136,7 +146,7 @@ def corner(
                         )
             _finish_cell(ax, i, j, n, params, labels)
 
-    if title and created:
+    if title:
         fig.suptitle(title)
 
     artists = {"hist": hists, "collection": density}
