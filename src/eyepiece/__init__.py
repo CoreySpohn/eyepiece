@@ -6,10 +6,10 @@ detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
 ``schematic``) are internal organization and are not part of the public
-API. The two vocabularies a caller reads against are exported alongside
-the functions: ``ARTIST_KEYS``, the key set a result's ``artists`` dict
-draws from, and ``PRESETS``, the measured fps/dpi pairs for the usual
-animation destinations.
+API. The vocabularies a caller reads against are exported alongside the
+functions: ``ARTIST_KEYS``, the key set a result's ``artists`` dict draws
+from; ``PRESETS``, the measured fps/dpi pairs for the usual animation
+destinations; and ``GLYPHS``, the optical-element names ``rail`` draws.
 
 Example::
 
@@ -40,11 +40,12 @@ from eyepiece.layout import (
 )
 from eyepiece.output import save_fig
 from eyepiece.scene import fading_track, sky_fan, trail
-from eyepiece.schematic import rail, schematic
+from eyepiece.schematic import GLYPHS, rail, schematic
 from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
 
 __all__ = [
     "ARTIST_KEYS",
+    "GLYPHS",
     "PRESETS",
     "Frame",
     "MosaicResult",

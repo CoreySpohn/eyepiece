@@ -18,6 +18,7 @@ here has to track another package's class names.
 
 from itertools import pairwise
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Ellipse, Polygon, Rectangle
@@ -69,9 +70,15 @@ def _draw_glyph(ax, glyph, x, y0, color):
         x: Glyph center, in axes coordinates.
         y0: Optical-axis height, in axes coordinates.
         color: Color for the glyph's ink.
+
+    Raises:
+        ValueError: If `glyph` has no drawing here. Reaching this means a
+            name was added to `GLYPHS` without a branch below; failing
+            loudly beats silently drawing an empty plane.
     """
     if glyph == "source":
-        ax.plot([x], [y0], marker="*", ms=14, ls="none", color=color, zorder=5)
+        star = 2.3 * matplotlib.rcParams["lines.markersize"]
+        ax.plot([x], [y0], marker="*", ms=star, ls="none", color=color, zorder=5)
     elif glyph in _BAR_GLYPHS:
         for low in (y0 - 0.25, y0 + 0.13):
             ax.add_patch(
@@ -120,21 +127,29 @@ def _draw_glyph(ax, glyph, x, y0, color):
                 )
             )
     elif glyph == "detector":
-        ax.add_patch(
-            Rectangle(
-                (x - 0.016, y0 - 0.10),
-                0.032,
-                0.20,
-                facecolor="none",
-                edgecolor=color,
-                lw=1.4,
-                hatch="///",
-                zorder=5,
+        # A Patch captures rcParams["hatch.color"] at construction, and that
+        # rcParam only defaults to the edge color from matplotlib 3.11. On an
+        # older supported version, or under a style that pins it, the hatch
+        # would come out black on a dark ground, so it is set explicitly for
+        # the length of the construction.
+        with matplotlib.rc_context({"hatch.color": color}):
+            ax.add_patch(
+                Rectangle(
+                    (x - 0.016, y0 - 0.10),
+                    0.032,
+                    0.20,
+                    facecolor="none",
+                    edgecolor=color,
+                    lw=1.4,
+                    hatch="///",
+                    zorder=5,
+                )
             )
-        )
+    else:
+        raise ValueError(f"glyph {glyph!r} is in GLYPHS but has no drawing")
 
 
-def rail(planes, *, ax=None, positions=None, highlight=None, accent=None):
+def rail(planes, *, ax=None, positions=None, highlight=None, accent=None, cap=None):
     """Draw a miniature optical-train rail with one plane highlighted.
 
     Each plane contributes a marker, a label, and a glyph drawn on a beam
@@ -143,10 +158,9 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None):
     (`"source"`, `"focal"`, `"fpm"`, `"detector"`). A lens is drawn just
     after every plane but the last: a pupil-plane lens forms the next
     focal plane, a lens after a focal-plane mask re-collimates to the next
-    pupil. When the last plane is a `"focal"` plane and no plane declares
-    the `"detector"` glyph, the beam is capped with a small detector block
-    so the train ends somewhere; a rail that places its own detector plane
-    gets that glyph instead of the cap.
+    pupil. A rail that ends on a `"focal"` plane is capped with a small
+    detector block by default, so the train ends somewhere; see `cap` to
+    force that block on or off.
 
     The glyphs are::
 
@@ -170,8 +184,16 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None):
         highlight: A plane's label, matched case-insensitively, to draw in
             the accent color. None leaves every plane in the neutral color.
             Anything that is not one of `planes`' labels raises
-            `ValueError` rather than silently matching nothing.
+            `ValueError` rather than silently matching nothing. Labels are
+            not required to be unique, and a `highlight` that matches
+            several of them lights every one.
         accent: Highlight color override; None uses `_style.color(1)`.
+        cap: Whether to close the beam with a detector block just past the
+            last plane. True always draws it, False never does, and None
+            (the default) draws it only when the last plane's glyph is
+            `"focal"` -- a rail that ends on its own `"detector"` plane
+            already terminates, and one that ends on a pupil is a train
+            still in progress.
 
     Returns:
         A `PlotResult` with artists `"fill"` (the beam-envelope
@@ -258,9 +280,9 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None):
             )
         )
 
-    last_glyph = planes[-1][1]
-    declares_detector = any(glyph == "detector" for _, glyph in planes)
-    if last_glyph == "focal" and not declares_detector:
+    if cap is None:
+        cap = planes[-1][1] == "focal"
+    if cap:
         ax.add_patch(
             Rectangle(
                 (positions[-1] + 0.015, y0 - 0.055),
