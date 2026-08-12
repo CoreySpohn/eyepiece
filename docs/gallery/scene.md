@@ -106,6 +106,36 @@ print(f"3D marker sizes: {sizes.min():.1f} to {sizes.max():.1f}")
 print("2D marker sizes:", np.unique(flat.artists["scatter"].get_sizes()))
 ```
 
+### Naming the source instead of the color
+
+`style` takes a color, but it also takes a `SourceStyles` entry, which is
+what a trajectory usually wants: the entry carries the marker as well, so a
+source drawn here matches how it is drawn in every other panel of the figure
+without the call site pulling the pair apart. That is the whole linked-views
+idea applied to one primitive -- see [one scene, N views](one-scene-n-views)
+for the full case.
+
+```{code-cell} python
+styles = ep.SourceStyles(["star", "b", "c"])
+
+fig = plt.figure(figsize=(4.2, 3.6), layout="constrained")
+ax = fig.add_subplot(projection="3d")
+ax.view_init(elev=22, azim=-125)
+for name, tilt in (("b", 40.0), ("c", 70.0)):
+    ep.trail(loop(1.2, 0.2, tilt, 15.0, n=30), ax=ax,
+             style=styles[name], marker_scale=45.0)
+ax.set_title("one entry, color and marker together")
+```
+
+The color and the marker both come from the entry, so this panel and any
+other panel built from the same `SourceStyles` agree on what planet b looks
+like.
+
+```{code-cell} python
+for name in ("b", "c"):
+    print(name, styles[name])
+```
+
 ## A fan of candidate tracks
 
 `sky_fan` draws many candidate paths through the same sky plane and fades
@@ -311,11 +341,12 @@ slots = [(axes[0, 0], axes[1, 0]), (axes[0, 1], axes[1, 1]),
 
 for (plane, data, is_focal), (ax_img, ax_rail) in zip(panels, slots, strict=True):
     if is_focal:
+        # no extent, so imshow_log drops the index ticks on its own
         ep.imshow_log(data, ax=ax_img, floor=1e-8, vmax=1.0, colorbar=False)
     else:
         ax_img.imshow(data, origin="lower", interpolation="nearest", cmap="magma")
-    ax_img.set_xticks([])
-    ax_img.set_yticks([])
+        ax_img.set_xticks([])  # a raw imshow still needs asking
+        ax_img.set_yticks([])
     ax_img.set_title(plane)
     ep.schematic("coronagraph", ax=ax_rail, highlight=plane)
 ```

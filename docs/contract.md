@@ -195,6 +195,21 @@ the sampling of the very grid the simulation computed on, so the default is
 raw pixels. A figure that genuinely wants smoothing can ask for it through
 `imshow_kw`, which merges last.
 
+## An image without an extent has no ticks
+
+Pass an `extent` and the axes carry real coordinates, so they get ticks.
+Leave it out and the axes are raw array indices, which are almost never what
+the reader is meant to measure: they frame the picture in numbers whose units
+live in the colorbar instead. So every image primitive -- `imshow_log`,
+`imshow_diverging`, `compare_row`, `triptych`, `show_field` -- drops the tick
+labels when `extent` is None, and restores them the moment you pass one.
+
+The rule matters most for the panel that is *nearly* the same as its
+neighbour. A row of images where one panel happens to carry an extent and the
+rest do not should not read as two kinds of figure, and answering "no extent"
+differently per primitive is how that happens. Ask for indices back with
+`ax.set_xticks(range(0, n, step))` after the call if you genuinely want them.
+
 ## What earns a place in this library
 
 eyepiece grows by accretion, not by anticipation. A candidate primitive
