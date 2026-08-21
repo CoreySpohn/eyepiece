@@ -233,6 +233,28 @@ def imshow_diverging(
     return PlotResult(ax=ax, artists=artists, update=update)
 
 
+def _row_figsize(image, extent, panel_size, n_panels):
+    """Figure size in inches for a row of `n_panels` drawn like `image`.
+
+    `imshow` takes its drawn aspect from `extent` when there is one and from
+    the array shape otherwise, so the figure has to be sized off whichever
+    one `imshow` will actually use -- sizing off the shape alone puts an
+    extent-carrying call straight back into a row of thin panels stranded in
+    a tall figure. The ratio is clamped because a long strip or a tall stack
+    would otherwise size the figure to a sliver or to a hundred inches, both
+    worse than the fixed default this replaced.
+    """
+    if extent is not None:
+        left, right, bottom, top = extent
+        span_x, span_y = abs(right - left), abs(top - bottom)
+        raw_aspect = span_y / span_x if span_x else 1.0
+    else:
+        shape = np.shape(image)
+        raw_aspect = shape[0] / shape[1] if len(shape) >= 2 and shape[1] else 1.0
+    aspect = min(max(raw_aspect, 0.4), 2.5)
+    return (panel_size * n_panels, panel_size * aspect)
+
+
 def _shared_norm(images, kind, floor, vmin=None, vmax=None):
     """Build one norm from the min/max across all images in `images`.
 
@@ -338,24 +360,10 @@ def compare_row(
         # image's own aspect; constrained layout fits the colorbar inside
         # that width. A caller who hands in axes owns the figure and its
         # size, so this applies only to the figure this function creates.
-        # imshow takes its drawn aspect from `extent` when there is one and
-        # from the array shape otherwise, so the figure has to be sized off
-        # whichever one imshow will use. The ratio is clamped because a long
-        # strip or a tall stack would otherwise size the figure to a sliver
-        # or to a hundred inches, both worse than the fixed default this
-        # replaced.
-        if extent is not None:
-            left, right, bottom, top = extent
-            span_x, span_y = abs(right - left), abs(top - bottom)
-            raw_aspect = span_y / span_x if span_x else 1.0
-        else:
-            shape = np.shape(images[0])
-            raw_aspect = shape[0] / shape[1] if len(shape) >= 2 and shape[1] else 1.0
-        aspect = min(max(raw_aspect, 0.4), 2.5)
         fig, panel_axes = plt.subplots(
             1,
             len(images),
-            figsize=(panel_size * len(images), panel_size * aspect),
+            figsize=_row_figsize(images[0], extent, panel_size, len(images)),
             layout="constrained",
             squeeze=False,
         )
@@ -612,6 +620,7 @@ def triptych(
     axes=None,
     ratio_clip=None,
     extent=None,
+    panel_size=3.2,
     imshow_kw=None,
     cbar_kw=None,
 ):
@@ -665,13 +674,18 @@ def triptych(
             `("A", "B", "B / A")` for `mode="ratio"` or
             `("A", "B", "B - A")` for `mode="residual"`.
         axes: Length-3 sequence of Axes to draw into. None creates a new
-            figure via `plt.subplots(1, 3, layout="constrained")`.
+            figure sized to hold three panels; see `panel_size`.
         ratio_clip: Fixed clip value for the ratio panel's norm, which
             then spans `[1 - ratio_clip, 1 + ratio_clip]`. None derives it
             from the data (see above). Ignored when `mode="residual"`.
         extent: `(left, right, bottom, top)` passed to all three panels'
             `imshow`, so a triptych can carry axis units the way every
             other image primitive here can.
+        panel_size: Size in inches of one panel, used only for a figure this
+            function creates: the width holds three of them and the height
+            follows the drawn aspect, so three square panels stay square
+            instead of shrinking into matplotlib's fixed default figure.
+            Ignored when `axes` is given.
         imshow_kw: Extra kwargs passed to all three panels' `ax.imshow`,
             applied last, exactly as in `compare_row`.
         cbar_kw: Extra kwargs passed to both colorbars' `fig.colorbar`,
@@ -708,7 +722,12 @@ def triptych(
         titles = ("A", "B", comparison_title)
 
     if axes is None:
-        _, axes = plt.subplots(1, 3, layout="constrained")
+        _, axes = plt.subplots(
+            1,
+            3,
+            figsize=_row_figsize(a, extent, panel_size, 3),
+            layout="constrained",
+        )
 
     ab_result = compare_row(
         [a_arr, b_arr],

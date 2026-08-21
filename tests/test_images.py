@@ -592,3 +592,22 @@ def test_compare_row_takes_its_aspect_from_extent_when_given():
     assert wide.fig.get_size_inches()[1] < square.fig.get_size_inches()[1]
     plt.close(square.fig)
     plt.close(wide.fig)
+
+
+def test_triptych_scales_its_owned_figure_with_its_three_panels():
+    # Same defect compare_row had: three square panels at matplotlib's fixed
+    # default render small and stranded in a tall figure.
+    a = np.full((64, 64), 1e-9)
+    res = triptych(a, a * 1.5)
+    w, h = res.fig.get_size_inches()
+    assert w > 2.0 * h
+    plt.close(res.fig)
+
+
+def test_triptych_takes_its_aspect_from_extent_like_compare_row():
+    a = np.full((64, 64), 1e-9)
+    square = triptych(a, a * 1.5, extent=(0.0, 1.0, 0.0, 1.0))
+    wide = triptych(a, a * 1.5, extent=(0.0, 10.0, 0.0, 1.0))
+    assert wide.fig.get_size_inches()[1] < square.fig.get_size_inches()[1]
+    plt.close(square.fig)
+    plt.close(wide.fig)
