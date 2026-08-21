@@ -42,6 +42,11 @@ The mechanics this module does own, each closing a specific trap:
   is not written onto a white background by savefig's own default.
 - mp4 sinks get `-vf crop=trunc(iw/2)*2:trunc(ih/2)*2`. h264 rejects odd
   pixel dimensions, which a figure size in inches times a dpi hits often.
+- Frames are rasterized through an Agg canvas, swapped in for the duration
+  and swapped back out after. An interactive backend snaps the figure size
+  to whole device pixels, which desynchronizes the frame size a writer
+  declared to ffmpeg from the size it actually rasterizes, and a sheared
+  mp4 is the only symptom. See `_agg_canvas`.
 - The dpi for HTML output is passed explicitly to the writer. Setting
   `fig.dpi` does NOT work: the style library pins `savefig.dpi` for print
   figures, and savefig's dpi wins over the figure's, so an embedded player
@@ -60,6 +65,7 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter, HTMLWriter, PillowWriter
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 PRESETS = {
     "talk": {"fps": 10, "dpi": 120},
@@ -161,6 +167,30 @@ def _rc_overrides(paths):
     if any(Path(p).suffix.lower() == ".mp4" for p in paths):
         overrides["animation.ffmpeg_path"] = _resolve_ffmpeg()
     return overrides
+
+
+@contextmanager
+def _agg_canvas(fig):
+    """Rasterize through an Agg canvas for the duration of a recording.
+
+    An interactive backend's canvas snaps `set_size_inches` to whole
+    device pixels, and matplotlib's writers need that call to land
+    exactly. `MovieWriter` shrinks the figure to the even pixel
+    dimensions h264 demands, remembers the size it asked for, and
+    restores that size before every grab -- but the frame size it
+    declared to ffmpeg was read back off the figure afterwards. On a
+    snapping backend the two disagree by a pixel, so ffmpeg reads each
+    rasterized row at the wrong stride and the movie comes out sheared,
+    with the frame wrapping further sideways down every row. Nothing
+    raises: the mp4 is silently wrong while the gif beside it, whose
+    writer never resizes anything, is correct. Agg does not snap.
+    """
+    original = fig.canvas
+    FigureCanvasAgg(fig)
+    try:
+        yield
+    finally:
+        fig.canvas = original
 
 
 def _finish_quietly(writer, path, *, warn):
@@ -316,6 +346,7 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
     with ExitStack() as stack:
         stack.callback(restore_engine)
         stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
+        stack.enter_context(_agg_canvas(fig))
         writers = [_make_writer(p, fps, extra_ffmpeg_args) for p in paths]
         for writer, path in zip(writers, paths, strict=True):
             Path(path).parent.mkdir(parents=True, exist_ok=True)

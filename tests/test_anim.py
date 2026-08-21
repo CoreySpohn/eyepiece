@@ -287,6 +287,61 @@ def test_record_restore_installs_no_engine_under_autolayout(tmp_path):
     plt.close(fig)
 
 
+class _SnappingManager:
+    """A figure manager that rounds the figure down to whole pixels.
+
+    Stands in for an interactive backend (macosx is the one that bit us):
+    `set_size_inches(forward=True)` asks the manager to resize, and the
+    manager hands back a size truncated to whole device pixels. The test
+    suite runs headless, so the behavior is injected rather than staged.
+    """
+
+    def __init__(self, fig):
+        self.fig = fig
+
+    def resize(self, w, h):
+        self.fig.set_size_inches(w / self.fig.dpi, h / self.fig.dpi, forward=False)
+
+
+def test_record_ignores_a_backend_that_snaps_the_figure_size(tmp_path):
+    # 11.5in at 130dpi is 1495px, odd, so the mp4 writer shrinks the figure
+    # to 1494px and restores that size before every grab -- while the frame
+    # size it declares to ffmpeg is read back off the figure. A snapping
+    # manager rounds that read-back down to 1493, ffmpeg then takes each
+    # 1494px row as 1493px, and the movie shears sideways a pixel per row
+    # with nothing raising. Recording through an Agg canvas, which has no
+    # manager to snap anything, keeps the two numbers equal.
+    fig, ax = plt.subplots(figsize=(11.5, 4.8))
+    ax.plot([], [])
+    fig.canvas.manager = _SnappingManager(fig)
+    with record(fig, tmp_path / "s.mp4", fps=5, dpi=130) as rec:
+        rec.hold(2)
+        assert rec.writers[0].frame_size == (1494, 624)
+    assert (tmp_path / "s.mp4").stat().st_size > 0
+    plt.close(fig)
+
+
+def test_record_restores_the_original_canvas(tmp_path):
+    fig, _ = _fig_line()
+    original = fig.canvas
+    with record(fig, tmp_path / "a.gif", fps=5) as rec:
+        rec.hold(2)
+        assert fig.canvas is not original
+    assert fig.canvas is original
+    plt.close(fig)
+
+
+def test_record_restores_the_original_canvas_after_an_exception(tmp_path):
+    fig, _ = _fig_line()
+    original = fig.canvas
+    with pytest.raises(ValueError, match="boom"):
+        with record(fig, tmp_path / "a.gif", fps=5) as rec:
+            rec.frame()
+            raise ValueError("boom")
+    assert fig.canvas is original
+    plt.close(fig)
+
+
 def test_exception_in_body_still_finalizes_every_writer(tmp_path):
     fig, line = _fig_line()
     with pytest.raises(ValueError, match="boom"):
