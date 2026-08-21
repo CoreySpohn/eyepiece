@@ -72,7 +72,13 @@ def imshow_log(
         vmin: Norm lower bound. None uses `max(data.min(), floor)`.
         vmax: Norm upper bound. None uses `data.max()`.
         cmap: Colormap override; None uses the semantic "intensity" cmap.
-        colorbar: Whether to attach a colorbar.
+        colorbar: Whether to attach a colorbar. True hangs it in an inset
+            just outside `ax`, which keeps a handed-in axes from stealing
+            space from its siblings under a layout engine. Use `"figure"`
+            for a figure-level colorbar, which takes its room from the axes
+            and so stays on-canvas on a figure with no layout engine -- the
+            right choice for a plain `plt.subplots` figure, and in recorded
+            animations, where a clipped label is permanent.
         cbar_label: Label for the colorbar.
         imshow_kw: Extra kwargs passed to `ax.imshow`, applied last.
         cbar_kw: Extra kwargs passed to `fig.colorbar`.
@@ -81,6 +87,7 @@ def imshow_log(
         A `PlotResult` with artists `"image"` (and `"cbar"` if drawn) and an
         `.update(new_image)` callable.
     """
+    _check_colorbar(colorbar)
     img = np.asarray(image, dtype=float)
     data = np.clip(img, floor, None)
     created = ax is None
@@ -99,9 +106,7 @@ def imshow_log(
     _hide_index_ticks(ax, extent)
 
     if colorbar:
-        cax = ax.inset_axes([1.02, 0.0, 0.04, 1.0])
-        cb = ax.figure.colorbar(im, cax=cax, label=cbar_label, **(cbar_kw or {}))
-        artists["cbar"] = cb
+        artists["cbar"] = _attach_colorbar(ax, im, colorbar, cbar_label, cbar_kw)
 
     def update(new_image):
         im.set_data(np.clip(np.asarray(new_image, dtype=float), floor, None))
@@ -109,10 +114,37 @@ def imshow_log(
     return PlotResult(ax=ax, artists=artists, update=update)
 
 
+def _check_colorbar(colorbar):
+    """Validate a `colorbar` argument, naming the modes on failure."""
+    if colorbar not in (True, False, "figure"):
+        raise ValueError(
+            f"colorbar must be True (inset), False, or 'figure'; got {colorbar!r}"
+        )
+
+
+def _attach_colorbar(ax, im, mode, cbar_label, cbar_kw):
+    """Attach one colorbar to `ax` in the mode the caller asked for.
+
+    `True` hangs it in an inset just outside `ax`. A layout engine does see
+    that inset -- it is a child axes, and `get_tightbbox` unions
+    `child_axes` -- so under constrained or tight layout the room is
+    reserved either way. On a figure with NO layout engine, which is what
+    plain `plt.subplots` gives, nothing reserves anything and the inset's
+    label runs off the canvas; in a recorded animation that is silent and
+    permanent, since every frame carries the clipped label. `"figure"`
+    attaches a figure-level colorbar, which takes its room from the axes
+    itself and so stays on-canvas with no layout engine at all.
+    """
+    if mode == "figure":
+        return ax.figure.colorbar(im, ax=ax, label=cbar_label, **(cbar_kw or {}))
+    cax = ax.inset_axes([1.02, 0.0, 0.04, 1.0])
+    return ax.figure.colorbar(im, cax=cax, label=cbar_label, **(cbar_kw or {}))
+
+
 def _diverging_draw(
     ax, data, norm, resolved_cmap, extent, colorbar, cbar_label, imshow_kw, cbar_kw
 ):
-    """Draw one image + inset colorbar under an already-built diverging norm.
+    """Draw one image + its colorbar under an already-built diverging norm.
 
     Shared by `imshow_diverging` and `triptych`'s ratio panel, which builds
     a norm centered on 1 rather than 0 but otherwise draws identically.
@@ -125,8 +157,7 @@ def _diverging_draw(
     im = ax.imshow(data, norm=norm, cmap=resolved_cmap, extent=extent, **kw)
     cb = None
     if colorbar:
-        cax = ax.inset_axes([1.02, 0.0, 0.04, 1.0])
-        cb = ax.figure.colorbar(im, cax=cax, label=cbar_label, **(cbar_kw or {}))
+        cb = _attach_colorbar(ax, im, colorbar, cbar_label, cbar_kw)
     return im, cb
 
 
@@ -151,7 +182,13 @@ def imshow_diverging(
         vlim: Symmetric norm bound; the norm spans `(-vlim, vlim)`. None
             uses `max(abs(data.min()), abs(data.max()))`.
         cmap: Colormap override; None uses the semantic "residual" cmap.
-        colorbar: Whether to attach a colorbar.
+        colorbar: Whether to attach a colorbar. True hangs it in an inset
+            just outside `ax`, which keeps a handed-in axes from stealing
+            space from its siblings under a layout engine. Use `"figure"`
+            for a figure-level colorbar, which takes its room from the axes
+            and so stays on-canvas on a figure with no layout engine -- the
+            right choice for a plain `plt.subplots` figure, and in recorded
+            animations, where a clipped label is permanent.
         cbar_label: Label for the colorbar.
         imshow_kw: Extra kwargs passed to `ax.imshow`, applied last.
         cbar_kw: Extra kwargs passed to `fig.colorbar`.
@@ -161,6 +198,7 @@ def imshow_diverging(
         `.update` -- the norm has no floor or other stateful transform to
         reapply.
     """
+    _check_colorbar(colorbar)
     data = np.asarray(image, dtype=float)
     created = ax is None
     if created:
@@ -229,6 +267,7 @@ def compare_row(
     cbar_label=None,
     vmin=None,
     vmax=None,
+    panel_size=3.2,
     imshow_kw=None,
     cbar_kw=None,
 ):
@@ -264,6 +303,11 @@ def compare_row(
             (see `_shared_norm`), never an asymmetric one.
         vmax: Pins the shared norm's upper bound instead of deriving it
             from the data. May be given alone.
+        panel_size: Size in inches of one panel along the row, used only for
+            a figure this function creates: the width scales with the panel
+            count and the height follows the first image's aspect, so a row
+            of k square images stays square instead of shrinking into
+            matplotlib's fixed default figure. Ignored when `axes` is given.
         imshow_kw: Extra kwargs passed to each panel's `ax.imshow`, applied
             last.
         cbar_kw: Extra kwargs passed to the shared colorbar's
@@ -287,8 +331,33 @@ def compare_row(
 
     created = axes is None
     if created:
+        # matplotlib's default figsize does not know how many panels it is
+        # about to hold, so k square images land as k small squares stranded
+        # in a tall figure beside a full-height colorbar. An owned figure
+        # grows with the panel count instead, keeping each panel near the
+        # image's own aspect; constrained layout fits the colorbar inside
+        # that width. A caller who hands in axes owns the figure and its
+        # size, so this applies only to the figure this function creates.
+        # imshow takes its drawn aspect from `extent` when there is one and
+        # from the array shape otherwise, so the figure has to be sized off
+        # whichever one imshow will use. The ratio is clamped because a long
+        # strip or a tall stack would otherwise size the figure to a sliver
+        # or to a hundred inches, both worse than the fixed default this
+        # replaced.
+        if extent is not None:
+            left, right, bottom, top = extent
+            span_x, span_y = abs(right - left), abs(top - bottom)
+            raw_aspect = span_y / span_x if span_x else 1.0
+        else:
+            shape = np.shape(images[0])
+            raw_aspect = shape[0] / shape[1] if len(shape) >= 2 and shape[1] else 1.0
+        aspect = min(max(raw_aspect, 0.4), 2.5)
         fig, panel_axes = plt.subplots(
-            1, len(images), layout="constrained", squeeze=False
+            1,
+            len(images),
+            figsize=(panel_size * len(images), panel_size * aspect),
+            layout="constrained",
+            squeeze=False,
         )
         axes = panel_axes[0]
     else:

@@ -459,3 +459,136 @@ def test_imshow_diverging_updates_in_place_on_a_fixed_scale():
     assert np.allclose(res.artists["image"].get_array(), first * 0.1)
     assert (norm.vmin, norm.vmax) == (vmin, vmax)
     plt.close(res.fig)
+
+
+def test_figure_colorbar_is_a_real_figure_axes():
+    # The structural difference: "figure" produces a figure-level axes, not
+    # a child of the image axes. Consumers pin exactly this (an image axes
+    # with no children) to prove they are not getting an inset.
+    img = _img()
+    fig, ax = plt.subplots(figsize=(4, 4), layout="constrained")
+    res = imshow_log(img, ax=ax, colorbar="figure", cbar_label="contrast")
+    fig.canvas.draw()
+    assert len(ax.child_axes) == 0
+    assert res.artists["cbar"].ax in fig.axes
+    plt.close(fig)
+
+
+def test_figure_colorbar_makes_layout_reserve_room():
+    # Constrained layout reserves room for BOTH kinds (an inset is a child
+    # axes and get_tightbbox unions those), so this pins the smaller,
+    # genuine difference: a figure-level colorbar takes slightly more room
+    # than an inset. The regime where the two really diverge is a figure
+    # with no layout engine -- see the clipping test below.
+    img = _img()
+    fig_i, ax_i = plt.subplots(figsize=(4, 4), layout="constrained")
+    imshow_log(img, ax=ax_i, colorbar=True, cbar_label="contrast")
+    fig_i.canvas.draw()
+    fig_f, ax_f = plt.subplots(figsize=(4, 4), layout="constrained")
+    imshow_log(img, ax=ax_f, colorbar="figure", cbar_label="contrast")
+    fig_f.canvas.draw()
+    assert ax_f.get_position().x1 < ax_i.get_position().x1
+    plt.close(fig_i)
+    plt.close(fig_f)
+
+
+def test_default_colorbar_stays_an_inset():
+    # Backwards compatibility: True keeps the inset, so existing callers
+    # (and the sibling-space tests above) are unaffected.
+    img = _img()
+    fig, ax = plt.subplots(figsize=(4, 4), layout="constrained")
+    imshow_log(img, ax=ax, colorbar=True)
+    assert len(ax.child_axes) == 1
+    plt.close(fig)
+
+
+def test_diverging_offers_the_same_figure_colorbar():
+    img = np.linspace(-1.0, 1.0, 256).reshape(16, 16)
+    fig, ax = plt.subplots(figsize=(4, 4), layout="constrained")
+    res = imshow_diverging(img, ax=ax, colorbar="figure", cbar_label="resid")
+    fig.canvas.draw()
+    assert len(ax.child_axes) == 0
+    assert res.artists["cbar"].ax in fig.axes
+    plt.close(fig)
+
+
+def test_unknown_colorbar_mode_raises_naming_the_options():
+    img = _img()
+    with pytest.raises(ValueError, match=r"figure"):
+        imshow_log(img, colorbar="inset-please")
+
+
+def test_compare_row_scales_its_owned_figure_with_panel_count():
+    # A row of k SQUARE panels at matplotlib's default 6.4x4.8 renders as k
+    # small squares stranded in a tall figure beside a full-height colorbar.
+    # An owned figure has to grow with the panel count.
+    images = [_img() for _ in range(4)]
+    res = compare_row(images, cbar_label="contrast")
+    w, h = res.fig.get_size_inches()
+    assert w > 2.0 * h
+    plt.close(res.fig)
+
+
+def test_compare_row_panel_size_is_tunable():
+    images = [_img() for _ in range(3)]
+    small = compare_row(images, panel_size=2.0)
+    big = compare_row(images, panel_size=4.0)
+    assert big.fig.get_size_inches()[0] > small.fig.get_size_inches()[0]
+    plt.close(small.fig)
+    plt.close(big.fig)
+
+
+def test_compare_row_handed_axes_figure_is_left_alone():
+    # The caller owns the figure; the primitive must not resize it.
+    images = [_img() for _ in range(4)]
+    fig, axes = plt.subplots(1, 4, figsize=(5.0, 5.0))
+    before = tuple(fig.get_size_inches())
+    compare_row(images, axes=axes)
+    assert tuple(fig.get_size_inches()) == before
+    plt.close(fig)
+
+
+def test_inset_colorbar_clips_only_without_a_layout_engine():
+    # The regime that actually bites. Constrained layout DOES see an inset
+    # (it is a child axes, and get_tightbbox unions child_axes), so it
+    # reserves room either way. On a figure with NO layout engine -- plain
+    # plt.subplots, matplotlib's default -- nothing reserves anything and
+    # the inset's label runs off the canvas. colorbar="figure" steals the
+    # room from the axes instead, so it stays on-canvas.
+    img = _img()
+
+    def overflow(mode):
+        fig, ax = plt.subplots(figsize=(4, 4))  # deliberately no layout engine
+        res = imshow_log(img, ax=ax, colorbar=mode, cbar_label="contrast [ph/s/pix]")
+        fig.canvas.draw()
+        bb = res.artists["cbar"].ax.get_tightbbox(fig.canvas.get_renderer())
+        over = bb.x1 - fig.get_window_extent().x1
+        plt.close(fig)
+        return over
+
+    assert overflow(True) > 0.0
+    assert overflow("figure") <= 0.0
+
+
+def test_compare_row_clamps_a_degenerate_panel_aspect():
+    # A row of wide strips must not collapse to a sliver, and a row of tall
+    # panels must not blow the figure up to a hundred inches; before the
+    # clamp these were 0.1in and 102.4in tall respectively.
+    wide = compare_row([np.full((32, 1024), 1e-9) for _ in range(3)])
+    tall = compare_row([np.full((1024, 32), 1e-9) for _ in range(3)])
+    assert wide.fig.get_size_inches()[1] > 1.0
+    assert tall.fig.get_size_inches()[1] < 12.0
+    plt.close(wide.fig)
+    plt.close(tall.fig)
+
+
+def test_compare_row_takes_its_aspect_from_extent_when_given():
+    # imshow derives the drawn aspect from extent, not from array shape, so
+    # sizing the figure off the shape puts an extent-carrying call straight
+    # back into "k thin panels stranded in a tall figure".
+    images = [_img() for _ in range(3)]
+    square = compare_row(images, extent=(0.0, 1.0, 0.0, 1.0))
+    wide = compare_row(images, extent=(0.0, 10.0, 0.0, 1.0))
+    assert wide.fig.get_size_inches()[1] < square.fig.get_size_inches()[1]
+    plt.close(square.fig)
+    plt.close(wide.fig)
