@@ -1,6 +1,6 @@
 """Multi-sink animation recording: one draw pass feeds every output file.
 
-Both entry points here are built on `MovieWriter.saving()` plus explicit
+Both entry points here are built on matplotlib's movie writers plus explicit
 `grab_frame()` calls rather than on `FuncAnimation.save`, because a single
 rendered frame must be handed to every requested sink at once. An mp4, a
 gif, and an embedded-HTML player are all MovieWriters, each re-rastering the
@@ -53,6 +53,7 @@ The mechanics this module does own, each closing a specific trap:
 
 import shutil
 import tempfile
+import warnings
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
@@ -162,12 +163,57 @@ def _rc_overrides(paths):
     return overrides
 
 
+def _finish_quietly(writer, path, *, warn):
+    """Close `writer` without letting a failure of its own escape.
+
+    Used while another error is already on its way out, where an escaping
+    teardown error would replace the reason the caller actually needs. A
+    writer that received no frame cannot finalize at all and that is
+    expected here, so `warn` is False for it; one that did receive frames
+    and still failed to close has left a truncated file behind, which is
+    worth saying out loud even though the original error still wins.
+    """
+    try:
+        writer.finish()
+    except Exception as exc:
+        if warn:
+            warnings.warn(
+                f"{path} may be truncated: closing it raised {exc!r}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+
+@contextmanager
+def _sink(writer, fig, path, dpi, counter):
+    """Open one writer, and close it without masking the body's failure.
+
+    `AbstractMovieWriter.saving` finalizes in a bare `finally`, so a writer
+    that never received a frame raises out of its own teardown -- Pillow's
+    indexes `self._frames[0]` -- and that error REPLACES whatever actually
+    went wrong inside the block. A draw that raised, or a glyph the backend
+    refused to render, would reach the caller as `IndexError: list index
+    out of range` from inside matplotlib, pointing at the wrong library
+    entirely. The writer is therefore driven directly; `saving`'s only
+    other duty is an inner `savefig.bbox` override that `_rc_overrides`
+    already holds open for the whole recording.
+    """
+    writer.setup(fig, path, dpi)
+    try:
+        yield
+    except BaseException:
+        _finish_quietly(writer, path, warn=bool(counter["frames"]))
+        raise
+    writer.finish()
+
+
 class _Recorder:
     """Frame grabber yielded by `record`; fans one figure out to every sink."""
 
-    def __init__(self, fig, writers):
+    def __init__(self, fig, writers, counter):
         self.fig = fig
         self.writers = writers
+        self._counter = counter
         self._layout_frozen = False
 
     def frame(self):
@@ -183,6 +229,7 @@ class _Recorder:
         facecolor = self.fig.get_facecolor()
         for writer in self.writers:
             writer.grab_frame(facecolor=facecolor)
+        self._counter["frames"] += 1
         if not self._layout_frozen:
             self.fig.canvas.draw()
             self.fig.set_layout_engine("none")
@@ -252,7 +299,8 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
 
     Raises:
         ValueError: If a path has an unsupported suffix.
-        RuntimeError: If an mp4 sink is requested and no ffmpeg is found.
+        RuntimeError: If an mp4 sink is requested and no ffmpeg is found,
+            or if the block exits without ever grabbing a frame.
     """
     saved_engine = fig.get_layout_engine()
 
@@ -264,14 +312,27 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
         if saved_engine is not None:
             fig.set_layout_engine(saved_engine)
 
+    counter = {"frames": 0}
     with ExitStack() as stack:
         stack.callback(restore_engine)
         stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
         writers = [_make_writer(p, fps, extra_ffmpeg_args) for p in paths]
         for writer, path in zip(writers, paths, strict=True):
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-            stack.enter_context(writer.saving(fig, str(path), _sink_dpi(path, dpi)))
-        yield _Recorder(fig, writers)
+            stack.enter_context(
+                _sink(writer, fig, str(path), _sink_dpi(path, dpi), counter)
+            )
+        yield _Recorder(fig, writers, counter)
+        if not counter["frames"]:
+            # Raised here rather than per sink so the message can name them
+            # all. It travels out through the sinks, which take their
+            # exception path and close without adding noise of their own.
+            joined = ", ".join(str(p) for p in paths)
+            raise RuntimeError(
+                f"no frames were grabbed, so the outputs are empty or "
+                f"missing ({joined}); call rec.frame() at least once "
+                "inside the record block"
+            )
 
 
 def _is_one_shot(frames):
@@ -365,7 +426,7 @@ class Animation:
 
         Raises:
             RuntimeError: If the frame source is an exhausted one-shot
-                generator.
+                generator, or if it yields no frames at all.
         """
         frames = self._frame_iter()
         rate = self.fps if fps is None else fps
@@ -402,7 +463,7 @@ class Animation:
 
         Raises:
             RuntimeError: If the frame source is an exhausted one-shot
-                generator.
+                generator, or if it yields no frames at all.
         """
         frames = self._frame_iter()
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -430,7 +491,8 @@ class Animation:
 
         Raises:
             RuntimeError: If the frame source is an exhausted one-shot
-                generator, or if an mp4 is requested without ffmpeg.
+                generator, if it yields no frames at all, or if an mp4 is
+                requested without ffmpeg.
         """
         self.save(path, dpi=dpi, fps=fps)
         try:

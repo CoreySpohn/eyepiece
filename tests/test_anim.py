@@ -302,6 +302,66 @@ def test_exception_in_body_still_finalizes_every_writer(tmp_path):
     plt.close(fig)
 
 
+def test_body_error_survives_a_writer_that_never_got_a_frame(tmp_path):
+    # The teardown must never outrank the body. A writer that received no
+    # frame cannot finalize -- PillowWriter indexes self._frames[0] -- and
+    # matplotlib finalizes in a bare `finally`, so without a guard that
+    # IndexError REPLACES the real error on its way out and the caller is
+    # sent to debug the wrong library.
+    fig, _ = _fig_line()
+    with pytest.raises(ValueError, match="boom"):
+        with record(fig, tmp_path / "z.gif", fps=5):
+            raise ValueError("boom")
+    plt.close(fig)
+
+
+def test_body_error_survives_across_every_sink(tmp_path):
+    # Each sink unwinds separately, so one sink that cannot finalize must
+    # not clobber the error either -- the guard has to hold per writer.
+    fig, _ = _fig_line()
+    with pytest.raises(ValueError, match="boom"):
+        with record(fig, tmp_path / "z.gif", tmp_path / "z.html", fps=5):
+            raise ValueError("boom")
+    plt.close(fig)
+
+
+def test_raising_draw_reports_itself_not_a_teardown_error(tmp_path):
+    # The animate() path is where this bites in practice: draw raises on
+    # frame 0, no frame is ever grabbed, and the caller used to see only
+    # `IndexError: list index out of range` from inside matplotlib.
+    fig, _ = _fig_line()
+
+    def draw(_fig, _ctx):
+        raise ValueError("boom")
+
+    with pytest.raises(ValueError, match="boom"):
+        animate(fig, draw, 3, fps=5).save(tmp_path / "d.gif")
+    plt.close(fig)
+
+
+def test_draw_with_the_wrong_arity_reports_the_type_error(tmp_path):
+    # draw is called as draw(fig, ctx); a one-argument draw is the easiest
+    # mistake to make against that contract and must say so.
+    fig, _ = _fig_line()
+
+    def draw(_ctx):
+        pass
+
+    with pytest.raises(TypeError):
+        animate(fig, draw, 3, fps=5).save(tmp_path / "d.gif")
+    plt.close(fig)
+
+
+def test_recording_no_frames_at_all_raises_actionable(tmp_path):
+    # A clean exit having grabbed nothing is a caller bug, not a crash
+    # site: say what was not written and what to call.
+    fig, _ = _fig_line()
+    with pytest.raises(RuntimeError, match=r"no frames|frame\(\)"):
+        with record(fig, tmp_path / "n.gif", fps=5):
+            pass
+    plt.close(fig)
+
+
 def test_dark_figure_frame_is_not_saved_on_white(tmp_path):
     fig, ax = plt.subplots(facecolor="black")
     ax.set_facecolor("black")
@@ -335,4 +395,19 @@ def test_mp4_without_ffmpeg_raises_actionable(tmp_path):
     with pytest.raises(RuntimeError, match=r"imageio-ffmpeg|apt_packages|ffmpeg"):
         with record(fig, tmp_path / "x.mp4", fps=5) as rec:
             rec.frame()
+    plt.close(fig)
+
+
+def test_recording_no_frames_names_every_sink(tmp_path):
+    # A zero-frame gif is never written, but a zero-frame html player and a
+    # zero-frame mp4 ARE both left on disk as empty stubs, so the message
+    # has to name every sink and must not claim they went unwritten.
+    fig, _ = _fig_line()
+    paths = [tmp_path / "n.gif", tmp_path / "n.html", tmp_path / "n.mp4"]
+    with pytest.raises(RuntimeError) as excinfo:
+        with record(fig, *paths, fps=5):
+            pass
+    message = str(excinfo.value)
+    for p in paths:
+        assert str(p) in message
     plt.close(fig)
