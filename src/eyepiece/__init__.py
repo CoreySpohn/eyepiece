@@ -28,6 +28,7 @@ from eyepiece._version import __version__
 from eyepiece.anim import PRESETS, Animation, animate, record
 from eyepiece.images import (
     compare_row,
+    display_limits,
     imshow_diverging,
     imshow_log,
     show_field,
@@ -65,6 +66,7 @@ __all__ = [
     "corner",
     "corner_overlay",
     "cov_ellipse",
+    "display_limits",
     "extent_arcsec",
     "extent_au",
     "extent_lod",

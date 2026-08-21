@@ -99,6 +99,63 @@ print(sorted(low.artists))
 print(type(low.artists["image"]).__name__, type(low.artists["cbar"]).__name__)
 ```
 
+## Bounds from the data
+
+Left to itself, a log image runs from the data minimum to the data maximum,
+and a single bright core sets the top of that range. The usual reflex is to
+reference the floor to the peak, a fixed number of decades below `vmax`.
+On a frame whose interesting structure sits near the background level, that
+choice hides exactly what the figure was made to show.
+
+`display_limits` derives the pair from the data instead. It returns plain
+floats rather than a norm object, so the result drops into any primitive
+here. `low_scale` anchors the floor to a fraction of a percentile, which is
+what a rate map needs: its median IS the background, so half a median puts
+the background mid-scale and leaves the structure above it visible.
+
+```{code-cell} python
+rate = speckles(3, level=0.6) + 2.0e-6
+
+peak_lo, peak_hi = float(np.nanmax(rate)) * 1e-3, float(np.nanmax(rate))
+data_lo, data_hi = ep.display_limits(rate, low=50.0, low_scale=0.5, high=99.9)
+
+fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.0), layout="constrained")
+ep.imshow_log(
+    rate, ax=axes[0], vmin=peak_lo, vmax=peak_hi, extent=EXTENT, cbar_label="rate"
+)
+ep.imshow_log(
+    rate, ax=axes[1], vmin=data_lo, vmax=data_hi, extent=EXTENT, cbar_label="rate"
+)
+axes[0].set_title("floor referenced to the peak")
+axes[1].set_title("floor referenced to the median")
+for ax in axes:
+    ep.label_lod(ax)
+```
+
+The two floors differ by orders of magnitude on the same array.
+
+```{code-cell} python
+print(f"peak-referenced floor: {peak_lo:.3e}")
+print(f"data-derived floor:    {data_lo:.3e}")
+```
+
+Before a log scale, pass `positive=True` so that zero and negative samples
+are dropped before the percentile is taken. A masked frame is where this
+matters: a dark-zone cut or a bad-pixel map leaves a large fraction of the
+array at exactly zero, and a percentile taken over the whole frame then
+lands on zero rather than on the data. Data with nothing left to measure
+after that filtering returns an ordered pair rather than raising, so a
+blank frame partway through an animation cannot stop a render.
+
+```{code-cell} python
+masked = np.where(r < 3.0, rate, 0.0)  # a dark-zone cut zeroes most of the frame
+
+print(f"fraction at zero:   {np.mean(masked == 0.0):.1%}")
+print("with zeros kept:   ", ep.display_limits(masked, low=1.0, high=99.9))
+print("with zeros dropped:", ep.display_limits(masked, low=1.0, high=99.9, positive=True))
+print("nothing positive:  ", ep.display_limits(np.zeros((8, 8)), positive=True))
+```
+
 ## One norm across a row
 
 `compare_row` builds a single norm from the minimum and maximum across all

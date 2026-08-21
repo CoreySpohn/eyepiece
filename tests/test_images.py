@@ -9,6 +9,7 @@ import pytest
 from eyepiece import _style
 from eyepiece.images import (
     compare_row,
+    display_limits,
     imshow_diverging,
     imshow_log,
     show_field,
@@ -611,3 +612,62 @@ def test_triptych_takes_its_aspect_from_extent_like_compare_row():
     assert wide.fig.get_size_inches()[1] < square.fig.get_size_inches()[1]
     plt.close(square.fig)
     plt.close(wide.fig)
+
+
+def test_display_limits_returns_plain_floats_from_percentiles():
+    # The contract says scalars are plain Python floats, and these are meant
+    # to drop straight into a primitive's vmin=/vmax=.
+    data = np.arange(0.0, 101.0).reshape(101, 1)
+    vmin, vmax = display_limits(data, low=1.0, high=99.0)
+    assert type(vmin) is float and type(vmax) is float
+    assert vmin == pytest.approx(1.0, abs=0.5)
+    assert vmax == pytest.approx(99.0, abs=0.5)
+
+
+def test_display_limits_positive_ignores_non_positive_samples():
+    # The dominant hand-rolled idiom: log data has to drop zeros and
+    # negatives before a percentile, or the floor collapses onto them.
+    data = np.concatenate([np.zeros(500), np.logspace(-9, -6, 500)])
+    plain = display_limits(data, low=1.0, high=99.0)
+    positive = display_limits(data, low=1.0, high=99.0, positive=True)
+    assert plain[0] == 0.0
+    assert positive[0] > 0.0
+
+
+def test_display_limits_low_scale_anchors_a_floor_below_the_median():
+    # A rate map whose median IS the background reads best with the floor a
+    # fraction of the median, not a fixed number of decades below the peak.
+    rng = np.random.default_rng(0)
+    data = rng.lognormal(mean=0.0, sigma=0.4, size=4096)
+    median = float(np.median(data))
+    vmin, _ = display_limits(data, low=50.0, low_scale=0.5)
+    assert vmin == pytest.approx(0.5 * median, rel=1e-6)
+
+
+def test_display_limits_guards_data_with_nothing_positive_left():
+    # Several hand-rolled versions omit this guard and raise on an all-zero
+    # frame; several others invent a different sentinel each time.
+    vmin, vmax = display_limits(np.zeros((8, 8)), positive=True)
+    assert np.isfinite(vmin) and np.isfinite(vmax)
+    assert vmin < vmax
+
+
+def test_display_limits_guards_constant_and_all_nan_data():
+    for data in (np.full((8, 8), 3.0), np.full((8, 8), np.nan)):
+        vmin, vmax = display_limits(data)
+        assert np.isfinite(vmin) and np.isfinite(vmax)
+        assert vmin < vmax
+
+
+def test_display_limits_feeds_a_primitive():
+    img = _img()
+    vmin, vmax = display_limits(img, low=2.0, high=99.9, positive=True)
+    res = imshow_log(img, vmin=vmin, vmax=vmax)
+    norm = res.artists["image"].norm
+    assert (norm.vmin, norm.vmax) == (vmin, vmax)
+    plt.close(res.fig)
+
+
+def test_display_limits_rejects_a_reversed_percentile_pair():
+    with pytest.raises(ValueError, match=r"low.*high|high.*low"):
+        display_limits(_img(), low=90.0, high=10.0)

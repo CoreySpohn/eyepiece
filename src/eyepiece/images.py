@@ -38,6 +38,64 @@ def _hide_index_ticks(axes, extent):
         ax.set_yticks([])
 
 
+def display_limits(image, *, low=1.0, high=99.5, low_scale=1.0, positive=False):
+    """Compute `(vmin, vmax)` display bounds from the data itself.
+
+    Deriving display bounds from percentiles rather than from the raw
+    min/max is what keeps one hot pixel or one dead pixel from setting the
+    whole scale, and it is hand-rolled constantly. The parts that are easy
+    to get wrong, and that every hand-rolled copy solves slightly
+    differently, are the ones this owns: dropping non-finite samples,
+    dropping non-positive ones before a log scale, and still returning an
+    ordered, finite pair when nothing survives that filtering.
+
+    The bounds come back as plain floats for a primitive's `vmin`/`vmax`,
+    rather than as a norm object, so they compose with every image
+    primitive here and with a hand-built norm equally well.
+
+    Args:
+        image: Array-like of values to derive the bounds from. Shape is
+            irrelevant; the data is flattened.
+        low: Percentile in [0, 100] for the lower bound.
+        high: Percentile in [0, 100] for the upper bound.
+        low_scale: Factor applied to the lower bound after the percentile.
+            `low=50.0, low_scale=0.5` puts the floor half a median below the
+            data, which is what a rate map whose median IS its background
+            needs: a floor referenced to the peak instead washes the
+            structure out.
+        positive: Whether to drop values <= 0 before computing. Required
+            before a log scale, where a zero or negative sample would
+            otherwise drag the floor onto it.
+
+    Returns:
+        An ordered `(vmin, vmax)` tuple of plain floats. Data with nothing
+        left to measure -- all non-finite, or nothing positive under
+        `positive=True` -- yields `(0.0, 1.0)` rather than raising, and
+        constant data is widened around its value, so the result is always
+        usable as a norm's bounds.
+
+    Raises:
+        ValueError: If `low` is not below `high`.
+    """
+    if low >= high:
+        raise ValueError(f"low must be below high; got low={low}, high={high}")
+    data = np.asarray(image, dtype=float).ravel()
+    data = data[np.isfinite(data)]
+    if positive:
+        data = data[data > 0.0]
+    if data.size == 0:
+        return (0.0, 1.0)
+
+    vmin = float(np.percentile(data, low)) * float(low_scale)
+    vmax = float(np.percentile(data, high))
+    if not vmax > vmin:
+        # constant data, or a low_scale that lifted the floor past the
+        # ceiling: still owe the caller something a norm will accept
+        span = abs(vmax) * 0.5 or 0.5
+        vmin, vmax = vmax - span, vmax + span
+    return (vmin, vmax)
+
+
 def imshow_log(
     image,
     *,
