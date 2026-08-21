@@ -399,11 +399,13 @@ def test_mp4_without_ffmpeg_raises_actionable(tmp_path):
 
 
 def test_recording_no_frames_names_every_sink(tmp_path):
-    # A zero-frame gif is never written, but a zero-frame html player and a
-    # zero-frame mp4 ARE both left on disk as empty stubs, so the message
-    # has to name every sink and must not claim they went unwritten.
+    # A zero-frame gif is never written, but a zero-frame html player IS left
+    # on disk as an empty stub, so the message has to name every sink and
+    # must not claim they all went unwritten. Deliberately no mp4 sink: an
+    # ffmpeg-less machine would raise the ffmpeg error before the recording
+    # ever starts, which is a different code path and not what this pins.
     fig, _ = _fig_line()
-    paths = [tmp_path / "n.gif", tmp_path / "n.html", tmp_path / "n.mp4"]
+    paths = [tmp_path / "n.gif", tmp_path / "n.html"]
     with pytest.raises(RuntimeError) as excinfo:
         with record(fig, *paths, fps=5):
             pass
