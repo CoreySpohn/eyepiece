@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.0](https://github.com/CoreySpohn/eyepiece/compare/v0.1.0...v0.2.0) (2026-08-21)
+
+
+### Features
+
+* **anim:** let save and video take an fps override like jshtml does ([bf69b48](https://github.com/CoreySpohn/eyepiece/commit/bf69b487b6fbb6fb7cabe5ad536e33291afbde03))
+* **images:** add display_limits for data-derived vmin/vmax ([e158b85](https://github.com/CoreySpohn/eyepiece/commit/e158b85600ee6ec569a268a009a344a68b70ded5))
+* **scene:** let trail take a SourceStyles entry so linked views compose ([ce5e462](https://github.com/CoreySpohn/eyepiece/commit/ce5e462b78bcfa502db176184f0cf17e1b776dc3))
+
+
+### Bug Fixes
+
+* **anim:** stop writer teardown from masking the real recording error ([7cafedb](https://github.com/CoreySpohn/eyepiece/commit/7cafedbb9abb26c937df7065086e23831f99447f))
+* **images:** figure-level colorbar option and panel-count figure scaling ([01df23d](https://github.com/CoreySpohn/eyepiece/commit/01df23dc7fa2e9ed5bda11dbd740bd07a08bf666))
+* **images:** hide index ticks without an extent, and let imshow_diverging update ([eab4e67](https://github.com/CoreySpohn/eyepiece/commit/eab4e676711405fc215cf53c600c9817507ddefa))
+* **images:** size a triptych's owned figure for its three panels ([b3a175c](https://github.com/CoreySpohn/eyepiece/commit/b3a175c63bc4f5861700c2769e5b125ad7ca3b12))
+* **profiles:** keep the IWA/OWA labels clear of the axes title ([2fbbe51](https://github.com/CoreySpohn/eyepiece/commit/2fbbe51a0d44c2bedd9861157748c638cfbdf746))
+* **tests:** drop the mp4 sink from the zero-frame sink-naming test ([5b43320](https://github.com/CoreySpohn/eyepiece/commit/5b43320b16999101aea1ec7f2738fcc66fb2ae00))
+
 ## [0.1.0](https://github.com/CoreySpohn/eyepiece/compare/v0.0.1...v0.1.0) (2026-08-12)
 
 
