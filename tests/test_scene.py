@@ -121,3 +121,14 @@ def test_trail_still_takes_a_plain_color():
     res = trail(track, style="#123456")
     assert res.artists["line"].get_color() == "#123456"
     plt.close(res.fig)
+
+
+def test_sky_fan_iwa_disk_sits_under_the_tracks():
+    """The disk is context; a track crossing it must stay visible."""
+    tracks = [(np.linspace(-0.2, 0.2, 50), np.zeros(50))]
+    result = sky_fan(tracks, iwa=0.05)
+    disk = result.artists["ellipse"]
+    assert all(
+        disk.get_zorder() < line.get_zorder() for line in result.artists["lines"]
+    )
+    plt.close(result.ax.figure)

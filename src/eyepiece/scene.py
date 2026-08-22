@@ -249,7 +249,13 @@ def sky_fan(
     if iwa is not None:
         theta = np.linspace(0, 2 * np.pi, 200)
         xc, yc = iwa * np.cos(theta), iwa * np.sin(theta)
-        (ellipse,) = ax.fill(xc, yc, color=_style.neutral(0.15), zorder=2, lw=0)
+        # Under the tracks, not over them. The fill shares the default line
+        # zorder, and being drawn second it used to paint over every track
+        # crossing the disk, so a fan that passed through the inner region
+        # looked like a fan that stopped at it. The shading is context; the
+        # tracks are the data. The outline stays above, since a 0.8-wide
+        # ring marks the boundary without hiding anything.
+        (ellipse,) = ax.fill(xc, yc, color=_style.neutral(0.15), zorder=0.5, lw=0)
         ax.plot(xc, yc, color=_style.neutral(0.4), lw=0.8, zorder=3)
         artists["ellipse"] = ellipse
 
