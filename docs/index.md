@@ -18,6 +18,9 @@ reading once rather than rediscovering per call. The
 {doc}`contract <contract>` page states them, and
 {doc}`viz-convention <viz-convention>` describes how a simulation library
 ships plotting for its own types on top of these primitives.
+{doc}`evidence <evidence>` is the reasoning underneath both: proportionality,
+data ink, layering by value, small multiples, labels on the data, and showing
+mechanism rather than outcome.
 
 ## Installation
 
@@ -137,6 +140,7 @@ about them. The API reference documents every signature.
 :caption: Guides
 
 contract
+evidence
 viz-convention
 ```
 

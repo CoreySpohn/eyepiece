@@ -121,6 +121,16 @@ norm are not an error, they render clipped to the colormap's end colors, and
 the norm is not rescaled. When the data range is expected to move, pin it up
 front with `vmin` and `vmax`, or call the primitive again.
 
+This is deliberate, and the reason is integrity rather than convenience. A scale
+that follows the data redraws every frame at full height, so a quantity that
+falls by an order of magnitude reads as one that never moved. Reusing the first
+draw's norm makes an animation's default behavior honest and makes rescaling
+something the caller has to ask for. The same reasoning applies to axis limits,
+which no primitive rescales after its own call: an animated figure's data scales
+are the caller's contract, and pinning them from the union over all frames is
+part of building the figure rather than part of the frame loop. `record` warns
+when one drifts anyway.
+
 ## Routed keyword arguments
 
 A parameter the primitive owns semantically is a real keyword argument:
@@ -209,6 +219,56 @@ neighbour. A row of images where one panel happens to carry an extent and the
 rest do not should not read as two kinds of figure, and answering "no extent"
 differently per primitive is how that happens. Ask for indices back with
 `ax.set_xticks(range(0, n, step))` after the call if you genuinely want them.
+
+## A size that means a number needs a key
+
+Marker size, opacity, and line width become quantitative channels the moment a
+caller drives them from data, and a reader measures them whether or not anyone
+intended it. Three rules follow.
+
+A size argument names its unit, like every other physical scalar here.
+Matplotlib's `scatter` takes `s` as an AREA in points squared while `plot` takes
+`ms` as a DIAMETER in points, so a helper producing one and a parameter
+consuming the other will square the encoding silently and the figure will still
+render. Naming the parameter for its unit makes the mistake visible at the call
+site.
+
+A channel carries one quantity. Where a second cue has to share it, such as a
+depth swell over a size that already encodes a physical radius, the cue's full
+dynamic range stays a small fraction of the smallest gap the encoded quantity has
+to show, and that fraction is computed rather than estimated.
+
+A non-linear encoding is declared. A geometric size map is often the only legible
+choice, and it stays legitimate exactly as long as the figure carries a key from
+which the reader can recover it. Without one the reader assumes linear.
+
+## Curves are labeled at the data, not in a corner
+
+A legend asks the reader to hold a color in working memory, cross the figure, and
+come back. Below roughly five curves that trade is not worth making, so a
+primitive drawing a small fixed set of named curves labels them in place: at each
+curve's right end where the curves separate there, inside a band where the
+primitive draws filled regions, or at a caller-chosen x otherwise. Labels take
+the curve's own color, which is what makes the word and the mark one object
+rather than two.
+
+A primitive that labels inline exposes the legend as the opt-out, so a caller
+drawing many curves, or composing a small multiple around one shared key, can
+still ask for one. It never solves label placement per draw: a label that moves
+between animation frames is worse than the legend it replaced, which is the same
+reason a "best" legend location is not used.
+
+A label is hidden, not shrunk and not displaced, when its curve's local
+separation falls below about two text heights.
+
+## A whole and its parts are not three peers
+
+When a primitive draws a quantity alongside the components it decomposes into,
+the total is not a third measurement of equal standing. Drawn as three peer lines
+it asserts three independent quantities, and when the components converge the
+lines overprint into a color belonging to none of them. Draw the total as a wide,
+pale envelope beneath its own components: the components stay legible on top, and
+a component sitting inside the envelope is the additive identity made visible.
 
 ## What earns a place in this library
 

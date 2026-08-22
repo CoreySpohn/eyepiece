@@ -224,6 +224,27 @@ and effect share color, within a figure and across every subsequent figure
 of the same document. If the aberration is drawn in one color on the pupil
 panel, the speckle it produces is drawn in that color on the image panel.
 
+The converse does not follow, and getting it wrong is the commoner error.
+Two things that must be TOLD APART take different palette slots even when
+they describe the same object: a truth track and the ensemble around it, a
+model and the data it fits, a chosen candidate and the options it beat.
+Distinguishing them by line width or alpha alone, with the names left in a
+panel title, is the failure mode, because a reader cannot invert "ensemble
+plus truth" into which curve is which.
+
+A cast is per DOCUMENT, and a talk is one document. Two scripts whose
+figures will be seen in the same deck build the same cast, in the same
+order, from a shared module-level list, rather than two casts that happen
+to overlap. A plotting function that declares series of its own registers
+them into the caller's cast; a caller should never have to know another
+library's internal declaration order to avoid a collision.
+
+Cause and effect share color, and where they can, they share an axis. Two
+quantities in a causal relation are drawn on a common axis so the eye links
+them by position rather than by memory. A shared x axis between a score and
+the physical quantity driving it is the alternative to a cross-panel arrow:
+alignment is the link, and it needs no artist.
+
 ## Method: census first
 
 Before writing a plotting module, count. Sweep the library's own example
