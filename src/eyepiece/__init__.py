@@ -47,6 +47,7 @@ from eyepiece.layout import (
 )
 from eyepiece.output import save_fig
 from eyepiece.profiles import plot_contrast_curve, plot_radial, radial_profile_plot
+from eyepiece.provenance import provenance_text, stamp
 from eyepiece.scene import fading_track, sky_fan, trail
 from eyepiece.schematic import GLYPHS, rail, schematic
 from eyepiece.stats import corner, corner_overlay, cov_ellipse, hist_vs_pdf
@@ -80,6 +81,7 @@ __all__ = [
     "label_lod",
     "plot_contrast_curve",
     "plot_radial",
+    "provenance_text",
     "radial_profile_plot",
     "rail",
     "record",
@@ -87,6 +89,7 @@ __all__ = [
     "schematic",
     "show_field",
     "sky_fan",
+    "stamp",
     "trail",
     "triptych",
 ]
