@@ -237,14 +237,81 @@ def _sink(writer, fig, path, dpi, counter):
     writer.finish()
 
 
+def _scale_signature(fig):
+    """Every axes' data scales: the numbers a reader converts into a size.
+
+    Axis limits and image/collection norms, keyed by axes index. This is
+    deliberately not the geometry (position, size); geometry stability is
+    already guaranteed by the `savefig.bbox` override and the layout
+    freeze. This is the other half: what the axes claim the numbers MEAN.
+    """
+    signature = {}
+    for index, ax in enumerate(fig.axes):
+        entry = {"x": tuple(ax.get_xlim()), "y": tuple(ax.get_ylim())}
+        if hasattr(ax, "get_zlim"):
+            entry["z"] = tuple(ax.get_zlim())
+        norms = []
+        for artist in [*ax.images, *ax.collections]:
+            get_clim = getattr(artist, "get_clim", None)
+            if get_clim is None:
+                continue
+            try:
+                norms.append(tuple(float(v) for v in get_clim()))
+            except (TypeError, ValueError):
+                continue
+        entry["color"] = tuple(norms)
+        signature[index] = entry
+    return signature
+
+
+def _span_ratio(before, after):
+    """How many times bigger `after`'s span is than `before`'s, or None."""
+    old = abs(before[1] - before[0])
+    new = abs(after[1] - after[0])
+    if old == 0.0 or new == 0.0:
+        return None
+    ratio = new / old
+    return ratio if abs(ratio - 1.0) > 0.01 else None
+
+
+def _drift_warnings(first, current):
+    """Human-readable descriptions of every scale that moved."""
+    messages = []
+    for index, before in first.items():
+        after = current.get(index)
+        if after is None:
+            continue
+        for key in ("x", "y", "z"):
+            if key not in before or key not in after:
+                continue
+            ratio = _span_ratio(before[key], after[key])
+            if ratio is not None:
+                messages.append(
+                    f"axes[{index}] {key}-limits {before[key]} -> {after[key]} "
+                    f"({ratio:.2f}x the original span)"
+                )
+        pairs = zip(before["color"], after["color"], strict=False)
+        for slot, (old, new) in enumerate(pairs):
+            ratio = _span_ratio(old, new)
+            if ratio is not None:
+                messages.append(
+                    f"axes[{index}] color norm #{slot} {old} -> {new} "
+                    f"({ratio:.2f}x the original span)"
+                )
+    return messages
+
+
 class _Recorder:
     """Frame grabber yielded by `record`; fans one figure out to every sink."""
 
-    def __init__(self, fig, writers, counter):
+    def __init__(self, fig, writers, counter, allow_rescale=False):
         self.fig = fig
         self.writers = writers
         self._counter = counter
         self._layout_frozen = False
+        self._allow_rescale = allow_rescale
+        self._first_scales = None
+        self._warned = False
 
     def frame(self):
         """Grab the figure exactly as it stands now, into every open sink.
@@ -260,10 +327,42 @@ class _Recorder:
         for writer in self.writers:
             writer.grab_frame(facecolor=facecolor)
         self._counter["frames"] += 1
+        self._check_scales()
         if not self._layout_frozen:
             self.fig.canvas.draw()
             self.fig.set_layout_engine("none")
             self._layout_frozen = True
+
+    def _check_scales(self):
+        """Warn once if any axes changed what its numbers mean mid-recording.
+
+        A reader cannot separate a change in the data from a change in the
+        drawing, so a scale that follows the data redraws every frame at
+        full height and a quantity that fell by an order of magnitude reads
+        as one that never moved. That failure is silent -- the animation
+        renders perfectly -- so it is caught here rather than in review.
+        """
+        if self._allow_rescale or self._warned:
+            return
+        current = _scale_signature(self.fig)
+        if self._first_scales is None:
+            self._first_scales = current
+            return
+        messages = _drift_warnings(self._first_scales, current)
+        if not messages:
+            return
+        self._warned = True
+        warnings.warn(
+            "data scales changed during recording, so a quantity is drawn at "
+            "a different size in different frames and the change will read as "
+            "a change in the data: "
+            + "; ".join(messages)
+            + ". Pin the limits from the union over all frames before the "
+            "frame loop, or pass allow_rescale=True if the rescaling is the "
+            "point.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
 
     def hold(self, n):
         """Repeat the current figure for `n` frames, to dwell on a moment.
@@ -277,7 +376,7 @@ class _Recorder:
 
 
 @contextmanager
-def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
+def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=False):
     """Open every output file at once and record `fig` frame by frame.
 
     Use this when the frames come from a loop the caller already owns (a
@@ -323,6 +422,12 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
             replaces that crop instead of adding to it (ffmpeg honors the
             last `-vf` only), which reopens the odd-dimension h264 failure;
             include the crop in your own filter chain if you need one.
+        allow_rescale: Silence the scale-drift warning. Every axes' limits
+            and color norms are fingerprinted on the first frame and
+            compared on each later one, because an axis that follows the
+            data redraws every frame at full height and hides the very
+            change the animation exists to show. Pass True when the
+            rescaling is deliberate.
 
     Yields:
         A recorder with `.frame()` and `.hold(n)`.
@@ -353,7 +458,7 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None):
             stack.enter_context(
                 _sink(writer, fig, str(path), _sink_dpi(path, dpi), counter)
             )
-        yield _Recorder(fig, writers, counter)
+        yield _Recorder(fig, writers, counter, allow_rescale=allow_rescale)
         if not counter["frames"]:
             # Raised here rather than per sink so the message can name them
             # all. It travels out through the sinks, which take their

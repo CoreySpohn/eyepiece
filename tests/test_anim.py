@@ -8,6 +8,7 @@ silently producing broken output.
 
 import logging
 import shutil
+import warnings
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -467,4 +468,59 @@ def test_recording_no_frames_names_every_sink(tmp_path):
     message = str(excinfo.value)
     for p in paths:
         assert str(p) in message
+    plt.close(fig)
+
+
+def test_record_warns_when_an_axis_rescales_mid_recording(tmp_path):
+    # The bug this guard exists for: a quantity that collapses by ~9x, with
+    # the axis following it, is redrawn full-height every frame and reads as
+    # a quantity that never changed. The animation renders perfectly, so
+    # nothing catches it except a reader who checks the tick labels.
+    fig, ax = plt.subplots()
+    (line,) = ax.plot([0, 1], [0, 5.3])
+    with pytest.warns(RuntimeWarning, match="data scales changed"):
+        with record(fig, tmp_path / "drift.gif", fps=5) as rec:
+            for peak in (5.3, 1.1, 0.6):
+                line.set_ydata([0, peak])
+                ax.relim()
+                ax.autoscale_view()
+                rec.frame()
+    plt.close(fig)
+
+
+def test_record_is_quiet_when_limits_are_pinned(tmp_path):
+    fig, ax = plt.subplots()
+    (line,) = ax.plot([0, 1], [0, 5.3])
+    ax.set_ylim(0, 5.6)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with record(fig, tmp_path / "pinned.gif", fps=5) as rec:
+            for peak in (5.3, 1.1, 0.6):
+                line.set_ydata([0, peak])
+                rec.frame()
+    plt.close(fig)
+
+
+def test_record_allow_rescale_silences_the_warning(tmp_path):
+    fig, ax = plt.subplots()
+    (line,) = ax.plot([0, 1], [0, 5.3])
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with record(fig, tmp_path / "ok.gif", fps=5, allow_rescale=True) as rec:
+            for peak in (5.3, 0.6):
+                line.set_ydata([0, peak])
+                ax.relim()
+                ax.autoscale_view()
+                rec.frame()
+    plt.close(fig)
+
+
+def test_record_warns_on_a_drifting_color_norm(tmp_path):
+    fig, ax = plt.subplots()
+    im = ax.imshow(np.arange(16.0).reshape(4, 4), extent=(0, 1, 0, 1))
+    with pytest.warns(RuntimeWarning, match="color norm"):
+        with record(fig, tmp_path / "norm.gif", fps=5) as rec:
+            rec.frame()
+            im.set_clim(0, 120.0)
+            rec.frame()
     plt.close(fig)
