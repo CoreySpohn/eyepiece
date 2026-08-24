@@ -163,3 +163,37 @@ def test_cov_ellipse_scales_with_sigma():
     r2 = cov_ellipse((0, 0), np.eye(2), ax=r1.ax, n_sigma=2)
     assert r2.artists["ellipse"].width == pytest.approx(2 * r1.artists["ellipse"].width)
     plt.close(r1.fig)
+
+
+def test_cov_ellipse_label_true_names_the_sigma_level():
+    fig, ax = plt.subplots()
+    res = cov_ellipse(
+        [0.0, 0.0], [[4.0, 0.0], [0.0, 1.0]], ax=ax, n_sigma=2, label=True
+    )
+    assert res.artists["text"].get_text() == "2 sigma"
+    plt.close(fig)
+
+
+def test_cov_ellipse_label_accepts_a_custom_string():
+    fig, ax = plt.subplots()
+    res = cov_ellipse([0.0, 0.0], [[1.0, 0.0], [0.0, 1.0]], ax=ax, label="95% region")
+    assert res.artists["text"].get_text() == "95% region"
+    plt.close(fig)
+
+
+def test_cov_ellipse_without_a_label_draws_no_text():
+    fig, ax = plt.subplots()
+    res = cov_ellipse([0.0, 0.0], [[1.0, 0.0], [0.0, 1.0]], ax=ax)
+    assert "text" not in res.artists
+    plt.close(fig)
+
+
+def test_cov_ellipse_label_lands_on_the_curve():
+    """The label sits at the semi-major tip, not at the center or adrift."""
+    fig, ax = plt.subplots()
+    res = cov_ellipse(
+        [0.0, 0.0], [[9.0, 0.0], [0.0, 1.0]], ax=ax, n_sigma=1, label=True
+    )
+    x, y = res.artists["text"].xy
+    assert abs(abs(x) - 3.0) < 1e-9 and abs(y) < 1e-9
+    plt.close(fig)

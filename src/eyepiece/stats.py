@@ -275,7 +275,17 @@ def hist_vs_pdf(
     return PlotResult(ax=ax, artists={"hist": hist, "line": line})
 
 
-def cov_ellipse(mean2, cov22, *, ax=None, n_sigma=1, color=None, ellipse_kw=None):
+def cov_ellipse(
+    mean2,
+    cov22,
+    *,
+    ax=None,
+    n_sigma=1,
+    color=None,
+    label=None,
+    ellipse_kw=None,
+    text_kw=None,
+):
     """Draw an n-sigma covariance ellipse from a 2D mean and covariance.
 
     Args:
@@ -285,11 +295,23 @@ def cov_ellipse(mean2, cov22, *, ax=None, n_sigma=1, color=None, ellipse_kw=None
         n_sigma: Number of standard deviations the ellipse spans; the
             ellipse's width and height scale linearly with this.
         color: Edge color override; None uses `_style.color(0)`.
+        label: Text naming the interval, written on the ellipse itself.
+            True writes "<n> sigma" from `n_sigma`; a string is used as
+            given; None writes nothing.
+
+            An ellipse is a claim about an interval, and an interval nobody
+            names is not one a reader can check: the same outline can be one
+            standard deviation, two, or a 95 percent region, and the drawing
+            is identical. Nothing on a bare ellipse distinguishes them, so a
+            reader either asks or assumes. The label goes on the curve rather
+            than into a legend because that is where the reader is looking
+            when the question occurs to them.
         ellipse_kw: Extra kwargs passed to `Ellipse`, applied last.
+        text_kw: Extra kwargs passed to the label's `ax.annotate`.
 
     Returns:
         A `PlotResult` with artist `"ellipse"` (the `Ellipse` patch, already
-        added to `ax`).
+        added to `ax`) and, when `label` is given, `"text"` (the `Text`).
     """
     mean = np.asarray(mean2, dtype=float)
     cov = np.asarray(cov22, dtype=float)
@@ -310,4 +332,22 @@ def cov_ellipse(mean2, cov22, *, ax=None, n_sigma=1, color=None, ellipse_kw=None
     )
     ax.add_patch(ell)
 
-    return PlotResult(ax=ax, artists={"ellipse": ell})
+    artists = {"ellipse": ell}
+    if label is not None and label is not False:
+        text = f"{n_sigma:g} sigma" if label is True else str(label)
+        # the end of the semi-major axis, so the label sits on the curve
+        # rather than floating beside it
+        major = n_sigma * np.sqrt(vals[1]) * vecs[:, 1]
+        tip = mean + (major if major[1] >= 0 else -major)
+        tkw = {
+            "fontsize": 8,
+            "color": ekw.get("color"),
+            "ha": "center",
+            "va": "bottom",
+            "textcoords": "offset points",
+            "xytext": (0, 3),
+            **(text_kw or {}),
+        }
+        artists["text"] = ax.annotate(text, xy=tuple(tip), **tkw)
+
+    return PlotResult(ax=ax, artists=artists)
