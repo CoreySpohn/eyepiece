@@ -6,8 +6,12 @@ change in the data, so every property of the drawing is a claim, whether or not
 anyone intended to make it. This page is the reasoning; the
 [contract](contract.md) is the API rules that follow from it.
 
-The vocabulary is Edward Tufte's. The specific failures below are ones this
-library has actually shipped and then fixed, which is why they are written down.
+Two traditions meet here and they do not always agree. The vocabulary of
+graphical integrity is Edward Tufte's, argued from examples. The account of what
+a reader can actually decode is Cleveland and McGill's, measured from
+experiments. Where they conflict, the measured result wins for a figure whose
+job is measurement. The specific failures below are ones this library has
+actually shipped and then fixed, which is why they are written down.
 
 ## Provenance
 
@@ -141,16 +145,25 @@ Two rules about color follow:
 paper is one document. Declare the cast once and thread it through every figure,
 including figures built by different scripts.
 
-**Two views of one entity stay in one hue and separate by value.** A posterior
-ensemble and the truth it brackets are not two different kinds of thing.
-Separating them by line width alone, with the names left in a panel title, asks
-the reader to read a difference the palette says is not there.
+**Two things a reader must tell apart take different hues, even when they
+describe one object.** A posterior ensemble and the truth it brackets are one
+system, but the reader's task is to say which curve is which, and that is a
+categorical judgment. Hue is the channel for categories precisely because it
+has no natural ordering: it separates kinds well and carries magnitudes badly.
+Value and saturation are the reverse. Separating a truth from its ensemble by
+line width or by value alone, with the names left in a panel title, asks the
+reader to invert "ensemble plus truth" into which curve is which, and nothing
+on the panel supports the inversion.
 
 An ensemble is drawn so that its darkness encodes its density. Set the per-curve
 alpha from the count rather than by eye, and check that the saturation carries
 information: a bundle at full saturation in every frame would look identical with
 five draws or five hundred, so the ink has stopped reporting the spread. Opacity
-that a reader interprets as probability has to be the probability.
+that a reader interprets as probability has to be the probability. Even when it
+is, opacity is the weakest quantitative channel there is, so a probability the
+figure depends on belongs on position: order the draws and draw the interval,
+or let the mass be carried by the density of equally weighted draws, which is a
+count and reads as one.
 
 ## Time on an axis
 
@@ -219,19 +232,55 @@ A process that loops is drawn as a grid, not as a line. A procedure that
 repeats carries two indices, the stage within an iteration and the iteration
 itself. Give the stages the rows and the iterations the columns.
 
+## What a reader can decode
+
+Every rule here assumes a reader who can recover the quantity from the mark.
+That assumption has been tested. Ranked by how accurately people read a
+magnitude off them, the channels are:
+
+1. Position along a common scale
+2. Position along nonaligned scales
+3. Length, direction, angle
+4. Area
+5. Volume, curvature
+6. Shading, color saturation
+
+Ranks three, five and six are ties rather than strict orderings, and the gaps
+are large: position beats length by roughly 1.4 to 2.5 times in accuracy, and
+beats angle by about two, with large errors several times more frequent on the
+weaker channel.
+
+This ordering is why a channel budget is not a list of equal slots. A quantity
+moved from position to area is not relocated, it is degraded, and a quantity on
+saturation ranks rather than measures however carefully it was computed. Before
+spending a channel, ask which one is left and whether a reader can decode it. A
+variable nobody can read is not a variable the panel carries.
+
+Two consequences run against the intuition that furniture is waste. A frame of
+known size drawn around two bars converts a length comparison into a position
+comparison against a common scale, one rank better, and it makes a difference
+visible that the bare bars do not. And a non-linear encoding is not rescued by
+declaring it, because the correction a reader applies to an area varies from
+person to person; the remedy is to encode the quantity as a length instead.
+
+The ordering describes reading magnitudes. Hue sits outside it, having no
+unambiguous ordering, which makes it right for naming categories and wrong for
+carrying amounts.
+
 ## How many variables the panel carries
 
 A panel is a budget and the unit is the variable. Count the distinct quantities
 a reader can recover from one still frame and name the channel each one uses.
 Position on a flat surface costs two channels and counts two. A scalar printed
 in a title counts one. Opacity, marker size, marker shape, tick spacing along a
-path, and the length of an axis spine are each a channel.
+path, and the length of an axis spine are each a channel. They are not equally
+good, and the ordering above decides which to spend first.
 
 Two things do not count. A cue that re-encodes a quantity the panel already
 draws adds nothing. A landmark derived from the drawn geometry is a reading aid
 on a quantity already present.
 
-Four to six is the working range for a scientific panel. A panel carrying two is
+Four to six is this workspace's working range for a scientific panel, a habit rather than a finding. A panel carrying two is
 under-loaded, and the usual reason is that the missing variables are being
 supplied by the reader from memory or from the caption. Adding one back normally
 makes the panel easier to read, because context is what makes a mark
