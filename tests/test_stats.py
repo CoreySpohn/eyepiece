@@ -197,3 +197,39 @@ def test_cov_ellipse_label_lands_on_the_curve():
     x, y = res.artists["text"].xy
     assert abs(abs(x) - 3.0) < 1e-9 and abs(y) < 1e-9
     plt.close(fig)
+
+
+def test_corner_diagonal_and_overlay_share_the_same_normalization():
+    """The overlay lands at the diagonal's scale instead of flatlining.
+
+    `corner` drew raw counts while `corner_overlay` drew a density, so an
+    overlay onto a `corner` diagonal sat orders of magnitude below the axis
+    it was drawn into and read as a flat line at zero.
+    """
+    samples = _samples(n=2000)
+    base = corner(samples, ["a", "b"])
+    diag = base.axes[0, 0]
+    base_peak = max(p.get_path().vertices[:, 1].max() for p in base.artists["hist"][0])
+    corner_overlay([samples], ["a", "b"], axes=base.axes)
+    overlay_peak = max(
+        p.get_path().vertices[:, 1].max()
+        for p in diag.patches
+        if p not in base.artists["hist"][0]
+    )
+    # same data drawn twice -> the two curves must sit on top of each other
+    assert overlay_peak == pytest.approx(base_peak, rel=0.02)
+    _, hi = diag.get_ylim()
+    assert overlay_peak > 0.5 * hi  # visible, not pinned to the floor
+    plt.close(base.fig)
+
+
+def test_corner_diagonal_is_unit_area():
+    """The drawn diagonal matches numpy's density histogram, not its counts."""
+    samples = _samples(n=4000)
+    res = corner(samples, ["a"], bins=30)
+    drawn = res.artists["hist"][0][0].get_path().vertices[:, 1].max()
+    density, _ = np.histogram(samples["a"], bins=30, density=True)
+    counts, _ = np.histogram(samples["a"], bins=30)
+    assert drawn == pytest.approx(density.max(), rel=1e-6)
+    assert drawn != pytest.approx(counts.max(), rel=0.5)  # not the old scale
+    plt.close(res.fig)

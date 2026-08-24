@@ -95,6 +95,15 @@ def corner(
         `artists["line"]` collects the truth guide lines, when `truths` is
         given.
 
+    Note:
+        The diagonal histograms are normalized to unit area (`density=True`),
+        not drawn as raw counts, so `corner_overlay` can lay a second dataset
+        onto the same diagonal at a comparable scale and so that datasets of
+        different sample size compare on shape rather than on how many draws
+        each happens to carry. The diagonal's y ticks are removed either way:
+        the height of a marginal is not a quantity the reader is meant to
+        read off.
+
     Raises:
         ValueError: If both `title` and `axes` are given.
     """
@@ -123,8 +132,16 @@ def corner(
         for j in range(i + 1):
             ax = axes[i, j]
             if i == j:
+                # density, not counts: `corner_overlay` normalizes the same
+                # way, so an overlay lands on the diagonal at the scale the
+                # underlying histogram set. Counts here put the two curves
+                # orders of magnitude apart and flatlined the overlay.
                 _, _, patches = ax.hist(
-                    data[i], bins=bins, color=hist_color, histtype="step"
+                    data[i],
+                    bins=bins,
+                    color=hist_color,
+                    histtype="step",
+                    density=True,
                 )
                 hists.append(patches)
                 if truths is not None and params[i] in truths:

@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from eyepiece.layout import SourceStyles
-from eyepiece.scene import fading_track, sky_fan, trail
+from eyepiece.scene import WEIGHT_FLOOR, fading_track, sky_fan, trail
 
 
 def _orbit3d(n=50):
@@ -132,3 +132,21 @@ def test_sky_fan_iwa_disk_sits_under_the_tracks():
         disk.get_zorder() < line.get_zorder() for line in result.artists["lines"]
     )
     plt.close(result.ax.figure)
+
+
+def test_sky_fan_weight_to_alpha_map_is_the_documented_one():
+    """Alpha is base * (WEIGHT_FLOOR + weight), not base * weight.
+
+    The floor is deliberate -- a zero-weight track stays faintly visible --
+    but it makes opacity a non-proportional encoding, so the map is pinned
+    here and spelled out in the docstring rather than left implicit.
+    """
+    t = np.linspace(0, 1, 5)
+    tracks = [(t, t)] * 3
+    base = 0.25
+    res = sky_fan(tracks, weights=[0.0, 0.5, 1.0])
+    got = [line.get_alpha() for line in res.artists["lines"]]
+    want = [min(1.0, base * (WEIGHT_FLOOR + w)) for w in (0.0, 0.5, 1.0)]
+    assert got == pytest.approx(want)
+    assert got[0] > 0.0  # the floor keeps a zero-weight track on the page
+    plt.close(res.ax.figure)

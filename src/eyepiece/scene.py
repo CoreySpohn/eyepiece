@@ -22,6 +22,10 @@ from matplotlib.colors import to_rgb
 from eyepiece import _style
 from eyepiece._result import PlotResult
 
+#: Alpha floor in `sky_fan`'s weight-to-opacity map, so a zero-weight track
+#: stays faintly visible instead of disappearing from the fan entirely.
+WEIGHT_FLOOR = 0.35
+
 
 def _viewer_vectors(positions, azim_deg, elev_deg):
     """Viewer position and the per-point object/object-viewer vectors.
@@ -199,8 +203,15 @@ def sky_fan(
         colors: Optional list of per-track color overrides, same length as
             `tracks`. None defaults every track to `_style.color(k)`.
         weights: Optional list of per-track weights, same length as
-            `tracks`, scaling each track's alpha. None weights every track
-            equally.
+            `tracks`, setting each track's alpha. None weights every track
+            equally. The map is deliberately NOT proportional: a track's
+            alpha is `base_alpha * (WEIGHT_FLOOR + weight)`, clipped at 1,
+            with `WEIGHT_FLOOR = 0.35`. A zero-weight track therefore still
+            draws at 35 percent of the base alpha rather than vanishing.
+            Read the fan as "which region is occupied", not as a
+            quantitative readout of weight -- opacity is a weak perceptual
+            channel, and the floor makes it weaker still. Encode a weight
+            you want the reader to compare on position or length instead.
         iwa: Optional inner-working-angle radius, in the same units as
             `tracks`; drawn as a shaded disk with an edge.
         data: Optional `(x, y, err)` tuple of array-likes for observed
@@ -240,7 +251,7 @@ def sky_fan(
     lines = []
     for k, (x, y) in enumerate(tracks):
         c = _style.color(k, colors[k] if colors is not None else None)
-        line_alpha = min(1.0, base_alpha * (0.35 + resolved_weights[k]))
+        line_alpha = min(1.0, base_alpha * (WEIGHT_FLOOR + resolved_weights[k]))
         line_kw = {"color": c, "alpha": line_alpha, **kw}
         (line,) = ax.plot(np.asarray(x), np.asarray(y), **line_kw)
         lines.append(line)
