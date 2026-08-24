@@ -49,9 +49,14 @@ boundary is the result, and the figure says so rather than presenting an
 interior optimum it did not find.
 
 The stamp itself is furniture: the smallest legible type, the furniture rank in
-the value ordering, one fixed corner, never competing with the data. Write the
-same fields into the file metadata as well, because the visible line is lost to
-a crop and the metadata is lost to a screenshot.
+the value ordering, one fixed corner, never competing with the data. The same
+fields go into the file metadata as well, because the visible line is lost to a
+crop and the metadata is lost to a screenshot, and a figure outlives the
+conversation that explained it. `stamp` writes both channels: the visible line,
+and a structured payload that `save_fig` embeds in the file. A figure that has
+been cropped, renamed and pasted into a document still answers what produced it.
+Nothing is written for an unstamped figure, since a file claiming no provenance
+is honest and one claiming invented provenance is not.
 
 Constants are imported, not typed. A physical constant written as a literal
 inside a plotting script is untraceable by construction, and two scripts that

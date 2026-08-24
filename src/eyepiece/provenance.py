@@ -18,6 +18,7 @@ lost to a screenshot. Writing both is cheap.
 """
 
 import datetime as _datetime
+import json
 import subprocess
 from pathlib import Path
 
@@ -46,6 +47,72 @@ def _git_short_sha(anchor):
     except (OSError, subprocess.SubprocessError):
         return None
     return out.stdout.strip() or None
+
+
+# Where `stamp` leaves the structured payload for `save_fig` to embed. The
+# visible line and the file metadata are the same facts in two channels, so
+# a caller should not have to supply them twice.
+PAYLOAD_ATTR = "_eyepiece_provenance"
+
+# The gid marking the stamp's Text artist, so a figure can be asked whether
+# it carries provenance without parsing what it says.
+STAMP_GID = "eyepiece-provenance"
+
+# Each writer accepts a different key vocabulary: PNG takes arbitrary tEXt
+# keys, PDF only its fixed infodict set (an unknown key warns), and the SVG
+# writer RAISES on one. So the payload is routed per format rather than
+# handed to every backend unchanged.
+_METADATA_KEYS = {
+    ".png": ("Software", "Comment"),
+    ".pdf": ("Creator", "Subject"),
+    ".svg": ("Creator", "Description"),
+}
+
+
+def provenance_fields(*, script=None, seed=None, note=None, date=None, sha=None):
+    """The stamp's contents as structured data, for the file-metadata channel.
+
+    The same facts as `provenance_text`, unjoined, so a reader parsing a
+    file does not have to split a display string back apart.
+
+    Returns:
+        A dict with the supplied fields only; absent fields are omitted
+        rather than set to None, so a consumer can distinguish "no seed"
+        from "seed recorded as null".
+    """
+    fields = {}
+    if script is not None:
+        fields["script"] = Path(script).name
+        if sha is None:
+            sha = _git_short_sha(script)
+    if sha:
+        fields["sha"] = sha
+    fields["date"] = date or _datetime.date.today().isoformat()
+    if seed is not None:
+        fields["seed"] = seed
+    if note:
+        fields["note"] = str(note)
+    return fields
+
+
+def file_metadata(fields, suffix):
+    """Map a provenance payload onto one format's metadata key vocabulary.
+
+    Args:
+        fields: The dict from `provenance_fields`.
+        suffix: The output file suffix, including the dot.
+
+    Returns:
+        A dict suitable for `savefig(metadata=...)` for that format, or an
+        empty dict when the format has no supported key vocabulary. An
+        unsupported format is not an error: the visible stamp is still on
+        the figure, and only the second channel is unavailable.
+    """
+    keys = _METADATA_KEYS.get(str(suffix).lower())
+    if not keys or not fields:
+        return {}
+    software_key, payload_key = keys
+    return {software_key: "eyepiece", payload_key: json.dumps(fields, sort_keys=True)}
 
 
 def provenance_text(*, script=None, seed=None, note=None, date=None, sha=None):
@@ -94,6 +161,10 @@ def stamp(fig, *, script=None, seed=None, note=None, date=None, sha=None, size=6
         size: Font size in points. The default is deliberately small: this
             is furniture and must never compete with the data.
 
+    Writes both channels the module docstring describes: the visible line
+    here, and the structured payload stashed for `save_fig` to embed in the
+    file's metadata.
+
     Returns:
         The `matplotlib.text.Text` artist, or None when there is nothing to
         say.
@@ -101,7 +172,14 @@ def stamp(fig, *, script=None, seed=None, note=None, date=None, sha=None, size=6
     text = provenance_text(script=script, seed=seed, note=note, date=date, sha=sha)
     if not text:
         return None
-    return fig.text(
+    # The structured form rides along on the figure so `save_fig` can write
+    # the file-metadata channel without the caller repeating themselves.
+    setattr(
+        fig,
+        PAYLOAD_ATTR,
+        provenance_fields(script=script, seed=seed, note=note, date=date, sha=sha),
+    )
+    artist = fig.text(
         0.005,
         0.004,
         text,
@@ -111,3 +189,5 @@ def stamp(fig, *, script=None, seed=None, note=None, date=None, sha=None, size=6
         color=_style.neutral(0.45),
         zorder=0.1,
     )
+    artist.set_gid(STAMP_GID)
+    return artist

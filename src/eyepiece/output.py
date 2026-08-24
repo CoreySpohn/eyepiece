@@ -19,6 +19,8 @@ from pathlib import Path
 
 import hwostyle
 
+from eyepiece import provenance as _provenance
+
 
 def save_fig(fig, name, *, dir=None, anchor=None, **overrides):
     """Save a figure using the active hwostyle mode's savefig policy.
@@ -44,6 +46,10 @@ def save_fig(fig, name, *, dir=None, anchor=None, **overrides):
             when `dir` is not given.
         **overrides: Extra kwargs passed to `fig.savefig`, applied last.
 
+    A figure carrying a provenance stamp (see `eyepiece.stamp`) also gets
+    that provenance written into the file's own metadata, in whichever key
+    vocabulary the format accepts. An explicit `metadata=` override wins.
+
     Returns:
         The `pathlib.Path` the figure was written to.
     """
@@ -63,6 +69,15 @@ def save_fig(fig, name, *, dir=None, anchor=None, **overrides):
 
     kwargs = hwostyle.save_defaults()
     kwargs["facecolor"] = fig.get_facecolor()
+    # The second provenance channel. A stamped figure carries its structured
+    # payload; embedding it here means the file still answers "what made
+    # this?" after it has been cropped out of its own visible stamp. Nothing
+    # is manufactured for an unstamped figure -- a file that claims no
+    # provenance is honest, one that claims invented provenance is not.
+    payload = getattr(fig, _provenance.PAYLOAD_ATTR, None)
+    metadata = _provenance.file_metadata(payload, path.suffix)
+    if metadata:
+        kwargs["metadata"] = {**metadata, **kwargs.get("metadata", {})}
     kwargs.update(overrides)
 
     fig.savefig(path, **kwargs)
