@@ -21,6 +21,30 @@ import eyepiece
 from eyepiece.anim import PRESETS, _make_writer, _sink_dpi, animate, record
 
 
+def _ffmpeg_available():
+    """Mirror `_resolve_ffmpeg`'s search order, not just PATH.
+
+    The guards below have to agree with the library about whether an mp4 can
+    be written. Keying them on `shutil.which` alone was wrong once CI grew an
+    ffmpeg from the `imageio-ffmpeg` wheel: PATH stays empty, the library
+    resolves a binary anyway, and the two guards disagree in opposite
+    directions -- one skipping a regression that could have run, the other
+    demanding a RuntimeError that no longer comes.
+    """
+    if shutil.which(matplotlib.rcParams.get("animation.ffmpeg_path", "ffmpeg")):
+        return True
+    if shutil.which("ffmpeg"):
+        return True
+    try:
+        import imageio_ffmpeg  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+HAS_FFMPEG = _ffmpeg_available()
+
+
 def _fig_line():
     fig, ax = plt.subplots()
     (line,) = ax.plot([], [])
@@ -304,6 +328,7 @@ class _SnappingManager:
         self.fig.set_size_inches(w / self.fig.dpi, h / self.fig.dpi, forward=False)
 
 
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
 def test_record_ignores_a_backend_that_snaps_the_figure_size(tmp_path):
     # 11.5in at 130dpi is 1495px, odd, so the mp4 writer shrinks the figure
     # to 1494px and restores that size before every grab -- while the frame
@@ -432,7 +457,7 @@ def test_dark_figure_frame_is_not_saved_on_white(tmp_path):
     plt.close(fig)
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs ffmpeg")
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
 def test_stale_ffmpeg_path_falls_through_and_is_restored(tmp_path):
     fig, _ = _fig_line()
     stale = str(tmp_path / "no-such-ffmpeg")
@@ -445,7 +470,7 @@ def test_stale_ffmpeg_path_falls_through_and_is_restored(tmp_path):
     plt.close(fig)
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is not None, reason="ffmpeg present")
+@pytest.mark.skipif(HAS_FFMPEG, reason="ffmpeg present")
 def test_mp4_without_ffmpeg_raises_actionable(tmp_path):
     fig, _ = _fig_line()
     with pytest.raises(RuntimeError, match=r"imageio-ffmpeg|apt_packages|ffmpeg"):

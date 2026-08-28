@@ -21,7 +21,7 @@ dependencies = ["matplotlib>=3.8", "numpy", "hwostyle>=1.3.0"]
 [project.optional-dependencies]
 hwo = ["hwoutils"]
 docs = ["sphinx", "myst-nb", "sphinx-book-theme", "sphinx-autoapi", "sphinx_autodoc_typehints", "ipython", "imageio-ffmpeg"]
-test = ["pytest", "pytest-cov"]
+test = ["pytest", "pytest-cov", "imageio-ffmpeg"]
 dev = ["pre-commit"]
 
 [project.urls]
