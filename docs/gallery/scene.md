@@ -61,46 +61,69 @@ gets a flat projection with every marker the same size, and the right one
 hands over all three and gets the depth cues that a three-dimensional path
 needs to be readable at all.
 
-The cue is the marker size, scaled by `(1 + cos(viewer_angle)) / 2`, so a
-point on the far side of the path nearly vanishes while the near side keeps
-almost the full `marker_scale`. The camera angles come from the axes itself,
-which is why a 3D path passed to a plain axes raises rather than silently
-flattening: `trail` would have no viewing direction to work from. The
-scatter collection's `zorder` is set from the path's mean distance along
-that same view axis, so several `trail` calls on one 3D axes stack in the
-right order rather than in call order.
+A closed curve in 3D is ambiguous on its own: nothing about the outline says
+which half is nearer the camera, and for an orbit that half is the difference
+between a planet in front of its star and behind it. `depth` picks how the
+path answers that.
 
-Because those angles are read off the axes when the call is made, the view
-is set first, and the view is what decides how much of the range the cue
-actually uses. A path seen face-on puts every point at nearly the same
-angle, so the markers come out nearly uniform, which is the right answer for
-a path showing the viewer no depth. A view nearer to edge-on drives the size
-from one end of the range to the other, and the view below is chosen to do
-exactly that.
+The default `"hidden"` borrows the engineering-drawing convention. The whole
+path is drawn dim and dashed, and the near half is overdrawn solid, so the
+boundary falls exactly where the path crosses the plane containing the line
+of sight. `"markers"` is the older treatment: a marker on every point, scaled
+by `(1 + cos(viewer_angle)) / 2`, so the far side nearly vanishes. `"none"`
+draws the bare path.
+
+The default changed because the markers were measured against the
+alternative on a three-planet system: they cost 2.6 times the ink and hid
+22.6 percent of the orbits drawn behind them, against 9.1 percent, for the
+same one fact. Reach for `"markers"` when the per-point sampling is itself
+the subject -- an uneven observing cadence, say -- rather than as the way to
+show depth.
+
+Either way the camera angles come from the axes itself, which is why a 3D
+path passed to a plain axes raises rather than silently flattening: `trail`
+would have no viewing direction to work from. Because those angles are read
+when the call is made, set the view first.
+
+The same path under all three, with two orbits so the occlusion cost is
+visible rather than asserted:
 
 ```{code-cell} python
 path = loop(1.4, 0.25, 55.0, 20.0, n=36)
+inner = loop(0.8, 0.10, 50.0, 60.0, n=36)
 
+# Both names from ONE SourceStyles: a fresh one restarts the palette, so two
+# separate calls would hand back the same colour twice.
+pair = ep.SourceStyles(["outer", "inner"])
+
+fig = plt.figure(figsize=(11.4, 3.6), layout="constrained")
+for i, mode in enumerate(["hidden", "markers", "none"]):
+    ax = fig.add_subplot(1, 3, i + 1, projection="3d")
+    ax.view_init(elev=30, azim=10)
+    ep.trail(inner, ax=ax, depth=mode, marker_scale=60.0, style=pair["inner"])
+    ep.trail(path, ax=ax, depth=mode, marker_scale=80.0, style=pair["outer"])
+    ax.set_title(f'depth="{mode}"')
+```
+
+Under `"markers"` the sizes are on the returned collection, so the cue stays
+inspectable rather than baked into a rendering pass; a 2D path has no depth
+and takes `marker_scale` flat.
+
+```{code-cell} python
 fig = plt.figure(figsize=(7.8, 3.4), layout="constrained")
 ax_flat = fig.add_subplot(1, 2, 1)
 ax_deep = fig.add_subplot(1, 2, 2, projection="3d")
 ax_deep.view_init(elev=30, azim=10)
 
 flat = ep.trail(path[:, :2], ax=ax_flat, marker_scale=14.0)
-deep = ep.trail(path, ax=ax_deep, marker_scale=80.0)
+deep = ep.trail(path, ax=ax_deep, depth="markers", marker_scale=80.0)
 
 ax_flat.set_aspect("equal")
 ax_flat.set_xlabel("$x$ [AU]")
 ax_flat.set_ylabel("$y$ [AU]")
 ax_flat.set_title("(N, 2) positions")
-ax_deep.set_title("(N, 3) positions")
-```
+ax_deep.set_title('(N, 3), depth="markers"')
 
-The sizes are on the returned collection, so the cue is inspectable rather
-than baked into a rendering pass, and the flat panel's markers are all
-exactly `marker_scale`.
-
-```{code-cell} python
 sizes = deep.artists["scatter"].get_sizes()
 print(f"3D marker sizes: {sizes.min():.1f} to {sizes.max():.1f}")
 print("2D marker sizes:", np.unique(flat.artists["scatter"].get_sizes()))

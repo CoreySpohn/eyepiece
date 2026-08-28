@@ -73,6 +73,9 @@ source_suffix = {
 nb_execution_mode = "auto"
 nb_execution_timeout = 300
 nb_execution_raise_on_error = True
+# ... and print the failing cell's traceback: raise_on_error alone names only
+# the page, which is not enough to fix it from a CI log.
+nb_execution_show_tb = True
 # Drop benign import-time stderr (e.g. tqdm's IProgress warning) from the
 # rendered output; genuine execution errors still raise via the flag above.
 nb_output_stderr = "remove"

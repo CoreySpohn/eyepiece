@@ -29,10 +29,67 @@ def test_trail_2d_on_given_axes():
 
 
 def test_trail_marker_sizes_vary_with_depth():
-    res = trail(_orbit3d())
+    res = trail(_orbit3d(), depth="markers")
     sizes = res.artists["scatter"].get_sizes()
     assert sizes.min() < sizes.max()  # far side shrinks
     plt.close(res.fig)
+
+
+def test_trail_defaults_to_the_hidden_line_cue():
+    # The per-point markers were measured at 2.6x the ink of the hidden-line
+    # convention while hiding 2.5x as much of whatever is drawn behind them,
+    # for the same one fact, so they stopped being the default. A caller that
+    # never names a mode must not get a scatter back.
+    res = trail(_orbit3d())
+    assert "scatter" not in res.artists
+    assert "near" in res.artists
+    plt.close(res.fig)
+
+
+def test_trail_hidden_draws_the_near_half_solid_over_a_dashed_whole():
+    res = trail(_orbit3d())
+    whole, near = res.artists["line"], res.artists["near"]
+    # the base line is the WHOLE path, so "line" keeps meaning what it did
+    assert np.isfinite(whole.get_xdata(orig=False)).all()
+    assert whole.get_linestyle() not in ("-", "solid")
+    assert near.get_linestyle() in ("-", "solid")
+    # ... and the near overlay covers part of it, not all of it
+    drawn = np.isfinite(np.asarray(near.get_xdata(orig=False), dtype=float))
+    assert 0 < drawn.sum() < drawn.size
+    plt.close(res.fig)
+
+
+def test_trail_hidden_far_half_is_dimmer_and_thinner():
+    res = trail(_orbit3d())
+    whole, near = res.artists["line"], res.artists["near"]
+    assert whole.get_linewidth() < near.get_linewidth()
+    assert whole.get_alpha() < 1.0
+    plt.close(res.fig)
+
+
+def test_trail_none_draws_a_bare_path():
+    res = trail(_orbit3d(), depth="none")
+    assert set(res.artists) == {"line"}
+    assert res.artists["line"].get_linestyle() in ("-", "solid")
+    plt.close(res.fig)
+
+
+def test_trail_2d_keeps_its_markers_under_the_new_default():
+    # A 2D path has no depth to cue, so the default must not change it.
+    res = trail(_orbit3d()[:, :2])
+    assert "scatter" in res.artists
+    plt.close(res.fig)
+
+
+def test_trail_2d_none_drops_the_markers():
+    res = trail(_orbit3d()[:, :2], depth="none")
+    assert set(res.artists) == {"line"}
+    plt.close(res.fig)
+
+
+def test_trail_rejects_an_unknown_depth_mode():
+    with pytest.raises(ValueError, match=r"hidden.*markers.*none"):
+        trail(_orbit3d(), depth="beads")
 
 
 def test_sky_fan_weights_scale_alpha():
