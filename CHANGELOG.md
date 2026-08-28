@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/CoreySpohn/eyepiece/compare/v0.2.0...v0.3.0) (2026-08-24)
+
+
+### Features
+
+* add provenance stamps so a figure documents its own production ([ecc5c61](https://github.com/CoreySpohn/eyepiece/commit/ecc5c61d6a40cc812e67f2953d0f5100f693b07f))
+* **anim:** warn when a data scale drifts mid-recording ([99516c0](https://github.com/CoreySpohn/eyepiece/commit/99516c04f8bd3aa80cfa2c10b9f7e339da5dd079))
+* **provenance:** embed the stamp payload in file metadata ([4f356c6](https://github.com/CoreySpohn/eyepiece/commit/4f356c6b00ff43d3d9f0c2e4d405f4e31d58f8df))
+* **stats:** let cov_ellipse name the interval it draws ([dade42d](https://github.com/CoreySpohn/eyepiece/commit/dade42d352a56c3ae22cf52dbd168d90d4959423))
+
+
+### Bug Fixes
+
+* **anim:** record through an Agg canvas so mp4 frames are not sheared ([8471aa1](https://github.com/CoreySpohn/eyepiece/commit/8471aa1a0ca394fb7e098f033fad59bd4ec4a0ff))
+* **scene:** draw the sky_fan IWA disk under the tracks, not over them ([531d96a](https://github.com/CoreySpohn/eyepiece/commit/531d96a6dce76d701b8d40d7a1d98e6e30b9a437))
+* **stats:** normalize the corner diagonal so an overlay lands on its scale ([15da2f0](https://github.com/CoreySpohn/eyepiece/commit/15da2f0a8b16c8f99dd3e85414444c06803e1b5a))
+
 ## [0.2.0](https://github.com/CoreySpohn/eyepiece/compare/v0.1.0...v0.2.0) (2026-08-21)
 
 
