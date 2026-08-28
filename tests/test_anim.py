@@ -298,17 +298,27 @@ def test_record_with_no_layout_engine_records_without_error(tmp_path):
 def test_record_restore_installs_no_engine_under_autolayout(tmp_path):
     # set_layout_engine(None) is not "no engine": matplotlib consults
     # figure.autolayout (and figure.constrained_layout.use) and installs
-    # whichever they name. A figure that had no engine must therefore have
-    # its restore SKIPPED, not replayed with None, or the exit hands back a
-    # tight-layout engine the figure never had.
+    # whichever they name, so a figure that had no engine must never come
+    # back carrying a tight-layout engine it never had.
+    #
+    # This originally asserted that the exit left the engine UNCHANGED from
+    # whatever it was mid-recording, because the remedy at the time was to
+    # skip the restore entirely. That is the wrong end state, and it hid a
+    # leak: matplotlib's own writer bookkeeping calls set_layout_engine(None)
+    # during the recording, which under this rcParam builds an engine on the
+    # engine-less figure and leaves a placeholder behind. Skipping the
+    # restore preserved that placeholder faithfully. The contract `record`
+    # documents is that the figure comes back as it went in, so this now
+    # pins the end state itself.
     fig, _ = _fig_line()
     assert fig.get_layout_engine() is None
     with matplotlib.rc_context({"figure.autolayout": True}):
         with record(fig, tmp_path / "a.gif", fps=5) as rec:
             rec.hold(2)
-            engine_during = fig.get_layout_engine()
-        assert fig.get_layout_engine() is engine_during
+        assert fig.get_layout_engine() is None
         assert not isinstance(fig.get_layout_engine(), TightLayoutEngine)
+    # The rcParam going back off must not resurrect an engine either.
+    assert fig.get_layout_engine() is None
     plt.close(fig)
 
 
@@ -548,4 +558,31 @@ def test_record_warns_on_a_drifting_color_norm(tmp_path):
             rec.frame()
             im.set_clim(0, 120.0)
             rec.frame()
+    plt.close(fig)
+
+
+@pytest.mark.parametrize(
+    "rc",
+    [{"figure.autolayout": True}, {"figure.constrained_layout.use": True}],
+    ids=["autolayout", "constrained"],
+)
+def test_record_leaves_an_engineless_figure_with_no_engine(tmp_path, rc):
+    # A figure built with layout="none" while one of the layout rcParams is
+    # on carries NO engine, and must still carry none afterwards. It did
+    # not: matplotlib's own writer bookkeeping calls set_layout_engine(None)
+    # during the recording, and None does not mean "no engine" -- it means
+    # "consult figure.autolayout / figure.constrained_layout.use", which
+    # under these rcParams BUILDS a Tight or Constrained engine on a figure
+    # that never had one. The freeze then demotes that to a placeholder and
+    # matplotlib restores the placeholder. record() saved None and so skipped
+    # its own restore entirely, leaving the pollution in place: the caller
+    # gets back a figure that silently relays out differently than the one
+    # it handed in.
+    with matplotlib.rc_context(rc):
+        fig, ax = plt.subplots(layout="none")
+        ax.plot([0, 1], [0, 1])
+        assert fig.get_layout_engine() is None  # precondition
+        with record(fig, tmp_path / "a.gif", fps=5) as rec:
+            rec.hold(2)
+        assert fig.get_layout_engine() is None
     plt.close(fig)

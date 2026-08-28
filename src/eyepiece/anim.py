@@ -391,9 +391,9 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=
     manager already guarantees. A figure with no layout engine, or one
     the caller already froze, records normally: freezing is a no-op on
     top of "none" already, and a figure that had no engine is left with
-    no engine (the restore is skipped rather than replaying `None`
-    through `set_layout_engine`, which would consult the autolayout
-    rcParams and install an engine the figure never had).
+    no engine -- restored deliberately, with the layout rcParams held off
+    so that `None` means "no engine" rather than "consult the rcParams",
+    which would otherwise install an engine the figure never had.
     The engine is captured before the `savefig.bbox` override and the
     writers are set up, so it unwinds last, after every writer has
     finished and the rcParams overrides are back -- the freeze outlives
@@ -443,9 +443,22 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=
         # set_layout_engine(None) does not mean "no engine": matplotlib
         # reads figure.autolayout / figure.constrained_layout.use and
         # installs whichever they ask for, so replaying a saved None would
-        # give a figure that had no engine one it never had.
+        # give a figure an engine it never had.
         if saved_engine is not None:
             fig.set_layout_engine(saved_engine)
+            return
+        # Restoring "no engine" still has to be done, not skipped. During
+        # the recording matplotlib's own writer bookkeeping calls
+        # set_layout_engine(None) itself, and under either layout rcParam
+        # that BUILDS an engine on a figure that had none; the freeze then
+        # demotes it to a placeholder, which is what the caller was left
+        # holding. Turning both rcParams off for the length of the call is
+        # what makes None mean what it says, using public API rather than
+        # assigning the private engine attribute.
+        with matplotlib.rc_context(
+            {"figure.autolayout": False, "figure.constrained_layout.use": False}
+        ):
+            fig.set_layout_engine(None)
 
     counter = {"frames": 0}
     with ExitStack() as stack:
