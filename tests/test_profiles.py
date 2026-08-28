@@ -526,3 +526,32 @@ def test_radial_profile_plot_forwards_center_and_nbins():
         res.artists["line"].get_ydata(), np.asarray(expected_profile)
     )
     plt.close(res.fig)
+
+
+@pytest.mark.parametrize("scale", [1e-8, 1.0, 1e10])
+def test_plot_contrast_curve_shading_is_scale_free(scale):
+    # The shading was built by stepping a FIXED 1e9 data units off the
+    # working angle, which silently breaks at both ends of that constant.
+    # In radians (x ~ 1e-8) the step swamps the anchor, `inner + width`
+    # rounds to -1e9 and the region's inner edge lands on 0 instead of on
+    # the IWA -- the excluded zone reads as working range. At x ~ 1e10 the
+    # step is far too short and both regions stop mid-axes, leaving an
+    # unshaded gap outside the working angles. Neither raises. The reach
+    # has to come from the axes limits, which are always in the data's own
+    # units, rather than from a constant that assumes arcseconds.
+    fig, ax = plt.subplots(layout="constrained")
+    r = np.linspace(1.0, 10.0, 50) * scale
+    iwa, owa = 2.0 * scale, 8.0 * scale
+    res = plot_contrast_curve(r, np.logspace(-11, -8, 50), ax=ax, iwa=iwa, owa=owa)
+    fig.canvas.draw()
+
+    iwa_fill, owa_fill = res.artists["fill"]
+    left, right = ax.get_xlim()
+
+    # The edge facing the visible region sits exactly on the working angle.
+    assert iwa_fill.get_x() + iwa_fill.get_width() == pytest.approx(iwa, rel=1e-6)
+    assert owa_fill.get_x() == pytest.approx(owa, rel=1e-6)
+    # And the far edge still reaches past the axes, at every scale.
+    assert iwa_fill.get_x() <= left
+    assert owa_fill.get_x() + owa_fill.get_width() >= right
+    plt.close(fig)

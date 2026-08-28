@@ -138,34 +138,77 @@ def _still_attached(artists, ax):
     return bool(artists) and all(a.axes is ax for a in artists)
 
 
-_SPAN_OUTER = 1e9
-
 # IWA/OWA labels sit just INSIDE the top of the axes. Above it (the obvious
 # place) is exactly where `set_title` draws, so any titled contrast curve --
 # which is most of them -- collided with its own annotations.
 _LABEL_Y = 0.98
 
 
-def _span(ax, inner, outer_sign, span_kw):
-    """Shade from `inner` to the axes edge, permanently.
+class _EdgeSpan(Rectangle):
+    """A shaded region anchored at a data x that always reaches the axes edge.
 
     The shading marks a region the instrument cannot see, so it has to
     reach the edge of the axes whatever the x limits turn out to be -- and
-    they are not known here: autoscaling runs at draw time, and a second
-    curve drawn later legitimately widens them. Reading `ax.get_xlim()`
-    and shading between those numbers would freeze the annotation at the
-    limits of the moment, leaving unshaded axes on the excluded side.
+    they are not known at construction time: autoscaling runs at draw time,
+    and a second curve drawn later legitimately widens them. So the outer
+    edge is recomputed from `ax.get_xlim()` on every draw, which is the one
+    moment the limits are both known and current.
 
-    So the region is a `Rectangle` whose y runs 0 to 1 in axes coordinates
-    (`ax.get_xaxis_transform()`) and whose x runs from `inner` to
-    `_SPAN_OUTER` past it, in data coordinates, on the side `outer_sign`
-    picks (-1 for an inner working angle, +1 for an outer one). It is
+    The reach cannot be a constant. It was `1e9` data units, which is only
+    the right order of magnitude for separations in arcseconds, and it
+    failed silently at both ends of that assumption. In radians (x of order
+    1e-8) the offset swamped the anchor: `inner + width` rounded to exactly
+    -1e9, so the region's inner edge landed on 0 rather than on the working
+    angle and the excluded zone read as working range. At x of order 1e10
+    the same offset was far too short and the shading stopped mid-axes,
+    leaving an unshaded gap outside the working angles. Taking the reach
+    from the limits instead makes it dimensionally correct by construction,
+    because the limits are always in the data's own units.
+
+    The region is a `Rectangle` whose y runs 0 to 1 in axes coordinates
+    (`ax.get_xaxis_transform()`) and whose x runs in data coordinates. It is
     added with `add_artist` rather than `add_patch`, which keeps it out of
     the data limits: the x range of a contrast curve should be set by the
-    data, not by an annotation reaching a billion units off-screen. The
-    axes clips it to its own box on every draw, so it always reaches the
-    edge and never overshoots it. `add_artist` still sets the artist's
-    `.axes`, so `_still_attached` reads it exactly as it reads a patch.
+    data, not by an annotation reaching off-screen. The axes clips it to its
+    own box on every draw, so it always reaches the edge and never
+    overshoots it. `add_artist` still sets the artist's `.axes`, so
+    `_still_attached` reads it exactly as it reads a patch.
+
+    The rectangle is kept in matplotlib's usual orientation -- `get_x()` is
+    the LEFT edge and the width is positive -- so that callers and tests can
+    read its geometry the way they read any other patch.
+    """
+
+    def __init__(self, inner, outer_sign, **kwargs):
+        super().__init__((inner, 0.0), 0.0, 1.0, **kwargs)
+        self._inner = float(inner)
+        self._outer_sign = outer_sign
+
+    def _outer(self):
+        """The far edge, one full axis-width outside the visible range.
+
+        The pad is what guarantees the region covers the edge pixel rather
+        than stopping a rounding error short of it. On a log axis an
+        additive pad would run the edge through zero and out the far side
+        into negative x, which the log transform drops, so the pad is
+        multiplicative there.
+        """
+        lo, hi = sorted(self.axes.get_xlim())
+        if self.axes.get_xscale() == "log":
+            return lo / 10.0 if self._outer_sign < 0 else hi * 10.0
+        span = hi - lo
+        return lo - span if self._outer_sign < 0 else hi + span
+
+    def draw(self, renderer):
+        if self.axes is not None:
+            outer = self._outer()
+            self.set_x(min(self._inner, outer))
+            self.set_width(abs(self._inner - outer))
+        super().draw(renderer)
+
+
+def _span(ax, inner, outer_sign, span_kw):
+    """Shade from `inner` to the axes edge, permanently.
 
     Args:
         ax: Axes to draw into.
@@ -174,14 +217,10 @@ def _span(ax, inner, outer_sign, span_kw):
         span_kw: Extra `Rectangle` kwargs, applied last.
 
     Returns:
-        The `Rectangle`.
+        The `_EdgeSpan`, a `Rectangle`.
     """
     kw = {"color": _style.neutral(0.2), "alpha": 0.5, "zorder": 0, **(span_kw or {})}
-    width = outer_sign * _SPAN_OUTER
-    x0 = inner if width > 0 else inner + width
-    rect = Rectangle(
-        (x0, 0.0), abs(width), 1.0, transform=ax.get_xaxis_transform(), **kw
-    )
+    rect = _EdgeSpan(inner, outer_sign, transform=ax.get_xaxis_transform(), **kw)
     ax.add_artist(rect)
     return rect
 
