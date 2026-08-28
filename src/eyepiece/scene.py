@@ -108,6 +108,31 @@ def _resolve_style(style):
     return _style.color(0, style), None
 
 
+def _drop_aliases(kw, *names):
+    """`kw` without any of `names` or their matplotlib long/short aliases.
+
+    A caller's `trail_kw` may spell a property either way, and matplotlib
+    refuses a call that carries both (`"Got both 'linestyle' and 'ls'"`), so
+    the hidden-line branch strips whichever the caller used before setting
+    its own.
+    """
+    alias = {
+        "ls": "linestyle",
+        "linestyle": "ls",
+        "lw": "linewidth",
+        "linewidth": "lw",
+    }
+    drop = set(names) | {alias[n] for n in names if n in alias}
+    return {k: v for k, v in kw.items() if k not in drop}
+
+
+def _look_up(kw, short, long, default):
+    """Read a property from `kw` under either of its aliases."""
+    if short in kw:
+        return kw[short]
+    return kw.get(long, default)
+
+
 # The far half of a hidden-line path is drawn thinner and dimmer as well as
 # dashed: dashing alone reads as a different line rather than the same line
 # further away.
@@ -196,10 +221,12 @@ def trail(
             # The whole path stays continuous underneath, dashed and dim, so
             # `"line"` still means the entire trajectory; the near half is
             # overdrawn solid on top of it.
+            width = _look_up(lkw, "lw", "linewidth", 1.5)
+            stripped = _drop_aliases(lkw, "ls", "lw", "alpha")
             base_kw = {
-                **lkw,
+                **stripped,
                 "ls": (0, (2, 2)),
-                "lw": lkw.get("lw", 1.5) * _FAR_WIDTH,
+                "lw": width * _FAR_WIDTH,
                 "alpha": lkw.get("alpha", 1.0) * _FAR_ALPHA,
             }
             (line,) = ax.plot(
@@ -207,9 +234,10 @@ def trail(
             )
             near = positions.copy()
             near[facing <= 0.5] = np.nan
-            (near_line,) = ax.plot(
-                near[:, 0], near[:, 1], near[:, 2], **{**lkw, "ls": "-"}
-            )
+            near_kw = {**stripped, "ls": "-", "lw": width}
+            if "alpha" in lkw:
+                near_kw["alpha"] = lkw["alpha"]
+            (near_line,) = ax.plot(near[:, 0], near[:, 1], near[:, 2], **near_kw)
             artists["near"] = near_line
         else:
             (line,) = ax.plot(positions[:, 0], positions[:, 1], positions[:, 2], **lkw)
