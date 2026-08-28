@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/CoreySpohn/eyepiece/compare/v0.3.1...v0.4.0) (2026-08-28)
+
+
+### Features
+
+* **scene:** make the hidden-line convention trail's default depth cue ([85a7e75](https://github.com/CoreySpohn/eyepiece/commit/85a7e7513adc8edc3d8e156ed63db9e4bdf892aa))
+
+
+### Bug Fixes
+
+* **scene:** accept linestyle/lw under either alias in the hidden-line branch ([a93fa29](https://github.com/CoreySpohn/eyepiece/commit/a93fa29aa0c1f4afc90ed47239a8331928ce0caf))
+
 ## [0.3.1](https://github.com/CoreySpohn/eyepiece/compare/v0.3.0...v0.3.1) (2026-08-28)
 
 
