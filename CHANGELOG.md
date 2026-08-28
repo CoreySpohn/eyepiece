@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/CoreySpohn/eyepiece/compare/v0.3.0...v0.3.1) (2026-08-28)
+
+
+### Bug Fixes
+
+* **anim:** restore a no-engine figure instead of skipping the restore ([9540ba8](https://github.com/CoreySpohn/eyepiece/commit/9540ba826547001b82c0fb8169b48226a04d247d))
+* **profiles:** take the IWA/OWA shading reach from the axes, not a constant ([7968230](https://github.com/CoreySpohn/eyepiece/commit/7968230fecabec67256025b78d7ee91b7589f6d5))
+
 ## [0.3.0](https://github.com/CoreySpohn/eyepiece/compare/v0.2.0...v0.3.0) (2026-08-24)
 
 
