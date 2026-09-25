@@ -356,9 +356,45 @@ def test_clock_format_drives_frame_at_and_strip_labels():
     assert find_element(sequence.frame(1), "clock").text == "t = 1.00 s"
     assert find_element(sequence.at(5.0).view, "clock").text == "t = 1.00 s"
     strip = sequence.strip([2, 0])
-    assert find_element(strip, "0/time").text == "t = 10.00 s"
-    assert find_element(strip, "1/time").text == "t = 0.00 s"
     assert find_element(strip, "0/clock").text == "t = 10.00 s"
+    assert find_element(strip, "1/clock").text == "t = 0.00 s"
+
+
+def _labels(view):
+    if isinstance(view, PanelGroup):
+        return [label for child in view.views for label in _labels(child)]
+    return [mark for mark in view.marks if isinstance(mark, Label)]
+
+
+def test_strip_with_a_clock_keeps_one_time_label_per_slot():
+    """The Clock label is the slot's time label; strip adds no second one."""
+    label = Label("clock", "", (0.5, 0.5))
+    view = ImageView(
+        "image", np.zeros((2, 3)), _axes(), _scale(0, 1), "signal", marks=(label,)
+    )
+    sequence = Sequence(view, np.array([0.0, 1.0, 10.0]), "s", (Clock("clock"),))
+    strip = sequence.strip([2, 0])
+    for slot, text in ((0, "10 s"), (1, "0 s")):
+        labels = _labels(strip.views[slot])
+        assert [lab.id for lab in labels] == [f"{slot}/clock"]
+        assert labels[0].text == text
+        assert labels[0].xy == (0.5, 0.5)
+    with pytest.raises(KeyError):
+        find_element(strip, "0/time")
+
+
+def test_strip_accepts_a_clock_label_named_time():
+    """A Clock label with id "time" no longer collides with an added label."""
+    label = Label("time", "", (0.0, 0.0))
+    view = ImageView(
+        "image", np.zeros((2, 3)), _axes(), _scale(0, 1), "signal", marks=(label,)
+    )
+    clock = Clock("time", fmt="t = {value:g} {unit}")
+    sequence = Sequence(view, np.array([0.0, 1.0]), "d", (clock,))
+    strip = sequence.strip([1, 0])
+    assert find_element(strip, "0/time").text == "t = 1 d"
+    assert find_element(strip, "1/time").text == "t = 0 d"
+    assert [len(_labels(slot)) for slot in strip.views] == [1, 1]
 
 
 def test_clock_default_format_is_the_compact_text():
@@ -564,6 +600,8 @@ def test_strip_prefixes_ids_and_shares_arrays_and_scale():
     assert find_element(strip, "0/time").text == "10 s"
     assert find_element(strip, "1/time").text == "0 s"
     assert find_element(strip, "2/time").text == "10 s"
+    # Without a Clock, strip adds exactly one time label per slot.
+    assert [len(_labels(slot)) for slot in strip.views] == [1, 1, 1]
 
 
 def test_strip_leaves_source_id_unchanged():

@@ -166,9 +166,8 @@ still = mpl.render(sequence.frame(12), axes=axes, cast=CAST, profile=PROFILE)
 
 A comparison between two non-adjacent times is a strip rather than a movie.
 `sequence.strip(indices)` returns one slot per index with its IDs prefixed by
-slot position and a time label added to each slot's first panel. The clock
-the sequence drives is then redundant, so the strip hides it through its
-part.
+slot position. The clock the sequence drives becomes each slot's time label,
+restamped with that slot's acquisition time in the clock's format.
 
 ```{code-cell} python
 picks = [0, 15, 29]
@@ -178,8 +177,6 @@ fig, grid = plt.subplots(
 strip = mpl.render(
     sequence.strip(picks), axes=grid.T.ravel(), cast=CAST, profile=PROFILE
 )
-for slot in range(len(picks)):
-    strip.parts[f"{slot}/clock"].set_visible(False)
 ```
 
 ## A movie

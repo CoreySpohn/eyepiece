@@ -44,8 +44,8 @@ from eyepiece.prepared._views import (
 _ARRAY_CHANNEL_FIELDS = ("data", "valid", "xy")
 
 # Panel-space placement (figure-fraction, top-left) for the label `strip`
-# adds to every slot so each strip panel is labelled even when the
-# template carries no Clock-driven label of its own.
+# adds to every slot when the template carries no Clock-driven label of its
+# own.
 _STRIP_LABEL_XY = (0.02, 0.95)
 
 # Relative tolerance for treating `run_time * fps` as a whole frame count.
@@ -216,9 +216,8 @@ class Sequence:
 
     Attributes:
         template: The root `View`, fully built at some reference frame
-            (frame 0's values, by convention -- see the module-level
-            `make_image_sequence`-style helpers used in tests). Every
-            other frame replaces only the elements named by `channels`.
+            (frame 0's values, by convention). Every other frame replaces
+            only the elements named by `channels`.
         times: Physical timestamps, one per sample. Must be finite and
             strictly increasing (never sorted or de-duplicated for the
             caller); at least one sample is required.
@@ -463,12 +462,15 @@ class Sequence:
         globally unique IDs. `source_id`, scales, and arrays are shared,
         unchanged, with `.frame(index)`; only `id` fields differ.
 
-        Every slot also gets an added panel-space `Label` with ID
-        `f"{slot}/time"` giving that slot's acquisition time (in the first
-        `Clock` channel's `fmt`, or the default clock format) -- present
-        even when the template already carries a `Clock`-driven label
-        (which is itself already updated to that slot's acquisition time
-        by `.frame`), so every strip panel is labelled the same way. The
+        Every slot carries exactly one time label giving that slot's
+        acquisition time. When the sequence has a `Clock` channel, that
+        label is the template's own `Clock`-driven `Label` (prefixed like
+        every other ID, e.g. `f"{slot}/clock"`), which `.frame` already
+        restamps with the slot's acquisition time in the `Clock`'s `fmt`;
+        nothing is added, so the strip never shows two overlapping time
+        labels and any `Clock` label ID (including `"time"`) is allowed.
+        When the sequence has no `Clock`, `strip` adds a panel-space
+        `Label` with ID `f"{slot}/time"` in the default clock format. The
         added label is placed on the slot's top-level view when that view
         is a single view, or on the first marked view reached by
         descending through `views[0]` when the slot is itself a
@@ -483,14 +485,16 @@ class Sequence:
         Returns:
             A `PanelGroup` with id `"strip"`.
         """
-        fmt = self._clocks[0][1] if self._clocks else _CLOCK_FORMAT
         slots = []
         for slot, index in enumerate(indices):
             prefix = f"{slot}/"
             prefixed = _prefix_ids(self.frame(index), prefix)
+            if self._clocks:
+                slots.append(prefixed)
+                continue
             label = Label(
                 f"{slot}/time",
-                _clock_text(self.times[index], self.time_unit, fmt),
+                _clock_text(self.times[index], self.time_unit),
                 _STRIP_LABEL_XY,
                 space="panel",
             )

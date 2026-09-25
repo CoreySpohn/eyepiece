@@ -247,8 +247,12 @@ print("frames for 0.28 s at 25 fps:", len(sequence.schedule(0.28, 25)))
 `frame(i)` returns the state at sample `i`, and `strip(indices)` returns a
 `PanelGroup` with one slot per index. Each slot's IDs are prefixed with its
 position (`"0/image"`, `"1/image"`), so a repeated or out-of-order selection
-still has unique IDs, and each slot gains a `"<slot>/time"` label giving its
-acquisition time.
+still has unique IDs. Each slot carries exactly one time label. When the
+sequence has a `Clock`, that label is the clock's own label (`"0/clock"`),
+restamped with the slot's acquisition time in the clock's format, so a strip
+never shows two time labels and a clock label may itself be named `"time"`.
+Without a `Clock`, each slot gains a `"<slot>/time"` label in the default
+format.
 
 ## Appearance: cast and profile
 
