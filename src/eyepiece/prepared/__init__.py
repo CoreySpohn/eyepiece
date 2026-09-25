@@ -12,6 +12,13 @@ from eyepiece.prepared._display import (
     resolve_bounds,
     weight_opacity,
 )
+from eyepiece.prepared._sequence import (
+    ArrayChannel,
+    Clock,
+    PathWindow,
+    Sample,
+    Sequence,
+)
 from eyepiece.prepared._views import (
     AxisSpec,
     CurveView,
@@ -31,17 +38,22 @@ from eyepiece.prepared._views import (
 )
 
 __all__ = [
+    "ArrayChannel",
     "AxisSpec",
+    "Clock",
     "CurveView",
     "ImageView",
     "Label",
     "Mark",
     "PanelGroup",
     "Path",
+    "PathWindow",
     "Points",
     "ReferenceLine",
     "Region",
+    "Sample",
     "Scale",
+    "Sequence",
     "TrackView",
     "View",
     "find_element",
