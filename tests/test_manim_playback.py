@@ -134,14 +134,20 @@ def test_begin_resets_and_consumer_visibility_survives_seek_and_replay(
     clip = em.animate(track_sequence)
     region = clip.parts["iwa"]
     region.set_opacity(0)
+    glyphs = clip.parts["clock"].submobjects[0]
+    outline = {
+        i: em.render(track_sequence.frame(i)).parts["clock"].submobjects[0].points
+        for i in (0, 7)
+    }
     clip.seek(7.0)
-    assert clip.result.parts["clock"].submobjects[0].original_text == "7 d"
+    np.testing.assert_allclose(glyphs.points, outline[7])
     with manim.tempconfig({"frame_rate": 10}):
         animation = clip.playback(1.0)
         _run_like_a_scene(animation, 10)
-        assert clip.result.parts["clock"].submobjects[0].original_text == "7 d"
+        np.testing.assert_allclose(glyphs.points, outline[7])
         animation.begin()
-        assert clip.result.parts["clock"].submobjects[0].original_text == "0 d"
+        np.testing.assert_allclose(glyphs.points, outline[0])
+        assert clip.parts["clock"].submobjects == [glyphs]
         # Replay is deterministic: the trail restarts from its first vertex.
         assert not clip.parts["orbit"].has_points()
     copy = clip.mobject.copy()
@@ -203,7 +209,7 @@ def test_an_eight_second_pass_maps_each_held_image_once(monkeypatch):
 # --- Encoded frames ---------------------------------------------------------------
 
 
-def _render_scene(construct, fps, tmp_path):
+def _render_scene(construct, fps, tmp_path, size=(128, 72), background=None):
     """Render a Scene running `construct(scene)` at a tiny size; return the movie."""
 
     class Clip(manim.Scene):
@@ -213,13 +219,15 @@ def _render_scene(construct, fps, tmp_path):
     settings = {
         "media_dir": str(tmp_path),
         "disable_caching": True,
-        "pixel_width": 128,
-        "pixel_height": 72,
+        "pixel_width": size[0],
+        "pixel_height": size[1],
         "frame_rate": fps,
         "progress_bar": "none",
         "verbosity": "ERROR",
         "output_file": "clip",
     }
+    if background is not None:
+        settings["background_color"] = background
     with manim.tempconfig(settings):
         scene = Clip()
         scene.render()
@@ -329,3 +337,72 @@ def test_strided_read_only_memmap_is_shown_without_copies(tmp_path):
         expected = map_rgba(cube[index], valid=None, scale=view.scale, profile=profile)
         np.testing.assert_array_equal(image.pixel_array, expected[::-1])
     assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
+
+
+def _decode(movie):
+    import av
+
+    with av.open(str(movie)) as container:
+        return [f.to_ndarray(format="rgb24") for f in container.decode(video=0)]
+
+
+def test_encoded_clock_labels_redraw_without_overdraw(track_sequence, tmp_path):
+    """Mid-play frames show only the current clock text, as a still of that view."""
+    import eyepiece.manim as em
+
+    fps, size, height = 10, (640, 360), 7.0
+    profile = snapshot_profile()
+    clip = em.animate(track_sequence, profile=profile)
+    clip.mobject.scale_to_fit_height(height)
+
+    def play(scene):
+        scene.add(clip.mobject)
+        scene.play(clip.playback(0.8))  # 8 ticks: tick k shows sample k
+
+    # The profile's text color is drawn on the profile's background.
+    background = profile.background_color
+    movie, frame_size = _render_scene(play, fps, tmp_path / "play", size, background)
+    frames = _decode(movie)
+    assert len(frames) == 8
+
+    def still(index):
+        result = em.render(track_sequence.frame(index), profile=profile)
+        result.mobject.scale_to_fit_height(height)
+
+        def hold(scene):
+            scene.add(result.mobject)
+            scene.wait(1 / fps)
+
+        movie, _ = _render_scene(
+            hold, fps, tmp_path / f"still{index}", size, background
+        )
+        return _decode(movie)[0], result.parts["clock"]
+
+    first, clock = still(0)
+    frame_width, frame_height = frame_size
+    pad = 0.1
+    cols = [
+        int((x + frame_width / 2) / frame_width * size[0])
+        for x in (clock.get_left()[0] - pad, clock.get_right()[0] + pad)
+    ]
+    rows = [
+        int((frame_height / 2 - y) / frame_height * size[1])
+        for y in (clock.get_top()[1] + pad, clock.get_bottom()[1] - pad)
+    ]
+
+    def label(frame):
+        """Luma of the label box (chroma is subsampled by the encoder)."""
+        box = frame[rows[0] : rows[1], cols[0] : cols[1]].astype(float)
+        return box @ np.array([0.299, 0.587, 0.114])
+
+    # Measured at this size: codec noise between a played frame and its
+    # still is a mean of at most ~3 and a max of ~50 luma levels, while a
+    # stale "0 d" drawn under the new text gives a mean of 9 or more and
+    # full-contrast pixels (max 250 or more).
+    assert np.abs(label(frames[0]) - label(first)).mean() < 6
+    for index in range(1, 8):
+        expected, _ = still(index)
+        assert np.abs(label(expected) - label(first)).mean() > 6  # text changed
+        difference = np.abs(label(frames[index]) - label(expected))
+        assert difference.mean() < 6, index
+        assert difference.max() < 128, index

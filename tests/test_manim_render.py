@@ -320,15 +320,35 @@ def test_unsupported_region_role_raises_before_drawing():
         em.render(view)
 
 
-def test_labels_use_the_profile_and_anchor_like_matplotlib():
+def _label_points(text, profile, space="panel"):
+    """Outline points of `text` laid out alone, shifted to a zero corner."""
     import eyepiece.manim as em
 
+    view = TrackView(
+        "t", AxisSpec("x", "y", (0, 1), (0, 1)), (Label("l", text, (0.5, 0.5), space),)
+    )
+    points = em.render(view, profile=profile).parts["l"].submobjects[0].points
+    return points - points.min(axis=0)
+
+
+def test_labels_use_the_profile_and_anchor_like_matplotlib(monkeypatch):
+    import eyepiece.manim as em
+
+    fonts = []
+    original = manim.Text
+
+    def text_spy(*args, **kwargs):
+        fonts.append(kwargs.get("font"))
+        return original(*args, **kwargs)
+
     profile = snapshot_profile()
+    monkeypatch.setattr(manim, "Text", text_spy)
     result = em.render(_track(), profile=profile)
+    monkeypatch.setattr(manim, "Text", original)
+    assert fonts and set(fonts) == {profile.font_family}
     clock = result.parts["clock"]
     glyphs = clock.submobjects[0]
-    assert isinstance(glyphs, manim.Text)
-    assert glyphs.font == profile.font_family
+    assert isinstance(glyphs, manim.VMobject) and not glyphs.submobjects
     assert glyphs.get_fill_color().to_hex().lower() == (
         manim.ManimColor(profile.text_color).to_hex().lower()
     )
@@ -366,7 +386,7 @@ def test_result_keeps_the_profile_it_rendered_with(monkeypatch):
     assert result.profile is used
 
 
-def test_update_moves_marks_in_place_and_swaps_only_label_glyphs():
+def test_update_moves_marks_in_place_and_rewrites_label_outlines():
     import eyepiece.manim as em
 
     template = _track()
@@ -398,10 +418,13 @@ def test_update_moves_marks_in_place_and_swaps_only_label_glyphs():
     np.testing.assert_allclose(
         _xy(result.parts["obs"][0].get_center()), iwa_center, atol=1e-9
     )
-    new_glyphs = clock.submobjects[0]
-    assert new_glyphs is not old_glyphs
-    assert new_glyphs.original_text == "3 d"
-    assert new_glyphs.get_fill_opacity() == pytest.approx(0.4)
+    # The same glyph mobject is drawn with the new text's outline: a
+    # scene that flattened the family at play time redraws it.
+    glyphs = clock.submobjects[0]
+    assert glyphs is old_glyphs and len(clock.submobjects) == 1
+    new_outline = glyphs.points - glyphs.points.min(axis=0)
+    np.testing.assert_allclose(new_outline, _label_points("3 d", result.profile))
+    assert glyphs.get_fill_opacity() == pytest.approx(0.4)
     # Two visible vertices make one straight segment (one cubic curve).
     assert len(result.parts["path/0"].points) == 4
 
@@ -450,7 +473,7 @@ def test_invalid_second_view_leaves_the_whole_group_unchanged():
         for key in ("a/obs", "b/obs", "a/path/0")
         for mob in result.parts[key].get_family()
     }
-    glyphs_before = result.parts["a/clock"].submobjects[0]
+    glyphs_before = result.parts["a/clock"].submobjects[0].points.copy()
     changed = replace_elements(
         group,
         {
@@ -472,7 +495,9 @@ def test_invalid_second_view_leaves_the_whole_group_unchanged():
         result.update(changed)
     for mob, points in before.items():
         np.testing.assert_array_equal(mob.points, points)
-    assert result.parts["a/clock"].submobjects[0] is glyphs_before
+    np.testing.assert_array_equal(
+        result.parts["a/clock"].submobjects[0].points, glyphs_before
+    )
 
 
 def test_update_reuses_the_mapped_image_while_the_sample_is_held(

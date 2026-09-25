@@ -9,13 +9,13 @@ lines, and labels are native vector mobjects.
 Every mark is placed through its panel's frame: the rectangle whose corners
 are the axis limits. Updates read that frame's current corners, so a panel
 the caller has moved or uniformly scaled keeps the same data-coordinate
-mapping, and marks, markers, and replaced label glyphs follow it. The x axis
+mapping, and marks, markers, and label text follow it. The x axis
 reversal (positive RA on the left) flips the display mapping once; the data
 and the image storage are never reversed, and image row 0 is the bottom
 pixel row, as in the Matplotlib renderer.
 
 Opacity belongs to the caller. An update rewrites geometry, image pixels,
-and label glyphs, but never sets a part's opacity: a nonfinite coordinate
+and label outlines, but never sets a part's opacity: a nonfinite coordinate
 is a gap whose marker, error bar, or path segment has no points (the
 handle stays, and a later finite update gives it points again), and an
 image keeps the opacity the caller last set on it. A new path weight
@@ -244,8 +244,14 @@ def _text(text, profile, font_size):
     )
 
 
-def _label_glyphs(label, profile, scale):
-    """(glyphs, baseline drop per unit scale) for one Label's text.
+def _label_outline(label, profile, scale):
+    """(Bezier points of the label text, baseline drop per unit scale).
+
+    Every glyph outline of a laid-out `Text` goes into one points array,
+    so a label is drawn by one `VMobject` whose points change with the
+    text. A scene flattens the moving mobjects' families when an animation
+    begins, so swapping glyph submobjects mid-play would leave the old
+    glyphs drawn; rewriting the points of one fixed mobject does not.
 
     A data-space label sits on its baseline like Matplotlib's
     `va="baseline"`, but a Manim `Text` only knows its glyph box. Laying
@@ -259,20 +265,23 @@ def _label_glyphs(label, profile, scale):
         body_bottom = min(g.get_bottom()[1] for g in probe.submobjects[:-1])
         drop = body_bottom - probe.submobjects[-1].get_bottom()[1]
     glyphs.scale(scale)
-    return glyphs, drop
+    outlines = [g.points for g in glyphs.family_members_with_points()]
+    points = np.concatenate(outlines) if outlines else np.zeros((0, 3))
+    return points, drop
 
 
-def _label_offset(glyphs, label, spec, basis, drop):
-    """The shift that puts `glyphs` at `label`'s anchor on the current frame."""
-    if not len(glyphs.submobjects):
+def _label_offset(points, label, spec, basis, drop):
+    """The shift that puts outline `points` at `label`'s anchor on the frame."""
+    if not len(points):
         return np.zeros(3)
     origin, x_vec, y_vec = basis
+    left, bottom = points[:, 0].min(), points[:, 1].min()
     if label.space == "panel":
         fx, fy = label.xy
-        return origin + fx * x_vec + fy * y_vec - glyphs.get_corner(manim.UL)
+        corner = np.array([left, points[:, 1].max(), 0.0])
+        return origin + fx * x_vec + fy * y_vec - corner
     target = _to_scene(np.array([label.xy]), spec, basis)[0]
-    current = np.array([glyphs.get_left()[0], glyphs.get_bottom()[1] - drop, 0.0])
-    return target - current
+    return target - np.array([left, bottom - drop, 0.0])
 
 
 # --- Panel state (kept on the result, never on a mobject) --------------------
@@ -490,8 +499,11 @@ def _draw_panel(view, styles, rgba, profile, parts):
             parts[mark.id] = mob
             ordered[_LINE].append(mob)
         else:
-            glyphs, drop = _label_glyphs(mark, profile, 1.0)
-            glyphs.shift(_label_offset(glyphs, mark, spec, basis, drop))
+            points, drop = _label_outline(mark, profile, 1.0)
+            glyphs = manim.VMobject(
+                fill_color=profile.text_color, fill_opacity=1.0, stroke_width=0
+            )
+            glyphs.set_points(points + _label_offset(points, mark, spec, basis, drop))
             state.label_drops[mark.id] = drop
             state.label_texts[mark.id] = mark.text
             wrapper = manim.VGroup(glyphs)
@@ -536,8 +548,11 @@ class ManimResult:
             arranged `Group`, a `Path` or `ReferenceLine` to a `VMobject`,
             a `Region` to a filled `VMobject` (an annulus has a hole), a
             `Points` to a `VGroup` with one marker per sample, and a `Label`
-            to a stable `VGroup` wrapper whose single child is the current
-            `Text` (replaced when the text changes). Derived parts use
+            to a stable `VGroup` wrapper whose single child is one
+            `VMobject` holding every glyph outline of the current text
+            (its points are rewritten when the text changes; the mobject
+            itself is never replaced, so a playing scene redraws it).
+            Derived parts use
             suffixed keys: `"<view id>/frame"` (the axes box, whose
             corners are the axis limits), `"<view id>/axes"` (ticks and
             axis labels), `"<image id>/colorbar"`, and
@@ -566,7 +581,7 @@ class ManimResult:
         """Show a new state of the same tree, reusing every mobject.
 
         The whole of `view` is validated against the rendered topology, and
-        every new image buffer, geometry array, and label glyph set is
+        every new image buffer, geometry array, and label outline is
         computed, before any mobject changes, so an invalid update leaves
         every part exactly as it was. An image whose data and validity
         arrays are the same borrowed storage as the one displayed is not
@@ -648,28 +663,18 @@ class ManimResult:
         return changes
 
     def _label_change(self, mark, wrapper, state, basis, scale):
-        """New glyphs (only when the text changed), placed at the anchor."""
-        old = wrapper.submobjects[0] if wrapper.submobjects else None
+        """New outline points (laid out only when the text changed), placed."""
+        glyphs = wrapper.submobjects[0]
         if mark.text != state.label_texts[mark.id]:
-            glyphs, drop = _label_glyphs(mark, self.profile, scale)
-            if old is not None and len(old.submobjects) and len(glyphs.submobjects):
-                glyphs.match_style(old)
+            points, drop = _label_outline(mark, self.profile, scale)
         else:
-            glyphs, drop = old, state.label_drops[mark.id]
-        shift = (
-            _label_offset(glyphs, mark, state.spec, basis, drop * scale)
-            if glyphs is not None
-            else None
-        )
+            points, drop = glyphs.points, state.label_drops[mark.id]
+        placed = points + _label_offset(points, mark, state.spec, basis, drop * scale)
 
         def apply():
-            if glyphs is not old:
-                wrapper.remove(*wrapper.submobjects)
-                wrapper.add(glyphs)
-                state.label_texts[mark.id] = mark.text
-                state.label_drops[mark.id] = drop
-            if shift is not None:
-                glyphs.shift(shift)
+            glyphs.set_points(placed)
+            state.label_texts[mark.id] = mark.text
+            state.label_drops[mark.id] = drop
 
         return apply
 
