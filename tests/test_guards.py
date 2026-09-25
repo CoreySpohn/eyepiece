@@ -172,6 +172,19 @@ def test_lazy_attribute_access_resolves_and_caches():
         assert eyepiece.__dict__[name] is value
 
 
+def test_submodule_attribute_access_imports_the_submodule():
+    """`ep._style` works on a fresh `import eyepiece`, as scripts use it."""
+    out = _blocked_import(
+        "import eyepiece as ep\n"
+        "assert ep._style.neutral is not None\n"
+        "assert callable(ep.mpl.render)",
+        (),
+        ("manim", "manim_slides"),
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "ok"
+
+
 def test_unknown_attribute_still_raises_attribute_error():
     with pytest.raises(AttributeError):
         _ = eyepiece.not_a_real_export

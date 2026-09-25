@@ -30,6 +30,7 @@ that needs them.
 """
 
 import importlib
+import importlib.util
 
 from eyepiece._version import __version__
 
@@ -125,10 +126,18 @@ _LAZY_EXPORTS = {
 
 
 def __getattr__(name):
-    """Resolve a public name on first access (PEP 562), then cache it."""
+    """Resolve a public name on first access (PEP 562), then cache it.
+
+    A name that is not an export but names a submodule (``eyepiece._style``,
+    ``eyepiece.mpl``) imports and returns that submodule, as plain attribute
+    access did before the package loaded lazily. Only the requested
+    submodule loads, so ``import eyepiece.prepared`` stays free of pyplot.
+    """
     try:
         module_name, attr_name = _LAZY_EXPORTS[name]
     except KeyError:
+        if not name.startswith("__") and importlib.util.find_spec(f"{__name__}.{name}"):
+            return importlib.import_module(f"{__name__}.{name}")
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
     value = getattr(importlib.import_module(module_name), attr_name)
     globals()[name] = value
