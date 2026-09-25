@@ -235,6 +235,17 @@ def test_array_channel_points_xy_varies_per_frame():
     np.testing.assert_allclose(updated.xy, [[2.0, 2.0]])
 
 
+def test_array_channel_points_xy_carries_gap_frames():
+    head = Points("head", np.zeros((1, 2)))
+    view = TrackView("track", _axes(), marks=(head,))
+    xy = np.array([[[0.0, 0.0]], [[np.nan, np.nan]], [[2.0, 2.0]]])
+    sequence = Sequence(
+        view, np.array([0.0, 1.0, 2.0]), "s", (ArrayChannel("head", "xy", xy),)
+    )
+    assert np.all(np.isnan(find_element(sequence.frame(1), "head").xy))
+    np.testing.assert_allclose(find_element(sequence.frame(2), "head").xy, [[2, 2]])
+
+
 def test_image_mask_time_synchronization():
     """Each frame's validity mirrors that frame's own captured mask."""
     plain = np.array([np.full((2, 2), v) for v in (0.0, 10.0, 20.0)])

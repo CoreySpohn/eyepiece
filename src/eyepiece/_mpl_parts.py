@@ -143,15 +143,37 @@ def path_alphas(leaf):
 # --- Geometry helpers ----------------------------------------------------------
 
 
+def gap_nan(xy):
+    """Float copy of (P, 2) `xy` with every gap row (any nonfinite) all NaN.
+
+    Matplotlib breaks a line at a NaN vertex and skips a NaN segment, but
+    an infinite coordinate is not reliably a gap, so every nonfinite row
+    becomes NaN in both components. The row count never changes, so a
+    handle keeps one vertex/offset per sample and a later finite update
+    shows the sample again.
+    """
+    xy = np.array(xy, dtype=float)
+    xy[~np.all(np.isfinite(xy), axis=1)] = np.nan
+    return xy
+
+
 def visible_xy(path):
-    """The revealed `(start, stop)` slice of a Path's vertices (a view)."""
+    """The revealed `(start, stop)` slice of a Path's vertices, gaps as NaN."""
     start, stop = path.visible
-    return path.xy[start:stop]
+    return gap_nan(path.xy[start:stop])
+
+
+def point_offsets(points):
+    """(P, 2) scatter offsets for `points`, with gap rows masked (hidden)."""
+    return np.ma.masked_invalid(gap_nan(points.xy))
 
 
 def error_segments(points, name):
-    """(P, 2, 2) error-bar segments for `points`' `xerr` or `yerr`."""
-    xy = np.asarray(points.xy, dtype=float)
+    """(P, 2, 2) error-bar segments for `points`' `xerr` or `yerr`.
+
+    A gap row's segment is all NaN, which Matplotlib does not draw.
+    """
+    xy = gap_nan(points.xy)
     err = np.asarray(getattr(points, name), dtype=float)
     offset = np.zeros_like(xy)
     offset[:, 0 if name == "xerr" else 1] = err
@@ -283,9 +305,10 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
                 label=mark.label,
             )
         elif isinstance(mark, Points):
+            offsets = point_offsets(mark)
             parts[mark.id] = ax.scatter(
-                mark.xy[:, 0],
-                mark.xy[:, 1],
+                offsets[:, 0],
+                offsets[:, 1],
                 color=style["color"],
                 marker=style["marker"],
                 label=mark.label,

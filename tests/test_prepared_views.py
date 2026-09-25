@@ -217,9 +217,26 @@ def test_path_rejects_nonnumeric_coordinates():
         Path("p1", np.array([["a", "b"], ["c", "d"]]))
 
 
-def test_path_rejects_nonfinite_coordinates():
-    with pytest.raises(ValueError, match="p1"):
-        Path("p1", np.array([[0.0, 0.0], [float("nan"), 1.0]]))
+def test_path_accepts_nonfinite_rows_as_gaps():
+    xy = np.array([[0.0, 0.0], [float("nan"), 1.0], [2.0, float("inf")]])
+    path = Path("p1", xy)
+    assert path.xy is xy
+
+
+def test_points_accepts_nonfinite_rows_as_gaps():
+    xy = np.array([[0.0, 0.0], [float("nan"), float("nan")]])
+    points = Points("pts", xy)
+    assert points.xy is xy
+
+
+def test_points_errors_may_be_nonfinite_only_on_gap_rows():
+    xy = np.array([[0.0, 0.0], [float("nan"), 1.0]])
+    points = Points("pts", xy, xerr=np.array([0.5, float("nan")]))
+    assert np.isnan(points.xerr[1])
+    with pytest.raises(ValueError, match="pts"):
+        Points("pts", xy, xerr=np.array([float("nan"), 0.5]))
+    with pytest.raises(ValueError, match="pts"):
+        Points("pts", xy, yerr=np.array([float("inf"), 0.5]))
 
 
 def test_points_rejects_malformed_coordinates():

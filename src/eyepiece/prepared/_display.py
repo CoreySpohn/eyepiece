@@ -226,8 +226,12 @@ def map_rgba(data, *, valid, scale, profile):
     """Map `data` to uint8 RGBA under `scale`, using `profile`'s LUT.
 
     Uses `normalize_values` (the same mapper a scalar colorbar lookup
-    uses) to get a display value in [0, 1] per sample, then indexes the
-    256-entry LUT `profile.colormaps[scale.cmap_role]`. A masked
+    uses) to get a display value `x` in [0, 1] per sample, then indexes
+    the N-entry LUT `profile.colormaps[scale.cmap_role]` at
+    `min(floor(x * N), N - 1)` -- N equal-width bins over [0, 1], the
+    same bin rule a colormap built from that LUT applies, so an image
+    pixel and a colorbar swatch of the same value pick the same entry. A
+    masked
     (invalid) sample is painted `profile.bad_rgba` instead -- distinct
     from a clipped-but-valid extreme, which reads as the LUT's own first
     or last entry.
@@ -249,7 +253,8 @@ def map_rgba(data, *, valid, scale, profile):
     normalized = normalize_values(data, valid=valid, scale=scale)
     lut = profile.colormaps[scale.cmap_role]
     filled = np.ma.filled(normalized, 0.0)
-    index = np.clip(np.round(filled * 255.0), 0, 255).astype(np.intp)
+    n_entries = lut.shape[0]
+    index = np.clip(np.floor(filled * n_entries), 0, n_entries - 1).astype(np.intp)
     rgba = lut[index]
     bad = np.ma.getmaskarray(normalized)
     bad_rgba = np.asarray(profile.bad_rgba, dtype=np.uint8)

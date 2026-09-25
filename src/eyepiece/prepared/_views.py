@@ -80,16 +80,24 @@ def _check_numeric(arr, owner_id, field_name):
 
 
 def _check_xy(value, owner_id, field_name):
-    """Validate a (P, 2) coordinate array, returning it as an ndarray."""
+    """Validate a (P, 2) coordinate array, returning it as an ndarray.
+
+    A row with any nonfinite component (NaN or inf) is accepted as a
+    missing-data gap, never as a coordinate: renderers hide it, and
+    anything that derives bounds from coordinates skips it.
+    """
     arr = np.asarray(value)
     _check_numeric(arr, owner_id, field_name)
     if arr.ndim != 2 or arr.shape[1] != 2:
         raise ValueError(
             f"{owner_id}: {field_name} must be shaped (P, 2), got {arr.shape}"
         )
-    if not np.all(np.isfinite(arr)):
-        raise ValueError(f"{owner_id}: {field_name} must be finite")
     return arr
+
+
+def _gap_rows(xy):
+    """Boolean (P,) array, True where a coordinate row is a gap."""
+    return ~np.all(np.isfinite(xy), axis=1)
 
 
 def _check_center(value, owner_id):
@@ -103,10 +111,22 @@ def _check_center(value, owner_id):
     return arr
 
 
-def _check_error_vector(value, p_count, owner_id, field_name):
-    """Validate an optional nonnegative error vector matching `p_count`."""
+def _check_error_vector(value, gaps, owner_id, field_name):
+    """Validate an optional nonnegative error vector matching the rows.
+
+    Args:
+        value: The error vector, or None.
+        gaps: Boolean (P,) array from `_gap_rows`, True on gap rows.
+        owner_id: Element id named in errors.
+        field_name: "xerr" or "yerr", named in errors.
+
+    An error may be nonfinite only on a gap row (a missing point has no
+    meaningful error); on every other row it must be finite. No error may
+    be negative.
+    """
     if value is None:
         return None
+    p_count = gaps.shape[0]
     arr = np.asarray(value)
     _check_numeric(arr, owner_id, field_name)
     if arr.ndim != 1 or arr.shape[0] != p_count:
@@ -115,6 +135,10 @@ def _check_error_vector(value, p_count, owner_id, field_name):
         )
     if np.any(arr < 0):
         raise ValueError(f"{owner_id}: {field_name} must be nonnegative")
+    if not np.all(np.isfinite(arr[~gaps])):
+        raise ValueError(
+            f"{owner_id}: {field_name} must be finite wherever xy is finite"
+        )
     return arr
 
 
@@ -274,7 +298,9 @@ class Path:
 
     Attributes:
         id: Element id, unique within the tree.
-        xy: Coordinates shaped (P, 2).
+        xy: Coordinates shaped (P, 2). A row with a nonfinite component
+            is a gap: the polyline breaks there instead of passing
+            through a coordinate.
         source_id: Optional identity of the scientific source this path
             belongs to, distinct from `id` (several paths can share one
             `source_id` while remaining independently addressable).
@@ -309,11 +335,14 @@ class Points:
 
     Attributes:
         id: Element id, unique within the tree.
-        xy: Coordinates shaped (P, 2).
+        xy: Coordinates shaped (P, 2). A row with a nonfinite component
+            is a missing point (a gap), hidden by renderers.
         source_id: Optional identity of the scientific source this point
             set belongs to, distinct from `id`.
-        xerr: Optional nonnegative x error shaped (P,).
-        yerr: Optional nonnegative y error shaped (P,).
+        xerr: Optional nonnegative x error shaped (P,); nonfinite only on
+            gap rows.
+        yerr: Optional nonnegative y error shaped (P,); nonfinite only on
+            gap rows.
         label: Legend/description text.
     """
 
@@ -327,11 +356,12 @@ class Points:
     def __post_init__(self):
         xy = _check_xy(self.xy, self.id, "xy")
         object.__setattr__(self, "xy", xy)
+        gaps = _gap_rows(xy)
         object.__setattr__(
-            self, "xerr", _check_error_vector(self.xerr, xy.shape[0], self.id, "xerr")
+            self, "xerr", _check_error_vector(self.xerr, gaps, self.id, "xerr")
         )
         object.__setattr__(
-            self, "yerr", _check_error_vector(self.yerr, xy.shape[0], self.id, "yerr")
+            self, "yerr", _check_error_vector(self.yerr, gaps, self.id, "yerr")
         )
 
 

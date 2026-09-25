@@ -490,3 +490,88 @@ def test_update_reuses_mapped_image_while_index_is_held(image_sequence, monkeypa
     for time in (0.5, 1.0, 5.0, 9.9, 10.0, 10.0):
         result.update(sequence.at(time).view)
     assert calls == [0.0, 10.0, 20.0]
+
+
+# --- Image and colorbar agree; coordinate gaps ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("scale", "values"),
+    [
+        (Scale("linear", 0.0, 20.0), np.linspace(0.0, 20.0, 2001)),
+        (
+            Scale("symmetric", -5.0, 5.0, cmap_role="residual"),
+            np.linspace(-5.0, 5.0, 2001),
+        ),
+        (Scale("log", 1e-3, 1.0, floor=1e-4), np.geomspace(1e-3, 1.0, 2001)),
+    ],
+)
+def test_image_and_colorbar_pick_the_same_lut_entry(scale, values):
+    import eyepiece.mpl as mpl
+
+    view = ImageView(
+        "image",
+        values.reshape(1, -1),
+        AxisSpec("x", "y", (0, values.size), (0, 1)),
+        scale,
+        "q",
+    )
+    result = mpl.render(view)
+    image_rgba = np.asarray(result.parts["image"].get_array())[0]
+    mappable = result.parts["image/colorbar"].mappable
+    np.testing.assert_array_equal(image_rgba, mappable.to_rgba(values, bytes=True))
+
+
+def _gap_track(head_xy, path_xy):
+    axes = AxisSpec("x", "y", (-1.0, 1.0), (-1.0, 1.0))
+    return TrackView(
+        "track",
+        axes,
+        (
+            Path("trail", path_xy, source_id="b"),
+            Points("head", head_xy, source_id="b", xerr=np.array([0.2])),
+        ),
+    )
+
+
+def test_nonfinite_coordinates_are_hidden_gaps_then_restored():
+    import eyepiece.mpl as mpl
+
+    path_xy = np.array([[-0.8, -0.8], [np.nan, np.nan], [0.8, -0.8]])
+    gap = _gap_track(np.array([[np.nan, np.nan]]), path_xy)
+    fig, ax = plt.subplots(figsize=(3, 3), dpi=50)
+    result = mpl.render(gap, ax=ax)
+    head, trail, xerr = (result.parts[k] for k in ("head", "trail", "head/xerr"))
+    background = _pixel_rgba(fig, ax, 0.5, 0.5)
+    np.testing.assert_array_equal(_pixel_rgba(fig, ax, 0.0, 0.0), background)
+    assert len(head.get_offsets()) == 1
+    assert not np.isfinite(np.ma.filled(head.get_offsets(), np.nan)).any()
+    assert np.isnan(trail.get_xydata()[1]).all()
+    np.testing.assert_allclose(trail.get_xydata()[[0, 2]], path_xy[[0, 2]])
+
+    filled = np.array([[-0.8, -0.8], [0.0, -0.8], [0.8, -0.8]])
+    result.update(_gap_track(np.array([[0.0, 0.0]]), filled))
+    assert result.parts["head"] is head
+    assert result.parts["trail"] is trail
+    assert result.parts["head/xerr"] is xerr
+    np.testing.assert_allclose(np.ma.getdata(head.get_offsets()), [[0.0, 0.0]])
+    assert not np.ma.getmaskarray(head.get_offsets()).any()
+    np.testing.assert_allclose(trail.get_xydata(), filled)
+    np.testing.assert_allclose(xerr.get_segments()[0], [[-0.2, 0.0], [0.2, 0.0]])
+    assert not np.array_equal(_pixel_rgba(fig, ax, 0.0, 0.0), background)
+
+    result.update(gap)
+    assert not np.isfinite(np.ma.filled(head.get_offsets(), np.nan)).any()
+    np.testing.assert_array_equal(_pixel_rgba(fig, ax, 0.0, 0.0), background)
+
+
+def test_infinite_coordinates_are_gaps_not_far_away_points():
+    import eyepiece.mpl as mpl
+
+    path_xy = np.array([[-0.8, -0.8], [np.inf, 0.0], [0.8, -0.8]])
+    result = mpl.render(_gap_track(np.array([[np.inf, 0.0]]), path_xy))
+    assert np.isnan(result.parts["trail"].get_xydata()[1]).all()
+    assert not np.isfinite(
+        np.ma.filled(result.parts["head"].get_offsets(), np.nan)
+    ).any()
+    result.fig.canvas.draw()

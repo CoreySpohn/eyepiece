@@ -9,11 +9,15 @@ entry of the sequence's shared output schedule.
 The renderer computes no science. Image colors come from
 `eyepiece.prepared.map_rgba` under the view's own `Scale` and the render
 profile's colormap table, and the colorbar is a scalar mappable over that
-same scale and table, so the image and its colorbar cannot disagree. Every
-mark on a panel is drawn in that panel's data coordinates, so paths, points,
-their error bars, and regions stay aligned when the x axis is reversed (the
-increasing-RA-left convention reverses the axis display once; the data and
-the image extent are never flipped).
+same scale and table using the same N-bin lookup, so for every value on the
+colorbar's range the image pixel and the colorbar swatch are the same table
+entry. Every mark on a panel is drawn in that panel's data coordinates, so
+paths, points, their error bars, and regions stay aligned when the x axis is
+reversed (the increasing-RA-left convention reverses the axis display once;
+the data and the image extent are never flipped). A nonfinite coordinate row
+is a gap: the path breaks there and the point and its error bars are hidden,
+while the handle keeps one entry per sample so a later finite update shows
+it again.
 
 A result is bound to the topology it was rendered from. `MplResult.update`
 accepts a new state of the same tree -- same element IDs and kinds, image
@@ -26,7 +30,6 @@ caller hid stays hidden.
 
 from types import MappingProxyType
 
-import numpy as np
 from matplotlib.patches import Annulus
 
 from eyepiece._mpl_parts import (
@@ -39,6 +42,7 @@ from eyepiece._mpl_parts import (
     leaf_views,
     owned_axes,
     path_alphas,
+    point_offsets,
     resolve_axes,
     resolve_styles,
     root_figure,
@@ -257,7 +261,7 @@ class MplResult:
         if isinstance(mark, Path):
             return [(part.set_data, visible_xy(mark).T)]
         if isinstance(mark, Points):
-            changes = [(part.set_offsets, np.asarray(mark.xy, dtype=float))]
+            changes = [(part.set_offsets, point_offsets(mark))]
             for name in ("xerr", "yerr"):
                 if getattr(mark, name) is not None:
                     changes.append(
