@@ -28,28 +28,11 @@ def _scale(vmin=0.0, vmax=1.0):
     return Scale("linear", vmin, vmax)
 
 
-# --- Task-3-brief fixture (verbatim) ----------------------------------------
+# --- Task-3-brief fixture (image_sequence, in conftest.py) -----------------
 
 
-def make_image_sequence():
-    cube = np.array([np.full((2, 3), v) for v in (0.0, 10.0, 20.0)])
-    view = ImageView(
-        "image",
-        cube[0],
-        AxisSpec("x", "y", (0, 3), (0, 2)),
-        Scale("linear", 0, 20),
-        "signal",
-    )
-    return Sequence(
-        view,
-        np.array([0.0, 1.0, 10.0]),
-        "s",
-        (ArrayChannel("image", "data", cube),),
-    )
-
-
-def test_hold_uses_acquisition_time():
-    sample = make_image_sequence().at(5.0)
+def test_hold_uses_acquisition_time(image_sequence):
+    sample = image_sequence().at(5.0)
     assert sample.index == 1
     assert sample.acquisition_time == 1.0
     assert sample.physical_time == 5.0
@@ -59,8 +42,8 @@ def test_hold_uses_acquisition_time():
 # --- Left sample-and-hold seeking --------------------------------------------
 
 
-def test_seeking_before_after_and_between_samples():
-    sequence = make_image_sequence()
+def test_seeking_before_after_and_between_samples(image_sequence):
+    sequence = image_sequence()
     queries = [0.0, 7.0, 2.0, 10.0, 0.0]
     expected_index = [0, 1, 1, 2, 0]
     expected_acquisition = [0.0, 1.0, 1.0, 10.0, 0.0]
@@ -73,8 +56,8 @@ def test_seeking_before_after_and_between_samples():
         assert sample.physical_time == query
 
 
-def test_seek_clamps_out_of_range_but_keeps_raw_physical_time():
-    sequence = make_image_sequence()
+def test_seek_clamps_out_of_range_but_keeps_raw_physical_time(image_sequence):
+    sequence = image_sequence()
     early = sequence.at(-5.0)
     assert early.index == 0
     assert early.acquisition_time == 0.0
@@ -86,35 +69,35 @@ def test_seek_clamps_out_of_range_but_keeps_raw_physical_time():
     assert late.physical_time == 1e6
 
 
-def test_seek_rejects_nan():
+def test_seek_rejects_nan(image_sequence):
     with pytest.raises(ValueError, match="physical_time"):
-        make_image_sequence().at(float("nan"))
+        image_sequence().at(float("nan"))
 
 
-def test_seek_rejects_inf():
+def test_seek_rejects_inf(image_sequence):
     with pytest.raises(ValueError, match="physical_time"):
-        make_image_sequence().at(float("inf"))
+        image_sequence().at(float("inf"))
 
 
-def test_frame_matches_at_for_exact_sample_time():
-    sequence = make_image_sequence()
+def test_frame_matches_at_for_exact_sample_time(image_sequence):
+    sequence = image_sequence()
     direct = sequence.frame(1)
     via_at = sequence.at(1.0).view
     assert np.array_equal(direct.data, via_at.data)
     assert direct.scale is via_at.scale
 
 
-def test_frame_index_out_of_range_raises():
-    sequence = make_image_sequence()
+def test_frame_index_out_of_range_raises(image_sequence):
+    sequence = image_sequence()
     with pytest.raises(IndexError):
         sequence.frame(3)
     with pytest.raises(IndexError):
         sequence.frame(-1)
 
 
-def test_frame_index_must_be_integer():
+def test_frame_index_must_be_integer(image_sequence):
     with pytest.raises(TypeError):
-        make_image_sequence().frame(1.5)
+        image_sequence().frame(1.5)
 
 
 # --- Leading-N arrays are borrowed, unrelated elements share identity -------
@@ -361,8 +344,8 @@ def test_clock_requires_label_target():
 # --- schedule --------------------------------------------------------------
 
 
-def test_schedule_endpoints_at_10_and_30_fps():
-    sequence = make_image_sequence()
+def test_schedule_endpoints_at_10_and_30_fps(image_sequence):
+    sequence = image_sequence()
     ten = sequence.schedule(run_time=1.0, fps=10)
     thirty = sequence.schedule(run_time=1.0, fps=30)
     assert len(ten) == 10
@@ -381,19 +364,19 @@ def test_schedule_singleton_sequence_is_constant():
     assert np.all(schedule == 5.0)
 
 
-def test_schedule_rejects_nonpositive_run_time():
+def test_schedule_rejects_nonpositive_run_time(image_sequence):
     with pytest.raises(ValueError):
-        make_image_sequence().schedule(run_time=0.0, fps=30)
+        image_sequence().schedule(run_time=0.0, fps=30)
 
 
-def test_schedule_rejects_nonpositive_fps():
+def test_schedule_rejects_nonpositive_fps(image_sequence):
     with pytest.raises(ValueError):
-        make_image_sequence().schedule(run_time=1.0, fps=0)
+        image_sequence().schedule(run_time=1.0, fps=0)
 
 
-def test_schedule_rejects_nonfinite_inputs():
+def test_schedule_rejects_nonfinite_inputs(image_sequence):
     with pytest.raises(ValueError):
-        make_image_sequence().schedule(run_time=float("nan"), fps=30)
+        image_sequence().schedule(run_time=float("nan"), fps=30)
 
 
 # --- strip -------------------------------------------------------------
