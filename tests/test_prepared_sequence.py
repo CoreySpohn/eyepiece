@@ -352,6 +352,68 @@ def test_clock_requires_label_target():
         Sequence(view, np.array([0.0, 1.0]), "s", (Clock("image"),))
 
 
+# --- d1: multiple channels on one ImageView compose atomically --------------
+#
+# `_build_frame` replaces a changed ImageView wholesale to update its
+# data/valid (see the module-level comment on `_build_frame`); a Clock
+# label or Points head that is a MARK of that same ImageView must still be
+# updated each frame, not silently reverted to the template's frame-0
+# marks by that wholesale replacement.
+
+
+def _composed_image_sequence():
+    cube = np.array([np.full((2, 2), v) for v in (0.0, 10.0, 20.0)])
+    head_xy = np.array([[[0.0, 0.0]], [[1.0, 1.0]], [[2.0, 2.0]]])
+    label = Label("clock", "", (0.0, 0.0))
+    head = Points("head", np.zeros((1, 2)))
+    view = ImageView(
+        "image",
+        cube[0],
+        AxisSpec("x", "y", (0, 2), (0, 2)),
+        Scale("linear", 0, 20),
+        "signal",
+        marks=(label, head),
+    )
+    channels = (
+        ArrayChannel("image", "data", cube),
+        ArrayChannel("head", "xy", head_xy),
+        Clock("clock"),
+    )
+    return Sequence(view, np.array([0.0, 1.0, 2.0]), "s", channels)
+
+
+def test_frame_composes_image_clock_and_head_atomically():
+    sequence = _composed_image_sequence()
+    for i in range(3):
+        frame = sequence.frame(i)
+        assert frame.data.mean() == 10.0 * i
+        assert find_element(frame, "clock").text == f"{i} s"
+        np.testing.assert_allclose(
+            find_element(frame, "head").xy, [[float(i), float(i)]]
+        )
+
+
+def test_at_composes_image_clock_and_head_atomically():
+    sequence = _composed_image_sequence()
+    sample = sequence.at(1.0)
+    assert sample.view.data.mean() == 10.0
+    assert find_element(sample.view, "clock").text == "1 s"
+    np.testing.assert_allclose(find_element(sample.view, "head").xy, [[1.0, 1.0]])
+
+
+def test_strip_composes_image_clock_and_head_atomically():
+    sequence = _composed_image_sequence()
+    strip = sequence.strip([2, 0])
+
+    assert find_element(strip, "0/image").data.mean() == 20.0
+    assert find_element(strip, "0/clock").text == "2 s"
+    np.testing.assert_allclose(find_element(strip, "0/head").xy, [[2.0, 2.0]])
+
+    assert find_element(strip, "1/image").data.mean() == 0.0
+    assert find_element(strip, "1/clock").text == "0 s"
+    np.testing.assert_allclose(find_element(strip, "1/head").xy, [[0.0, 0.0]])
+
+
 # --- schedule --------------------------------------------------------------
 
 
@@ -400,6 +462,49 @@ def test_schedule_rejects_nonpositive_fps(image_sequence):
 def test_schedule_rejects_nonfinite_inputs(image_sequence):
     with pytest.raises(ValueError):
         image_sequence().schedule(run_time=float("nan"), fps=30)
+
+
+# --- d2: `.at` snaps a sample time perturbed by float noise -----------------
+
+
+def test_schedule_times_recover_their_intended_index_in_order():
+    """80 epochs (days), run_time=80/12 at fps=12: every schedule time must
+    map back to its own index, in order, with no repeats or skips (the
+    reported regression: 9 of 80 were skipped when a schedule time landed
+    a few ULPs below the sample time it was meant to reproduce)."""
+    n = 80
+    times = np.linspace(0.0, 240 / 24, n)
+    cube = np.zeros((n, 2, 2))
+    view = ImageView(
+        "image",
+        cube[0],
+        AxisSpec("x", "y", (0, 2), (0, 2)),
+        Scale("linear", -1, 1),
+        "signal",
+    )
+    sequence = Sequence(view, times, "d", (ArrayChannel("image", "data", cube),))
+    schedule = sequence.schedule(run_time=80 / 12, fps=12)
+    assert len(schedule) == n
+    indices = [sequence.at(float(t)).index for t in schedule]
+    assert indices == list(range(n))
+
+
+def test_at_snaps_a_sample_time_perturbed_one_ulp_below(image_sequence):
+    sequence = image_sequence()
+    perturbed = float(np.nextafter(1.0, -np.inf))
+    assert perturbed < 1.0
+    sample = sequence.at(perturbed)
+    assert sample.index == 1
+    assert sample.acquisition_time == 1.0
+    # the raw request itself is still reported unclamped/unsnapped
+    assert sample.physical_time == perturbed
+
+
+def test_at_does_not_snap_a_request_well_below_a_sample(image_sequence):
+    sequence = image_sequence()
+    sample = sequence.at(0.9)
+    assert sample.index == 0
+    assert sample.acquisition_time == 0.0
 
 
 # --- strip -------------------------------------------------------------

@@ -51,6 +51,11 @@ _STRIP_LABEL_XY = (0.02, 0.95)
 # Relative tolerance for treating `run_time * fps` as a whole frame count.
 _FRAME_COUNT_RTOL = 1e-9
 
+# Relative tolerance, against max(|physical_time|, times span), for treating
+# a seek request as landing exactly on the next sample time rather than
+# just before it. See `Sequence._sample_index`.
+_SAMPLE_SNAP_RTOL = 1e-9
+
 
 def _clock_text(acquisition_time, time_unit):
     """Format an acquisition time as a compact "<time> <unit>" clock string.
@@ -303,47 +308,72 @@ class Sequence:
         return self._build_frame(int(index))
 
     def _build_frame(self, index):
-        changes = {}
+        # Two passes, not one flat `changes` dict: `replace_elements` swaps
+        # in a replacement WHOLESALE and never descends into it (that is
+        # its contract -- see `_views._rebuild`), so an ImageView carrying
+        # both a "data"/"valid" ArrayChannel and a Clock/Points mark of its
+        # own cannot have both applied in a single pass. Pass 1 rebuilds
+        # every Points/Path/Label MARK (never a whole ImageView), which
+        # `_rebuild`'s per-id recursion already composes correctly even
+        # when several marks belong to the same container. Pass 2 then
+        # builds each changed ImageView's data/valid replacement FROM that
+        # already-updated tree, so its `marks` field -- untouched by this
+        # pass -- carries pass 1's results forward instead of reverting to
+        # the template's frame-0 marks.
+        leaf_changes = {}
         for element_id, fields in self._array_by_element.items():
-            current = find_element(self.template, element_id)
-            if isinstance(current, ImageView):
-                data_channel = fields.get("data")
-                data = (
-                    data_channel.values[index]
-                    if data_channel is not None
-                    else current.data
-                )
-                mask_valid = (
-                    data_channel.mask_valid[index]
-                    if data_channel is not None and data_channel.mask_valid is not None
-                    else None
-                )
-                valid_channel = fields.get("valid")
-                explicit_valid = (
-                    valid_channel.values[index] if valid_channel is not None else None
-                )
-                valid = _combine_valid(mask_valid, explicit_valid)
-                changes[element_id] = dataclasses.replace(
-                    current, data=data, valid=valid
-                )
-            else:
+            target = find_element(self.template, element_id)
+            if isinstance(target, Points):
                 xy_channel = fields["xy"]
-                changes[element_id] = dataclasses.replace(
-                    current, xy=xy_channel.values[index]
+                leaf_changes[element_id] = dataclasses.replace(
+                    target, xy=xy_channel.values[index]
                 )
 
         for element_id, history in self._path_windows.items():
-            current = find_element(self.template, element_id)
+            target = find_element(self.template, element_id)
             start = max(0, index + 1 - history) if history is not None else 0
             stop = index + 1
-            changes[element_id] = dataclasses.replace(current, visible=(start, stop))
+            leaf_changes[element_id] = dataclasses.replace(
+                target, visible=(start, stop)
+            )
 
         for element_id in self._clocks:
-            current = find_element(self.template, element_id)
+            target = find_element(self.template, element_id)
             text = _clock_text(self.times[index], self.time_unit)
-            changes[element_id] = dataclasses.replace(current, text=text)
+            leaf_changes[element_id] = dataclasses.replace(target, text=text)
 
-        return replace_elements(self.template, changes)
+        updated = (
+            replace_elements(self.template, leaf_changes)
+            if leaf_changes
+            else self.template
+        )
+
+        image_changes = {}
+        for element_id, fields in self._array_by_element.items():
+            current = find_element(updated, element_id)
+            if not isinstance(current, ImageView):
+                continue
+            data_channel = fields.get("data")
+            data = (
+                data_channel.values[index] if data_channel is not None else current.data
+            )
+            mask_valid = (
+                data_channel.mask_valid[index]
+                if data_channel is not None and data_channel.mask_valid is not None
+                else None
+            )
+            valid_channel = fields.get("valid")
+            explicit_valid = (
+                valid_channel.values[index] if valid_channel is not None else None
+            )
+            valid = _combine_valid(mask_valid, explicit_valid)
+            image_changes[element_id] = dataclasses.replace(
+                current, data=data, valid=valid
+            )
+
+        if not image_changes:
+            return updated
+        return replace_elements(updated, image_changes)
 
     def at(self, physical_time):
         """Evaluate the sequence at an arbitrary physical time.
@@ -366,19 +396,39 @@ class Sequence:
         physical_time = float(physical_time)
         if not math.isfinite(physical_time):
             raise ValueError(f"physical_time must be finite, got {physical_time!r}")
-        index = int(
-            np.clip(
-                np.searchsorted(self.times, physical_time, side="right") - 1,
-                0,
-                len(self.times) - 1,
-            )
-        )
+        index = self._sample_index(physical_time)
         return Sample(
             index=index,
             physical_time=physical_time,
             acquisition_time=float(self.times[index]),
             view=self._build_frame(index),
         )
+
+    def _sample_index(self, physical_time):
+        """Left sample-and-hold index for `physical_time`, snapping float noise.
+
+        The declared convention is
+        `searchsorted(times, t, side="right") - 1`, clamped to a valid
+        index. Taken completely literally, that convention fails a value
+        `t` meant to reproduce a sample time exactly but landing a handful
+        of ULPs BELOW it (a `schedule()` output built by `np.linspace`, or
+        any physical time recovered through an intermediate unit
+        conversion, can do this): `t` then reads as "just before" that
+        sample and holds the PREVIOUS one instead. A request within
+        `_SAMPLE_SNAP_RTOL` of the sample time it is approaching from
+        below is therefore treated as exactly that sample time before
+        applying left sample-and-hold; a request that is genuinely earlier
+        by more than that tolerance still holds the previous sample, as
+        the convention requires.
+        """
+        times = self.times
+        idx_right = int(np.searchsorted(times, physical_time, side="right"))
+        if idx_right < len(times):
+            span = times[-1] - times[0]
+            scale = max(abs(physical_time), span)
+            if times[idx_right] - physical_time <= _SAMPLE_SNAP_RTOL * scale:
+                idx_right += 1
+        return int(np.clip(idx_right - 1, 0, len(times) - 1))
 
     def strip(self, indices):
         """Return a `PanelGroup` of the selected epochs, one slot per index.
