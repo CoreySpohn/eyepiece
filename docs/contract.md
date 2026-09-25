@@ -7,6 +7,14 @@ figure assembled from several primitives comes out looking like one figure
 rather than a collage. This page states the contract; the API reference
 states the arguments.
 
+eyepiece has two ways to draw. The ax-first primitives at the top level
+(`imshow_log`, `compare_row`, `sky_fan`, and the rest) take arrays and draw
+them in one call. Prepared views, in `eyepiece.prepared`, write a scene down
+as data once, and the renderers in `eyepiece.mpl` and `eyepiece.manim` draw
+that data as a Matplotlib figure or as native Manim objects. Most of this page
+applies to both; the {ref}`prepared-contract` section states the rules
+specific to the second path.
+
 ## Arrays in, plain floats for scalars
 
 An array argument is anything `numpy.asarray` accepts, and it is converted
@@ -15,6 +23,12 @@ memory-mapped slice are all valid, and none of them are given special
 treatment. No primitive accepts a simulation-library type, checks for one,
 or imports a package that defines one, which is what keeps the library
 usable from any code that can produce a number.
+
+The same firewall holds for prepared views. A record holds borrowed numeric
+arrays and plain metadata, never a live simulation object, and neither
+renderer ever receives one. The records borrow rather than convert: a
+float32 cube or a read-only memory map is stored as given, without a dtype
+promotion or a copy.
 
 Scalars are plain Python floats. There is no `Quantity` type anywhere in the
 API, no unit registry, and no attempt to infer units from an array's
@@ -67,6 +81,12 @@ that reads the figure off the axes. `MosaicResult` carries `.axes` (the
 panel array, as `plt.subplots` returns it), the same `.artists` and
 `.update`, and a `.fig` property that reads the figure off the first panel.
 
+The prepared renderers return their own result types, described under
+{ref}`prepared-contract`: `eyepiece.mpl.render` returns an `MplResult`,
+`eyepiece.mpl.animate` an `eyepiece.Animation`, `eyepiece.manim.render` a
+`ManimResult`, and `eyepiece.manim.animate` a `ManimClip`. A preparation
+function returns a record or a `Sequence`, not a figure.
+
 ### The artist vocabulary
 
 `.artists` is a plain dict whose keys are drawn from `ARTIST_KEYS`, a fixed
@@ -113,8 +133,10 @@ The reason it exists is animation. `imshow_log` clips its data to a floor
 before building the norm, so a frame loop that called `imshow` itself would
 have to re-derive that clip and would eventually get it wrong. Instead
 `result.update(new_image)` re-applies the floor and calls `set_data` on the
-existing `AxesImage`, creating no new artist. `imshow_diverging`, by
-contrast, has no stateful transform to reapply and so returns no `update`.
+existing `AxesImage`, creating no new artist. `imshow_diverging` returns an
+`update` as well, which converts the new data to float and calls `set_data`
+under the symmetric norm of the first draw, so every frame keeps the same
+zero and the same scale.
 
 An `update` reuses the norm built from the first draw. Values outside that
 norm are not an error, they render clipped to the colormap's end colors, and
@@ -175,6 +197,12 @@ across it with `fig.colorbar(ax=axes)`, and called with `axes=` it draws the
 identical row but puts the shared colorbar in an inset off the last panel.
 The figure looks the same either way, and the caller's layout survives.
 
+`eyepiece.mpl.render` follows the same rule. On caller axes its colorbar is
+an inset beside the image and no layout engine is installed on the caller's
+figure, so on a figure created without a layout engine the colorbar label can
+fall outside the canvas. A figure created with `layout="constrained"` keeps
+it on the canvas.
+
 ## Style resolves at call time
 
 Color, colormap, and savefig policy come from hwostyle, and every lookup
@@ -188,6 +216,14 @@ The practical rule this comes from is that a style library rebinds its own
 module globals when a mode is activated, so a reference captured at import
 time silently freezes whichever mode happened to be active then. Nothing in
 eyepiece holds such a reference.
+
+The prepared renderers resolve style at an explicit moment instead of at
+each draw. `eyepiece.style.snapshot_profile()` copies the current palette,
+colormap tables, text settings, and reference color into a read-only
+`RenderProfile`, and a rendered result keeps that profile for every later
+update. A mode switch therefore changes the next snapshot and never an
+existing result, which is what lets a movie or a slide play to the end in
+the colors it started with.
 
 A primitive called with no style applied at all still produces a sensible
 figure. Colormaps fall back to the light-mode definitions, and palette
@@ -269,6 +305,111 @@ it asserts three independent quantities, and when the components converge the
 lines overprint into a color belonging to none of them. Draw the total as a wide,
 pale envelope beneath its own components: the components stay legible on top, and
 a component sitting inside the envelope is the additive identity made visible.
+
+(prepared-contract)=
+## Prepared views
+
+A prepared view is a frozen tree of records in `eyepiece.prepared`: images,
+curve and track panels, panel groups, and the paths, points, regions,
+reference lines, and labels drawn on them, plus `Sequence` for replayable
+states over physical time. The {doc}`prepared views guide <prepared-views>`
+documents the records; the rules they follow are these.
+
+### Preparation is pure
+
+A preparation module turns scientific objects into records and does nothing
+else. It imports `eyepiece.prepared`, which loads only the standard library
+and NumPy, and it never imports a renderer, activates a style, or touches
+Matplotlib state. It performs every scientific step once: extraction, unit
+choice, coordinate conventions such as right ascension increasing to the
+left, scientific floors and normalization, masks, and traces computed from
+scientific values before any display clipping. It also owns the transfer from
+a device array to host memory. The records it returns are then the only
+input a renderer sees, and no update recomputes any of it.
+
+### Masks and validity
+
+A sample is invalid when a mask marks it, when an explicit `valid` array
+marks it, or when it is not finite. A masked array's mask is captured before
+the data is coerced, and a mask and an explicit `valid` combine by logical
+and. Invalid samples contribute to no bounds or statistics, and they are
+drawn in the profile's bad-sample color, which is distinct from every
+colormap entry. A valid sample outside the display range is clipped to the
+nearest end of the scale and stays visible. Masking and clipping are never
+the same appearance.
+
+Display bounds come from the valid samples of the whole sequence, or from
+limits the caller supplies, and stay fixed for every still, strip, and frame
+made from it. An all-invalid sequence and a constant one both raise rather
+than invent a scale, and an unsupported scale kind or invalid bounds fail
+before anything is drawn.
+
+### Return types and named parts
+
+A renderer's result exposes what it drew by the element IDs of the records.
+`MplResult.parts` maps each ID to its Matplotlib artist, and
+`ManimResult.parts` maps each ID to its mobject. Derived parts take suffixed
+keys: `"<image id>/colorbar"` in both renderers, `"<points id>/xerr"` and
+`"<points id>/yerr"` for error bars in both, and `"<view id>/frame"` and
+`"<view id>/axes"` in the Manim renderer only, since only there are the axes
+box and the axis decoration separate objects. An element ID that collides
+with a derived key is rejected before drawing.
+
+A `source_id` is not an element ID. It names the scientific source a mark
+belongs to, so many independently addressable marks can share one source's
+color and marker.
+
+A result's `update(view)` takes a new state of the same topology, validates
+the whole of it, and prepares every change before applying any, so an
+invalid update leaves the output exactly as it was. Adding or removing an
+element, or changing a shape, scale, axis specification, point count, or
+source, needs a new render.
+
+### Ownership is renderer specific
+
+The two renderers share the records, the display mapping, the schedule, and
+the topology rules, and nothing else. Each returns objects native to its own
+toolkit, and the consumer customizes them there: through the Matplotlib
+artists in `MplResult.parts`, or through the mobjects in `ManimResult.parts`.
+There are no routed keyword dictionaries on the prepared renderers and no
+shared abstraction over artists and mobjects. Exact figure dimensions,
+slide placement, camera motion, and reveal order stay with the consumer.
+
+Updates never change what the consumer owns. A Matplotlib update never
+changes an artist's visibility, and a Manim update never sets a part's
+opacity, so a part the consumer hid stays hidden until the consumer shows it.
+
+### Cast and profile are explicit
+
+Appearance enters a render through two arguments. A `SourceCast` fixes each
+source name's palette slot and marker from its position in a declared list,
+independent of the order in which sources are drawn. A `RenderProfile` is a
+read-only snapshot of the style, taken when `snapshot_profile` is called and
+never changed afterwards. When either is omitted, the renderer builds it once
+at render time and keeps it for every update: a cast from the tree's source
+IDs in encounter order, and a profile sized for a paper figure from the
+Matplotlib rc settings in `eyepiece.mpl`, or with 24 pt text and 1.5 pt
+strokes in `eyepiece.manim`. A document with more than one figure declares
+its cast once and passes it everywhere.
+
+### Time is sampled, not interpolated
+
+A `Sequence` holds instantaneous samples at finite, strictly increasing
+physical times, and rejects any other declared sample kind. Every frame is a
+complete state. Evaluation is left sample-and-hold, and a clock label reports
+the acquisition time of the sample shown. Presentation duration and frame
+rate choose an output schedule, `ceil(run_time * fps)` times spanning the
+first sample through the last, that both renderers use; neither renderer
+interpolates between samples or reevaluates a simulation.
+
+### Direct model binding stays in the consumer
+
+A consumer that animates native Manim geometry straight from a scientific
+model, evaluating the model at each playback time, writes that binding in its
+own script or in the library that owns the model. It needs no import from
+eyepiece or from any viz module, and eyepiece does not inspect model objects
+to support it. The restriction that updates compute no science applies to the
+prepared renderers, not to that explicit consumer code.
 
 ## What earns a place in this library
 

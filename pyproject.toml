@@ -22,6 +22,11 @@ dependencies = ["matplotlib>=3.8", "numpy", "hwostyle>=1.3.0"]
 hwo = ["hwoutils"]
 docs = ["sphinx", "myst-nb", "sphinx-book-theme", "sphinx-autoapi", "sphinx_autodoc_typehints", "ipython", "imageio-ffmpeg"]
 test = ["pytest", "pytest-cov", "imageio-ffmpeg"]
+# Pillow 13 removes the Image.fromarray mode argument that manim 0.21 uses for
+# every image mobject, so both Manim extras cap it until manim adapts.
+manim = ["manim>=0.21,<0.22", "pillow<13"]
+# The pyside6 extra supplies the Qt binding that `manim-slides present` needs.
+slides = ["manim>=0.21,<0.22", "manim-slides[pyside6]>=5.7,<6", "pillow<13"]
 dev = ["pre-commit"]
 
 [project.urls]

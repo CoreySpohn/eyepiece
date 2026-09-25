@@ -14,6 +14,13 @@ returns a small result object holding the axes and the artists it drew, so
 callers can update or extend a figure without re-deriving which line or
 image object came from where.
 
+For a scene that has to appear more than once, eyepiece also offers prepared
+views: plain records of images, curves, tracks, and their marks, carrying
+borrowed arrays, units, masks, display scales, and stable IDs. A simulation
+library prepares a scene once, and the same records render as a paper still
+or a movie through `eyepiece.mpl`, and as native Manim objects for a talk
+through `eyepiece.manim`, without recomputing any science.
+
 Figure style (color, colormaps, and mode) is resolved through
 [hwostyle](https://github.com/HabitableWorldsObservatory/hwostyle) at call
 time, not at import time. `import eyepiece` never activates a style or
@@ -66,6 +73,19 @@ implement them are internal organization.
   frame source into the public `Animation` type it returns), and `PRESETS`
   of measured fps/dpi pairs.
 
+Prepared views live in namespaces of their own:
+
+- **`eyepiece.prepared`.** The frozen records (`ImageView`, `CurveView`,
+  `TrackView`, `PanelGroup`, and the `Path`, `Points`, `Region`,
+  `ReferenceLine`, and `Label` marks), `Sequence` for replayable states over
+  physical time, and the shared display mapping. It imports only NumPy.
+- **`eyepiece.style`.** `SourceCast` for fixed source colors and markers, and
+  `snapshot_profile`, which captures the active hwostyle appearance as a
+  read-only `RenderProfile`.
+- **`eyepiece.mpl`.** `render` and `animate` for Matplotlib stills and movies.
+- **`eyepiece.manim`.** `render` and `animate` for native Manim Community
+  objects, usable in a Manim scene or a Manim Slides deck.
+
 ## Usage
 
 ```python
@@ -92,6 +112,30 @@ def draw(fig, k):
 
 
 ep.animate(result.fig, draw, len(frames), fps=10).save("run.mp4", "run.gif")
+```
+
+A prepared sequence gives a still, a strip of selected epochs, and a movie
+from one preparation:
+
+```python
+import eyepiece.mpl as mpl
+from eyepiece.style import SourceCast, snapshot_profile
+
+cast = SourceCast(["planet b"])
+still = mpl.render(sequence.frame(10), cast=cast)
+strip = mpl.render(sequence.strip([0, 10, 20]), cast=cast)
+movie = mpl.animate(sequence, run_time=8, fps=30, cast=cast)
+movie.save("run.mp4")
+```
+
+The same sequence plays in a talk through Manim:
+
+```python
+import eyepiece.manim as em
+
+clip = em.animate(sequence, cast=cast, profile=snapshot_profile())
+self.add(clip.mobject)  # inside a Manim Scene or Slide
+self.play(clip.playback(run_time=8))
 ```
 
 `rail` draws a miniature optical-train diagram from a plain element list, so
@@ -124,6 +168,15 @@ pull in [hwoutils](https://github.com/CoreySpohn/hwoutils):
 
 ```bash
 pip install eyepiece[hwo]
+```
+
+The Manim renderer is optional too. `[manim]` adds Manim Community, and
+`[slides]` adds Manim Slides beside it; Manim needs system Cairo, Pango,
+pkg-config, and ffmpeg:
+
+```bash
+pip install "eyepiece[manim]"
+pip install "eyepiece[slides]"
 ```
 
 ## License

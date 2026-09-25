@@ -252,9 +252,10 @@ def imshow_diverging(
         cbar_kw: Extra kwargs passed to `fig.colorbar`.
 
     Returns:
-        A `PlotResult` with artists `"image"` (and `"cbar"` if drawn). No
-        `.update` -- the norm has no floor or other stateful transform to
-        reapply.
+        A `PlotResult` with artists `"image"` (and `"cbar"` if drawn) and an
+        `.update(new_image)` that redraws new data under the first draw's
+        symmetric norm, which is never refitted, so an animated residual
+        keeps one zero and one scale across frames.
     """
     _check_colorbar(colorbar)
     data = np.asarray(image, dtype=float)

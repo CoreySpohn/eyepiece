@@ -5,6 +5,9 @@ hwostyle.use() rebinds those module globals, so a captured reference
 silently freezes the mode a caller saw at import time. Every lookup here
 goes through the `hwostyle` module attribute at call time, so a later
 `hwostyle.use()` switch is always seen.
+
+This module serves the Matplotlib primitives; the prepared-view renderers
+take their appearance from an explicit snapshot instead (`eyepiece.style`).
 """
 
 import hwostyle

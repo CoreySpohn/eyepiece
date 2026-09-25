@@ -15,11 +15,13 @@ plotting framework two releases later.
 ## The division of labor
 
 eyepiece owns generic mechanisms over arrays: norms and colormaps, panel
-grids, colorbar geometry, extents and labels, animation, styled saving, and
-the {doc}`return contract <contract>` that ties them together. Your library
+grids, colorbar geometry, extents and labels, animation, styled saving, the
+prepared-view records with their display mapping and renderers, and the
+{doc}`return contract <contract>` that ties them together. Your library
 owns knowledge of its own types: which attribute holds the array, what units
 it is in, how a chromatic field is laid out, what a sensible default view of
-it is.
+it is, and every scientific step between the object and the arrays a figure
+shows.
 
 The test that decides where a function belongs is one question. Would this
 function have to change if some other library changed its API? If the answer
@@ -57,7 +59,9 @@ def eyepiece():
 A `viz/` package re-exports its functions lazily through the module-level
 `__getattr__` of PEP 562, with a matching `__dir__`, so importing the
 package does not import every submodule and therefore does not import
-eyepiece either.
+eyepiece either. A lazily exported name must not equal the name of a
+submodule of the same package: importing that submodule binds the name on
+the package to the module, and the lazy function is then never reached.
 
 The property that matters here is that the base install imports clean, and
 it is worth an explicit test rather than an assumption. Block the import in
@@ -73,6 +77,23 @@ CODE = "import sys; sys.modules['eyepiece'] = None; import mylib"
 
 def test_library_imports_without_eyepiece():
     subprocess.run([sys.executable, "-c", CODE], check=True)
+```
+
+A library with preparation functions adds the matching check one layer up:
+with Manim and Manim Slides blocked, importing the viz package and running a
+preparation still works, because nothing on that path imports a renderer
+interface.
+
+```python
+PREPARE = (
+    "import sys; sys.modules['manim'] = None; "
+    "sys.modules['manim_slides'] = None; "
+    "import mylib.viz as viz; viz.prepare_psf_cube"
+)
+
+
+def test_preparation_imports_without_manim():
+    subprocess.run([sys.executable, "-c", PREPARE], check=True)
 ```
 
 **No top-level re-exports.** Do not surface `mylib.plot_thing` from the
@@ -116,7 +137,9 @@ Named parameters for what the function owns semantically, per-target keyword
 dicts for everything routed onward, no flat `**kwargs`, and an
 `eyepiece.PlotResult` or `eyepiece.MosaicResult` on the way out. `ax=None`
 creates a figure, an axes passed in is drawn into and nothing else is
-touched.
+touched. The return rule governs Matplotlib plotting functions. A preparation
+function, described below, returns prepared records instead, and a
+convenience function that renders them returns the renderer's result.
 
 **Every function that accepts one of your types also accepts the bare
 arrays.** Real consumers frequently hold arrays loaded from a file rather
@@ -179,7 +202,98 @@ axis, passes an `update` through the result so an animation loop mutates
 artists without re-deriving the transform. Animations build on
 `eyepiece.record` and `eyepiece.animate`, and an animated figure must fit
 the figure size it declares, because the frame-grab path offers no
-tight-bounding-box rescue.
+tight-bounding-box rescue. A plot family that has a preparation function
+needs no updater of its own: its frames are prepared once, and the prepared
+renderers update from those frames without reaching back into the
+transform.
+
+## Preparation functions
+
+A plot family that needs more than one output, a paper still, a strip of
+epochs, a movie, and a talk, is split in two: a preparation function that
+turns your types into {doc}`prepared views <prepared-views>`, and rendering
+that eyepiece does. The preparation is where your library's knowledge lives,
+and it runs once for every output.
+
+**A pure module.** Put the preparation functions in their own module, for
+example `mylib/viz/_prepare.py`, importing only NumPy, your own library, and
+`eyepiece.prepared`. That module never imports Matplotlib, `eyepiece.mpl`,
+`eyepiece.manim`, or a style library, so preparing a scene costs neither a
+renderer nor a style.
+
+```python
+# mylib/viz/_prepare.py
+import numpy as np
+
+from mylib._require import eyepiece
+
+
+def prepare_psf_cube(cube_or_thing, *, times_s, pixscale_lod, bounds=None):
+    """Prepare a time series of PSFs as a replayable image sequence."""
+    eyepiece()  # raises with the install hint when the extra is missing
+    from eyepiece.prepared import (
+        ArrayChannel,
+        AxisSpec,
+        ImageView,
+        Scale,
+        Sequence,
+        resolve_bounds,
+    )
+
+    cube = np.asarray(getattr(cube_or_thing, "intensity", cube_or_thing))
+    half = cube.shape[-1] * pixscale_lod / 2.0
+    vmin, vmax = resolve_bounds(
+        ((frame, None) for frame in cube), kind="log", bounds=bounds
+    )
+    image = ImageView(
+        "psf",
+        cube[0],
+        AxisSpec("x (lambda/D)", "y (lambda/D)", (-half, half), (-half, half)),
+        Scale("log", vmin, vmax, floor=vmin),
+        quantity="intensity",
+    )
+    return Sequence(
+        image,
+        times=times_s,
+        time_unit="s",
+        channels=(ArrayChannel("psf", "data", cube),),
+    )
+```
+
+**Every scientific step happens here, once.** Extraction from your types,
+unit choice, coordinate conventions such as right ascension increasing to the
+left, scientific floors and normalization, masks, traces computed from the
+scientific values before display clipping, and the transfer of device arrays
+to host memory. A renderer receives only the returned records, and nothing
+downstream reevaluates your model. Display clipping is the renderer's; a
+scientific floor is yours.
+
+**Units and meaning in names.** Physical inputs keep unit-suffixed names
+(`times_s`, `pixscale_lod`), and the records carry explicit unit strings and
+labels. A sequence holds instantaneous samples only, so a preparation whose
+input is exposure-integrated raises rather than pretending otherwise.
+
+**Borrow, do not copy.** Hand the records the arrays you already hold, or
+read-only views of them, rather than promoted copies. Accept caller-supplied
+`bounds` so a large or memory-mapped cube can skip the full scan. Document
+that the caller keeps the storage alive and unchanged while any output made
+from it is in use.
+
+**Stable IDs are part of the signature.** Element IDs and source IDs are
+how a consumer finds a part to hide, reveal, restyle, or annotate, so they
+are documented output and change only with a breaking release.
+
+**Conveniences compose, they do not duplicate.** A `plot_*` or `animate_*`
+convenience calls the preparation and then `eyepiece.mpl.render` or
+`eyepiece.mpl.animate`, and holds no second copy of the extraction. Your
+library never imports `eyepiece.manim`: native playback belongs to the
+consumer, who renders your prepared output with it directly.
+
+**Direct model binding is not a viz function.** A talk that evaluates your
+model at each playback time and moves native Manim geometry with the result
+writes that binding in the consumer script, where it needs no import from
+your viz module or from eyepiece. If such a binding becomes common, it
+belongs to your library as a model-specific adapter, not to eyepiece.
 
 ## The firewall
 
@@ -187,7 +301,9 @@ Your plotting module renders your types and arrays. Nothing else. A figure
 that puts one library's output beside another's is composed in the user's
 script, on shared axes, by calling both libraries' functions. It is never
 written inside either library, because that would make each a dependency of
-the other for the sake of one figure.
+the other for the sake of one figure. Prepared views make that composition
+direct: the user's script places two libraries' prepared views in one
+`PanelGroup`, with element IDs unique across both, and renders them together.
 
 When a device turns out to be genuinely generic, the answer is promotion,
 not duplication. A drawing shape that has been hand-rolled independently in
@@ -218,6 +334,13 @@ declaration order, plus a marker, so the same name draws identically in
 every panel and every later figure of that document. Build it once and pass
 it down. Rebuilding a registry per figure is how panel three ends up
 disagreeing with panel one.
+
+The prepared renderers take the same declaration as an
+`eyepiece.style.SourceCast`, which assigns slots and markers by the same rule
+from the same ordered names, with the color resolved from whichever
+`RenderProfile` a render uses. Build both from one module-level list, and a
+paper figure drawn through `SourceStyles` and a slide drawn through a cast
+agree on every source.
 
 The grammar rule that follows from this is worth stating on its own: cause
 and effect share color, within a figure and across every subsequent figure
@@ -288,6 +411,14 @@ Run everything on the `Agg` backend.
 - **Your own regression class.** Whatever shape of data your library gets
   wrong when nobody is looking, a wavelength-first cube for instance, gets an
   explicit test.
+- **Known answers for preparation.** Assert the prepared numbers before any
+  rendering: an asymmetric image keeps its orientation, a known positive
+  right-ascension offset lands on the left, masked and nonfinite samples are
+  invalid, full-sequence bounds hold for every frame, and a trace equals the
+  value computed directly from the scientific data.
+- **Science runs once.** Prepare a sequence, replace the scientific methods
+  with ones that raise, and play a still, a strip, and a movie from the
+  prepared output. Any update that reached back into the model fails.
 - **No image baselines.** Pixel comparisons are expensive to maintain and
   fail for reasons that have nothing to do with the code. The executed
   example gallery is the visual net instead, which works only when those
@@ -300,7 +431,10 @@ if any page writes an mp4.
 
 Start every example page with the same preamble: activate the style mode,
 import the plotting module, and declare the document's cast. Consistency
-across pages is most of the benefit.
+across pages is most of the benefit. Each public preparation function gets an
+executed example that renders its output with `eyepiece.mpl`, from synthetic
+data built on the page. Manim output is shown as code rather than executed,
+since rendering it needs system libraries a documentation builder lacks.
 
 Author new pages as MyST markdown rather than notebooks. With `.md` mapped
 to `myst-nb`, a page with `{code-cell}` blocks executes at build exactly as
