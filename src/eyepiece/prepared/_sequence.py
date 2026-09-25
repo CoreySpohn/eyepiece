@@ -392,9 +392,12 @@ class Sequence:
         (which is itself already updated to that slot's acquisition time
         by `.frame`), so every strip panel is labelled the same way. The
         added label is placed on the slot's top-level view when that view
-        is a single view, or on its first child view when the slot is
-        itself a `PanelGroup` (documented here since neither convention is
-        forced by the record shapes alone).
+        is a single view, or on the first marked view reached by
+        descending through `views[0]` when the slot is itself a
+        `PanelGroup` -- recursively, so a nested `PanelGroup` (a grid of
+        panels used as one strip slot) still gets exactly one added label,
+        on its innermost first child (documented here since neither
+        convention is forced by the record shapes alone).
 
         Args:
             indices: Sample indices to select, one per output slot.
@@ -457,9 +460,18 @@ def _prefix_ids(element, prefix):
 
 
 def _add_strip_label(view, label):
-    """Attach `label` to `view`'s top-level marks, or its first child's."""
+    """Attach `label` to the first marked view in `view`'s tree.
+
+    `view` is either a single marked view (`ImageView`, `CurveView`, or
+    `TrackView`), which gets `label` directly, or a `PanelGroup`, in which
+    case this descends into `views[0]` -- recursively, since a slot's
+    template may itself be a nested `PanelGroup` -- until it reaches the
+    first marked view at any depth, and attaches `label` there. Every
+    ancestor `PanelGroup` on that path is rebuilt to carry the updated
+    child; every sibling and unrelated branch is untouched.
+    """
     if isinstance(view, PanelGroup):
         first, *rest = view.views
-        updated_first = dataclasses.replace(first, marks=(*first.marks, label))
+        updated_first = _add_strip_label(first, label)
         return dataclasses.replace(view, views=(updated_first, *rest))
     return dataclasses.replace(view, marks=(*view.marks, label))

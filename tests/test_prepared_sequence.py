@@ -458,3 +458,36 @@ def test_strip_handles_repeated_and_out_of_order_indices_uniquely():
     strip = sequence.strip([2, 2, 0])
     ids = {v.id for v in strip.views}
     assert ids == {"0/image", "1/image", "2/image"}
+
+
+def test_strip_labels_nested_panelgroup_slot_at_any_depth():
+    """A slot whose template is a PanelGroup-of-PanelGroups (a nested grid)
+    must still get exactly one added label, on the first marked view
+    reached by descending through views[0] at every level -- not raise
+    AttributeError from treating an inner PanelGroup as a marked view.
+    """
+    leaf_a = ImageView("leaf_a", np.zeros((2, 2)), _axes(), _scale(0, 1), "signal")
+    leaf_b = ImageView("leaf_b", np.zeros((2, 2)), _axes(), _scale(0, 1), "signal")
+    inner = PanelGroup("inner", views=(leaf_a, leaf_b))
+    right = ImageView("right", np.zeros((2, 2)), _axes(), _scale(0, 1), "signal")
+    template = PanelGroup("outer", views=(inner, right))
+    sequence = Sequence(template, np.array([0.0, 1.0]), "s")
+
+    strip = sequence.strip([0, 1])
+
+    # unique prefixed IDs at every depth (find_element would already have
+    # raised a construction-time ValueError above if these collided).
+    for slot, acquisition in ((0, "0 s"), (1, "1 s")):
+        assert find_element(strip, f"{slot}/outer") is not None
+        assert find_element(strip, f"{slot}/inner") is not None
+        assert find_element(strip, f"{slot}/leaf_a") is not None
+        assert find_element(strip, f"{slot}/leaf_b") is not None
+        assert find_element(strip, f"{slot}/right") is not None
+
+        time_label = find_element(strip, f"{slot}/time")
+        assert time_label.text == acquisition
+
+        leaf_a_prefixed = find_element(strip, f"{slot}/leaf_a")
+        leaf_b_prefixed = find_element(strip, f"{slot}/leaf_b")
+        assert time_label in leaf_a_prefixed.marks
+        assert time_label not in leaf_b_prefixed.marks
