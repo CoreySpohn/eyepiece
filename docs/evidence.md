@@ -163,7 +163,11 @@ that a reader interprets as probability has to be the probability. Even when it
 is, opacity is the weakest quantitative channel there is, so a probability the
 figure depends on belongs on position: order the draws and draw the interval,
 or let the mass be carried by the density of equally weighted draws, which is a
-count and reads as one.
+count and reads as one. The prepared renderers' weight mapping is relative
+emphasis rather than probability for this reason: opacity runs linearly from
+0.15 at zero weight to 0.80 at the heaviest weight on the panel, so every
+candidate stays visible, and any probability claim is left to a quantitative
+axis.
 
 ## Time on an axis
 
@@ -189,6 +193,14 @@ no instant.
 An elapsed-time readout is not a time axis and does not discharge this. A number
 with no denominator cannot be placed in its cycle, so where a readout is all the
 room allows, give it the denominator in the same string.
+
+Playback time is presentation, not physics. A prepared sequence plays its
+samples on a schedule evenly spaced in physical time and holds each sample until
+the next one, so a long gap between observations reads as a long hold rather
+than as smooth motion nobody observed. Easing, pauses, and a change of duration
+alter how long the viewer looks, never which instant is shown, and the clock
+label reports the acquisition time of the sample on screen. A claim about a rate
+or a period still needs its time axis beside the movie.
 
 ## Small multiples
 
@@ -296,9 +308,12 @@ plotted against time carries distance, phase, period and rate on two axes, which
 is four variables where an oblique view of the same track carries two.
 
 **Multifunctioning elements are the cheapest variable a figure can buy.** A path
-drawn with marks at equal time intervals carries rate as well as shape: close
-marks are fast, wide marks are slow, and the bunching at the slow end is the
-mechanism drawn rather than asserted. An axis drawn only over the range the data
+drawn with marks at equal intervals of physical time carries rate as well as
+shape: marks sit closer together where the projected speed is lower and farther
+apart where it is higher, and the bunching at the slow end is the mechanism drawn
+rather than asserted. The reading holds only under a fixed mapping from data to
+page and equal physical-time sampling. A moving camera changes the spacing with no
+change in speed, and so do nonuniform timestamps. An axis drawn only over the range the data
 occupies reports that range, which turns furniture into a measurement. An axis
 can carry the events that drive the curve above it.
 

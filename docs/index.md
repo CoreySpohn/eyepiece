@@ -13,6 +13,14 @@ from where. Nothing in the library imports a simulation package, and
 rcParams, so a primitive behaves the same whether it is called from a
 notebook, a figure script, or another library's plotting module.
 
+The same arrays can also be written down once as a prepared view: plain
+records of images, curves, tracks, and their marks, with units, masks,
+display scales, and stable IDs. The {doc}`prepared views <prepared-views>`
+guide renders one preparation as a paper still, a strip of epochs, and a
+Matplotlib movie through `eyepiece.mpl`, and {doc}`Manim and slides <manim>`
+plays the same preparation as native Manim objects in a talk through
+`eyepiece.manim`.
+
 Because the same behavior holds for every function, the rules are worth
 reading once rather than rediscovering per call. The
 {doc}`contract <contract>` page states them, and
@@ -44,6 +52,15 @@ and the profile computation behind `radial_profile_plot`. Those four are the
 only names that need it, and each raises an `ImportError` naming the extra
 when it is missing. Everything else works on the base install.
 
+```bash
+pip install "eyepiece[manim]"
+pip install "eyepiece[slides]"
+```
+
+The `[manim]` extra adds Manim Community for `eyepiece.manim`, and
+`[slides]` adds Manim Slides beside it. Manim needs system Cairo, Pango,
+pkg-config, and ffmpeg. Nothing outside `eyepiece.manim` imports either.
+
 ## Quickstart
 
 A primitive called with no axes creates its own figure, draws into it, and
@@ -68,7 +85,9 @@ assembled. Multi-panel primitives take an `axes=` sequence in place of
 import matplotlib.pyplot as plt
 
 fig, axes = plt.subplots(1, 3, layout="constrained")
-row = ep.compare_row([before, after, model], titles=["Before", "After", "Model"], axes=axes)
+row = ep.compare_row(
+    [before, after, model], titles=["Before", "After", "Model"], axes=axes
+)
 ```
 
 Because a result carries the artists it made, animating a figure is a matter
@@ -127,10 +146,27 @@ the API reference, and the groups are:
 - **Vocabularies.** `ARTIST_KEYS`, the key set a result's `artists` dict
   draws from, alongside `PlotResult` and `MosaicResult` themselves.
 
+Prepared views live in their own namespaces rather than at the top level:
+
+- **`eyepiece.prepared`.** The records (`ImageView`, `CurveView`,
+  `TrackView`, `PanelGroup`, and the `Path`, `Points`, `Region`,
+  `ReferenceLine`, and `Label` marks, with `AxisSpec` and `Scale`),
+  `Sequence` with its `ArrayChannel`, `PathWindow`, and `Clock` channels,
+  and the display mapping (`normalize_values`, `map_rgba`, `resolve_bounds`,
+  `weight_opacity`). It imports only NumPy.
+- **`eyepiece.style`.** `SourceCast`, `RenderProfile`, and
+  `snapshot_profile`.
+- **`eyepiece.mpl`.** `render`, returning an `MplResult`, and `animate`,
+  returning an `Animation`.
+- **`eyepiece.manim`.** `render`, returning a `ManimResult`, and `animate`,
+  returning a `ManimClip`.
+
 ## Where to go next
 
 Read {doc}`contract <contract>` to predict what any primitive will do with
 the arguments you hand it and what you get back. Read
+{doc}`prepared views <prepared-views>` to prepare a scene once for figures,
+movies, and talks, and {doc}`Manim and slides <manim>` to present one. Read
 {doc}`viz-convention <viz-convention>` if you maintain a simulation library
 and want its own types to plot themselves without eyepiece ever learning
 about them. The API reference documents every signature.
@@ -141,6 +177,8 @@ about them. The API reference documents every signature.
 
 contract
 evidence
+prepared-views
+manim
 viz-convention
 ```
 
@@ -154,6 +192,7 @@ gallery/profiles
 gallery/scene
 gallery/animation
 gallery/one-scene-n-views
+gallery/prepared
 ```
 
 ```{toctree}
