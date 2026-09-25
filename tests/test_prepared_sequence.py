@@ -367,6 +367,18 @@ def test_schedule_endpoints_at_10_and_30_fps(image_sequence):
     assert thirty[-1] == 10.0
 
 
+@pytest.mark.parametrize(("run_time", "fps", "count"), [(0.28, 25, 7), (5 / 12, 12, 5)])
+def test_schedule_count_ignores_float_noise(image_sequence, run_time, fps, count):
+    """0.28 * 25 is 7.000000000000001 in floating point; that is 7 frames, not 8."""
+    schedule = image_sequence().schedule(run_time=run_time, fps=fps)
+    assert len(schedule) == count
+    assert schedule[-1] == 10.0
+
+
+def test_schedule_still_rounds_a_real_fraction_up(image_sequence):
+    assert len(image_sequence().schedule(run_time=0.281, fps=25)) == 8
+
+
 def test_schedule_singleton_sequence_is_constant():
     view = ImageView("image", np.zeros((2, 3)), _axes(), _scale(0, 1), "signal")
     sequence = Sequence(view, np.array([5.0]), "s")

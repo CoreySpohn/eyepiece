@@ -3,7 +3,14 @@
 import numpy as np
 import pytest
 
-from eyepiece.prepared import ArrayChannel, AxisSpec, ImageView, Scale, Sequence
+from eyepiece.prepared import (
+    ArrayChannel,
+    AxisSpec,
+    ImageView,
+    Scale,
+    Sequence,
+    map_rgba,
+)
 from eyepiece.style import snapshot_profile
 
 manim = pytest.importorskip("manim")
@@ -86,7 +93,9 @@ def test_playback_quantizes_run_time_to_whole_output_frames(image_sequence):
         assert len(_ticks(animation, 10)) == 3
 
 
-@pytest.mark.parametrize(("fps", "count"), [(10, 5), (12, 5), (12, 10), (60, 480)])
+@pytest.mark.parametrize(
+    ("fps", "count"), [(10, 5), (12, 5), (12, 10), (25, 7), (60, 480)]
+)
 def test_every_encoder_tick_lands_on_its_schedule_index(fps, count, monkeypatch):
     """Tick k shows schedule index k, including where float time rounds badly."""
     import eyepiece.manim as em
@@ -194,14 +203,12 @@ def test_an_eight_second_pass_maps_each_held_image_once(monkeypatch):
 # --- Encoded frames ---------------------------------------------------------------
 
 
-def _encode(clip, run_time, fps, tmp_path):
-    """Render `clip.playback(run_time)` at a tiny size; return decoded RGB frames."""
-    import av
+def _render_scene(construct, fps, tmp_path):
+    """Render a Scene running `construct(scene)` at a tiny size; return the movie."""
 
     class Clip(manim.Scene):
         def construct(self):
-            self.add(clip.mobject)
-            self.play(clip.playback(run_time))
+            construct(self)
 
     settings = {
         "media_dir": str(tmp_path),
@@ -216,12 +223,22 @@ def _encode(clip, run_time, fps, tmp_path):
     with manim.tempconfig(settings):
         scene = Clip()
         scene.render()
-        movie = scene.renderer.file_writer.movie_file_path
-        frame_width = manim.config.frame_width
-        frame_height = manim.config.frame_height
+        frame_size = (manim.config.frame_width, manim.config.frame_height)
+        return scene.renderer.file_writer.movie_file_path, frame_size
+
+
+def _encode(clip, run_time, fps, tmp_path):
+    """Render `clip.playback(run_time)` at a tiny size; return decoded RGB frames."""
+    import av
+
+    def construct(scene):
+        scene.add(clip.mobject)
+        scene.play(clip.playback(run_time))
+
+    movie, frame_size = _render_scene(construct, fps, tmp_path)
     with av.open(str(movie)) as container:
         frames = [f.to_ndarray(format="rgb24") for f in container.decode(video=0)]
-    return frames, (frame_width, frame_height)
+    return frames, frame_size
 
 
 def _pixel_at(frame, point, frame_size):
@@ -258,3 +275,57 @@ def test_encoded_clip_holds_the_schedule_and_ends_on_the_final_sample(
     np.testing.assert_allclose(
         _pixel_at(frames[-1], center, frame_size), lut[255][:3], atol=12
     )
+
+
+def test_play_keywords_cannot_override_the_quantized_duration(image_sequence, tmp_path):
+    import eyepiece.manim as em
+
+    clip = em.animate(image_sequence())
+
+    def construct(scene):
+        scene.add(clip.mobject)
+        scene.play(clip.playback(0.5), run_time=0.2)
+
+    with pytest.raises(ValueError, match="pass run_time to playback"):
+        _render_scene(construct, 10, tmp_path)
+
+
+def test_strided_read_only_memmap_is_shown_without_copies(tmp_path):
+    """Review focus 1: negative/positive strides over a read-only float32 memmap."""
+    import hashlib
+
+    import eyepiece.manim as em
+
+    path = tmp_path / "cube.f32"
+    rng = np.random.default_rng(0)
+    writer = np.memmap(path, dtype=np.float32, mode="w+", shape=(3, 4, 6))
+    writer[:] = rng.random((3, 4, 6), dtype=np.float32)
+    writer.flush()
+    del writer
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    storage = np.memmap(path, dtype=np.float32, mode="r", shape=(3, 4, 6))
+    cube = storage[:, ::-1, ::2]  # negative row stride, doubled column stride
+    assert not cube.flags.writeable
+    assert cube.strides[1] < 0 and cube.strides[2] == 8
+    view = ImageView(
+        "image",
+        cube[0],
+        AxisSpec("x", "y", (0, 3), (0, 4)),
+        Scale("linear", 0, 1),
+        "signal",
+    )
+    sequence = Sequence(
+        view, np.array([0.0, 1.0, 2.0]), "s", (ArrayChannel("image", "data", cube),)
+    )
+    profile = snapshot_profile()
+    clip = em.animate(sequence, profile=profile)
+    image = clip.parts["image"]
+    for index in (2, 0, 1):
+        frame = sequence.frame(index).data
+        assert np.shares_memory(frame, storage)
+        assert frame.strides == cube[index].strides
+        clip.seek(float(index))
+        expected = map_rgba(cube[index], valid=None, scale=view.scale, profile=profile)
+        np.testing.assert_array_equal(image.pixel_array, expected[::-1])
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == digest

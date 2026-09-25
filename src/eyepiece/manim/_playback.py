@@ -27,9 +27,8 @@ from eyepiece.prepared import Sequence
 # can add an (N + 1)th tick and can put alpha * N just below an integer.
 # Running for N / fps shortened by this relative margin always gives
 # exactly N ticks, and tick k lands at alpha * N = k (1 + ~1e-9), which a
-# floor maps to k; `_TICK_EPSILON` absorbs the remaining float noise.
+# floor maps to k.
 _TICK_MARGIN = 1e-9
-_TICK_EPSILON = 1e-6
 
 
 class ManimClip:
@@ -95,6 +94,19 @@ class _SequencePlayback(manim.Animation):
         super().__init__(clip.mobject, run_time=duration, rate_func=manim.linear)
         self._clip = clip
         self._output_times = output_times
+        self._duration = duration
+
+    def begin(self):
+        # Scene.play sets every keyword it is given on each animation, so
+        # `play(clip.playback(8), run_time=4)` would silently replace the
+        # quantized duration and drop or misplace output frames.
+        if self.run_time != self._duration:
+            raise ValueError(
+                f"playback run_time was changed to {self.run_time:g} s after it "
+                f"was quantized to {len(self._output_times)} frames; pass "
+                "run_time to playback(), not play()"
+            )
+        super().begin()
 
     def create_starting_mobject(self):
         # Every frame is replayed from the sequence, never interpolated from
@@ -104,7 +116,7 @@ class _SequencePlayback(manim.Animation):
     def interpolate_mobject(self, alpha):
         alpha = min(max(float(alpha), 0.0), 1.0)
         count = len(self._output_times)
-        index = min(count - 1, int(np.floor(alpha * count + _TICK_EPSILON)))
+        index = min(count - 1, int(np.floor(alpha * count)))
         self._clip.seek(float(self._output_times[index]))
 
 

@@ -63,32 +63,56 @@ def test_import_has_no_rcparams_side_effect():
     assert out.stdout.strip() == "True"
 
 
-def test_prepared_import_avoids_matplotlib_and_manim():
-    """`import eyepiece.prepared` must not load pyplot, manim, or simulation libs.
+def _blocked_import(statement, banned_names, banned_tops):
+    """Run `statement` in a fresh interpreter with some modules unimportable.
 
-    A meta-path finder blocks those modules before the import, so any of
-    them being pulled in raises ImportError instead of silently
-    succeeding through an already-imported copy.
+    A meta-path finder raises ImportError from `find_spec` for every banned
+    module, so importing one fails even if it is installed, instead of
+    silently succeeding. (`find_module`-only finders are ignored by
+    Python 3.12's import system and would block nothing.)
     """
     code = (
         "import sys\n"
         "class _Blocker:\n"
-        "    def find_module(self, name, path=None):\n"
-        "        banned = ('manim', 'manim_slides', 'matplotlib.pyplot')\n"
-        "        blocked_top = " + repr(FORBIDDEN_LIBS) + "\n"
-        "        top = name.split('.')[0]\n"
-        "        if name in banned or top in blocked_top:\n"
-        "            return self\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name in " + repr(tuple(banned_names)) + " or (\n"
+        "            name.split('.')[0] in " + repr(tuple(banned_tops)) + "\n"
+        "        ):\n"
+        "            raise ImportError(f'blocked: {name}')\n"
         "        return None\n"
-        "    def load_module(self, name):\n"
-        "        raise ImportError(f'blocked: {name}')\n"
-        "sys.meta_path.insert(0, _Blocker())\n"
-        "import eyepiece.prepared\n"
-        "print('ok')\n"
+        "sys.meta_path.insert(0, _Blocker())\n" + statement + "\nprint('ok')\n"
     )
-    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+
+
+def test_prepared_import_avoids_matplotlib_and_manim():
+    """`import eyepiece.prepared` must not load pyplot, manim, or simulation libs."""
+    out = _blocked_import(
+        "import eyepiece.prepared",
+        ("matplotlib.pyplot",),
+        ("manim", "manim_slides", *FORBIDDEN_LIBS),
+    )
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == "ok"
+
+
+def test_base_and_matplotlib_imports_work_without_manim():
+    """`import eyepiece` and `import eyepiece.mpl` never need Manim."""
+    out = _blocked_import(
+        "import eyepiece, eyepiece.mpl\n"
+        "eyepiece.imshow_log, eyepiece.Animation, eyepiece.mpl.render",
+        (),
+        ("manim", "manim_slides"),
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "ok"
+
+
+def test_import_blocker_really_blocks():
+    """The guard itself: a banned import in the statement must fail."""
+    out = _blocked_import("import csv", ("csv",), ())
+    assert out.returncode != 0
+    assert "blocked: csv" in out.stderr
 
 
 _EXPECTED_ALL = [

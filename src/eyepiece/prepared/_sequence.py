@@ -48,6 +48,9 @@ _ARRAY_CHANNEL_FIELDS = ("data", "valid", "xy")
 # template carries no Clock-driven label of its own.
 _STRIP_LABEL_XY = (0.02, 0.95)
 
+# Relative tolerance for treating `run_time * fps` as a whole frame count.
+_FRAME_COUNT_RTOL = 1e-9
+
 
 def _clock_text(acquisition_time, time_unit):
     """Format an acquisition time as a compact "<time> <unit>" clock string.
@@ -425,7 +428,9 @@ class Sequence:
         `N = max(2 if len(times) > 1 else 1, ceil(run_time * fps))`
         physical times, evenly spaced from the first sample through the
         last (both endpoints included), so the encoded duration is `N/fps`
-        and the final sample is visible for at least one output frame.
+        and the final sample is visible for at least one output frame. A
+        product `run_time * fps` within a relative 1e-9 of a whole number
+        counts as that number, so `run_time = n / fps` gives `n` frames.
 
         Args:
             run_time: Presentation duration, finite and positive.
@@ -443,7 +448,14 @@ class Sequence:
             raise ValueError(f"run_time must be finite and positive, got {run_time!r}")
         if not (math.isfinite(fps) and fps > 0):
             raise ValueError(f"fps must be finite and positive, got {fps!r}")
-        count = max(2 if len(self.times) > 1 else 1, int(np.ceil(run_time * fps)))
+        frames = run_time * fps
+        # A duration of a whole number of frames given as run_time = n / fps
+        # can multiply back to n plus float noise (0.28 * 25 is
+        # 7.000000000000001); that is n frames, not n + 1.
+        nearest = round(frames)
+        if abs(frames - nearest) <= _FRAME_COUNT_RTOL * max(1.0, frames):
+            frames = nearest
+        count = max(2 if len(self.times) > 1 else 1, math.ceil(frames))
         return np.linspace(self.times[0], self.times[-1], count)
 
 
