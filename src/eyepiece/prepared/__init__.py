@@ -6,6 +6,12 @@ This package imports only the standard library and NumPy, so importing it
 never loads matplotlib or a simulation library.
 """
 
+from eyepiece.prepared._display import (
+    map_rgba,
+    normalize_values,
+    resolve_bounds,
+    weight_opacity,
+)
 from eyepiece.prepared._views import (
     AxisSpec,
     CurveView,
@@ -39,5 +45,9 @@ __all__ = [
     "TrackView",
     "View",
     "find_element",
+    "map_rgba",
+    "normalize_values",
     "replace_elements",
+    "resolve_bounds",
+    "weight_opacity",
 ]
