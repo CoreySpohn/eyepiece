@@ -27,6 +27,7 @@ from eyepiece._result import ARTIST_KEYS, MosaicResult, PlotResult
 from eyepiece._version import __version__
 from eyepiece.anim import PRESETS, Animation, animate, record
 from eyepiece.images import (
+    compare_grid,
     compare_row,
     display_limits,
     imshow_diverging,
@@ -68,6 +69,7 @@ __all__ = [
     "SourceStyles",
     "__version__",
     "animate",
+    "compare_grid",
     "compare_row",
     "corner",
     "corner_overlay",

@@ -454,6 +454,153 @@ def compare_row(
     return MosaicResult(axes=axes, artists=artists)
 
 
+def _grid_cells(images, titles):
+    """Validate a 2D image layout and return it as rows of arrays or None.
+
+    Rows may differ in length; a short row is padded with empty cells so the
+    layout is a rectangle of ``(n_rows, n_cols)``.
+    """
+    rows = [list(row) for row in images]
+    if not rows or all(cell is None for row in rows for cell in row):
+        raise ValueError("compare_grid needs at least one image")
+    n_cols = max(len(row) for row in rows)
+    cells = [
+        [None if cell is None else np.asarray(cell, dtype=float) for cell in row]
+        + [None] * (n_cols - len(row))
+        for row in rows
+    ]
+    if titles is not None:
+        title_rows = [list(row) for row in titles]
+        if len(title_rows) != len(rows) or any(
+            len(t) != len(r) for t, r in zip(title_rows, rows, strict=True)
+        ):
+            raise ValueError("compare_grid titles must match the shape of images")
+    return cells, n_cols
+
+
+def compare_grid(
+    images,
+    titles=None,
+    *,
+    axes=None,
+    norm="linear",
+    floor=1e-20,
+    extent=None,
+    cmap=None,
+    cbar_label=None,
+    vmin=None,
+    vmax=None,
+    panel_size=1.6,
+    imshow_kw=None,
+    cbar_kw=None,
+):
+    """Draw a 2D layout of images sharing one norm and one colorbar.
+
+    The two-dimensional counterpart of `compare_row`. `images` is a sequence
+    of rows, and a cell may be None, which leaves that slot empty with its
+    axes switched off. Empty cells let a caller lay images out on any
+    pattern a rectangular grid can hold (a triangle indexed by two integers,
+    a sparse design matrix, a staircase), while every drawn panel still
+    shares the one norm object, so equal colors mean equal values anywhere
+    in the grid.
+
+    Args:
+        images: Sequence of rows; each row a sequence of 2D array-likes or
+            None. Rows may have different lengths, and short rows are
+            padded with empty cells on the right.
+        titles: Optional nested sequence matching `images` row by row; an
+            entry is ignored where its image is None.
+        axes: A 2D array of Axes of shape `(n_rows, n_cols)` to draw into.
+            None creates a new figure.
+        norm: `"linear"`, `"log"`, or `"diverging"` -- which shared norm to
+            build, as in `compare_row`.
+        floor: Clip floor used when `norm="log"`.
+        extent: `(left, right, bottom, top)` passed to every panel's
+            `imshow`.
+        cmap: Colormap override; None uses the semantic "intensity" cmap
+            (or "residual" when `norm="diverging"`).
+        cbar_label: Label for the shared colorbar.
+        vmin: Pins the shared norm's lower bound (symmetric for
+            `norm="diverging"`).
+        vmax: Pins the shared norm's upper bound.
+        panel_size: Size in inches of one square cell, used only for a
+            figure this function creates.
+        imshow_kw: Extra kwargs passed to each panel's `ax.imshow`, applied
+            last.
+        cbar_kw: Extra kwargs passed to the shared colorbar's
+            `fig.colorbar`, applied last.
+
+    Returns:
+        A `MosaicResult` whose `axes` is a 2D array of shape
+        `(n_rows, n_cols)`, with `artists["image"]` a nested list of the
+        same shape holding an `AxesImage` per drawn cell and None per empty
+        cell, and `artists["cbar"]` the single shared colorbar.
+
+    Raises:
+        ValueError: If no cell holds an image, if `titles` does not match
+            the shape of `images`, or if `axes` has the wrong shape.
+    """
+    cells, n_cols = _grid_cells(images, titles)
+    n_rows = len(cells)
+    if norm == "log":
+        cells = [
+            [None if c is None else np.clip(c, floor, None) for c in row]
+            for row in cells
+        ]
+
+    created = axes is None
+    if created:
+        fig, axes = plt.subplots(
+            n_rows,
+            n_cols,
+            figsize=(panel_size * n_cols + 1.0, panel_size * n_rows),
+            layout="constrained",
+            squeeze=False,
+        )
+    else:
+        axes = np.asarray(axes, dtype=object)
+        if axes.shape != (n_rows, n_cols):
+            raise ValueError(
+                f"compare_grid: expected axes shape ({n_rows}, {n_cols}), "
+                f"got {axes.shape}"
+            )
+        fig = axes[0, 0].figure
+
+    drawn = [c for row in cells for c in row if c is not None]
+    shared_norm = _shared_norm(drawn, norm, floor, vmin=vmin, vmax=vmax)
+    semantic_cmap = "residual" if norm == "diverging" else "intensity"
+    resolved_cmap = _style.cmap(semantic_cmap, cmap)
+
+    kw = {"interpolation": "nearest", "origin": "lower", **(imshow_kw or {})}
+    ims = []
+    last = None
+    for i, row in enumerate(cells):
+        row_ims = []
+        for j, img in enumerate(row):
+            ax = axes[i, j]
+            if img is None:
+                ax.set_axis_off()
+                row_ims.append(None)
+                continue
+            im = ax.imshow(
+                img, norm=shared_norm, cmap=resolved_cmap, extent=extent, **kw
+            )
+            if titles is not None and j < len(titles[i]):
+                ax.set_title(titles[i][j])
+            _hide_index_ticks(ax, extent)
+            row_ims.append(im)
+            last = im
+        ims.append(row_ims)
+
+    if created:
+        cb = fig.colorbar(last, ax=axes, label=cbar_label, **(cbar_kw or {}))
+    else:
+        cax = axes[-1, -1].inset_axes([1.02, 0.0, 0.04, 1.0])
+        cb = fig.colorbar(last, cax=cax, label=cbar_label, **(cbar_kw or {}))
+
+    return MosaicResult(axes=axes, artists={"image": ims, "cbar": cb})
+
+
 def _decade(values):
     """Power-of-ten exponent of a panel's peak, for a scale annotation.
 

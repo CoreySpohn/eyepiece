@@ -38,7 +38,8 @@ implement them are internal organization.
 - **Images.** `imshow_log` (log scale clipped to a floor, so a zero-valued
   pixel cannot break the norm), `imshow_diverging` (symmetric norm about
   zero), `show_field` (amplitude and phase panels of a complex field),
-  `compare_row` (several images sharing one norm and colorbar), and
+  `compare_row` (several images sharing one norm and colorbar), `compare_grid`
+  (the same on a 2D layout with empty cells allowed), and
   `triptych` (A, B, and a ratio or residual comparison panel, side by side).
 - **Distributions.** `corner`, `corner_overlay` (a second sample set laid
   over an existing triangle plot), `hist_vs_pdf`, and `cov_ellipse`.
