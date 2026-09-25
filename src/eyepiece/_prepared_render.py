@@ -30,6 +30,11 @@ VIEW_TYPES = (*LEAF_TYPES, PanelGroup)
 # its outline is drawn fully opaque. See `region_fill_opacity`.
 REGION_FILL_OPACITY = 0.2
 
+# Total width of the halo stroked behind a label drawn over an image, as a
+# fraction of the text size; half of it extends past each glyph edge. See
+# `label_halo`.
+LABEL_HALO_EM = 0.25
+
 _SUPPORTED_ROLES = ("reference",)
 
 
@@ -158,12 +163,41 @@ def region_fill_opacity(leaf):
     return 0.0 if isinstance(leaf, ImageView) else REGION_FILL_OPACITY
 
 
-def path_alphas(leaf):
-    """Opacity per Path on one panel, through the shared weight mapping."""
-    paths = [m for m in leaf.marks if isinstance(m, Path)]
-    weights = tuple(float(p.weight) for p in paths)
-    alphas = weight_opacity(np.asarray(weights, dtype=float))
-    return weights, {p.id: float(a) for p, a in zip(paths, alphas, strict=True)}
+def label_halo(leaf):
+    """Whether a Label drawn on `leaf` gets a halo in the background color.
+
+    Over an `ImageView` a label can sit on any colormap value, including
+    one close to the text color, so its glyphs are stroked behind with the
+    profile's background color (`LABEL_HALO_EM` of the text size wide).
+    On a `CurveView` or `TrackView` the label sits on the panel background
+    already and gets no halo.
+    """
+    return isinstance(leaf, ImageView)
+
+
+def mark_alphas(leaf):
+    """Opacity per weighted mark on one panel, through the shared weight mapping.
+
+    Paths and Points are two separate groups: each panel's Paths are
+    normalized among themselves by `weight_opacity`, and its Points among
+    themselves by the same rule, so a lone path or a lone point set draws
+    at the mapping's maximum and a head carrying its track's weight fades
+    exactly as that track does.
+
+    Returns:
+        `(weights, alphas)`: the panel's weights as a hashable tuple (one
+        inner tuple per group, for change detection) and a dict from mark
+        ID to opacity.
+    """
+    weights = []
+    alphas = {}
+    for kind in (Path, Points):
+        marks = [m for m in leaf.marks if isinstance(m, kind)]
+        group = tuple(float(m.weight) for m in marks)
+        opacity = weight_opacity(np.asarray(group, dtype=float))
+        weights.append(group)
+        alphas.update((m.id, float(a)) for m, a in zip(marks, opacity, strict=True))
+    return tuple(weights), alphas
 
 
 # --- Geometry and storage identity -------------------------------------------
@@ -215,7 +249,8 @@ def _topology_entry(element):
     """What an update may not change about one element, as a comparable tuple.
 
     Values, path visible intervals, mark positions, region geometry, label
-    text, and path weights are state; everything returned here is topology.
+    text, and path and point weights are state; everything returned here is
+    topology.
     """
     if isinstance(element, ImageView):
         scale = element.scale

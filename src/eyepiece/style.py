@@ -14,6 +14,9 @@ including hwostyle's own un-activated default -- along with the current
 Matplotlib text rcParams, at the moment it is called. It never calls
 `hwostyle.use()` or otherwise changes global state; a caller who wants a
 particular mode calls `hwostyle.use(...)` before snapshotting.
+
+The Matplotlib primitives (`imshow_log`, `sky_fan`, and the rest) resolve
+hwostyle at call time instead, through `eyepiece._style`.
 """
 
 import dataclasses
@@ -22,6 +25,7 @@ from types import MappingProxyType
 import hwostyle
 import matplotlib
 import numpy as np
+from matplotlib import font_manager
 
 # Roles documented on `hwostyle.colormaps.Colormaps`: sequential intensity
 # families (idealized/model images, detector readouts, high-dynamic-range),
@@ -76,16 +80,48 @@ def _sample_lut(colormap):
     return lut
 
 
+def _font_path(family):
+    """The font file Matplotlib resolves for `family`, without falling back.
+
+    Args:
+        family: A concrete font family name.
+
+    Returns:
+        The path of the font file Matplotlib would draw `family` with.
+
+    Raises:
+        ValueError: If Matplotlib has no font of that family installed.
+    """
+    path = font_manager.findfont(
+        font_manager.FontProperties(family=family), fallback_to_default=False
+    )
+    return str(path)
+
+
 def _resolve_font_family(font_family):
-    """Resolve `font_family`, or the current Matplotlib font stack's first entry."""
+    """Resolve `font_family`, or the first installed family of the rc font stack.
+
+    The rc stack (`font.family`, each generic entry expanded through its
+    `font.<generic>` list) can name fonts that are not installed, such as a
+    brand font on a machine without it. The first family Matplotlib can
+    actually find is the one its text is drawn with, so that is the family
+    recorded; when none is installed, the family of Matplotlib's own
+    default fallback file is recorded instead.
+    """
     if font_family is not None:
         return font_family
-    generic = matplotlib.rcParams["font.family"]
-    generic = generic[0] if generic else "sans-serif"
-    concrete = matplotlib.rcParams.get(f"font.{generic}")
-    if concrete:
-        return concrete[0]
-    return generic
+    rc = matplotlib.rcParams
+    for entry in rc["font.family"] or ["sans-serif"]:
+        for family in rc.get(f"font.{entry}", [entry]):
+            try:
+                _font_path(family)
+            except ValueError:
+                continue
+            return family
+    fallback = font_manager.findfont(
+        font_manager.FontProperties(family=rc["font.family"])
+    )
+    return font_manager.get_font(fallback).family_name
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -109,7 +145,8 @@ class RenderProfile:
         background_color: Matplotlib's active `axes.facecolor`.
         reference_color: hwostyle's "reference" brand role color (IWA/OWA
             rings, floor curves, and similar scenery).
-        font_family: Resolved font family name.
+        font_family: Resolved font family name: one Matplotlib can find
+            installed, unless the caller named a family explicitly.
         text_size_pt: Text size, in points.
         stroke_width_pt: Line/stroke width, in points.
     """
@@ -153,8 +190,9 @@ def snapshot_profile(*, font_family=None, text_size_pt=24, stroke_width_pt=1.5):
     `hwostyle.use(...)` first to snapshot a particular mode.
 
     Args:
-        font_family: Font family name. Defaults to the first concrete font
-            in Matplotlib's currently active font stack.
+        font_family: Font family name. Defaults to the first family in
+            Matplotlib's currently active font stack that Matplotlib can
+            find installed (a listed but missing font is skipped).
         text_size_pt: Text size, in points.
         stroke_width_pt: Line/stroke width, in points.
 

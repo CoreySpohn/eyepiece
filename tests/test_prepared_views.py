@@ -102,6 +102,14 @@ def test_image_view_rejects_nonnumeric_data():
         ImageView("img", np.array([["a", "b"]]), _axes(), _scale(), "intensity")
 
 
+def test_complex_data_and_coordinates_are_rejected_by_name():
+    field = np.ones((2, 2), dtype=np.complex64)
+    with pytest.raises(ValueError, match="img: data must be real, got complex"):
+        ImageView("img", field, _axes(), _scale(), "intensity")
+    with pytest.raises(ValueError, match="p: xy must be real"):
+        Path("p", np.zeros((3, 2), dtype=complex))
+
+
 def test_image_view_rejects_wrong_ndim():
     with pytest.raises(ValueError, match="img"):
         ImageView("img", np.zeros(4), _axes(), _scale(), "intensity")
@@ -272,6 +280,16 @@ def test_path_rejects_out_of_range_visible_start_when_stop_is_none():
 def test_path_allows_visible_start_at_vertex_count_when_stop_is_none():
     path = Path("p1", np.zeros((3, 2)), visible=(3, None))
     assert path.visible == (3, None)
+
+
+@pytest.mark.parametrize("weight", [-1.0, np.nan, np.inf])
+def test_points_reject_negative_or_nonfinite_weight(weight):
+    with pytest.raises(ValueError, match="p1: weight"):
+        Points("p1", np.zeros((3, 2)), weight=weight)
+
+
+def test_points_weight_defaults_to_one():
+    assert Points("p1", np.zeros((3, 2))).weight == 1.0
 
 
 def test_path_rejects_negative_weight():

@@ -47,7 +47,7 @@ from eyepiece._prepared_render import (
     check_topology,
     default_cast,
     leaf_views,
-    path_alphas,
+    mark_alphas,
     resolve_styles,
     topology,
     visible_xy,
@@ -100,7 +100,7 @@ class MplResult:
         # arrays keeps their addresses from being reused by new storage, so
         # an equal key really is the same borrowed sample.
         self._image_keys = image_keys
-        self._weights = {leaf.id: path_alphas(leaf)[0] for leaf in leaf_views(view)}
+        self._weights = {leaf.id: mark_alphas(leaf)[0] for leaf in leaf_views(view)}
 
     @property
     def ax(self):
@@ -131,7 +131,7 @@ class MplResult:
                 point counts, error-bar presence, source IDs, region kinds,
                 reference-line axes, and label spaces. Values, path visible
                 intervals, point and region positions, reference values,
-                label text, and path weights may change.
+                label text, and path and point weights may change.
 
         Raises:
             ValueError: If `view` differs in topology, naming the element.
@@ -151,19 +151,28 @@ class MplResult:
                     )
                     pending.append((self.parts[leaf.id].set_data, rgba))
                     image_keys[leaf.id] = (key, (leaf.data, leaf.valid))
-            weights, alphas = path_alphas(leaf)
+            weights, alphas = mark_alphas(leaf)
             if weights != self._weights[leaf.id]:
-                pending.extend(
-                    (self.parts[mark_id].set_alpha, alpha)
-                    for mark_id, alpha in alphas.items()
-                )
+                for mark in leaf.marks:
+                    if mark.id not in alphas:
+                        continue
+                    keys = [mark.id]
+                    if isinstance(mark, Points):
+                        keys += [
+                            f"{mark.id}/{name}"
+                            for name in ("xerr", "yerr")
+                            if getattr(mark, name) is not None
+                        ]
+                    pending.extend(
+                        (self.parts[key].set_alpha, alphas[mark.id]) for key in keys
+                    )
             for mark in leaf.marks:
                 pending.extend(self._mark_changes(mark))
 
         for setter, value in pending:
             setter(value)
         self._image_keys = image_keys
-        self._weights = {leaf.id: path_alphas(leaf)[0] for leaf in leaf_views(view)}
+        self._weights = {leaf.id: mark_alphas(leaf)[0] for leaf in leaf_views(view)}
         self.view = view
 
     def _mark_changes(self, mark):
@@ -303,7 +312,9 @@ def animate(sequence, *, run_time, fps=30, ax=None, axes=None, cast=None, profil
 
     Returns:
         An `eyepiece.Animation`; nothing is encoded until `.save`,
-        `.jshtml`, or `.video` is called.
+        `.jshtml`, or `.video` is called. Its `.result` is the `MplResult`
+        every frame updates, so a caller reaches the artists through
+        `.result.parts` (to hide, restyle, or annotate one) before encoding.
     """
     output_times = sequence.schedule(run_time=run_time, fps=fps)
     result = render(sequence.frame(0), ax=ax, axes=axes, cast=cast, profile=profile)
@@ -311,7 +322,9 @@ def animate(sequence, *, run_time, fps=30, ax=None, axes=None, cast=None, profil
     def draw(_fig, index):
         result.update(sequence.at(float(output_times[index])).view)
 
-    return legacy_animate(result.fig, draw, len(output_times), fps=fps)
+    animation = legacy_animate(result.fig, draw, len(output_times), fps=fps)
+    animation.result = result
+    return animation
 
 
 __all__ = ["MplResult", "animate", "render"]

@@ -18,24 +18,27 @@ Opacity belongs to the caller. An update rewrites geometry, image pixels,
 and label outlines, but never sets a part's opacity: a nonfinite coordinate
 is a gap whose marker, error bar, or path segment has no points (the
 handle stays, and a later finite update gives it points again), and an
-image keeps the opacity the caller last set on it. A new path weight
-rescales the path's current opacity rather than replacing it.
+image keeps the opacity the caller last set on it. A new path or point
+weight rescales the mark's current opacity rather than replacing it.
 """
 
 import math
 from types import MappingProxyType
 
 import manim
+import manimpango
 import numpy as np
 
 from eyepiece._prepared_render import (
+    LABEL_HALO_EM,
     VIEW_TYPES,
     array_key,
     check_topology,
     default_cast,
     gap_nan,
+    label_halo,
     leaf_views,
-    path_alphas,
+    mark_alphas,
     region_fill_opacity,
     resolve_styles,
     topology,
@@ -50,7 +53,7 @@ from eyepiece.prepared import (
     Region,
     map_rgba,
 )
-from eyepiece.style import snapshot_profile
+from eyepiece.style import _font_path, snapshot_profile
 
 # Scene-unit layout of a freshly rendered panel. A 16:9 Manim frame is 8
 # units tall, so one panel fits beside a second one or a title. Callers
@@ -66,6 +69,9 @@ _TICK_FONT_SCALE = 0.75
 # `axes.formatter.limits`); outside them ticks share a power of ten.
 _PLAIN_ORDERS = (-5, 6)
 _MARKER_RADIUS = 0.07
+# Manim stroke-width units per point of text size for a one-em stroke: a
+# 24 pt em is about 0.31 scene units, and stroke width 1 is 0.01 units.
+_STROKE_PER_EM_PT = 1.3
 _DASH_LENGTH = 0.15
 
 # Mark draw order, matching the Matplotlib renderer's z-orders: regions
@@ -257,6 +263,35 @@ def _nice_ticks(low, high):
     return values, texts
 
 
+def _ensure_font(family):
+    """Make Pango lay out `family` from the same file Matplotlib draws it with.
+
+    A profile's font family is one Matplotlib resolves. When Pango does not
+    list that family (Matplotlib's bundled DejaVu Sans, for one, is not a
+    system font), the file Matplotlib resolved is registered with Pango, so
+    a label measured in one renderer is drawn from the same glyphs in the
+    other.
+
+    Raises:
+        ValueError: If neither resolver has `family`, or Pango refuses the
+            file Matplotlib resolved.
+    """
+    if family in manimpango.list_fonts():
+        return
+    try:
+        path = _font_path(family)
+    except ValueError:
+        raise ValueError(
+            f"font {family!r} is installed for neither Pango nor Matplotlib; "
+            "install it or pass another font_family to snapshot_profile"
+        ) from None
+    if not manimpango.register_font(path) or family not in manimpango.list_fonts():
+        raise ValueError(
+            f"font {family!r}: Pango could not register {path}, the file "
+            "Matplotlib resolves for it; install the font system-wide"
+        )
+
+
 def _text(text, profile, font_size):
     return manim.Text(
         text,
@@ -322,7 +357,7 @@ class _Panel:
         self.markers = {}
         self.image_key = None
         self.image_arrays = None
-        self.weights, self.alphas = path_alphas(view)
+        self.weights, self.alphas = mark_alphas(view)
 
     def set_weights(self, weights, alphas):
         self.weights, self.alphas = weights, alphas
@@ -416,10 +451,16 @@ def _colorbar(view, frame, profile):
     bottom = _text(f"{scale.vmin:g}", profile, tick_size)
     bottom.next_to(strip, manim.RIGHT, buff=0.1).align_to(strip, manim.DOWN)
     parts = [strip, outline, top, bottom]
+    if scale.kind == "symmetric":
+        # A signed quantity's zero is its reference, so it is labelled at
+        # the strip's midpoint (vmin == -vmax).
+        zero = _text("0", profile, tick_size)
+        zero.next_to(strip, manim.RIGHT, buff=0.1)
+        parts.append(zero)
     if view.quantity:
         quantity = _text(view.quantity, profile, profile.text_size_pt)
         quantity.rotate(-manim.PI / 2)
-        quantity.next_to(manim.Group(top, bottom, strip), manim.RIGHT, buff=0.15)
+        quantity.next_to(manim.Group(*parts[2:], strip), manim.RIGHT, buff=0.15)
         parts.append(quantity)
     return manim.Group(*parts)
 
@@ -452,7 +493,7 @@ def _draw_panel(view, styles, rgba, profile, parts):
         layers = [image, *layers, colorbar]
 
     ordered = {_REGION: [], _LINE: [], _TOP: []}
-    _, alphas = path_alphas(view)
+    _, alphas = mark_alphas(view)
     for mark in view.marks:
         style = styles.get(mark.id, {})
         if isinstance(mark, Path):
@@ -472,7 +513,9 @@ def _draw_panel(view, styles, rgba, profile, parts):
             markers = manim.VGroup(
                 *(
                     manim.VMobject(
-                        fill_color=style["color"], fill_opacity=1.0, stroke_width=0
+                        fill_color=style["color"],
+                        fill_opacity=alphas[mark.id],
+                        stroke_width=0,
                     )
                     for _ in centers
                 )
@@ -489,6 +532,7 @@ def _draw_panel(view, styles, rgba, profile, parts):
                         manim.VMobject(
                             stroke_color=style["color"],
                             stroke_width=stroke,
+                            stroke_opacity=alphas[mark.id],
                             fill_opacity=0.0,
                         )
                         for _ in centers
@@ -525,6 +569,13 @@ def _draw_panel(view, styles, rgba, profile, parts):
             glyphs = manim.VMobject(
                 fill_color=profile.text_color, fill_opacity=1.0, stroke_width=0
             )
+            if label_halo(view):
+                glyphs.set_stroke(
+                    color=profile.background_color,
+                    width=LABEL_HALO_EM * profile.text_size_pt * _STROKE_PER_EM_PT,
+                    opacity=1.0,
+                    background=True,
+                )
             glyphs.set_points(points + _label_offset(points, mark, spec, basis, drop))
             state.label_drops[mark.id] = drop
             state.label_texts[mark.id] = mark.text
@@ -613,7 +664,7 @@ class ManimResult:
             view: A prepared view with the same topology as the rendered
                 one (see `eyepiece.mpl.MplResult.update`): values, path
                 visible intervals, point and region positions, reference
-                values, label text, and path weights may change.
+                values, label text, and path and point weights may change.
 
         Raises:
             TypeError: If `view` is not a prepared view.
@@ -647,11 +698,22 @@ class ManimResult:
                     lambda: _set_pixels(self.parts[leaf.id], pixels, state, key, arrays)
                 )
 
-        weights, alphas = path_alphas(leaf)
+        weights, alphas = mark_alphas(leaf)
         if weights != state.weights:
-            for mark_id, alpha in alphas.items():
-                factor = alpha / state.alphas[mark_id]
-                changes.append(_rescale_stroke(self.parts[mark_id], factor))
+            for mark in leaf.marks:
+                if mark.id not in alphas:
+                    continue
+                factor = alphas[mark.id] / state.alphas[mark.id]
+                if isinstance(mark, Path):
+                    changes.append(_rescale_stroke(self.parts[mark.id], factor))
+                    continue
+                changes.extend(_rescale_fill(m, factor) for m in self.parts[mark.id])
+                for name in ("xerr", "yerr"):
+                    if getattr(mark, name) is not None:
+                        changes.extend(
+                            _rescale_stroke(bar, factor)
+                            for bar in self.parts[f"{mark.id}/{name}"]
+                        )
             changes.append(lambda: state.set_weights(weights, alphas))
 
         for mark in leaf.marks:
@@ -715,6 +777,13 @@ def _rescale_stroke(mob, factor):
     return apply
 
 
+def _rescale_fill(mob, factor):
+    def apply():
+        mob.set_fill(opacity=mob.get_fill_opacity() * factor)
+
+    return apply
+
+
 def _set_pixels(image, pixels, state, key, arrays):
     """Rewrite an image's pixel buffer in place, keeping the caller's opacity.
 
@@ -762,7 +831,10 @@ def render(view, *, cast=None, profile=None):
         ValueError: If a source ID is not in `cast`, a region or reference
             line has an unsupported role, a colormap role is not in
             `profile`, an axis aspect is not usable, or a derived part key
-            collides with an element ID. Each error names the element.
+            collides with an element ID. Each error names the element. Also
+            raised when the profile's font is installed for neither Pango
+            nor Matplotlib; a font only Matplotlib has is registered with
+            Pango from the file Matplotlib resolves, once per render.
     """
     if not isinstance(view, VIEW_TYPES):
         raise TypeError(f"render takes a prepared view, got {type(view).__name__}")
@@ -771,6 +843,7 @@ def render(view, *, cast=None, profile=None):
     styles = resolve_styles(
         view, cast, profile, renderer="Manim", leaf_parts=_LEAF_PARTS
     )
+    _ensure_font(profile.font_family)
     leaves = leaf_views(view)
     for leaf in leaves:
         _panel_size(leaf)

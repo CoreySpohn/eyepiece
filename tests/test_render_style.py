@@ -1,6 +1,7 @@
 """SourceCast slot/marker assignment and RenderProfile hwostyle snapshots."""
 
 import hwostyle
+import matplotlib
 import numpy as np
 import pytest
 
@@ -101,6 +102,27 @@ def test_snapshot_profile_colormaps_mapping_is_read_only():
     profile = snapshot_profile()
     with pytest.raises(TypeError):
         profile.colormaps["intensity"] = np.zeros((256, 4), dtype=np.uint8)
+
+
+def test_snapshot_profile_skips_uninstalled_fonts_in_the_rc_stack():
+    """A listed but missing font is never recorded; the first installed one is."""
+    from matplotlib import font_manager
+
+    matplotlib.rcParams["font.family"] = ["sans-serif"]
+    matplotlib.rcParams["font.sans-serif"] = ["No Such Font 0", "DejaVu Sans"]
+    profile = snapshot_profile()
+    assert profile.font_family == "DejaVu Sans"
+    path = font_manager.findfont(
+        font_manager.FontProperties(family=profile.font_family),
+        fallback_to_default=False,
+    )
+    assert str(path).endswith("DejaVuSans.ttf")
+
+
+def test_snapshot_profile_with_no_installed_font_records_the_fallback_file():
+    matplotlib.rcParams["font.family"] = ["sans-serif"]
+    matplotlib.rcParams["font.sans-serif"] = ["No Such Font 0", "No Such Font 1"]
+    assert snapshot_profile().font_family == "DejaVu Sans"
 
 
 def test_snapshot_profile_explicit_overrides_win():

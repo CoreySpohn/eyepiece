@@ -48,6 +48,9 @@ def test_animate_returns_the_public_animation_type(image_sequence):
     assert isinstance(animation, eyepiece.Animation)
     assert animation.n_frames == 4
     assert animation.fps == 4
+    assert isinstance(animation.result, mpl.MplResult)
+    assert animation.result.fig is animation.fig
+    assert "image" in animation.result.parts
 
 
 @pytest.mark.parametrize(

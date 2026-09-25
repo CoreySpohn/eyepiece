@@ -62,7 +62,7 @@ same mode, or of two modes, with the same cast.
 | a `Label` ID | a `VGroup` wrapper whose single child holds the glyph outlines |
 | `"<view id>/frame"` | the axes box, whose corners are the axis limits |
 | `"<view id>/axes"` | the tick marks, tick labels, and axis labels |
-| `"<image id>/colorbar"` | the colormap strip, its bounds, and its quantity |
+| `"<image id>/colorbar"` | the colormap strip, its bounds (and a zero label on a symmetric scale), and its quantity |
 | `"<points id>/xerr"`, `"<points id>/yerr"` | one error-bar segment per sample |
 
 The `frame` and `axes` keys exist only in the Manim renderer.
@@ -97,10 +97,14 @@ class SpeckleScene(manim.Scene):
         ...
 ```
 
-Manim lays text out through Pango, which resolves `profile.font_family`
-independently of Matplotlib. Check that the family is installed where the
-scene renders, pass `font_family=` to `snapshot_profile`, or register a font
-file with `manimpango.register_font` before rendering.
+Manim lays text out through Pango, which resolves fonts independently of
+Matplotlib. `snapshot_profile()` records the first family of the Matplotlib
+font stack that Matplotlib can find installed, skipping a listed font that is
+missing. When Pango does not list that family (Matplotlib's bundled DejaVu
+Sans, for example), `render` registers the file Matplotlib resolved with
+Pango once per render, so both renderers draw the same glyphs. A family that
+neither resolver has raises a `ValueError` naming it; pass another
+`font_family=` to `snapshot_profile` in that case.
 
 ### Updates and ownership
 
@@ -114,8 +118,8 @@ redraws them.
 
 Opacity belongs to the consumer. An update never sets a part's opacity, so a
 part hidden before a slide begins stays hidden through seeking, playback,
-moving, and scaling, until the consumer reveals it. A new path weight
-rescales the path's current opacity rather than replacing it.
+moving, and scaling, until the consumer reveals it. A new path or point
+weight rescales the mark's current opacity rather than replacing it.
 
 ```python
 annulus = clip.parts["annulus"]

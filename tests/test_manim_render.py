@@ -309,6 +309,144 @@ def test_a_lone_path_is_drawn_at_the_top_weight_opacity():
     assert em.render(view).parts["p"].get_stroke_opacity() == pytest.approx(0.80)
 
 
+def _weighted_heads(heavy=1.0, light=0.25):
+    """Two weighted point sets beside two weighted paths on one panel."""
+    return TrackView(
+        "track",
+        AxisSpec("x", "y", (0, 1), (0, 1)),
+        (
+            Path("path/a", np.array([[0.1, 0.1], [0.9, 0.9]]), weight=1.0),
+            Path("path/b", np.array([[0.1, 0.9], [0.9, 0.1]]), weight=0.5),
+            Points("head/a", np.array([[0.9, 0.9]]), weight=heavy, xerr=np.ones(1)),
+            Points("head/b", np.array([[0.9, 0.1]]), weight=light),
+        ),
+    )
+
+
+def test_point_opacity_uses_the_shared_weight_mapping_per_group():
+    """Points normalize among the panel's Points, as Paths do among its Paths."""
+    import eyepiece.manim as em
+
+    result = em.render(_weighted_heads())
+    heads = weight_opacity([1.0, 0.25])
+    paths = weight_opacity([1.0, 0.5])
+    (marker_a,) = result.parts["head/a"]
+    (bar_a,) = result.parts["head/a/xerr"]
+    (marker_b,) = result.parts["head/b"]
+    assert marker_a.get_fill_opacity() == pytest.approx(heads[0])
+    assert bar_a.get_stroke_opacity() == pytest.approx(heads[0])
+    assert marker_b.get_fill_opacity() == pytest.approx(heads[1])
+    assert result.parts["path/b"].get_stroke_opacity() == pytest.approx(paths[1])
+
+    result.update(_weighted_heads(heavy=0.25, light=1.0))
+    assert marker_a.get_fill_opacity() == pytest.approx(heads[1])
+    assert bar_a.get_stroke_opacity() == pytest.approx(heads[1])
+    assert marker_b.get_fill_opacity() == pytest.approx(heads[0])
+
+
+def test_a_lone_point_set_is_drawn_at_the_top_weight_opacity():
+    import eyepiece.manim as em
+
+    view = TrackView(
+        "track",
+        AxisSpec("x", "y", (0, 1), (0, 1)),
+        (Points("p", np.array([[0.5, 0.5]])),),
+    )
+    (marker,) = em.render(view).parts["p"]
+    assert marker.get_fill_opacity() == pytest.approx(0.80)
+
+
+def test_labels_over_an_image_get_a_background_halo():
+    """A label over image pixels has a background stroke; a track label has none."""
+    import eyepiece.manim as em
+
+    profile = snapshot_profile()
+    view = PanelGroup(
+        "pair",
+        (
+            _image(
+                marks=(
+                    Label("panel", "a", (0.1, 0.9)),
+                    Label("data", "b", (1.0, 1.0), space="data"),
+                )
+            ),
+            TrackView(
+                "track",
+                AxisSpec("x", "y", (0, 1), (0, 1)),
+                (Label("plain", "c", (0.1, 0.9)),),
+            ),
+        ),
+    )
+    result = em.render(view, profile=profile)
+    background = manim.ManimColor(profile.background_color).to_hex().lower()
+    for key in ("panel", "data"):
+        (glyphs,) = result.parts[key].submobjects
+        assert glyphs.get_stroke_width(background=True) == pytest.approx(
+            0.25 * profile.text_size_pt * 1.3
+        )
+        assert glyphs.get_stroke_color(background=True).to_hex().lower() == background
+        assert glyphs.get_stroke_width() == 0
+    (plain,) = result.parts["plain"].submobjects
+    assert plain.get_stroke_width(background=True) == 0
+
+    # The halo survives a text change, and a hidden label hides its halo too.
+    changed = replace_elements(view, {"panel": Label("panel", "longer", (0.1, 0.9))})
+    result.update(changed)
+    (glyphs,) = result.parts["panel"].submobjects
+    assert glyphs.get_stroke_width(background=True) > 0
+    result.parts["panel"].set_opacity(0)
+    assert glyphs.get_stroke_opacity(background=True) == 0
+
+
+def test_render_registers_the_profile_font_with_pango():
+    """Both resolvers see the family the profile recorded after one render."""
+    import dataclasses
+
+    import manimpango
+
+    import eyepiece.manim as em
+
+    profile = dataclasses.replace(snapshot_profile(), font_family="DejaVu Sans")
+    em.render(_image(marks=(Label("t", "a", (0.1, 0.9)),)), profile=profile)
+    assert "DejaVu Sans" in manimpango.list_fonts()
+
+
+def test_render_rejects_a_font_neither_resolver_has():
+    import dataclasses
+
+    import eyepiece.manim as em
+
+    profile = dataclasses.replace(snapshot_profile(), font_family="No Such Font 0")
+    with pytest.raises(ValueError, match="No Such Font 0"):
+        em.render(_image(), profile=profile)
+
+
+def _texts(mobject):
+    """The strings of every Text in a mobject's family."""
+    return [m.text for m in mobject.get_family() if isinstance(m, manim.Text)]
+
+
+def test_symmetric_colorbar_labels_zero_at_its_midpoint():
+    import eyepiece.manim as em
+
+    data = np.array([[-1.0, 0.0, 1.0], [0.5, -0.5, 0.0]])
+    view = ImageView(
+        "delta",
+        data,
+        AxisSpec("x", "y", (0.0, 3.0), (0.0, 2.0)),
+        Scale("symmetric", -2.0, 2.0, cmap_role="residual"),
+        "delta",
+    )
+    colorbar = em.render(view).parts["delta/colorbar"]
+    assert _texts(colorbar)[:3] == ["2", "-2", "0"]
+    strip, _, _, _, zero = colorbar.submobjects[:5]
+    assert zero.get_center()[1] == pytest.approx(strip.get_center()[1])
+    assert zero.get_left()[0] > strip.get_right()[0]
+
+    linear = em.render(_image()).parts["image/colorbar"]
+    assert "0" not in _texts(linear)[2:]
+
+
 def test_unsupported_region_role_raises_before_drawing():
     import eyepiece.manim as em
 

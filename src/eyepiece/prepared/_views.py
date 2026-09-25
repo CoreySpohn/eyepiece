@@ -77,6 +77,12 @@ def _check_numeric(arr, owner_id, field_name):
         raise ValueError(
             f"{owner_id}: {field_name} must be numeric, got dtype {arr.dtype}"
         )
+    if np.issubdtype(arr.dtype, np.complexfloating):
+        raise ValueError(
+            f"{owner_id}: {field_name} must be real, got complex dtype "
+            f"{arr.dtype}; prepare the displayed quantity (for example "
+            "np.abs(field) ** 2, .real, or np.angle) first"
+        )
 
 
 def _check_xy(value, owner_id, field_name):
@@ -344,6 +350,9 @@ class Points:
         yerr: Optional nonnegative y error shaped (P,); nonfinite only on
             gap rows.
         label: Legend/description text.
+        weight: Nonnegative candidate weight, mapped to display opacity
+            (markers and error bars together) through the same mapping as
+            `Path.weight`.
     """
 
     id: str
@@ -352,10 +361,16 @@ class Points:
     xerr: np.ndarray | None = None
     yerr: np.ndarray | None = None
     label: str = ""
+    weight: float = 1.0
 
     def __post_init__(self):
         xy = _check_xy(self.xy, self.id, "xy")
         object.__setattr__(self, "xy", xy)
+        if not math.isfinite(self.weight) or self.weight < 0:
+            raise ValueError(
+                f"{self.id}: weight must be a nonnegative finite number, "
+                f"got {self.weight!r}"
+            )
         gaps = _gap_rows(xy)
         object.__setattr__(
             self, "xerr", _check_error_vector(self.xerr, gaps, self.id, "xerr")

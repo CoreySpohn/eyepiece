@@ -9,14 +9,17 @@ tree walk, and style resolution are renderer-neutral and live in
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import patheffects
 from matplotlib.cm import ScalarMappable
 from matplotlib.collections import LineCollection
 from matplotlib.colors import ListedColormap, LogNorm, Normalize, to_rgba
 from matplotlib.patches import Annulus, Circle
 
 from eyepiece._prepared_render import (
+    LABEL_HALO_EM,
     gap_nan,
-    path_alphas,
+    label_halo,
+    mark_alphas,
     region_fill_opacity,
     visible_xy,
 )
@@ -153,7 +156,7 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
     else:
         parts[leaf.id] = ax
 
-    _, alphas = path_alphas(leaf)
+    _, alphas = mark_alphas(leaf)
     for mark in leaf.marks:
         style = styles.get(mark.id, {})
         if isinstance(mark, Path):
@@ -173,6 +176,7 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
                 offsets[:, 1],
                 color=style["color"],
                 marker=style["marker"],
+                alpha=alphas[mark.id],
                 label=mark.label,
                 zorder=3,
             )
@@ -183,6 +187,7 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
                     error_segments(mark, name),
                     colors=style["color"],
                     linewidths=stroke,
+                    alpha=alphas[mark.id],
                 )
                 parts[f"{mark.id}/{name}"] = ax.add_collection(
                     collection, autolim=False
@@ -217,6 +222,14 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
             )
         else:
             panel = mark.space == "panel"
+            halo = []
+            if label_halo(leaf):
+                halo = [
+                    patheffects.withStroke(
+                        linewidth=LABEL_HALO_EM * profile.text_size_pt,
+                        foreground=profile.background_color,
+                    )
+                ]
             parts[mark.id] = ax.text(
                 *mark.xy,
                 mark.text,
@@ -226,5 +239,6 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
                 fontfamily=profile.font_family,
                 ha="left",
                 va="top" if panel else "baseline",
+                path_effects=halo,
             )
     _apply_axis_spec(ax, leaf.axes)

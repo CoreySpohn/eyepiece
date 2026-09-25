@@ -3,7 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from matplotlib.colors import LogNorm
+from matplotlib.colors import LogNorm, to_rgba
 
 from eyepiece.prepared import (
     AxisSpec,
@@ -290,6 +290,95 @@ def test_path_opacity_uses_the_shared_weight_mapping():
     expected = weight_opacity([1.0, 0.25])
     assert result.parts["path/0"].get_alpha() == pytest.approx(expected[0])
     assert result.parts["path/1"].get_alpha() == pytest.approx(expected[1])
+
+
+def _weighted_heads(heavy=1.0, light=0.25):
+    """Two weighted point sets beside two weighted paths on one panel."""
+    return TrackView(
+        "track",
+        AxisSpec("x", "y", (0, 1), (0, 1)),
+        (
+            Path("path/a", np.array([[0.1, 0.1], [0.9, 0.9]]), weight=1.0),
+            Path("path/b", np.array([[0.1, 0.9], [0.9, 0.1]]), weight=0.5),
+            Points("head/a", np.array([[0.9, 0.9]]), weight=heavy, xerr=np.ones(1)),
+            Points("head/b", np.array([[0.9, 0.1]]), weight=light),
+        ),
+    )
+
+
+def test_point_opacity_uses_the_shared_weight_mapping_per_group():
+    """Points normalize among the panel's Points, as Paths do among its Paths."""
+    import eyepiece.mpl as mpl
+
+    result = mpl.render(_weighted_heads())
+    heads = weight_opacity([1.0, 0.25])
+    paths = weight_opacity([1.0, 0.5])
+    assert result.parts["head/a"].get_alpha() == pytest.approx(heads[0])
+    assert result.parts["head/a/xerr"].get_alpha() == pytest.approx(heads[0])
+    assert result.parts["head/b"].get_alpha() == pytest.approx(heads[1])
+    assert result.parts["path/b"].get_alpha() == pytest.approx(paths[1])
+
+    result.update(_weighted_heads(heavy=0.25, light=1.0))
+    assert result.parts["head/a"].get_alpha() == pytest.approx(heads[1])
+    assert result.parts["head/a/xerr"].get_alpha() == pytest.approx(heads[1])
+    assert result.parts["head/b"].get_alpha() == pytest.approx(heads[0])
+
+
+def test_a_lone_point_set_is_drawn_at_the_top_weight_opacity():
+    import eyepiece.mpl as mpl
+
+    view = TrackView(
+        "track",
+        AxisSpec("x", "y", (0, 1), (0, 1)),
+        (Points("p", np.array([[0.5, 0.5]])),),
+    )
+    assert mpl.render(view).parts["p"].get_alpha() == pytest.approx(0.80)
+
+
+def test_labels_over_an_image_get_a_background_halo():
+    """Labels over image pixels get a background stroke; track labels do not."""
+    import eyepiece.mpl as mpl
+
+    profile = snapshot_profile(text_size_pt=12)
+    data = np.full((8, 8), 1.0)
+    image = ImageView(
+        "image",
+        data,
+        AxisSpec("x", "y", (0.0, 8.0), (0.0, 8.0)),
+        Scale("linear", 0.0, 1.0),
+        "signal",
+        marks=(
+            Label("panel", "WWW", (0.1, 0.9)),
+            Label("data", "WWW", (1.0, 2.0), space="data"),
+        ),
+    )
+    fig, (left, right) = plt.subplots(1, 2, figsize=(6, 3), dpi=100)
+    result = mpl.render(image, ax=left, profile=profile)
+    for key in ("panel", "data"):
+        (effect,) = result.parts[key].get_path_effects()
+        assert effect._gc["foreground"] == profile.background_color
+        assert effect._gc["linewidth"] == pytest.approx(0.25 * 12)
+
+    track = mpl.render(
+        TrackView(
+            "track",
+            AxisSpec("x", "y", (0, 1), (0, 1)),
+            (Label("plain", "b", (0.1, 0.9)),),
+        ),
+        ax=right,
+        profile=profile,
+    )
+    assert track.parts["plain"].get_path_effects() == []
+
+    # The halo really reaches the canvas: background-colored pixels appear
+    # inside the label's box, over an image mapped to the top of the table.
+    fig.canvas.draw()
+    buffer = np.asarray(fig.canvas.buffer_rgba())[..., :3]
+    box = result.parts["panel"].get_window_extent()
+    rows = slice(buffer.shape[0] - int(box.y1), buffer.shape[0] - int(box.y0))
+    cols = slice(int(box.x0), int(box.x1))
+    background = np.round(np.array(to_rgba(profile.background_color)[:3]) * 255)
+    assert np.any(np.all(buffer[rows, cols] == background, axis=-1))
 
 
 def test_unsupported_region_role_raises_before_drawing():

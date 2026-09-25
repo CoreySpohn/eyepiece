@@ -83,7 +83,7 @@ is handed.
 | `TrackView` | `id`, `axes`, `marks=()`: a 2D coordinate panel, such as a sky track |
 | `PanelGroup` | `id`, `views`, `direction="row"` (or `"column"`) |
 | `Path` | `id`, `xy` shaped (P, 2), `source_id=None`, `weight=1.0`, `visible=(0, None)`, `label=""` |
-| `Points` | `id`, `xy` shaped (P, 2), `source_id=None`, `xerr=None`, `yerr=None`, `label=""` |
+| `Points` | `id`, `xy` shaped (P, 2), `source_id=None`, `xerr=None`, `yerr=None`, `label=""`, `weight=1.0` |
 | `Region` | `id`, `center` shaped (2,), `outer_radius`, `inner_radius=0.0`, `role="reference"`, `label=""` |
 | `ReferenceLine` | `id`, `axis` (`"x"` or `"y"`), `value`, `role="reference"`, `label=""` |
 | `Label` | `id`, `text`, `xy`, `space="panel"` (or `"data"`) |
@@ -357,9 +357,12 @@ dictionaries is customized.
 Path opacity is `0.15 + 0.65 * weight / max_weight` over the paths on one
 panel, from `weight_opacity`. It is relative emphasis, not probability: a
 candidate of zero weight stays visible at 0.15, the heaviest is drawn at
-0.80, and a lone path is 0.80 whatever its weight. Points and moving heads are not
-weighted. A figure whose claim depends on the weights themselves still owes
-them a quantitative axis.
+0.80, and a lone path is 0.80 whatever its weight. `Points` carry a weight
+too, mapped the same way over the point sets on one panel (a separate group
+from the paths), and a point set's markers and error bars share its opacity.
+A moving head given its track's weight therefore fades exactly as its track
+does, and a lone point set is drawn at 0.80. A figure whose claim depends on
+the weights themselves still owes them a quantitative axis.
 
 ```{code-cell} python
 print(weight_opacity([0.2, 1.0, 0.5]), weight_opacity([3.0]))
@@ -375,6 +378,9 @@ A few drawing rules hold in both renderers:
   interior is shaded at 0.2 opacity.
 - `show_ticks=False` hides the tick labels. The tick marks and the axis
   labels remain.
+- A `Label` on an `ImageView` is drawn with a halo in the profile's
+  background color, so it stays readable over any colormap value. A label
+  on a curve or track panel already sits on the background and has none.
 
 On a figure the renderer created, constrained layout keeps the colorbar and
 its label on the canvas. On caller axes the colorbar hangs in an inset beside
@@ -386,7 +392,7 @@ can clip the colorbar label at the figure edge. Create the figure with
 
 `MplResult.update(view)` shows a new state of the same tree. It accepts new
 values, path visible intervals, point, region, and reference-line positions,
-label text, and path weights. It rejects a changed topology: different IDs or
+label text, and path and point weights. It rejects a changed topology: different IDs or
 kinds, image shapes, scales, axes, point counts, error-bar presence, or
 source IDs. The whole new tree is validated, and every new image mapped,
 before any artist changes, so a rejected update leaves the figure exactly as
