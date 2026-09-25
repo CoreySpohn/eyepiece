@@ -2,8 +2,9 @@
 
 Everything here turns one already-validated prepared element into
 Matplotlib state -- a resolved color, a segment array, an artist -- and
-none of it decides whether an update is allowed; that topology check lives
-beside `MplResult` in `eyepiece.mpl`. Private: not part of the public API.
+none of it decides whether an update is allowed; that topology check, the
+tree walk, and style resolution are renderer-neutral and live in
+`eyepiece._prepared_render`. Private: not part of the public API.
 """
 
 import matplotlib.pyplot as plt
@@ -13,154 +14,23 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import ListedColormap, LogNorm, Normalize, to_rgba
 from matplotlib.patches import Annulus, Circle
 
+from eyepiece._prepared_render import (
+    REGION_FILL_OPACITY,
+    gap_nan,
+    path_alphas,
+    visible_xy,
+)
 from eyepiece.images import _attach_colorbar
 from eyepiece.prepared import (
-    CurveView,
     ImageView,
     PanelGroup,
     Path,
     Points,
     ReferenceLine,
     Region,
-    TrackView,
-    weight_opacity,
 )
-from eyepiece.style import SourceCast
-
-LEAF_TYPES = (ImageView, CurveView, TrackView)
-
-# Fill opacity of a Region's interior; its outline is drawn fully opaque.
-_REGION_FILL_ALPHA = 0.2
-
-_SUPPORTED_ROLES = ("reference",)
-
-
-# --- Tree walking ---------------------------------------------------------------
-
-
-def iter_elements(element):
-    """Yield every view and mark in `element`'s tree, depth first."""
-    yield element
-    if isinstance(element, PanelGroup):
-        for child in element.views:
-            yield from iter_elements(child)
-    elif isinstance(element, LEAF_TYPES):
-        yield from element.marks
-
-
-def leaf_views(view):
-    """The drawable (non-group) views of a tree, depth first."""
-    return [e for e in iter_elements(view) if isinstance(e, LEAF_TYPES)]
-
-
-# --- Appearance resolution (all checks before anything is drawn) ------------
-
-
-def default_cast(view):
-    """A SourceCast over the tree's source IDs in first-encounter order."""
-    names = []
-    for element in iter_elements(view):
-        source_id = getattr(element, "source_id", None)
-        if source_id is not None and source_id not in names:
-            names.append(source_id)
-    return SourceCast(tuple(names))
-
-
-def _source_color(mark, cast, profile):
-    if mark.source_id is None:
-        return profile.text_color
-    try:
-        slot = cast.slot(mark.source_id)
-    except KeyError:
-        raise ValueError(
-            f"{mark.id}: source_id {mark.source_id!r} is not in the cast {cast.names!r}"
-        ) from None
-    return profile.colors[slot % len(profile.colors)]
-
-
-def _source_marker(mark, cast):
-    return "o" if mark.source_id is None else cast.marker(mark.source_id)
-
-
-def _role_color(mark, profile):
-    if mark.role not in _SUPPORTED_ROLES:
-        raise ValueError(
-            f"{mark.id}: role {mark.role!r} is not supported by the Matplotlib "
-            f"renderer; use one of {_SUPPORTED_ROLES}"
-        )
-    return profile.reference_color
-
-
-def resolve_styles(view, cast, profile):
-    """Resolve every element's appearance, raising before anything is drawn.
-
-    Returns:
-        A dict mapping element ID to its style dict.
-    """
-    ids = {element.id for element in iter_elements(view)}
-    styles = {}
-    for element in iter_elements(view):
-        derived = ()
-        if isinstance(element, ImageView):
-            role = element.scale.cmap_role
-            if role not in profile.colormaps:
-                raise ValueError(
-                    f"{element.id}: colormap role {role!r} is not in the render profile"
-                )
-            derived = (f"{element.id}/colorbar",)
-        elif isinstance(element, (Path, Points)):
-            styles[element.id] = {
-                "color": _source_color(element, cast, profile),
-                "marker": _source_marker(element, cast),
-            }
-            if isinstance(element, Points):
-                derived = tuple(
-                    f"{element.id}/{name}"
-                    for name in ("xerr", "yerr")
-                    if getattr(element, name) is not None
-                )
-        elif isinstance(element, (Region, ReferenceLine)):
-            styles[element.id] = {"color": _role_color(element, profile)}
-        elif isinstance(element, PanelGroup) and not element.views:
-            raise ValueError(f"{element.id}: panel group has no views to draw")
-        for key in derived:
-            if key in ids:
-                raise ValueError(
-                    f"{key}: element ID collides with the rendered part "
-                    f"{key!r} of {element.id!r}"
-                )
-    return styles
-
-
-def path_alphas(leaf):
-    """Opacity per Path on one panel, through the shared weight mapping."""
-    paths = [m for m in leaf.marks if isinstance(m, Path)]
-    weights = tuple(float(p.weight) for p in paths)
-    alphas = weight_opacity(np.asarray(weights, dtype=float))
-    return weights, {p.id: float(a) for p, a in zip(paths, alphas, strict=True)}
-
 
 # --- Geometry helpers ----------------------------------------------------------
-
-
-def gap_nan(xy):
-    """Float copy of (P, 2) `xy` with every gap row (any nonfinite) all NaN.
-
-    Matplotlib breaks a line at a NaN vertex and skips a NaN segment, but
-    an infinite coordinate is not reliably a gap, so every nonfinite row
-    becomes NaN in both components. The row count never changes, so a
-    handle keeps one vertex/offset per sample and a later finite update
-    shows the sample again.
-    """
-    xy = np.array(xy, dtype=float)
-    xy[~np.all(np.isfinite(xy), axis=1)] = np.nan
-    return xy
-
-
-def visible_xy(path):
-    """The revealed `(start, stop)` slice of a Path's vertices, gaps as NaN."""
-    start, stop = path.visible
-    return gap_nan(path.xy[start:stop])
 
 
 def point_offsets(points):
@@ -178,14 +48,6 @@ def error_segments(points, name):
     offset = np.zeros_like(xy)
     offset[:, 0 if name == "xerr" else 1] = err
     return np.stack([xy - offset, xy + offset], axis=1)
-
-
-def array_key(arr):
-    """Identity of borrowed storage: address, shape, strides, dtype."""
-    if arr is None:
-        return None
-    interface = arr.__array_interface__
-    return (interface["data"][0], arr.shape, arr.strides, arr.dtype.str)
 
 
 def _norm(scale):
@@ -328,7 +190,7 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
         elif isinstance(mark, Region):
             color = style["color"]
             common = {
-                "facecolor": to_rgba(color, _REGION_FILL_ALPHA),
+                "facecolor": to_rgba(color, REGION_FILL_OPACITY),
                 "edgecolor": to_rgba(color, 1.0),
                 "linewidth": stroke,
                 "label": mark.label,

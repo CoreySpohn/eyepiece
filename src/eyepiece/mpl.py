@@ -33,124 +33,34 @@ from types import MappingProxyType
 from matplotlib.patches import Annulus
 
 from eyepiece._mpl_parts import (
-    LEAF_TYPES,
-    array_key,
-    default_cast,
     draw_leaf,
     error_segments,
-    iter_elements,
-    leaf_views,
     owned_axes,
-    path_alphas,
     point_offsets,
     resolve_axes,
-    resolve_styles,
     root_figure,
+)
+from eyepiece._prepared_render import (
+    VIEW_TYPES,
+    array_key,
+    check_topology,
+    default_cast,
+    leaf_views,
+    path_alphas,
+    resolve_styles,
+    topology,
     visible_xy,
 )
 from eyepiece.anim import animate as legacy_animate
 from eyepiece.prepared import (
-    CurveView,
     ImageView,
-    PanelGroup,
     Path,
     Points,
     ReferenceLine,
     Region,
-    TrackView,
     map_rgba,
 )
 from eyepiece.style import snapshot_profile
-
-_VIEW_TYPES = (*LEAF_TYPES, PanelGroup)
-
-
-# --- Topology -----------------------------------------------------------------
-
-
-def _axes_key(spec):
-    return (
-        spec.x_label,
-        spec.y_label,
-        tuple(float(v) for v in spec.x_limits),
-        tuple(float(v) for v in spec.y_limits),
-        spec.aspect,
-        bool(spec.x_reverse),
-        bool(spec.show_ticks),
-    )
-
-
-def _topology_entry(element):
-    """What an update may not change about one element, as a comparable tuple.
-
-    Values, path visible intervals, mark positions, region geometry, label
-    text, and path weights are state; everything returned here is topology.
-    """
-    if isinstance(element, ImageView):
-        scale = element.scale
-        detail = (
-            element.data.shape,
-            (
-                scale.kind,
-                float(scale.vmin),
-                float(scale.vmax),
-                scale.cmap_role,
-                None if scale.floor is None else float(scale.floor),
-            ),
-            _axes_key(element.axes),
-            element.quantity,
-        )
-    elif isinstance(element, (CurveView, TrackView)):
-        detail = _axes_key(element.axes)
-    elif isinstance(element, PanelGroup):
-        detail = (element.direction, len(element.views))
-    elif isinstance(element, Path):
-        detail = (element.xy.shape[0], element.source_id)
-    elif isinstance(element, Points):
-        detail = (
-            element.xy.shape[0],
-            element.source_id,
-            element.xerr is None,
-            element.yerr is None,
-        )
-    elif isinstance(element, Region):
-        detail = (element.inner_radius == 0.0, element.role)
-    elif isinstance(element, ReferenceLine):
-        detail = (element.axis, element.role)
-    else:
-        detail = (element.space,)
-    return (element.id, type(element).__name__, detail)
-
-
-def _topology(view):
-    return tuple(_topology_entry(e) for e in iter_elements(view))
-
-
-def _check_topology(expected, actual):
-    """Raise a ValueError naming the first element whose topology changed."""
-    if expected == actual:
-        return
-    for old, new in zip(expected, actual, strict=False):
-        if old != new:
-            if old[0] != new[0] or old[1] != new[1]:
-                raise ValueError(
-                    f"{new[0]}: update replaces {old[1]} {old[0]!r} with "
-                    f"{new[1]} {new[0]!r}; a changed tree needs a new render"
-                )
-            raise ValueError(
-                f"{new[0]}: update changes this {new[1]}'s topology "
-                f"({old[2]!r} -> {new[2]!r}); a changed shape, scale, axes, "
-                "point count, or source needs a new render"
-            )
-    # Every shared position matched, so one tree is a prefix of the other.
-    if len(actual) > len(expected):
-        element_id, verb = actual[len(expected)][0], "adds"
-    else:
-        element_id, verb = expected[len(actual)][0], "removes"
-    raise ValueError(
-        f"{element_id}: update {verb} this element; a changed tree needs a new render"
-    )
-
 
 # --- Result --------------------------------------------------------------------
 
@@ -184,7 +94,7 @@ class MplResult:
         self.profile = profile
         self.cast = cast
         self.view = view
-        self._topology = _topology(view)
+        self._topology = topology(view)
         # image id -> (storage key, (data, valid)). Holding the displayed
         # arrays keeps their addresses from being reused by new storage, so
         # an equal key really is the same borrowed sample.
@@ -225,7 +135,7 @@ class MplResult:
         Raises:
             ValueError: If `view` differs in topology, naming the element.
         """
-        _check_topology(self._topology, _topology(view))
+        check_topology(self._topology, topology(view))
         pending = []
         image_keys = dict(self._image_keys)
         for leaf in leaf_views(view):
@@ -323,13 +233,13 @@ def render(view, *, ax=None, axes=None, cast=None, profile=None):
             a colormap role is not in `profile`, or a derived part key
             collides with an element ID. Each error names the element.
     """
-    if not isinstance(view, _VIEW_TYPES):
+    if not isinstance(view, VIEW_TYPES):
         raise TypeError(f"render takes a prepared view, got {type(view).__name__}")
     leaves = leaf_views(view)
     caller_axes = resolve_axes(view, leaves, ax, axes)
     profile = snapshot_profile() if profile is None else profile
     cast = default_cast(view) if cast is None else cast
-    styles = resolve_styles(view, cast, profile)
+    styles = resolve_styles(view, cast, profile, renderer="Matplotlib")
     rgbas = {
         leaf.id: map_rgba(
             leaf.data, valid=leaf.valid, scale=leaf.scale, profile=profile

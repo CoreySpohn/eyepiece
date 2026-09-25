@@ -34,5 +34,47 @@ jobs:
     - name: Diag imports
       run: .venv/bin/python -c "import eyepiece; print(eyepiece.__version__)"
 
+    - name: Check presentation packages are absent
+      run: |
+        if .venv/bin/python -c "import manim" 2>/dev/null; then
+          echo "the base job must not install Manim"; exit 1
+        fi
+
     - name: Run tests
-      run: .venv/bin/pytest tests/ -v --tb=short
+      run: .venv/bin/pytest tests/ -v --tb=short -rs
+
+  render:
+    # Manim (Cairo) rendering and encoding. EYEPIECE_REQUIRE_MANIM=1 makes
+    # tests/conftest.py import Manim at session start and fail the session
+    # if any Manim test is skipped, so a missing dependency cannot pass as
+    # a skip here the way it deliberately does in the base job.
+    name: Manim render tests on ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Install Cairo, Pango, fonts, and ffmpeg
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libcairo2-dev libpango1.0-dev pkg-config fonts-dejavu-core ffmpeg
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        enable-cache: true
+
+    - name: Create venv
+      run: uv venv .venv --python 3.12
+
+    - name: Install package with test and Manim dependencies
+      run: uv pip install -e ".[test,manim]"
+      env:
+        VIRTUAL_ENV: ${{ github.workspace }}/.venv
+
+    - name: Diag imports
+      run: .venv/bin/python -c "import manim, eyepiece.manim; print(manim.__version__)"
+
+    - name: Run tests
+      run: .venv/bin/pytest tests/ -v --tb=short -rs
+      env:
+        EYEPIECE_REQUIRE_MANIM: "1"
