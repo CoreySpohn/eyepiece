@@ -77,6 +77,74 @@ def test_log_negative_value_clips_to_floor_display():
     assert result[0] == pytest.approx(0.0)
 
 
+# --- normalize_values / map_rgba reject an incoherent Scale before mapping ---
+
+
+def test_normalize_values_rejects_unknown_kind():
+    with pytest.raises(ValueError, match="weird"):
+        normalize_values(np.array([1.0]), valid=None, scale=Scale("weird", 0.0, 1.0))
+
+
+def test_normalize_values_rejects_nonfinite_bounds():
+    with pytest.raises(ValueError, match="linear"):
+        normalize_values(
+            np.array([1.0]), valid=None, scale=Scale("linear", 0.0, float("nan"))
+        )
+
+
+def test_normalize_values_rejects_degenerate_bounds():
+    with pytest.raises(ValueError, match="linear"):
+        normalize_values(np.array([1.0]), valid=None, scale=Scale("linear", 1.0, 1.0))
+
+
+def test_normalize_values_rejects_symmetric_bounds_not_centered_on_zero():
+    with pytest.raises(ValueError, match="symmetric"):
+        normalize_values(
+            np.array([1.0]), valid=None, scale=Scale("symmetric", 0.0, 5.0)
+        )
+
+
+def test_normalize_values_rejects_log_scale_with_no_floor():
+    """The gap this fix closes: this used to raise a bare TypeError."""
+    with pytest.raises(ValueError, match="log"):
+        normalize_values(np.array([1.0]), valid=None, scale=Scale("log", 1.0, 10.0))
+
+
+def test_normalize_values_rejects_log_scale_with_nonpositive_floor():
+    with pytest.raises(ValueError, match="log"):
+        normalize_values(
+            np.array([1.0]), valid=None, scale=Scale("log", 0.1, 10.0, floor=-1.0)
+        )
+
+
+def test_normalize_values_rejects_log_scale_with_nonfinite_floor():
+    with pytest.raises(ValueError, match="log"):
+        normalize_values(
+            np.array([1.0]),
+            valid=None,
+            scale=Scale("log", 0.1, 10.0, floor=float("nan")),
+        )
+
+
+def test_normalize_values_rejects_log_scale_with_nonpositive_vmin():
+    """The other gap this fix closes: this used to raise a math domain error."""
+    with pytest.raises(ValueError, match="log"):
+        normalize_values(
+            np.array([1.0]), valid=None, scale=Scale("log", -1.0, 10.0, floor=1.0)
+        )
+
+
+def test_map_rgba_rejects_log_scale_with_nonpositive_vmin():
+    profile = snapshot_profile()
+    with pytest.raises(ValueError, match="log"):
+        map_rgba(
+            np.array([1.0]),
+            valid=None,
+            scale=Scale("log", -1.0, 10.0, floor=1.0),
+            profile=profile,
+        )
+
+
 def test_normalize_values_never_mutates_input():
     values = np.array([-2.0, 0.0, 2.0, np.nan])
     before = values.copy()

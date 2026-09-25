@@ -25,6 +25,8 @@ import math
 
 import numpy as np
 
+from eyepiece.prepared._scale import check_scale
+
 _LINEAR_KINDS = ("linear", "symmetric")
 
 
@@ -70,7 +72,14 @@ def normalize_values(data, *, valid, scale):
     Returns:
         A `numpy.ma.MaskedArray` shaped like `data`, values in [0, 1],
         masked wherever a sample is non-finite or explicitly invalid.
+
+    Raises:
+        ValueError: If `scale` is not internally coherent (see
+            `eyepiece.prepared._scale.check_scale`); this is checked
+            before any mapping runs, and before `map_rgba` (which calls
+            this) indexes anything.
     """
+    check_scale(scale, scale.kind)
     raw = np.asarray(data)
     invalid = _invalid_mask(raw, valid)
 
@@ -232,6 +241,10 @@ def map_rgba(data, *, valid, scale, profile):
 
     Returns:
         A uint8 ndarray shaped `data.shape + (4,)`.
+
+    Raises:
+        ValueError: If `scale` is not internally coherent; checked by the
+            `normalize_values` call below, before anything is drawn.
     """
     normalized = normalize_values(data, valid=valid, scale=scale)
     lut = profile.colormaps[scale.cmap_role]

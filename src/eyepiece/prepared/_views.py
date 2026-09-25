@@ -25,10 +25,11 @@ from numbers import Integral
 
 import numpy as np
 
+from eyepiece.prepared._scale import check_scale
+
 _AXES = ("x", "y")
 _SPACES = ("panel", "data")
 _DIRECTIONS = ("row", "column")
-_SCALE_KINDS = ("linear", "symmetric", "log")
 
 
 def _mask_to_valid(values):
@@ -161,33 +162,22 @@ def _check_limits(limits, owner_id, field_name):
 
 
 def _check_scale(scale, owner_id):
+    """Check that `scale` is a `Scale` and is internally coherent.
+
+    The "is this a `Scale`" check is specific to a view's field (a
+    dataclass constructor argument can be anything); coherence itself --
+    known kind, finite ordered bounds, and the kind-specific constraints --
+    is `eyepiece.prepared._scale.check_scale`, shared with the display
+    mapping path (`normalize_values`/`map_rgba`) so a malformed or
+    incoherent `Scale` is rejected identically wherever it is first used,
+    rather than surfacing later as a bare `TypeError`/`ValueError` out of
+    the arithmetic.
+    """
     if not isinstance(scale, Scale):
         raise ValueError(
             f"{owner_id}: scale must be a Scale, got {type(scale).__name__}"
         )
-    if scale.kind not in _SCALE_KINDS:
-        raise ValueError(
-            f"{owner_id}: scale kind must be one of {_SCALE_KINDS}, got {scale.kind!r}"
-        )
-    vmin, vmax = float(scale.vmin), float(scale.vmax)
-    if not (math.isfinite(vmin) and math.isfinite(vmax)):
-        raise ValueError(
-            f"{owner_id}: scale bounds must be finite, got "
-            f"({scale.vmin!r}, {scale.vmax!r})"
-        )
-    if not vmin < vmax:
-        raise ValueError(
-            f"{owner_id}: scale bounds must be nondegenerate, got "
-            f"vmin={vmin}, vmax={vmax}"
-        )
-    if scale.kind == "log":
-        if scale.floor is None:
-            raise ValueError(f"{owner_id}: log scale requires a positive floor")
-        floor = float(scale.floor)
-        if not math.isfinite(floor) or floor <= 0:
-            raise ValueError(
-                f"{owner_id}: log scale floor must be positive, got {floor}"
-            )
+    check_scale(scale, owner_id)
 
 
 def _check_marks(marks, owner_id):

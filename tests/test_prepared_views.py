@@ -161,6 +161,49 @@ def test_scale_log_accepts_positive_floor():
     assert view.scale.floor == 0.01
 
 
+def test_scale_log_rejects_nonpositive_vmin():
+    with pytest.raises(ValueError, match="img"):
+        ImageView(
+            "img", np.zeros((2, 2)), _axes(), Scale("log", -1, 10, floor=1), "intensity"
+        )
+
+
+def test_scale_log_rejects_nonpositive_floor():
+    with pytest.raises(ValueError, match="img"):
+        ImageView(
+            "img",
+            np.zeros((2, 2)),
+            _axes(),
+            Scale("log", 0.1, 1.0, floor=-1),
+            "intensity",
+        )
+
+
+def test_scale_log_rejects_nonfinite_floor():
+    with pytest.raises(ValueError, match="img"):
+        ImageView(
+            "img",
+            np.zeros((2, 2)),
+            _axes(),
+            Scale("log", 0.1, 1.0, floor=float("nan")),
+            "intensity",
+        )
+
+
+def test_scale_rejects_symmetric_bounds_not_centered_on_zero():
+    with pytest.raises(ValueError, match="img"):
+        ImageView(
+            "img", np.zeros((2, 2)), _axes(), Scale("symmetric", 0, 5), "intensity"
+        )
+
+
+def test_scale_rejects_symmetric_zero_bounds():
+    with pytest.raises(ValueError, match="img"):
+        ImageView(
+            "img", np.zeros((2, 2)), _axes(), Scale("symmetric", 0, 0), "intensity"
+        )
+
+
 # --- Marks: Path, Points, Region, ReferenceLine, Label ----------------------
 
 
