@@ -204,6 +204,16 @@ def test_path_rejects_out_of_range_visible_stop():
         Path("p1", np.zeros((3, 2)), visible=(0, 10))
 
 
+def test_path_rejects_out_of_range_visible_start_when_stop_is_none():
+    with pytest.raises(ValueError, match="p1"):
+        Path("p1", np.zeros((3, 2)), visible=(999, None))
+
+
+def test_path_allows_visible_start_at_vertex_count_when_stop_is_none():
+    path = Path("p1", np.zeros((3, 2)), visible=(3, None))
+    assert path.visible == (3, None)
+
+
 def test_path_rejects_negative_weight():
     with pytest.raises(ValueError, match="p1"):
         Path("p1", np.zeros((3, 2)), weight=-1.0)

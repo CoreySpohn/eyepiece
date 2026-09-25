@@ -153,6 +153,16 @@ def test_unknown_attribute_still_raises_attribute_error():
         _ = eyepiece.not_a_real_export
 
 
+def test_lazy_exports_table_matches_public_names():
+    """_LAZY_EXPORTS must cover exactly __all__ minus the eagerly bound names.
+
+    __version__ is bound eagerly in __init__.py (cheap, no matplotlib), so
+    it is the only name __all__ carries that _LAZY_EXPORTS does not.
+    """
+    eager = {"__version__"}
+    assert set(eyepiece._LAZY_EXPORTS) == set(eyepiece.__all__) - eager
+
+
 def test_flat_namespace():
     for name in (
         "imshow_log",

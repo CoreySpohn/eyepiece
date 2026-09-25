@@ -123,9 +123,10 @@ def _check_visible(visible, p_count, owner_id):
             f"{owner_id}: visible must be a (start, stop) tuple, got {visible!r}"
         )
     start, stop = visible
-    if not isinstance(start, Integral) or start < 0:
+    if not isinstance(start, Integral) or start < 0 or start > p_count:
         raise ValueError(
-            f"{owner_id}: visible start must be a nonnegative integer, got {start!r}"
+            f"{owner_id}: visible start must be an integer in [0, {p_count}], "
+            f"got {start!r}"
         )
     if stop is not None and (
         not isinstance(stop, Integral) or stop < start or stop > p_count
@@ -214,6 +215,21 @@ def _check_unique_ids(root):
         if element_id in seen:
             raise ValueError(f"{element_id}: duplicate element id in tree")
         seen.add(element_id)
+
+
+def _finalize_axis_view(self):
+    """Shared __post_init__ body for a plain axes-plus-marks view.
+
+    CurveView and TrackView differ only in the domain intent their
+    docstrings describe; both validate their `axes`, coerce and validate
+    `marks`, and check id uniqueness identically, so both call this instead
+    of repeating the same four lines.
+    """
+    _check_axis_spec(self.axes, self.id)
+    marks = tuple(self.marks)
+    _check_marks(marks, self.id)
+    object.__setattr__(self, "marks", marks)
+    _check_unique_ids(self)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -520,11 +536,7 @@ class CurveView:
     marks: tuple = ()
 
     def __post_init__(self):
-        _check_axis_spec(self.axes, self.id)
-        marks = tuple(self.marks)
-        _check_marks(marks, self.id)
-        object.__setattr__(self, "marks", marks)
-        _check_unique_ids(self)
+        _finalize_axis_view(self)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -548,11 +560,7 @@ class TrackView:
     marks: tuple = ()
 
     def __post_init__(self):
-        _check_axis_spec(self.axes, self.id)
-        marks = tuple(self.marks)
-        _check_marks(marks, self.id)
-        object.__setattr__(self, "marks", marks)
-        _check_unique_ids(self)
+        _finalize_axis_view(self)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
