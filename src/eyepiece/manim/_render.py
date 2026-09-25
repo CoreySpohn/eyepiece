@@ -29,7 +29,6 @@ import manim
 import numpy as np
 
 from eyepiece._prepared_render import (
-    REGION_FILL_OPACITY,
     VIEW_TYPES,
     array_key,
     check_topology,
@@ -37,6 +36,7 @@ from eyepiece._prepared_render import (
     gap_nan,
     leaf_views,
     path_alphas,
+    region_fill_opacity,
     resolve_styles,
     topology,
     visible_xy,
@@ -471,7 +471,7 @@ def _draw_panel(view, styles, rgba, profile, parts):
         elif isinstance(mark, Region):
             mob = manim.VMobject(
                 fill_color=style["color"],
-                fill_opacity=REGION_FILL_OPACITY,
+                fill_opacity=region_fill_opacity(view),
                 stroke_color=style["color"],
                 stroke_width=stroke,
                 stroke_opacity=1.0,
@@ -720,9 +720,12 @@ def render(view, *, cast=None, profile=None):
             (depth-first) order.
         profile: `RenderProfile` supplying colors, colormap tables, and
             text settings. None takes `eyepiece.style.snapshot_profile()`
-            once, now; the result keeps it for every later update. Its
-            `text_size_pt` is Manim's `font_size` and its `stroke_width_pt`
-            Manim's `stroke_width`.
+            once, now, with its talk-sized defaults (24 pt text, 1.5 pt
+            strokes; the Matplotlib rc sizes are not used); the result
+            keeps it for every later update. Its `text_size_pt` is Manim's
+            `font_size` and its `stroke_width_pt` Manim's `stroke_width`.
+            A `Region` on an `ImageView` is an outline only; on a curve or
+            track panel its interior is shaded.
 
     Returns:
         A `ManimResult`.

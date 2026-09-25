@@ -26,7 +26,8 @@ from eyepiece.style import SourceCast
 LEAF_TYPES = (ImageView, CurveView, TrackView)
 VIEW_TYPES = (*LEAF_TYPES, PanelGroup)
 
-# Fill opacity of a Region's interior; its outline is drawn fully opaque.
+# Fill opacity of a Region's interior on a coordinate panel (a shaded IWA);
+# its outline is drawn fully opaque. See `region_fill_opacity`.
 REGION_FILL_OPACITY = 0.2
 
 _SUPPORTED_ROLES = ("reference",)
@@ -144,6 +145,17 @@ def resolve_styles(view, cast, profile, *, renderer, leaf_parts=()):
                     f"{key!r} of {element.id!r}"
                 )
     return styles
+
+
+def region_fill_opacity(leaf):
+    """Fill opacity for a Region drawn on `leaf`.
+
+    On an `ImageView` a Region is an outline only: a translucent fill
+    would change the colors of the measured pixels under it, so they would
+    no longer read against the colorbar. On a `CurveView` or `TrackView`
+    the interior is shaded at `REGION_FILL_OPACITY`.
+    """
+    return 0.0 if isinstance(leaf, ImageView) else REGION_FILL_OPACITY
 
 
 def path_alphas(leaf):

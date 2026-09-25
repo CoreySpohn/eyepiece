@@ -30,6 +30,7 @@ caller hid stays hidden.
 
 from types import MappingProxyType
 
+import matplotlib
 from matplotlib.patches import Annulus
 
 from eyepiece._mpl_parts import (
@@ -221,7 +222,12 @@ def render(view, *, ax=None, axes=None, cast=None, profile=None):
             (depth-first) order.
         profile: `RenderProfile` supplying colors, colormap tables, and
             text settings. None takes `eyepiece.style.snapshot_profile()`
-            once, now; the result keeps it for every later update.
+            once, now, sized for paper figures from the active rc
+            (`text_size_pt=rcParams["font.size"]`,
+            `stroke_width_pt=rcParams["lines.linewidth"]`); the result
+            keeps it for every later update. A `Region` on an `ImageView`
+            is an outline only; on a curve or track panel its interior is
+            shaded.
 
     Returns:
         An `MplResult`.
@@ -237,7 +243,11 @@ def render(view, *, ax=None, axes=None, cast=None, profile=None):
         raise TypeError(f"render takes a prepared view, got {type(view).__name__}")
     leaves = leaf_views(view)
     caller_axes = resolve_axes(view, leaves, ax, axes)
-    profile = snapshot_profile() if profile is None else profile
+    if profile is None:
+        profile = snapshot_profile(
+            text_size_pt=matplotlib.rcParams["font.size"],
+            stroke_width_pt=matplotlib.rcParams["lines.linewidth"],
+        )
     cast = default_cast(view) if cast is None else cast
     styles = resolve_styles(view, cast, profile, renderer="Matplotlib")
     rgbas = {

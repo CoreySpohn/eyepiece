@@ -575,3 +575,38 @@ def test_infinite_coordinates_are_gaps_not_far_away_points():
         np.ma.filled(result.parts["head"].get_offsets(), np.nan)
     ).any()
     result.fig.canvas.draw()
+
+
+# --- Defaults and region fills --------------------------------------------------
+
+
+def test_default_profile_follows_the_matplotlib_rc_sizes():
+    import matplotlib
+
+    import eyepiece.mpl as mpl
+
+    with matplotlib.rc_context({"font.size": 9.0, "lines.linewidth": 0.8}):
+        result = mpl.render(_track())
+    assert result.profile.text_size_pt == 9.0
+    assert result.profile.stroke_width_pt == 0.8
+    assert result.parts["clock"].get_fontsize() == 9.0
+    assert result.parts["path/0"].get_linewidth() == 0.8
+
+
+def test_regions_on_images_are_outlines_but_track_regions_fill():
+    import eyepiece.mpl as mpl
+
+    ring = Region("iwa", np.array([1.5, 1.0]), 0.5)
+    image = ImageView(
+        "image",
+        np.zeros((2, 3)),
+        AxisSpec("x", "y", (0.0, 3.0), (0.0, 2.0)),
+        Scale("linear", 0.0, 1.0),
+        "signal",
+        marks=(ring,),
+    )
+    on_image = mpl.render(image).parts["iwa"]
+    assert on_image.get_facecolor()[3] == 0.0
+    assert on_image.get_edgecolor()[3] == 1.0
+    on_track = mpl.render(_track()).parts["iwa"]
+    assert on_track.get_facecolor()[3] == pytest.approx(0.2)

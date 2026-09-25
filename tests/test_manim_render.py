@@ -591,3 +591,25 @@ def test_an_annulus_is_drawn_with_a_hole():
     filled = pixel(center + np.array([1.65 * per_unit, 0.0, 0.0]))
     np.testing.assert_array_equal(background, pixel(np.array([6.8, 3.8, 0.0])))
     assert np.any(filled != background)
+
+
+def test_default_profile_keeps_the_talk_sizes_whatever_the_rc():
+    import matplotlib
+
+    import eyepiece.manim as em
+
+    with matplotlib.rc_context({"font.size": 9.0, "lines.linewidth": 0.8}):
+        result = em.render(_track())
+    assert result.profile.text_size_pt == 24.0
+    assert result.profile.stroke_width_pt == 1.5
+
+
+def test_regions_on_images_are_outlines_but_track_regions_fill():
+    import eyepiece.manim as em
+
+    ring = Region("iwa", np.array([1.5, 1.0]), 0.5)
+    on_image = em.render(_image(marks=(ring,))).parts["iwa"]
+    assert on_image.get_fill_opacity() == 0.0
+    assert on_image.get_stroke_opacity() == 1.0
+    on_track = em.render(_track()).parts["iwa"]
+    assert on_track.get_fill_opacity() == pytest.approx(0.2)

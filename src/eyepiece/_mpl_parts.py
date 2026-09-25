@@ -15,9 +15,9 @@ from matplotlib.colors import ListedColormap, LogNorm, Normalize, to_rgba
 from matplotlib.patches import Annulus, Circle
 
 from eyepiece._prepared_render import (
-    REGION_FILL_OPACITY,
     gap_nan,
     path_alphas,
+    region_fill_opacity,
     visible_xy,
 )
 from eyepiece.images import _attach_colorbar
@@ -190,7 +190,7 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
         elif isinstance(mark, Region):
             color = style["color"]
             common = {
-                "facecolor": to_rgba(color, REGION_FILL_OPACITY),
+                "facecolor": to_rgba(color, region_fill_opacity(leaf)),
                 "edgecolor": to_rgba(color, 1.0),
                 "linewidth": stroke,
                 "label": mark.label,

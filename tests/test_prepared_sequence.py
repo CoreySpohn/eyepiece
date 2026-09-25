@@ -346,6 +346,31 @@ def test_clock_label_reports_acquisition_time():
     assert find_element(sequence.frame(2), "clock").text == "10 s"
 
 
+def test_clock_format_drives_frame_at_and_strip_labels():
+    label = Label("clock", "", (0.0, 0.0))
+    view = ImageView(
+        "image", np.zeros((2, 3)), _axes(), _scale(0, 1), "signal", marks=(label,)
+    )
+    clock = Clock("clock", fmt="t = {value:.2f} {unit}")
+    sequence = Sequence(view, np.array([0.0, 1.0, 10.0]), "s", (clock,))
+    assert find_element(sequence.frame(1), "clock").text == "t = 1.00 s"
+    assert find_element(sequence.at(5.0).view, "clock").text == "t = 1.00 s"
+    strip = sequence.strip([2, 0])
+    assert find_element(strip, "0/time").text == "t = 10.00 s"
+    assert find_element(strip, "1/time").text == "t = 0.00 s"
+    assert find_element(strip, "0/clock").text == "t = 10.00 s"
+
+
+def test_clock_default_format_is_the_compact_text():
+    assert Clock("clock").fmt == "{value:g} {unit}"
+
+
+@pytest.mark.parametrize("fmt", ["{time} s", "{} {unit}", "{value:q}", 5])
+def test_clock_rejects_a_bad_format_naming_the_label(fmt):
+    with pytest.raises(ValueError, match="clock"):
+        Clock("clock", fmt=fmt)
+
+
 def test_clock_requires_label_target():
     view = ImageView("image", np.zeros((2, 3)), _axes(), _scale(0, 1), "signal")
     with pytest.raises(ValueError, match="image"):

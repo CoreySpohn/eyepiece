@@ -57,14 +57,17 @@ _FRAME_COUNT_RTOL = 1e-9
 _SAMPLE_SNAP_RTOL = 1e-9
 
 
-def _clock_text(acquisition_time, time_unit):
-    """Format an acquisition time as a compact "<time> <unit>" clock string.
+_CLOCK_FORMAT = "{value:g} {unit}"
+
+
+def _clock_text(acquisition_time, time_unit, fmt=_CLOCK_FORMAT):
+    """Format an acquisition time as clock text, `fmt` with `value` and `unit`.
 
     This describes the ACQUISITION time of the sampled frame -- the same
     value a `Sample.acquisition_time` reports -- never a continuously
     interpolated playhead value.
     """
-    return f"{float(acquisition_time):g} {time_unit}"
+    return fmt.format(value=float(acquisition_time), unit=time_unit)
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -140,16 +143,37 @@ class PathWindow:
 class Clock:
     """Declares that `Label` `element_id` reports this sequence's acquisition time.
 
-    The label text is `f"{t:g} {time_unit}"`, where `t` is the exact
-    ACQUISITION time of the sampled frame -- the same value
+    The label text is `fmt.format(value=t, unit=time_unit)`, where `t` is
+    the exact ACQUISITION time of the sampled frame -- the same value
     `Sample.acquisition_time` reports for that frame. It never shows a
-    continuously interpolated measurement.
+    continuously interpolated measurement. The default gives compact text
+    such as "10 s"; e.g. `fmt="t = {value:.2f} {unit}"` gives "t = 10.00 s".
 
     Attributes:
         element_id: The `Label` this clock drives.
+        fmt: A `str.format` template using only the `value` (float) and
+            `unit` (str) fields.
+
+    Raises:
+        ValueError: If `fmt` is not a string or does not format a float
+            `value` and a string `unit`, naming `element_id`.
     """
 
     element_id: str
+    fmt: str = _CLOCK_FORMAT
+
+    def __post_init__(self):
+        if not isinstance(self.fmt, str):
+            raise ValueError(
+                f"{self.element_id}: fmt must be a format string, got {self.fmt!r}"
+            )
+        try:
+            _clock_text(1.0, "s", self.fmt)
+        except (KeyError, IndexError, ValueError, TypeError) as exc:
+            raise ValueError(
+                f"{self.element_id}: fmt {self.fmt!r} must format only "
+                f"{{value}} (a float) and {{unit}} (a string): {exc!r}"
+            ) from None
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -274,7 +298,7 @@ class Sequence:
                 path_windows[channel.element_id] = channel.history
             elif isinstance(channel, Clock):
                 _check_channel_target(self.template, channel.element_id, Label, "Clock")
-                clocks.append(channel.element_id)
+                clocks.append((channel.element_id, channel.fmt))
             else:
                 raise TypeError(f"unsupported channel type {type(channel).__name__}")
 
@@ -337,9 +361,9 @@ class Sequence:
                 target, visible=(start, stop)
             )
 
-        for element_id in self._clocks:
+        for element_id, fmt in self._clocks:
             target = find_element(self.template, element_id)
-            text = _clock_text(self.times[index], self.time_unit)
+            text = _clock_text(self.times[index], self.time_unit, fmt)
             leaf_changes[element_id] = dataclasses.replace(target, text=text)
 
         updated = (
@@ -440,7 +464,8 @@ class Sequence:
         unchanged, with `.frame(index)`; only `id` fields differ.
 
         Every slot also gets an added panel-space `Label` with ID
-        `f"{slot}/time"` giving that slot's acquisition time -- present
+        `f"{slot}/time"` giving that slot's acquisition time (in the first
+        `Clock` channel's `fmt`, or the default clock format) -- present
         even when the template already carries a `Clock`-driven label
         (which is itself already updated to that slot's acquisition time
         by `.frame`), so every strip panel is labelled the same way. The
@@ -458,13 +483,14 @@ class Sequence:
         Returns:
             A `PanelGroup` with id `"strip"`.
         """
+        fmt = self._clocks[0][1] if self._clocks else _CLOCK_FORMAT
         slots = []
         for slot, index in enumerate(indices):
             prefix = f"{slot}/"
             prefixed = _prefix_ids(self.frame(index), prefix)
             label = Label(
                 f"{slot}/time",
-                _clock_text(self.times[index], self.time_unit),
+                _clock_text(self.times[index], self.time_unit, fmt),
                 _STRIP_LABEL_XY,
                 space="panel",
             )
