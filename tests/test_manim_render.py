@@ -5,6 +5,7 @@ import pytest
 
 from eyepiece.prepared import (
     AxisSpec,
+    CurveView,
     ImageView,
     Label,
     PanelGroup,
@@ -638,3 +639,29 @@ def test_regions_on_images_are_outlines_but_track_regions_fill():
     assert on_image.get_stroke_opacity() == 1.0
     on_track = em.render(_track()).parts["iwa"]
     assert on_track.get_fill_opacity() == pytest.approx(0.2)
+
+
+@pytest.mark.parametrize(
+    ("limits", "expected"),
+    [
+        ((-2.0, 2.0), ["-2", "-1", "0", "1", "2"]),
+        ((0.0, 1.0), ["0.0", "0.2", "0.4", "0.6", "0.8", "1.0"]),
+        ((0.0, 250.0), ["0", "50", "100", "150", "200", "250"]),
+        ((1e-3, 5e-3), ["0.001", "0.002", "0.003", "0.004", "0.005"]),
+        (
+            (1.41e-13, 2.59e-13),
+            ["1.50e-13", "1.75e-13", "2.00e-13", "2.25e-13", "2.50e-13"],
+        ),
+        ((0.0, 2e7), ["0", "0.5e7", "1.0e7", "1.5e7", "2.0e7"]),
+    ],
+)
+def test_tick_labels_stay_short_at_any_magnitude(limits, expected):
+    import eyepiece.manim as em
+
+    view = CurveView("curve", AxisSpec("x", "contrast", (0.0, 1.0), limits, "auto"))
+    y_labels = em.render(view).parts["curve/axes"][2]
+    texts = [t.original_text for t in y_labels]
+    assert texts == expected
+    low, high = limits
+    for text in texts:
+        assert low - 1e-9 * abs(high) <= float(text) <= high * (1 + 1e-9)

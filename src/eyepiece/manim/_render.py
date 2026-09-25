@@ -62,6 +62,9 @@ _COLORBAR_BUFF = 0.2
 _TICK_LENGTH = 0.1
 _TICK_TARGET = 5
 _TICK_FONT_SCALE = 0.75
+# Tick magnitude orders written in fixed point (Matplotlib's default
+# `axes.formatter.limits`); outside them ticks share a power of ten.
+_PLAIN_ORDERS = (-5, 6)
 _MARKER_RADIUS = 0.07
 _DASH_LENGTH = 0.15
 
@@ -221,18 +224,37 @@ def _error_points(points_mark, name, spec, basis):
 
 
 def _nice_ticks(low, high):
-    """About `_TICK_TARGET` round tick values in [low, high], and their text."""
+    """About `_TICK_TARGET` round tick values in [low, high], and their text.
+
+    Ticks whose largest magnitude is within Matplotlib's default
+    `axes.formatter.limits` (1e-5 up to 1e6) are written in fixed point
+    with just enough decimals for the step. Outside that range every tick
+    shares one power of ten written after its mantissa ("1.50e-13",
+    "2.0e7"), so labels stay short where Matplotlib would move the power
+    into an offset label.
+    """
     raw = (high - low) / _TICK_TARGET
     exponent = math.floor(math.log10(raw))
     for mantissa in (1.0, 2.0, 2.5, 5.0, 10.0):
         if mantissa * 10.0**exponent >= raw:
             break
     step = mantissa * 10.0**exponent
-    decimals = max(0, -exponent + (mantissa == 2.5) - (mantissa == 10.0))
+    # Decimals the step needs below its own leading digit.
+    extra = (mantissa == 2.5) - (mantissa == 10.0)
     first = math.ceil(low / step - 1e-9)
     last = math.floor(high / step + 1e-9)
     values = [k * step for k in range(first, last + 1)]
-    return values, [f"{v:.{decimals}f}" for v in values]
+    largest = max((abs(v) for v in values), default=0.0)
+    order = math.floor(math.log10(largest)) if largest > 0 else 0
+    if _PLAIN_ORDERS[0] <= order < _PLAIN_ORDERS[1]:
+        decimals = max(0, -exponent + extra)
+        return values, [f"{v:.{decimals}f}" for v in values]
+    digits = max(0, order - exponent + extra)
+    texts = [
+        "0" if k == 0 else f"{k * step / 10.0**order:.{digits}f}e{order}"
+        for k in range(first, last + 1)
+    ]
+    return values, texts
 
 
 def _text(text, profile, font_size):
