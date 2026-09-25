@@ -9,7 +9,7 @@ from matplotlib.colors import to_rgba
 from matplotlib.patches import Ellipse, Polygon, Rectangle
 
 import eyepiece
-from eyepiece.schematic import GLYPHS, rail, schematic
+from eyepiece._schematic import GLYPHS, rail, schematic
 
 # A single-plane rail draws four Line2D artists before any glyph does:
 # the two beam-envelope edges, the dotted optical axis, and the plane

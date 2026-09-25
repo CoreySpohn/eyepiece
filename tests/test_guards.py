@@ -208,3 +208,42 @@ def test_flat_namespace():
         "GLYPHS",
     ):
         assert hasattr(eyepiece, name), name
+
+
+_EXPORTS_SURVIVE_SUBMODULE_IMPORTS = """
+import importlib
+import pkgutil
+import types
+
+import eyepiece
+
+# Import every submodule first. Importing a submodule binds its name on the
+# package, which would shadow a lazily exported name spelled the same way.
+for info in pkgutil.walk_packages(eyepiece.__path__, "eyepiece."):
+    try:
+        importlib.import_module(info.name)
+    except ImportError:
+        pass  # an optional renderer (e.g. Manim) that is not installed
+
+bad = []
+for name, (module_name, attr_name) in eyepiece._LAZY_EXPORTS.items():
+    value = getattr(eyepiece, name)
+    expected = getattr(importlib.import_module(module_name), attr_name)
+    if isinstance(value, types.ModuleType) or value is not expected:
+        bad.append(name)
+for name in eyepiece.__all__:
+    if isinstance(getattr(eyepiece, name), types.ModuleType):
+        bad.append(name)
+print(",".join(sorted(set(bad))))
+"""
+
+
+def test_exports_survive_every_submodule_import():
+    """No public name is shadowed by a same-named submodule once it is imported."""
+    result = subprocess.run(
+        [sys.executable, "-c", _EXPORTS_SURVIVE_SUBMODULE_IMPORTS],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == ""
