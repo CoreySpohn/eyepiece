@@ -137,8 +137,8 @@ the API reference, and the groups are:
 - **Scenes.** `trail`, `sky_fan`, and `fading_track`.
 - **Emphasis.** `fade`, which blends any drawn artists toward their
   background so an element carried from an earlier figure reads as already
-  seen, and `capture`, which collects what a block of code drew so it can
-  be faded as one group.
+  seen, `capture`, which collects what a block of code drew so it can be
+  faded as one group, and `blend`, the same color blend for a single color.
 - **Schematics.** `rail` for an optical train built from a plain
   `(label, glyph)` list over the `GLYPHS` vocabulary, and `schematic`, a
   preset wrapper over it.

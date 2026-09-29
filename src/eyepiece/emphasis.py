@@ -10,7 +10,8 @@ faded element reads correctly on a light page and a dark one alike.
 
 `capture` is the other half: a context manager that collects the artists a
 block of drawing code added to an axes, so a caller can fade exactly that
-group later without tagging each artist by hand.
+group later without tagging each artist by hand. `blend` is the color blend
+itself, for a single color rather than a drawn artist.
 """
 
 import contextlib
@@ -61,11 +62,52 @@ class Faded:
         self._restored = True
 
 
+def _check_level(level):
+    level = float(level)
+    if not 0.0 <= level <= 1.0:
+        raise ValueError(f"level must be in [0, 1], got {level}")
+    return level
+
+
 def _blend(color, level, background):
     """`color` moved toward `background`, keeping `level` of its contrast."""
     r, g, b, a = to_rgba(color)
     br, bg, bb, _ = to_rgba(background)
     return (br + level * (r - br), bg + level * (g - bg), bb + level * (b - bb), a)
+
+
+def blend(color, level, background=None):
+    """A color moved toward a background, keeping `level` of its contrast.
+
+    This is the blend `fade` applies to every color an artist draws with,
+    exposed for a color that has no artist yet, or for a property `fade`
+    does not reach on its own (for example a hatch color set after the
+    fact). Each RGB channel moves linearly toward the background's; the
+    color's own alpha is kept, and the background's alpha is ignored.
+
+    Args:
+        color: Any matplotlib color.
+        level: The fraction of contrast kept, from 0.0 (the background
+            color itself) to 1.0 (`color` unchanged).
+        background: The color to blend toward. None uses
+            `rcParams["axes.facecolor"]`, read at call time, which is the
+            last fallback `fade` itself uses when an artist sits on no
+            opaque face.
+
+    Returns:
+        The blended color as an `(r, g, b, a)` tuple of floats.
+
+    Raises:
+        ValueError: If `level` is outside [0, 1].
+
+    Example::
+
+        hatch = ep.blend(accent, 0.45, background=ax.get_facecolor())
+    """
+    level = _check_level(level)
+    if background is None:
+        background = matplotlib.rcParams["axes.facecolor"]
+    return _blend(color, level, background)
 
 
 def _opaque(color):
@@ -288,9 +330,7 @@ def fade(target, level, *, background=None, keep=None):
         ax.plot(x, y2)  # the new element, at full strength
         ep.fade(earlier, 0.3)
     """
-    level = float(level)
-    if not 0.0 <= level <= 1.0:
-        raise ValueError(f"fade level must be in [0, 1], got {level}")
+    level = _check_level(level)
     targets = [target] if isinstance(target, Artist) else list(target)
     handle = Faded()
     seen = set()

@@ -1,6 +1,7 @@
 """fade blends toward the real background and restores; capture collects a block."""
 
 import hwostyle
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -171,6 +172,40 @@ def test_level_outside_unit_interval_raises(level):
     with pytest.raises(ValueError, match="level"):
         ep.fade(ax, level)
     plt.close(fig)
+
+
+def test_blend_keeps_level_of_the_contrast_and_the_color_alpha():
+    out = ep.blend((0.0, 0.2, 0.8, 0.6), 0.25, background=(1.0, 1.0, 1.0, 0.1))
+    np.testing.assert_allclose(out, [0.75, 0.8, 0.95, 0.6])
+    assert ep.blend("red", 1.0, background="blue") == to_rgba("red")
+    assert ep.blend("red", 0.0, background="blue") == to_rgba("blue")
+
+
+def test_blend_is_the_color_fade_draws():
+    fig, ax = plt.subplots()
+    ax.set_facecolor("#203040")
+    (line,) = ax.plot([0, 1], [0, 1], color="#e0a020")
+    ep.fade(line, 0.45)
+    np.testing.assert_allclose(
+        to_rgba(line.get_color()),
+        ep.blend("#e0a020", 0.45, background=ax.get_facecolor()),
+    )
+    plt.close(fig)
+
+
+def test_blend_without_background_reads_the_face_color_at_call_time():
+    with matplotlib.rc_context({"axes.facecolor": "black"}):
+        dark = ep.blend("white", 0.25)
+    with matplotlib.rc_context({"axes.facecolor": "white"}):
+        light = ep.blend("black", 0.25)
+    np.testing.assert_allclose(dark, [0.25, 0.25, 0.25, 1.0])
+    np.testing.assert_allclose(light, [0.75, 0.75, 0.75, 1.0])
+
+
+@pytest.mark.parametrize("level", [-0.1, 1.5])
+def test_blend_level_outside_unit_interval_raises(level):
+    with pytest.raises(ValueError, match="level"):
+        ep.blend("red", level, background="white")
 
 
 def test_capture_collects_only_what_the_block_added():

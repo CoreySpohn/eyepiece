@@ -126,6 +126,7 @@ _EXPECTED_ALL = [
     "SourceStyles",
     "__version__",
     "animate",
+    "blend",
     "capture",
     "compare_grid",
     "compare_row",

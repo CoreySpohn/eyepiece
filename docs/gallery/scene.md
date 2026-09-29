@@ -474,3 +474,15 @@ axes, ticks, and titles included) except the axes' own face, and a `keep`
 predicate that exempts matching artists, such as one region of a map left
 lit while the rest recedes. Fading an element twice compounds: two fades at
 0.5 leave a quarter of its contrast.
+
+`blend` is the blend itself, for a single color rather than a drawn artist:
+a color moved toward a background, keeping `level` of its contrast and its
+own alpha. It is the color `fade` would give an artist of that color on that
+background, which makes it the tool for a property set after drawing, such
+as a hatch that should recede less than the region it fills. With no
+`background` it blends toward the style's axes face color at call time.
+
+```{code-cell} python
+face = axes[1].get_facecolor()
+print(ep.blend(cast["b"]["color"], 0.45, background=face))
+```
