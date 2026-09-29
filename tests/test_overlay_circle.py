@@ -68,6 +68,33 @@ def test_underlay_can_be_colored_or_omitted():
     plt.close(fig)
 
 
+def test_underlay_kw_sets_the_underlay_width_and_tags_it():
+    fig, ax = plt.subplots()
+    res = ep.overlay_circle(
+        ax,
+        (0, 0),
+        1.0,
+        circle_kw={"lw": 1.5, "gid": "aperture"},
+        underlay_kw={"lw": 3.6, "gid": "aperture"},
+    )
+    under, dash = res.artists["ellipse"]
+    assert under.get_linewidth() == pytest.approx(3.6)
+    assert dash.get_linewidth() == pytest.approx(1.5)
+    assert under.get_gid() == dash.get_gid() == "aperture"
+    # Only what was passed changes: the underlay stays solid, on the dash's layer.
+    assert under.get_linestyle() in ("-", "solid")
+    assert under.get_zorder() == dash.get_zorder()
+    plt.close(fig)
+
+
+def test_underlay_kw_is_ignored_without_an_underlay():
+    fig, ax = plt.subplots()
+    res = ep.overlay_circle(ax, (0, 0), 1.0, underlay=False, underlay_kw={"lw": 9.0})
+    (dash,) = res.artists["ellipse"]
+    assert dash.get_linewidth() == pytest.approx(1.0)
+    plt.close(fig)
+
+
 @pytest.mark.parametrize("radius", [0.0, -1.0])
 def test_nonpositive_radius_raises(radius):
     fig, ax = plt.subplots()

@@ -1019,7 +1019,16 @@ def _light_and_dark():
     return (face, ink) if luminance(face) >= luminance(ink) else (ink, face)
 
 
-def overlay_circle(ax, center, radius, *, color=None, underlay=True, circle_kw=None):
+def overlay_circle(
+    ax,
+    center,
+    radius,
+    *,
+    color=None,
+    underlay=True,
+    circle_kw=None,
+    underlay_kw=None,
+):
     """Draw a dashed circle over an image, legible on bright and dark pixels.
 
     An aperture, a dark ring, or a working angle drawn over an image crosses
@@ -1046,6 +1055,11 @@ def overlay_circle(ax, center, radius, *, color=None, underlay=True, circle_kw=N
         circle_kw: Extra kwargs for the dashed `Circle` (for example `lw`,
             `ls`, `zorder`, or `gid`), applied last. The underlay follows the
             dash's line width and z-order and stays solid.
+        underlay_kw: Extra kwargs for the underlay `Circle`, applied last
+            over its defaults: a line width 1 pt wider than the dash's, a
+            solid line style, and the dash's z-order. Pass `lw` to set the
+            underlay's width outright, or `gid` to tag it alongside the dash.
+            Ignored when `underlay` is False.
 
     Returns:
         A `PlotResult` whose `artists["ellipse"]` is the list of `Circle`
@@ -1085,6 +1099,7 @@ def overlay_circle(ax, center, radius, *, color=None, underlay=True, circle_kw=N
             ls="-",
             zorder=dash.get_zorder(),
         )
+        under.set(**(underlay_kw or {}))
         patches.append(ax.add_artist(under))
     patches.append(ax.add_artist(dash))
     return PlotResult(ax=ax, artists={"ellipse": patches})
