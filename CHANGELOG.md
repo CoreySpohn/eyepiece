@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.0](https://github.com/CoreySpohn/eyepiece/compare/v0.5.0...v0.6.0) (2026-09-29)
+
+
+### Features
+
+* **emphasis:** expose blend, the color blend fade applies, for a single color ([0de2201](https://github.com/CoreySpohn/eyepiece/commit/0de220125bc47f9ea5b6ccadb8c233559cf95ed8))
+* **images:** let overlay_circle take underlay_kw to set the underlay width and tag ([58c6ffe](https://github.com/CoreySpohn/eyepiece/commit/58c6ffe3458902bfbf100d50ecdf5567c3e62e31))
+* **schematic:** add dm and phase_mask glyphs, mid-gap Fourier lenses, and beam-narrowing stops to rail ([7aea900](https://github.com/CoreySpohn/eyepiece/commit/7aea900e47b3121f1969b829a3b718e9850c8e9d))
+
 ## [0.5.0](https://github.com/CoreySpohn/eyepiece/compare/v0.4.0...v0.5.0) (2026-09-29)
 
 
