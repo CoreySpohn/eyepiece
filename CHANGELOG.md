@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.5.0](https://github.com/CoreySpohn/eyepiece/compare/v0.4.0...v0.5.0) (2026-09-29)
+
+
+### Features
+
+* **emphasis:** add fade and capture to carry earlier figure steps forward faded ([f735e07](https://github.com/CoreySpohn/eyepiece/commit/f735e077313a3d19b5678c7931b615d2e559067d))
+* **images:** add overlay_circle, a dashed circle legible on bright and dark pixels ([d151356](https://github.com/CoreySpohn/eyepiece/commit/d151356ce8c5d88fc4e936a1249770f51be31252))
+* **images:** compare_grid lays images sharing one norm on a 2D grid with empty cells ([8429e31](https://github.com/CoreySpohn/eyepiece/commit/8429e31319cfb1696c233c02703ca82fb509a5b1))
+* **images:** let compare_row and compare_grid draw the shared colorbar into a caller cax ([c73e25d](https://github.com/CoreySpohn/eyepiece/commit/c73e25de3d221e28b2fd943aa8cfb908eb3e6a65))
+* **manim:** render prepared views with replayable playback ([f02d4d2](https://github.com/CoreySpohn/eyepiece/commit/f02d4d2bf6c917d2a046b2f338036b85af2fc9d4))
+* **mpl:** render prepared views and sequences ([7074e2b](https://github.com/CoreySpohn/eyepiece/commit/7074e2b81249d820ea07838c3802b7a4357f2564))
+* **prepared:** add numerical views and lazy imports ([403bca9](https://github.com/CoreySpohn/eyepiece/commit/403bca9b8c3500479276b2fcb6a0c4ffa536e0f7))
+* **render:** weight point sets, halo image labels, and share one font file ([fb85fab](https://github.com/CoreySpohn/eyepiece/commit/fb85fab9424e5754f25ed8cbf3b2cd8569ca1d46))
+* **schematic:** let rail draw relay and lensless gaps between planes ([fd91df8](https://github.com/CoreySpohn/eyepiece/commit/fd91df88648ae4555fc07912a72e86b3b9bb2012))
+* **sequence:** add replayable states and shared time sampling ([0ddce4b](https://github.com/CoreySpohn/eyepiece/commit/0ddce4b957b08d567c70aaf1d7c5ecb159714f69))
+* **style:** share display mapping and render profiles ([3ae8a0a](https://github.com/CoreySpohn/eyepiece/commit/3ae8a0aab11dab08ce9226cbe7658afd6c30a77e))
+
+
+### Bug Fixes
+
+* **api:** keep schematic callable after lazy submodule loads ([ba5d012](https://github.com/CoreySpohn/eyepiece/commit/ba5d01282d6496c08c4d8f9036b82b9998cb8171))
+* **api:** return submodules through lazy attribute access ([9d4b5e6](https://github.com/CoreySpohn/eyepiece/commit/9d4b5e6c5a140f38b6333b8d85f015bca13dc16b))
+* **manim:** format tiny tick values compactly ([e61a10c](https://github.com/CoreySpohn/eyepiece/commit/e61a10c8cf7e1b9f0e6f5712a5260f50beedf41d))
+* **manim:** guard playback timing and import purity ([7077b95](https://github.com/CoreySpohn/eyepiece/commit/7077b95385e16b4ac2612cd528af99dad94579bb))
+* **manim:** redraw changing labels during playback ([4b3d985](https://github.com/CoreySpohn/eyepiece/commit/4b3d9854ab477f6800f339e022ad42c0e8b76bb4))
+* **mpl:** align colorbar lookup and draw coordinate gaps ([017c959](https://github.com/CoreySpohn/eyepiece/commit/017c959c20f4cc3eb856bffdbc660ec12d87ff4e))
+* **prepared:** tighten view validation ([b62e86f](https://github.com/CoreySpohn/eyepiece/commit/b62e86fb484413c3681391d6f6b8129a8faab47b))
+* **prepared:** validate scales before mapping ([5f716de](https://github.com/CoreySpohn/eyepiece/commit/5f716def05e54e7d7553ed6cada42b65f41787fd))
+* **render:** paper-sized defaults, outline image regions, clock formats ([649ab1f](https://github.com/CoreySpohn/eyepiece/commit/649ab1f2b6c2dacec4fd88019014da5adb15b5bb))
+* **sequence:** compose mark channels and snap sample times ([3a4ba13](https://github.com/CoreySpohn/eyepiece/commit/3a4ba13d4be249f34aafd5ab88319cebd08f088c))
+* **sequence:** label each strip slot once, through its Clock when it has one ([97d06e4](https://github.com/CoreySpohn/eyepiece/commit/97d06e452266f15cac6ee8fb07597a65ef2b2ed2))
+* **sequence:** label nested strip panels ([38a3a9e](https://github.com/CoreySpohn/eyepiece/commit/38a3a9e9d6d0828f11360b896b14db665e7dc209))
+
 ## [0.4.0](https://github.com/CoreySpohn/eyepiece/compare/v0.3.1...v0.4.0) (2026-08-28)
 
 
