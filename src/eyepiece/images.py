@@ -349,6 +349,7 @@ def compare_row(
     vmin=None,
     vmax=None,
     panel_size=3.2,
+    cax=None,
     imshow_kw=None,
     cbar_kw=None,
 ):
@@ -389,6 +390,11 @@ def compare_row(
             count and the height follows the first image's aspect, so a row
             of k square images stays square instead of shrinking into
             matplotlib's fixed default figure. Ignored when `axes` is given.
+        cax: Axes to draw the shared colorbar in, for a caller who placed
+            the colorbar slot themselves (beside a hand-built mosaic, or
+            spanning several rows). None attaches it by the rule above: a
+            figure-level colorbar on a figure this function created, an
+            inset beside the last panel otherwise.
         imshow_kw: Extra kwargs passed to each panel's `ax.imshow`, applied
             last.
         cbar_kw: Extra kwargs passed to the shared colorbar's
@@ -445,7 +451,9 @@ def compare_row(
     _hide_index_ticks(axes, extent)
 
     artists = {"image": ims}
-    if created:
+    if cax is not None:
+        cb = fig.colorbar(ims[-1], cax=cax, label=cbar_label, **(cbar_kw or {}))
+    elif created:
         cb = fig.colorbar(ims[-1], ax=axes, label=cbar_label, **(cbar_kw or {}))
     else:
         cax = axes[-1].inset_axes([1.02, 0.0, 0.04, 1.0])
@@ -492,6 +500,7 @@ def compare_grid(
     vmin=None,
     vmax=None,
     panel_size=1.6,
+    cax=None,
     imshow_kw=None,
     cbar_kw=None,
 ):
@@ -526,6 +535,11 @@ def compare_grid(
         vmax: Pins the shared norm's upper bound.
         panel_size: Size in inches of one square cell, used only for a
             figure this function creates.
+        cax: Axes to draw the shared colorbar in, for a caller who placed
+            the colorbar slot themselves (for example one tall slot beside
+            every row). None attaches it as a figure-level colorbar on a
+            figure this function created, and as an inset beside the last
+            cell otherwise.
         imshow_kw: Extra kwargs passed to each panel's `ax.imshow`, applied
             last.
         cbar_kw: Extra kwargs passed to the shared colorbar's
@@ -593,7 +607,9 @@ def compare_grid(
             last = im
         ims.append(row_ims)
 
-    if created:
+    if cax is not None:
+        cb = fig.colorbar(last, cax=cax, label=cbar_label, **(cbar_kw or {}))
+    elif created:
         cb = fig.colorbar(last, ax=axes, label=cbar_label, **(cbar_kw or {}))
     else:
         cax = axes[-1, -1].inset_axes([1.02, 0.0, 0.04, 1.0])

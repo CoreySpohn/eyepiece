@@ -190,6 +190,34 @@ for ax in axes[1:]:
     ax.set_xlabel(r"$x$ [$\lambda/D$]")
 ```
 
+### A colorbar slot the caller placed
+
+`compare_grid` is the two-dimensional form of the same idea, and both take
+`cax=` for a figure whose colorbar slot the caller has already placed: one
+tall slot beside every row, say, instead of an inset off the last panel.
+The shared colorbar is drawn into that axes and nothing else in the layout
+moves.
+
+```{code-cell} python
+fig, slots = plt.subplot_mosaic(
+    [["a", "b", "c", "bar"], ["d", "e", "f", "bar"]],
+    width_ratios=[1, 1, 1, 0.06],
+    figsize=(7.4, 3.8),
+    layout="constrained",
+)
+panels = np.array([[slots[k] for k in "abc"], [slots[k] for k in "def"]])
+grid = ep.compare_grid(
+    [frames, [CORE + speckles(5, lev) for lev in levels]],
+    titles=[[f"x {lev:g}" for lev in levels], ["", "", ""]],
+    axes=panels,
+    norm="log",
+    extent=EXTENT,
+    vmin=1e-9,
+    cax=slots["bar"],
+    cbar_label="intensity",
+)
+```
+
 ## Ratio and residual
 
 `triptych` draws A and B through `compare_row`, so the first two panels
