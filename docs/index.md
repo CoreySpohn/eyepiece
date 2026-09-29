@@ -128,7 +128,8 @@ the API reference, and the groups are:
 - **Images.** `imshow_log`, `imshow_diverging`, `show_field` for a complex
   field as real, imaginary, amplitude, and phase panels, `compare_row` for
   several images under one shared norm and colorbar, and `triptych` for A,
-  B, and a ratio or residual panel.
+  B, and a ratio or residual panel, plus `overlay_circle` for an aperture
+  or ring drawn over an image.
 - **Distributions.** `corner`, `corner_overlay`, `hist_vs_pdf`, and
   `cov_ellipse`.
 - **Profiles.** `plot_radial`, `plot_contrast_curve`, and

@@ -12,9 +12,11 @@ per the house rule that interpolating simulated detector data misrepresents
 the pixels.
 """
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import LogNorm, Normalize
+from matplotlib.colors import LogNorm, Normalize, to_rgb
+from matplotlib.patches import Circle
 
 from eyepiece import _style
 from eyepiece._result import MosaicResult, PlotResult
@@ -1004,3 +1006,85 @@ def triptych(
         "cbar": [ab_result.artists["cbar"], cmp_cb],
     }
     return MosaicResult(axes=axes, artists=artists)
+
+
+def _light_and_dark():
+    """The style's background and text tones, ordered lighter first."""
+    face = to_rgb(matplotlib.rcParams["axes.facecolor"])
+    ink = to_rgb(matplotlib.rcParams["text.color"])
+
+    def luminance(c):
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    return (face, ink) if luminance(face) >= luminance(ink) else (ink, face)
+
+
+def overlay_circle(ax, center, radius, *, color=None, underlay=True, circle_kw=None):
+    """Draw a dashed circle over an image, legible on bright and dark pixels.
+
+    An aperture, a dark ring, or a working angle drawn over an image crosses
+    pixels from the darkest to the brightest end of the colormap, so no one
+    color reads everywhere along it. The circle is therefore a light dash
+    over a thin, solid, dark underlay: where the pixels are bright the dark
+    underlay outlines it, and where they are dark the light dash does. The
+    two tones are the style's background and text colors, ordered by
+    lightness, so the pair holds in either mode.
+
+    The circle is added without touching the data limits, so drawing a
+    circle larger than the view neither rescales the axes nor moves an
+    image's extent.
+
+    Args:
+        ax: Axes to draw on, in its data coordinates.
+        center: `(x, y)` of the center, in data units.
+        radius: Radius in data units.
+        color: Color of the dash. None uses the lighter of the style's
+            background and text colors.
+        underlay: Whether to draw the solid dark underlay. True uses the
+            darker of the style's background and text colors; a color draws
+            it in that color; False omits it.
+        circle_kw: Extra kwargs for the dashed `Circle` (for example `lw`,
+            `ls`, `zorder`, or `gid`), applied last. The underlay follows the
+            dash's line width and z-order and stays solid.
+
+    Returns:
+        A `PlotResult` whose `artists["ellipse"]` is the list of `Circle`
+        patches in draw order: the underlay, when drawn, then the dash, so
+        `artists["ellipse"][-1]` is always the dashed circle.
+
+    Raises:
+        ValueError: If `radius` is not positive.
+
+    Example::
+
+        result = ep.imshow_log(psf, extent=extent)
+        ep.overlay_circle(result.ax, (3.0, 0.0), 0.7)
+    """
+    radius = float(radius)
+    if not radius > 0.0:
+        raise ValueError(f"overlay_circle radius must be positive, got {radius}")
+    center = (float(center[0]), float(center[1]))
+    light, dark = _light_and_dark()
+    kw = {
+        "fill": False,
+        "edgecolor": light if color is None else color,
+        "lw": 1.0,
+        "ls": (0, (3, 2)),
+        "zorder": 4,
+        **(circle_kw or {}),
+    }
+    dash = Circle(center, radius, **kw)
+    patches = []
+    if underlay is not False and underlay is not None:
+        under = Circle(
+            center,
+            radius,
+            fill=False,
+            edgecolor=dark if underlay is True else underlay,
+            lw=dash.get_linewidth() + 1.0,
+            ls="-",
+            zorder=dash.get_zorder(),
+        )
+        patches.append(ax.add_artist(under))
+    patches.append(ax.add_artist(dash))
+    return PlotResult(ax=ax, artists={"ellipse": patches})

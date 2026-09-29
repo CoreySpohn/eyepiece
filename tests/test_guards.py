@@ -146,6 +146,7 @@ _EXPECTED_ALL = [
     "label_arcsec",
     "label_au",
     "label_lod",
+    "overlay_circle",
     "plot_contrast_curve",
     "plot_radial",
     "provenance_fields",
