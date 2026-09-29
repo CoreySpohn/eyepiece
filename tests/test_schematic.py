@@ -25,7 +25,9 @@ GLYPH_SIGNATURES = {
     "lyot": (0, 2, 0),
     "mask": (0, 2, 0),
     "apodizer": (0, 1, 0),
+    "dm": (1, 1, 0),
     "fpm": (0, 0, 1),
+    "phase_mask": (0, 1, 0),
     "focal": (0, 0, 2),
     "detector": (0, 1, 0),
 }
@@ -366,3 +368,84 @@ def test_none_gap_is_free_space_in_a_collimated_beam():
 def test_bad_gaps_raise(gaps, match):
     with pytest.raises(ValueError, match=match):
         rail([("P", "pupil"), ("F", "focal"), ("L", "lyot")], gaps=gaps)
+
+
+_TRAIN = [
+    ("P", "pupil"),
+    ("DM", "dm"),
+    ("F", "phase_mask"),
+    ("L", "lyot"),
+    ("I", "focal"),
+]
+_TRAIN_AT = (0.1, 0.3, 0.5, 0.7, 0.9)
+
+
+def test_fourier_lens_after_is_the_default():
+    default = rail(_TRAIN, positions=_TRAIN_AT)
+    explicit = rail(_TRAIN, positions=_TRAIN_AT, fourier_lens="after")
+    assert _lenses(default) == _lenses(explicit)
+    np.testing.assert_array_equal(
+        default.ax.lines[0].get_ydata(), explicit.ax.lines[0].get_ydata()
+    )
+    plt.close(default.fig)
+    plt.close(explicit.fig)
+
+
+def test_middle_fourier_lens_sits_mid_gap_with_the_beam_collimated_to_it():
+    res = rail(
+        _TRAIN,
+        positions=_TRAIN_AT,
+        gaps=["relay", "fourier", "fourier", "fourier"],
+        fourier_lens="middle",
+    )
+    assert _lenses(res)[2:] == pytest.approx([0.4, 0.6, 0.8])
+    # DM (pupil) -> lens: collimated; lens -> phase mask: converging to a focus.
+    assert _half_width_at(res, 0.35) == pytest.approx(0.20)
+    assert _half_width_at(res, 0.45) == pytest.approx(0.109, abs=0.003)
+    assert _half_width_at(res, 0.5) == pytest.approx(0.018, abs=0.003)
+    # Phase mask -> lens: opening from the focus; lens -> Lyot: collimated.
+    assert _half_width_at(res, 0.65) == pytest.approx(0.20)
+    plt.close(res.fig)
+
+
+def test_a_stop_narrows_the_beam_from_its_plane_onward():
+    res = rail(
+        _TRAIN,
+        positions=_TRAIN_AT,
+        fourier_lens="middle",
+        stops={"l": 0.8},
+    )
+    assert _half_width_at(res, 0.7 - 0.01) == pytest.approx(0.20)
+    assert _half_width_at(res, 0.7 + 0.01) == pytest.approx(0.16)
+    # The narrowed beam stays collimated to the last lens, then focuses.
+    assert _half_width_at(res, 0.75) == pytest.approx(0.16)
+    assert _half_width_at(res, 0.9) == pytest.approx(0.018, abs=0.003)
+    # The step is drawn at the plane, not smeared across a sample.
+    xs = res.ax.lines[0].get_xdata()
+    assert np.any(np.isclose(xs, 0.7)) and np.any(np.isclose(xs, 0.7 + 1e-6))
+    plt.close(res.fig)
+
+
+def test_a_full_stop_leaves_the_beam_alone():
+    plain = rail(_TRAIN, positions=_TRAIN_AT)
+    full = rail(_TRAIN, positions=_TRAIN_AT, stops={"L": 1.0})
+    np.testing.assert_array_equal(
+        plain.ax.lines[0].get_ydata(), full.ax.lines[0].get_ydata()
+    )
+    plt.close(plain.fig)
+    plt.close(full.fig)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"fourier_lens": "before"}, "unknown fourier_lens"),
+        ({"stops": {"Nowhere": 0.8}}, "unknown stop plane"),
+        ({"stops": {"L": 0.0}}, r"must be in \(0, 1\]"),
+        ({"stops": {"L": 1.2}}, r"must be in \(0, 1\]"),
+        ({"stops": {"F": 0.8}}, "image-like glyph"),
+    ],
+)
+def test_bad_fourier_lens_or_stops_raise(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        rail(_TRAIN, **kwargs)

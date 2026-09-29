@@ -238,6 +238,20 @@ ep.overlay_circle(ax, (0.0, 0.0), 20.0)  # an outer working angle beyond the vie
 ep.label_lod(ax)
 ```
 
+The underlay is 1 pt wider than the dash by default, enough to outline a
+thin dash at print size. A thicker dash, or a figure scaled up for a
+slide, can want a different margin, so `underlay_kw` reaches the underlay
+circle the way `circle_kw` reaches the dash, and a `lw` there sets its width
+outright.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
+result = ep.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
+ep.overlay_circle(ax, (2.6, 1.4), 0.7, circle_kw={"lw": 1.5},
+                  underlay_kw={"lw": 3.6})
+ep.label_lod(ax)
+```
+
 ## Ratio and residual
 
 `triptych` draws A and B through `compare_row`, so the first two panels

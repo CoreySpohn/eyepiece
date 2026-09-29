@@ -34,7 +34,9 @@ GLYPHS = {
     "focal": False,
     "mask": True,
     "apodizer": True,
+    "dm": True,
     "fpm": False,
+    "phase_mask": False,
     "lyot": True,
     "detector": False,
 }
@@ -43,6 +45,9 @@ _BAR_GLYPHS = ("pupil", "lyot", "mask")
 
 # What the optics do across the gap between two consecutive planes.
 _GAPS = ("fourier", "relay", "none")
+
+# Where a "fourier" gap draws its lens.
+_FOURIER_LENS = ("after", "middle")
 
 # Each preset: the (label, glyph) planes and their hand-tuned x positions.
 _PRESETS = {
@@ -106,6 +111,39 @@ def _draw_glyph(ax, glyph, x, y0, color):
                 zorder=5,
             )
         )
+    elif glyph == "dm":
+        # An opaque plate with a rippled face toward the incoming beam.
+        ax.add_patch(
+            Rectangle(
+                (x - 0.005, y0 - 0.24),
+                0.010,
+                0.48,
+                facecolor=color,
+                edgecolor="none",
+                zorder=5,
+            )
+        )
+        ys = np.linspace(y0 - 0.24, y0 + 0.24, 80)
+        ax.plot(
+            x - 0.010 + 0.003 * np.sin(ys * 7.0 * np.pi / 0.24),
+            ys,
+            color=color,
+            lw=0.8,
+            zorder=5,
+        )
+    elif glyph == "phase_mask":
+        # A clear plate spanning the focus: it shifts phase, it blocks nothing.
+        ax.add_patch(
+            Rectangle(
+                (x - 0.006, y0 - 0.15),
+                0.012,
+                0.30,
+                facecolor=color,
+                alpha=0.7,
+                edgecolor="none",
+                zorder=5,
+            )
+        )
     elif glyph == "fpm":
         ax.add_patch(
             Polygon(
@@ -161,20 +199,24 @@ def rail(
     accent=None,
     cap=None,
     gaps=None,
+    fourier_lens="after",
+    stops=None,
 ):
     """Draw a miniature optical-train rail with one plane highlighted.
 
     Each plane contributes a marker, a label, and a glyph drawn on a beam
     envelope that opens at the pupil-like glyphs (`"pupil"`, `"lyot"`,
-    `"mask"`, `"apodizer"`) and pinches at the image-like ones
-    (`"source"`, `"focal"`, `"fpm"`, `"detector"`). A lens is drawn just
+    `"mask"`, `"apodizer"`, `"dm"`) and pinches at the image-like ones
+    (`"source"`, `"focal"`, `"fpm"`, `"phase_mask"`, `"detector"`). A lens
+    is drawn just
     after every plane but the last: a pupil-plane lens forms the next
     focal plane, a lens after a focal-plane mask re-collimates to the next
     pupil. A rail that ends on a `"focal"` plane is capped with a small
     detector block by default, so the train ends somewhere; see `cap` to
     force that block on or off. `gaps` replaces the one-lens default per
     gap, for a train that relays a pupil or runs a collimated beam between
-    two planes.
+    two planes; `fourier_lens` moves each Fourier lens to its gap's middle;
+    and `stops` narrows the beam at a stop that passes less than all of it.
 
     The glyphs are::
 
@@ -183,7 +225,11 @@ def rail(
         lyot       the same two bars (a Lyot stop is a pupil stop)
         mask       the same two bars (any other pupil-plane stop)
         apodizer   one translucent bar spanning the whole beam
+        dm         an opaque plate with a rippled face (a deformable mirror,
+                   drawn unfolded)
         fpm        a diamond on the optical axis
+        phase_mask a clear plate spanning the focus (a focal-plane phase
+                   mask, such as a vortex)
         focal      a bowtie, the beam waist pinching to a point
         detector   a hatched, unfilled box
 
@@ -217,6 +263,18 @@ def rail(
             re-imaging a plane onto the next one of the same kind; `"none"`
             is free space with no lens, as for a stop placed in a collimated
             beam. None makes every gap `"fourier"`.
+        fourier_lens: Where every `"fourier"` gap draws its lens. `"after"`
+            (the default) is just after the gap's first plane. `"middle"`
+            is the gap's midpoint, as in a train drawn to scale: the beam
+            stays collimated on the pupil side of the lens and focuses (or
+            opens from a focus) on the other.
+        stops: Mapping from a plane's label, matched case-insensitively as
+            `highlight` is, to the fraction of the beam's half-width that
+            plane passes, in (0, 1]. The beam steps down to that fraction at
+            the plane and stays narrower downstream, so an undersized Lyot
+            stop reads as the stop that trims the beam. Only a pupil-like
+            plane can take a stop, since the beam is already pinched at an
+            image-like one. None leaves the beam at full width.
 
     Returns:
         A `PlotResult` with artists `"fill"` (the beam-envelope
@@ -227,8 +285,10 @@ def rail(
     Raises:
         ValueError: If `planes` is empty, a glyph is not in `GLYPHS`,
             `positions` is the wrong length or decreases, `highlight` is
-            not one of the planes' labels, or `gaps` is the wrong length or
-            names an unknown gap.
+            not one of the planes' labels, `gaps` is the wrong length or
+            names an unknown gap, `fourier_lens` is not `"after"` or
+            `"middle"`, or `stops` names an unknown or image-like plane or
+            a fraction outside (0, 1].
 
     Note:
         Every tone but the accent is neutral scenery resolved from the
@@ -277,6 +337,29 @@ def rail(
             if gap not in _GAPS:
                 raise ValueError(f"unknown gap: {gap!r}; known: {list(_GAPS)}")
 
+    if fourier_lens not in _FOURIER_LENS:
+        raise ValueError(
+            f"unknown fourier_lens: {fourier_lens!r}; known: {list(_FOURIER_LENS)}"
+        )
+
+    passed = {}
+    for label, fraction in (stops or {}).items():
+        key = label.lower() if isinstance(label, str) else None
+        if key not in keys:
+            raise ValueError(f"unknown stop plane {label!r}; known planes: {labels}")
+        fraction = float(fraction)
+        if not 0.0 < fraction <= 1.0:
+            raise ValueError(
+                f"stop fraction for {label!r} must be in (0, 1], got {fraction}"
+            )
+        passed[key] = fraction
+    for key, (label, glyph) in zip(keys, planes, strict=True):
+        if key in passed and not GLYPHS[glyph]:
+            raise ValueError(
+                f"stop plane {label!r} has the image-like glyph {glyph!r}; "
+                "a stop narrows the beam only at a pupil-like plane"
+            )
+
     created = ax is None
     if created:
         _, ax = plt.subplots(layout="constrained")
@@ -292,29 +375,47 @@ def rail(
     left = min(0.02, positions[0])
     right = max(0.99, positions[-1])
     # Envelope control points and lens positions. A relay gap bends the
-    # envelope at its lenses and at the intermediate plane between them;
+    # envelope at its lenses and at the intermediate plane between them, and
+    # a mid-gap Fourier lens holds the collimated width up to the lens;
     # every other gap interpolates straight from one plane to the next.
+    # `full` is the collimated half-width, which a stop narrows for the rest
+    # of the train; a stop's step sits a hair past its plane so the control
+    # points stay strictly ordered.
+    full = wide
+    steps = []
     xs, hs = [left], [heights[0]]
     lenses = []
-    for i, (xp, hp) in enumerate(zip(positions, heights, strict=True)):
+    rows = zip(positions, keys, planes, strict=True)
+    for i, (xp, key, (_, glyph)) in enumerate(rows):
         xs.append(xp)
-        hs.append(hp)
+        hs.append(full if GLYPHS[glyph] else tight)
+        if key in passed and passed[key] < 1.0:
+            full *= passed[key]
+            steps += [xp, xp + 1e-6]
+            xs.append(xp + 1e-6)
+            hs.append(full)
         if i == len(planes) - 1:
             break
         gap, x_next = gaps[i], positions[i + 1]
-        if gap == "fourier":
+        if gap == "fourier" and fourier_lens == "after":
             lenses.append(xp + 0.035)
+        elif gap == "fourier":
+            lenses.append(0.5 * (xp + x_next))
+            xs.append(0.5 * (xp + x_next))
+            hs.append(full)
         elif gap == "relay":
             quarter = 0.25 * (x_next - xp)
-            middle = tight if GLYPHS[planes[i][1]] else wide
+            middle = tight if GLYPHS[glyph] else full
             xs += [xp + quarter, xp + 2 * quarter, x_next - quarter]
-            hs += [wide, middle, wide]
+            hs += [full, middle, full]
             lenses += [xp + quarter, x_next - quarter]
     xs.append(right)
-    hs.append(heights[-1])
+    hs.append(hs[-1])
     beam = _style.neutral(0.45)
     faint = _style.neutral(0.25)
     xf = np.linspace(left, right, 400)
+    if steps:
+        xf = np.union1d(xf, steps)
     hf = np.interp(xf, xs, hs)
     fill = ax.fill_between(xf, y0 - hf, y0 + hf, color=beam, alpha=0.20, lw=0)
     ax.plot(xf, y0 + hf, color=beam, lw=0.7)
