@@ -134,6 +134,10 @@ the API reference, and the groups are:
 - **Profiles.** `plot_radial`, `plot_contrast_curve`, and
   `radial_profile_plot`.
 - **Scenes.** `trail`, `sky_fan`, and `fading_track`.
+- **Emphasis.** `fade`, which blends any drawn artists toward their
+  background so an element carried from an earlier figure reads as already
+  seen, and `capture`, which collects what a block of code drew so it can
+  be faded as one group.
 - **Schematics.** `rail` for an optical train built from a plain
   `(label, glyph)` list over the `GLYPHS` vocabulary, and `schematic`, a
   preset wrapper over it.

@@ -392,3 +392,62 @@ The rail returns its per-plane markers and labels in plane order under
 `lines` and `text`, alongside the beam envelope under `fill`, so a caller
 who wants a second plane emphasized, or a label reworded, sets it on the
 artist instead of rebuilding the train.
+
+## Carrying a step forward, faded
+
+A figure that builds toward a whole in steps shows each earlier step again
+in the next one, quieter than the element that is new. `fade` quiets an
+element by blending every color it draws with toward the background it sits
+on, keeping `level` of its contrast. It does not lower the opacity, so a
+faded element still hides whatever is under it, and because the blend target
+is the actual face color the same call is right on a light figure and a dark
+one. `capture` collects the artists a block of drawing code added to an
+axes, so the step drawn inside the block can be faded as one group.
+
+Below, the left panel is the first step on its own: a star, the orbit, and
+the planet's position. The right panel draws that step again through the
+same code, fades it, and adds the next idea, the projected separation, at
+full strength.
+
+```{code-cell} python
+cast = ep.SourceStyles(["star", "b", "separation"])
+
+
+def first_step(ax):
+    orbit = loop(1.0, 0.0, 60.0, 0.0, n=200)
+    ax.plot(orbit[:, 0], orbit[:, 1], color=cast["b"]["color"])
+    ax.plot(0.0, 0.0, ms=12, ls="none", **{**cast["star"], "marker": "*"})
+    ax.plot(orbit[30, 0], orbit[30, 1], ms=7, ls="none", **cast["b"])
+    ax.text(0.05, -0.2, "star", ha="left", va="top")
+    ax.set(xlim=(-1.3, 1.3), ylim=(-1.0, 1.0), aspect="equal")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    return orbit[30]
+
+
+fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.0), layout="constrained")
+first_step(axes[0])
+axes[0].set_title("the orbit")
+with ep.capture(axes[1]) as carried:
+    planet = first_step(axes[1])
+faded = ep.fade(carried, 0.3)
+axes[1].plot([0.0, planet[0]], [0.0, planet[1]], lw=2.0,
+             color=cast["separation"]["color"])
+axes[1].text(planet[0] / 2, planet[1] / 2 + 0.08, "separation", ha="center",
+             color=cast["separation"]["color"])
+axes[1].set_title("its projected separation")
+```
+
+The handle `fade` returns lists what it changed and can put it back, which
+is how an animation toggles a region between beats without drawing it again.
+
+```{code-cell} python
+print(len(faded.artists), "artists faded")
+faded.restore()
+```
+
+`fade` also takes a whole axes, which fades everything inside it (inset
+axes, ticks, and titles included) except the axes' own face, and a `keep`
+predicate that exempts matching artists, such as one region of a map left
+lit while the rest recedes. Fading an element twice compounds: two fades at
+0.5 leave a quarter of its contrast.

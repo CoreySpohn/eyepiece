@@ -5,11 +5,12 @@ and animating simulated images (point spread functions, coronagraph
 detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
-``_schematic``, ``profiles``) are internal organization and are not part of
-the public API. The vocabularies a caller reads against are exported alongside the
-functions: ``ARTIST_KEYS``, the key set a result's ``artists`` dict draws
-from; ``PRESETS``, the measured fps/dpi pairs for the usual animation
-destinations; and ``GLYPHS``, the optical-element names ``rail`` draws.
+``_schematic``, ``profiles``, ``emphasis``) are internal organization and
+are not part of the public API. The vocabularies a caller reads against are
+exported alongside the functions: ``ARTIST_KEYS``, the key set a result's
+``artists`` dict draws from; ``PRESETS``, the measured fps/dpi pairs for the
+usual animation destinations; and ``GLYPHS``, the optical-element names
+``rail`` draws.
 
 Example::
 
@@ -45,6 +46,7 @@ __all__ = [
     "SourceStyles",
     "__version__",
     "animate",
+    "capture",
     "compare_grid",
     "compare_row",
     "corner",
@@ -55,6 +57,7 @@ __all__ = [
     "extent_au",
     "extent_lod",
     "extent_lod_from_pixels",
+    "fade",
     "fading_track",
     "file_metadata",
     "hist_vs_pdf",
@@ -90,6 +93,8 @@ _LAZY_EXPORTS = {
     "Animation": ("eyepiece.anim", "Animation"),
     "animate": ("eyepiece.anim", "animate"),
     "record": ("eyepiece.anim", "record"),
+    "capture": ("eyepiece.emphasis", "capture"),
+    "fade": ("eyepiece.emphasis", "fade"),
     "compare_grid": ("eyepiece.images", "compare_grid"),
     "compare_row": ("eyepiece.images", "compare_row"),
     "display_limits": ("eyepiece.images", "display_limits"),
