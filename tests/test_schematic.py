@@ -301,3 +301,68 @@ def test_rail_glyph_tone_follows_the_mode():
     with hwostyle.light():
         light = _pupil_bar_facecolor()
     assert dark != light
+
+
+def _lenses(res):
+    return sorted(p.center[0] for p in res.ax.patches if isinstance(p, Ellipse))
+
+
+def _half_width_at(res, x):
+    # The first line a rail draws is the upper beam edge.
+    upper = res.ax.lines[0]
+    return float(np.interp(x, upper.get_xdata(), upper.get_ydata())) - 0.52
+
+
+def test_default_gaps_are_one_fourier_lens_each():
+    planes = [("P", "pupil"), ("F", "fpm"), ("L", "lyot"), ("I", "focal")]
+    default = rail(planes)
+    explicit = rail(planes, gaps=["fourier"] * 3)
+    assert len(_lenses(default)) == 3
+    assert _lenses(default) == _lenses(explicit)
+    np.testing.assert_allclose(
+        default.ax.lines[0].get_ydata(), explicit.ax.lines[0].get_ydata()
+    )
+    plt.close(default.fig)
+    plt.close(explicit.fig)
+
+
+def test_pupil_relay_is_a_lens_pair_around_an_intermediate_focus():
+    positions = (0.1, 0.5, 0.9)
+    res = rail(
+        [("P", "pupil"), ("DM", "pupil"), ("I", "focal")],
+        positions=positions,
+        gaps=["relay", "fourier"],
+    )
+    lenses = _lenses(res)
+    assert lenses[:2] == pytest.approx([0.2, 0.4])
+    assert _half_width_at(res, 0.3) < 0.05  # the relay's intermediate focus
+    assert _half_width_at(res, 0.2) > 0.15  # collimated up to the first lens
+    plt.close(res.fig)
+
+
+def test_image_relay_opens_a_collimated_beam_between_two_foci():
+    res = rail([("F1", "focal"), ("F2", "focal")], positions=(0.1, 0.9), gaps=["relay"])
+    assert len(_lenses(res)) == 2
+    assert _half_width_at(res, 0.5) > 0.15
+    assert _half_width_at(res, 0.1) < 0.05
+    plt.close(res.fig)
+
+
+def test_none_gap_is_free_space_in_a_collimated_beam():
+    res = rail(
+        [("P", "pupil"), ("Stop", "mask"), ("I", "focal")],
+        positions=(0.1, 0.4, 0.9),
+        gaps=["none", "fourier"],
+    )
+    lenses = _lenses(res)
+    assert len(lenses) == 1 and lenses[0] > 0.4
+    assert _half_width_at(res, 0.25) == pytest.approx(_half_width_at(res, 0.1))
+    plt.close(res.fig)
+
+
+@pytest.mark.parametrize(
+    ("gaps", "match"), [(["fourier"], "gaps has 1"), (["warp", "none"], "unknown gap")]
+)
+def test_bad_gaps_raise(gaps, match):
+    with pytest.raises(ValueError, match=match):
+        rail([("P", "pupil"), ("F", "focal"), ("L", "lyot")], gaps=gaps)

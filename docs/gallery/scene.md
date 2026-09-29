@@ -393,6 +393,29 @@ The rail returns its per-plane markers and labels in plane order under
 who wants a second plane emphasized, or a label reworded, sets it on the
 artist instead of rebuilding the train.
 
+### Relays and collimated gaps
+
+By default every gap is one lens just after its first plane, a Fourier
+transform from a pupil to its focal plane or back. `gaps` names what the
+optics do across each gap instead, one entry per pair of consecutive
+planes. `"relay"` draws a lens pair at the gap's quarter points and
+re-images a plane onto the next one of the same kind, with an intermediate
+focus between two pupils; `"none"` is free space, as for a stop sitting in a
+collimated beam. The train below relays the entrance pupil onto a
+deformable mirror before the coronagraph proper.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 1.9), layout="constrained")
+relayed = ep.rail(
+    [("Pupil", "pupil"), ("DM", "pupil"), ("FPM", "fpm"), ("Lyot", "lyot"),
+     ("Focal", "focal")],
+    ax=ax,
+    positions=(0.06, 0.34, 0.54, 0.74, 0.92),
+    gaps=["relay", "fourier", "fourier", "fourier"],
+    highlight="DM",
+)
+```
+
 ## Carrying a step forward, faded
 
 A figure that builds toward a whole in steps shows each earlier step again
