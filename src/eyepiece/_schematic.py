@@ -41,6 +41,9 @@ GLYPHS = {
 
 _BAR_GLYPHS = ("pupil", "lyot", "mask")
 
+# What the optics do across the gap between two consecutive planes.
+_GAPS = ("fourier", "relay", "none")
+
 # Each preset: the (label, glyph) planes and their hand-tuned x positions.
 _PRESETS = {
     "imager": (
@@ -149,7 +152,16 @@ def _draw_glyph(ax, glyph, x, y0, color):
         raise ValueError(f"glyph {glyph!r} is in GLYPHS but has no drawing")
 
 
-def rail(planes, *, ax=None, positions=None, highlight=None, accent=None, cap=None):
+def rail(
+    planes,
+    *,
+    ax=None,
+    positions=None,
+    highlight=None,
+    accent=None,
+    cap=None,
+    gaps=None,
+):
     """Draw a miniature optical-train rail with one plane highlighted.
 
     Each plane contributes a marker, a label, and a glyph drawn on a beam
@@ -160,7 +172,9 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None, cap=No
     focal plane, a lens after a focal-plane mask re-collimates to the next
     pupil. A rail that ends on a `"focal"` plane is capped with a small
     detector block by default, so the train ends somewhere; see `cap` to
-    force that block on or off.
+    force that block on or off. `gaps` replaces the one-lens default per
+    gap, for a train that relays a pupil or runs a collimated beam between
+    two planes.
 
     The glyphs are::
 
@@ -194,6 +208,15 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None, cap=No
             `"focal"` -- a rail that ends on its own `"detector"` plane
             already terminates, and one that ends on a pupil is a train
             still in progress.
+        gaps: What the optics do between each pair of consecutive planes,
+            one entry per gap (`len(planes) - 1`). `"fourier"` is one lens
+            just after the first plane, taking a pupil to its focal plane or
+            back; `"relay"` is a lens pair at the gap's quarter points with
+            an intermediate focus (between two pupil-like planes) or
+            collimated beam (between two image-like planes) at its middle,
+            re-imaging a plane onto the next one of the same kind; `"none"`
+            is free space with no lens, as for a stop placed in a collimated
+            beam. None makes every gap `"fourier"`.
 
     Returns:
         A `PlotResult` with artists `"fill"` (the beam-envelope
@@ -203,8 +226,9 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None, cap=No
 
     Raises:
         ValueError: If `planes` is empty, a glyph is not in `GLYPHS`,
-            `positions` is the wrong length or decreases, or `highlight`
-            is not one of the planes' labels.
+            `positions` is the wrong length or decreases, `highlight` is
+            not one of the planes' labels, or `gaps` is the wrong length or
+            names an unknown gap.
 
     Note:
         Every tone but the accent is neutral scenery resolved from the
@@ -240,6 +264,19 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None, cap=No
         if any(b < a for a, b in pairwise(positions)):
             raise ValueError(f"positions must be non-decreasing, got {positions}")
 
+    if gaps is None:
+        gaps = ["fourier"] * (len(planes) - 1)
+    else:
+        gaps = list(gaps)
+        if len(gaps) != len(planes) - 1:
+            raise ValueError(
+                f"gaps has {len(gaps)} entries for {len(planes) - 1} gaps "
+                f"between {len(planes)} planes"
+            )
+        for gap in gaps:
+            if gap not in _GAPS:
+                raise ValueError(f"unknown gap: {gap!r}; known: {list(_GAPS)}")
+
     created = ax is None
     if created:
         _, ax = plt.subplots(layout="constrained")
@@ -254,8 +291,27 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None, cap=No
 
     left = min(0.02, positions[0])
     right = max(0.99, positions[-1])
-    xs = [left, *positions, right]
-    hs = [heights[0], *heights, heights[-1]]
+    # Envelope control points and lens positions. A relay gap bends the
+    # envelope at its lenses and at the intermediate plane between them;
+    # every other gap interpolates straight from one plane to the next.
+    xs, hs = [left], [heights[0]]
+    lenses = []
+    for i, (xp, hp) in enumerate(zip(positions, heights, strict=True)):
+        xs.append(xp)
+        hs.append(hp)
+        if i == len(planes) - 1:
+            break
+        gap, x_next = gaps[i], positions[i + 1]
+        if gap == "fourier":
+            lenses.append(xp + 0.035)
+        elif gap == "relay":
+            quarter = 0.25 * (x_next - xp)
+            middle = tight if GLYPHS[planes[i][1]] else wide
+            xs += [xp + quarter, xp + 2 * quarter, x_next - quarter]
+            hs += [wide, middle, wide]
+            lenses += [xp + quarter, x_next - quarter]
+    xs.append(right)
+    hs.append(heights[-1])
     beam = _style.neutral(0.45)
     faint = _style.neutral(0.25)
     xf = np.linspace(left, right, 400)
@@ -265,8 +321,7 @@ def rail(planes, *, ax=None, positions=None, highlight=None, accent=None, cap=No
     ax.plot(xf, y0 - hf, color=beam, lw=0.7)
     ax.plot([left, right], [y0, y0], color=faint, lw=0.6, ls=":")
 
-    for xp in positions[:-1]:
-        xm = xp + 0.035
+    for xm in lenses:
         hm = float(np.interp(xm, xs, hs))
         ax.add_patch(
             Ellipse(

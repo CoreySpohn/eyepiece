@@ -190,6 +190,54 @@ for ax in axes[1:]:
     ax.set_xlabel(r"$x$ [$\lambda/D$]")
 ```
 
+### A colorbar slot the caller placed
+
+`compare_grid` is the two-dimensional form of the same idea, and both take
+`cax=` for a figure whose colorbar slot the caller has already placed: one
+tall slot beside every row, say, instead of an inset off the last panel.
+The shared colorbar is drawn into that axes and nothing else in the layout
+moves.
+
+```{code-cell} python
+fig, slots = plt.subplot_mosaic(
+    [["a", "b", "c", "bar"], ["d", "e", "f", "bar"]],
+    width_ratios=[1, 1, 1, 0.06],
+    figsize=(7.4, 3.8),
+    layout="constrained",
+)
+panels = np.array([[slots[k] for k in "abc"], [slots[k] for k in "def"]])
+grid = ep.compare_grid(
+    [frames, [CORE + speckles(5, lev) for lev in levels]],
+    titles=[[f"x {lev:g}" for lev in levels], ["", "", ""]],
+    axes=panels,
+    norm="log",
+    extent=EXTENT,
+    vmin=1e-9,
+    cax=slots["bar"],
+    cbar_label="intensity",
+)
+```
+
+## Circles on an image
+
+An aperture, a dark ring, or a working angle drawn over an image crosses
+pixels from one end of the colormap to the other, so a circle in any single
+color disappears somewhere along its length. `overlay_circle` draws a light
+dash over a thin, solid, dark underlay, taking the two tones from the
+style's background and text colors, so the circle stays visible over the
+bright core and over the dark halo alike. It adds the circle without
+touching the data limits: a working-angle circle larger than the view does
+not widen it.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
+result = ep.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
+ep.overlay_circle(ax, (2.6, 1.4), 0.7)  # a photometric aperture on the companion
+ep.overlay_circle(ax, (0.0, 0.0), 1.22)  # the first dark ring of the core
+ep.overlay_circle(ax, (0.0, 0.0), 20.0)  # an outer working angle beyond the view
+ep.label_lod(ax)
+```
+
 ## Ratio and residual
 
 `triptych` draws A and B through `compare_row`, so the first two panels

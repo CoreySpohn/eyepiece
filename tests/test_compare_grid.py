@@ -66,3 +66,35 @@ def test_empty_and_all_gap_layouts_raise():
 def test_mismatched_titles_raise():
     with pytest.raises(ValueError, match="titles must match"):
         compare_grid([[_ramp(1.0), _ramp(1.0)]], titles=[["only one"]])
+
+
+def _positions(fig):
+    return [tuple(ax.get_position(original=True).bounds) for ax in fig.axes]
+
+
+@pytest.mark.parametrize("handed", [False, True])
+def test_caller_cax_holds_the_shared_colorbar_and_nothing_moves(handed):
+    fig = plt.figure(figsize=(6, 4))
+    axes = np.array(
+        [
+            [
+                fig.add_axes([0.05 + 0.3 * j, 0.55 - 0.5 * i, 0.25, 0.4])
+                for j in range(2)
+            ]
+            for i in range(2)
+        ]
+    )
+    cax = fig.add_axes([0.7, 0.05, 0.03, 0.9])
+    before = _positions(fig)
+    images = [[_ramp(1.0), _ramp(2.0)], [_ramp(3.0), None]]
+    if handed:
+        res = compare_grid(images, axes=axes, cax=cax, cbar_label="flux")
+    else:
+        res = compare_grid(images, axes=axes, cax=cax)
+    cb = res.artists["cbar"]
+    assert cb.ax is cax
+    assert cb.mappable.norm is res.artists["image"][0][0].norm
+    # No inset colorbar was hung off a panel, and no slot moved.
+    assert all(not ax.child_axes for ax in axes.ravel())
+    assert _positions(fig) == before
+    plt.close(fig)

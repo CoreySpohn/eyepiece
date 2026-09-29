@@ -95,6 +95,17 @@ def test_compare_row_handed_axes_does_not_steal_sibling_space():
     plt.close(fig)
 
 
+def test_compare_row_caller_cax_holds_the_shared_colorbar():
+    fig, axes = plt.subplots(1, 3)
+    before = [ax.get_position(original=True).bounds for ax in axes]
+    res = compare_row([_img(), _img()], axes=axes[:2], cax=axes[2])
+    assert res.artists["cbar"].ax is axes[2]
+    assert res.artists["cbar"].mappable.norm is res.artists["image"][0].norm
+    assert not axes[1].child_axes
+    assert [ax.get_position(original=True).bounds for ax in axes] == before
+    plt.close(fig)
+
+
 def test_compare_row_empty_raises():
     with pytest.raises(ValueError, match="at least one image"):
         compare_row([])

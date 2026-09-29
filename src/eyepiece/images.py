@@ -12,9 +12,11 @@ per the house rule that interpolating simulated detector data misrepresents
 the pixels.
 """
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import LogNorm, Normalize
+from matplotlib.colors import LogNorm, Normalize, to_rgb
+from matplotlib.patches import Circle
 
 from eyepiece import _style
 from eyepiece._result import MosaicResult, PlotResult
@@ -349,6 +351,7 @@ def compare_row(
     vmin=None,
     vmax=None,
     panel_size=3.2,
+    cax=None,
     imshow_kw=None,
     cbar_kw=None,
 ):
@@ -389,6 +392,11 @@ def compare_row(
             count and the height follows the first image's aspect, so a row
             of k square images stays square instead of shrinking into
             matplotlib's fixed default figure. Ignored when `axes` is given.
+        cax: Axes to draw the shared colorbar in, for a caller who placed
+            the colorbar slot themselves (beside a hand-built mosaic, or
+            spanning several rows). None attaches it by the rule above: a
+            figure-level colorbar on a figure this function created, an
+            inset beside the last panel otherwise.
         imshow_kw: Extra kwargs passed to each panel's `ax.imshow`, applied
             last.
         cbar_kw: Extra kwargs passed to the shared colorbar's
@@ -445,7 +453,9 @@ def compare_row(
     _hide_index_ticks(axes, extent)
 
     artists = {"image": ims}
-    if created:
+    if cax is not None:
+        cb = fig.colorbar(ims[-1], cax=cax, label=cbar_label, **(cbar_kw or {}))
+    elif created:
         cb = fig.colorbar(ims[-1], ax=axes, label=cbar_label, **(cbar_kw or {}))
     else:
         cax = axes[-1].inset_axes([1.02, 0.0, 0.04, 1.0])
@@ -492,6 +502,7 @@ def compare_grid(
     vmin=None,
     vmax=None,
     panel_size=1.6,
+    cax=None,
     imshow_kw=None,
     cbar_kw=None,
 ):
@@ -526,6 +537,11 @@ def compare_grid(
         vmax: Pins the shared norm's upper bound.
         panel_size: Size in inches of one square cell, used only for a
             figure this function creates.
+        cax: Axes to draw the shared colorbar in, for a caller who placed
+            the colorbar slot themselves (for example one tall slot beside
+            every row). None attaches it as a figure-level colorbar on a
+            figure this function created, and as an inset beside the last
+            cell otherwise.
         imshow_kw: Extra kwargs passed to each panel's `ax.imshow`, applied
             last.
         cbar_kw: Extra kwargs passed to the shared colorbar's
@@ -593,7 +609,9 @@ def compare_grid(
             last = im
         ims.append(row_ims)
 
-    if created:
+    if cax is not None:
+        cb = fig.colorbar(last, cax=cax, label=cbar_label, **(cbar_kw or {}))
+    elif created:
         cb = fig.colorbar(last, ax=axes, label=cbar_label, **(cbar_kw or {}))
     else:
         cax = axes[-1, -1].inset_axes([1.02, 0.0, 0.04, 1.0])
@@ -988,3 +1006,85 @@ def triptych(
         "cbar": [ab_result.artists["cbar"], cmp_cb],
     }
     return MosaicResult(axes=axes, artists=artists)
+
+
+def _light_and_dark():
+    """The style's background and text tones, ordered lighter first."""
+    face = to_rgb(matplotlib.rcParams["axes.facecolor"])
+    ink = to_rgb(matplotlib.rcParams["text.color"])
+
+    def luminance(c):
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    return (face, ink) if luminance(face) >= luminance(ink) else (ink, face)
+
+
+def overlay_circle(ax, center, radius, *, color=None, underlay=True, circle_kw=None):
+    """Draw a dashed circle over an image, legible on bright and dark pixels.
+
+    An aperture, a dark ring, or a working angle drawn over an image crosses
+    pixels from the darkest to the brightest end of the colormap, so no one
+    color reads everywhere along it. The circle is therefore a light dash
+    over a thin, solid, dark underlay: where the pixels are bright the dark
+    underlay outlines it, and where they are dark the light dash does. The
+    two tones are the style's background and text colors, ordered by
+    lightness, so the pair holds in either mode.
+
+    The circle is added without touching the data limits, so drawing a
+    circle larger than the view neither rescales the axes nor moves an
+    image's extent.
+
+    Args:
+        ax: Axes to draw on, in its data coordinates.
+        center: `(x, y)` of the center, in data units.
+        radius: Radius in data units.
+        color: Color of the dash. None uses the lighter of the style's
+            background and text colors.
+        underlay: Whether to draw the solid dark underlay. True uses the
+            darker of the style's background and text colors; a color draws
+            it in that color; False omits it.
+        circle_kw: Extra kwargs for the dashed `Circle` (for example `lw`,
+            `ls`, `zorder`, or `gid`), applied last. The underlay follows the
+            dash's line width and z-order and stays solid.
+
+    Returns:
+        A `PlotResult` whose `artists["ellipse"]` is the list of `Circle`
+        patches in draw order: the underlay, when drawn, then the dash, so
+        `artists["ellipse"][-1]` is always the dashed circle.
+
+    Raises:
+        ValueError: If `radius` is not positive.
+
+    Example::
+
+        result = ep.imshow_log(psf, extent=extent)
+        ep.overlay_circle(result.ax, (3.0, 0.0), 0.7)
+    """
+    radius = float(radius)
+    if not radius > 0.0:
+        raise ValueError(f"overlay_circle radius must be positive, got {radius}")
+    center = (float(center[0]), float(center[1]))
+    light, dark = _light_and_dark()
+    kw = {
+        "fill": False,
+        "edgecolor": light if color is None else color,
+        "lw": 1.0,
+        "ls": (0, (3, 2)),
+        "zorder": 4,
+        **(circle_kw or {}),
+    }
+    dash = Circle(center, radius, **kw)
+    patches = []
+    if underlay is not False and underlay is not None:
+        under = Circle(
+            center,
+            radius,
+            fill=False,
+            edgecolor=dark if underlay is True else underlay,
+            lw=dash.get_linewidth() + 1.0,
+            ls="-",
+            zorder=dash.get_zorder(),
+        )
+        patches.append(ax.add_artist(under))
+    patches.append(ax.add_artist(dash))
+    return PlotResult(ax=ax, artists={"ellipse": patches})
