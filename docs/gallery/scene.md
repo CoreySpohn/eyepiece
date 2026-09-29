@@ -259,7 +259,7 @@ print(f"{len(alphas)} segments, alpha {alphas[0]:.2f} at the tail to "
 ## The glyph vocabulary
 
 `rail` builds a miniature optical train from a list of `(label, glyph)`
-pairs, where the glyph is one of the eight names in `GLYPHS`. The names are
+pairs, where the glyph is one of the ten names in `GLYPHS`. The names are
 this library's own vocabulary, chosen to say what to draw rather than to
 match any simulation package's class names, and the mapping they carry is
 whether the beam is wide at that plane or pinched. The envelope in every
@@ -271,7 +271,7 @@ print({name: "pupil-like" if wide else "image-like"
        for name, wide in sorted(ep.GLYPHS.items())})
 ```
 
-The rail below is assembled to show all eight glyphs once rather than to
+The rail below is assembled to show all ten glyphs once rather than to
 describe a real instrument. A lens is drawn after every plane but the last,
 the planes are spaced evenly because no `positions` were given, and the
 train is capped with a detector block only when it ends on a `focal` plane,
@@ -282,14 +282,16 @@ vocabulary = [
     ("Source", "source"),
     ("Pupil", "pupil"),
     ("Apodizer", "apodizer"),
+    ("DM", "dm"),
     ("FPM", "fpm"),
+    ("Vortex", "phase_mask"),
     ("Lyot", "lyot"),
     ("Mask", "mask"),
     ("Focal", "focal"),
     ("Detector", "detector"),
 ]
 
-fig, ax = plt.subplots(figsize=(9.2, 2.2), layout="constrained")
+fig, ax = plt.subplots(figsize=(11.0, 2.2), layout="constrained")
 glyphs = ep.rail(vocabulary, ax=ax, highlight="FPM")
 ```
 
@@ -413,6 +415,29 @@ relayed = ep.rail(
     positions=(0.06, 0.34, 0.54, 0.74, 0.92),
     gaps=["relay", "fourier", "fourier", "fourier"],
     highlight="DM",
+)
+```
+
+A train drawn to scale puts each Fourier lens midway between its two
+planes, one focal length from each, so the beam stays collimated on the
+pupil side of the lens and focuses on the other. `fourier_lens="middle"`
+draws every `"fourier"` gap that way. `stops` maps a pupil-like plane's
+label to the fraction of the beam's half-width it passes, and the beam steps
+down to that width at the plane and stays narrower downstream, which is what
+an undersized Lyot stop does to the light. The train below is a vortex
+coronagraph with its entrance pupil relayed onto a deformable mirror.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 1.9), layout="constrained")
+vortex = ep.rail(
+    [("Pupil", "pupil"), ("DM", "dm"), ("Vortex", "phase_mask"),
+     ("Lyot", "lyot"), ("Image", "detector")],
+    ax=ax,
+    positions=(0.06, 0.34, 0.54, 0.74, 0.92),
+    gaps=["relay", "fourier", "fourier", "fourier"],
+    fourier_lens="middle",
+    stops={"Lyot": 0.8},
+    highlight="Lyot",
 )
 ```
 
