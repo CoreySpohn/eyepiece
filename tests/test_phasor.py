@@ -644,3 +644,49 @@ def test_resultant_head_alone_sets_its_default_width():
     total = res.artists["arrow"][-1]
     assert total.get_linewidth() == pytest.approx(1.5 * 1.5 * 0.7)
     plt.close(res.fig)
+
+
+def test_colors_may_mix_names_hex_and_rgba_tuples():
+    mixed = ["red", (0.0, 0.0, 1.0, 0.5), "#00ff00", (1.0, 1.0, 0.0)]
+    res = ep.phasor([1, 1j, -1, -1j], colors=mixed)
+    got = [patch.get_edgecolor() for patch in res.artists["arrow"]]
+    expected = [to_rgba(c) for c in mixed]
+    np.testing.assert_allclose(got, expected)
+    plt.close(res.fig)
+
+
+def test_a_single_rgba_tuple_colors_every_arrow():
+    # Four arrows and a four-number tuple: one RGBA color, not four colors.
+    res = ep.phasor([1, 1j, -1, -1j], colors=(0.2, 0.4, 0.6, 0.8))
+    for patch in res.artists["arrow"]:
+        np.testing.assert_allclose(patch.get_edgecolor(), (0.2, 0.4, 0.6, 0.8))
+    rgb = ep.phasor([1, 1j, -1], colors=(0.2, 0.4, 0.6))
+    for patch in rgb.artists["arrow"]:
+        np.testing.assert_allclose(patch.get_edgecolor(), (0.2, 0.4, 0.6, 1.0))
+    plt.close("all")
+
+
+def test_a_two_color_tuple_is_two_colors_not_a_dash_pattern():
+    res = ep.phasor([1, 1j], colors=("red", (0.0, 0.0, 1.0)))
+    got = [patch.get_edgecolor() for patch in res.artists["arrow"]]
+    np.testing.assert_allclose(got, [to_rgba("red"), to_rgba((0.0, 0.0, 1.0))])
+    plt.close(res.fig)
+
+
+def test_linestyles_may_mix_names_and_dash_patterns():
+    res = ep.phasor([1, 1j], linestyles=["--", (0, (3, 2))])
+    first, second = res.artists["arrow"]
+    assert first.get_linestyle() == "--"
+    assert second.get_linestyle() == (0, (3, 2))
+    single = ep.phasor([1, 1j], linestyles=(0, (3, 2)))
+    assert all(p.get_linestyle() == (0, (3, 2)) for p in single.artists["arrow"])
+    plt.close("all")
+
+
+def test_widths_and_head_scales_take_numpy_scalars_and_sequences():
+    res = ep.phasor([1, 1j], widths=np.float64(2.5), head_scale=np.array(0.5))
+    assert all(p.get_linewidth() == pytest.approx(2.5) for p in res.artists["arrow"])
+    per = ep.phasor([1, 1j], widths=np.array([1.0, 3.0]), head_scale=[0.5, 1.0])
+    widths = [p.get_linewidth() for p in per.artists["arrow"]]
+    assert widths == pytest.approx([1.0, 3.0])
+    plt.close("all")

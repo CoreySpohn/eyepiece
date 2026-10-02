@@ -11,11 +11,13 @@ The module is private because a public `eyepiece.phasor` submodule would
 shadow the `phasor` function of the same name once imported.
 """
 
+from numbers import Number
+
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
-from matplotlib.colors import to_rgba
+from matplotlib.colors import is_color_like
 from matplotlib.patches import FancyArrowPatch
 from matplotlib.path import Path
 from matplotlib.transforms import Bbox
@@ -112,11 +114,24 @@ class _Arrow(FancyArrowPatch):
         super().draw(renderer)
 
 
-def _per_arrow(value, n, default, name):
-    """Broadcast a scalar or a length-`n` sequence to a list of `n` values."""
+def _is_number(value):
+    """True for one plain number: a Python or NumPy scalar, or a 0-d array."""
+    if isinstance(value, np.ndarray):
+        return value.ndim == 0
+    return isinstance(value, Number) and not isinstance(value, bool)
+
+
+def _per_arrow(value, n, default, name, single=_is_number):
+    """Broadcast one value or a length-`n` sequence to a list of `n` values.
+
+    `single` decides whether `value` is one value for every arrow. It never
+    builds an array from `value`, so a sequence that mixes kinds of entry (a
+    color name beside an RGBA tuple, a named line style beside a dash
+    pattern) is taken entry by entry.
+    """
     if value is None:
         return [default] * n
-    if isinstance(value, str) or np.ndim(value) == 0 or _is_dash_tuple(value):
+    if single(value):
         return [value] * n
     values = list(value)
     if len(values) != n:
@@ -129,18 +144,15 @@ def _is_dash_tuple(value):
     return (
         isinstance(value, tuple)
         and len(value) == 2
-        and np.ndim(value[0]) == 0
+        and _is_number(value[0])
         and isinstance(value[1], tuple)
+        and all(_is_number(v) for v in value[1])
     )
 
 
-def _is_color(value):
-    """True for one color spec (a name, a hex string, or an RGB/RGBA tuple)."""
-    try:
-        to_rgba(value)
-    except (TypeError, ValueError):
-        return False
-    return True
+def _is_linestyle(value):
+    """True for one line style: a name such as `"--"` or a dash pattern."""
+    return isinstance(value, str) or _is_dash_tuple(value)
 
 
 def _shaft_fraction(head):
@@ -450,10 +462,14 @@ def phasor(
             the sum of `vectors`, in `sum_color` and 1.5 times the default
             width. It is listed last but layered beneath the other arrows,
             so a chain lying along its own resultant stays visible on top.
-        colors: One color for every arrow or one per vector. None uses
+        colors: One color for every arrow or one per vector. Any
+            matplotlib color spec works, and a per-vector sequence may mix
+            them (names, hex strings, RGB and RGBA tuples); a single RGB or
+            RGBA tuple is one color for every arrow. None uses
             `_style.color(0)`, the first color of the active palette.
-        linestyles: One line style for every arrow or one per vector.
-            None draws solid arrows.
+        linestyles: One line style for every arrow or one per vector, each a
+            name such as `"--"` or a dash pattern such as `(0, (3, 2))`, in
+            any mix. None draws solid arrows.
         widths: One shaft width in points for every arrow or one per
             vector. None uses `rcParams["lines.linewidth"]` for a full-size
             head and thins the shaft with a smaller one, to 0.4 of it at
@@ -564,10 +580,8 @@ def phasor(
 
     rc = matplotlib.rcParams
     base_width = float(rc["lines.linewidth"])
-    if colors is not None and _is_color(colors):
-        colors = [colors] * n
-    colors = _per_arrow(colors, n, _style.color(0), "colors")
-    linestyles = _per_arrow(linestyles, n, "-", "linestyles")
+    colors = _per_arrow(colors, n, _style.color(0), "colors", single=is_color_like)
+    linestyles = _per_arrow(linestyles, n, "-", "linestyles", single=_is_linestyle)
     heads = [float(h) for h in _per_arrow(head_scale, n, 1.0, "head_scale")]
     if widths is None:
         widths = [base_width * _shaft_fraction(h) for h in heads]
