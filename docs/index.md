@@ -143,8 +143,8 @@ the API reference, and the groups are:
   seen, `capture`, which collects what a block of code drew so it can be
   faded as one group, and `blend`, the same color blend for a single color.
 - **Schematics.** `rail` for an optical train built from a plain
-  `(label, glyph)` list over the `GLYPHS` vocabulary, and `schematic`, a
-  preset wrapper over it.
+  `(label, glyph)` list over the `GLYPHS` vocabulary, in its own axes or in
+  the caller's data coordinates, and `schematic`, a preset wrapper over it.
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus
   `Frame` and `SourceStyles` for keeping several panels of one scene

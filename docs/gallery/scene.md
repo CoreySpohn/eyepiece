@@ -299,10 +299,10 @@ glyphs = ep.rail(vocabulary, ax=ax, highlight="FPM")
 
 The point of the rail is the highlight, because a figure that shows a field
 at some plane of an instrument otherwise leaves the reader to work out which
-plane that is. `highlight` takes a plane's label, matched
-case-insensitively, and draws that plane's marker, glyph, and label in the
-accent color, leaving everything else neutral. A label that is not in the
-train raises rather than quietly matching nothing.
+plane that is. `highlight` takes a plane's label, or a list of labels,
+matched case-insensitively, and draws each named plane's marker, glyph, and
+label in the accent color, leaving everything else neutral. A label that is
+not in the train raises rather than quietly matching nothing.
 
 The four panels below are one Lyot coronagraph propagated with NumPy FFTs, a
 circular pupil to its focal plane, an opaque occulter of radius three lambda
@@ -391,9 +391,14 @@ print([t.get_text() for t in corona.artists["text"]])
 ```
 
 The rail returns its per-plane markers and labels in plane order under
-`lines` and `text`, alongside the beam envelope under `fill`, so a caller
-who wants a second plane emphasized, or a label reworded, sets it on the
-artist instead of rebuilding the train.
+`lines` and `text`, alongside the beam envelope under `fill` and the lenses
+under `ellipse`, so a caller who wants a label reworded sets it on the
+artist instead of rebuilding the train. Every artist it draws also carries a
+gid of the form `rail/<label>/<part>`, with the parts `marker`, `label`,
+`glyph`, `lens` (the lenses in the gap after that plane), and `cap`, and
+`rail/beam/fill`, `rail/beam/edge`, and `rail/beam/axis` for the beam. A
+glyph mixes lines and patches, so glyphs are found by gid rather than under
+an artist key.
 
 ### Relays and collimated gaps
 
@@ -439,6 +444,69 @@ vortex = ep.rail(
     stops={"Lyot": 0.8},
     highlight="Lyot",
 )
+```
+
+### Drawing in data coordinates
+
+A rail fills its own axes by default, laid out in axes fractions on the unit
+square with the axis turned off. `coords="data"` draws it in the caller's
+data coordinates instead, so the train can share an axes with other
+drawing, sit under cards placed in inches, or be drawn to scale. The
+positions are then data x values, the beam is centered on `axis_y` with a
+collimated half-width of `beam_half`, every glyph, lens, and label offset
+scales with `beam_half`, and the rail sets no limits and leaves the axis
+alone. Sizes along the axis are in the same units as `beam_half`, so the
+glyphs keep their shapes under an equal aspect. `span` sets where the beam
+starts and ends.
+
+`colors` maps a plane's label to its glyph color, so each element can carry
+its own role, and `beam_color` colors the envelope. A plane with a role
+color keeps it when lit, and its marker and label carry the highlight. The
+train below is a four-plane Lyot coronagraph, pupil, focal-plane mask, Lyot
+stop, and image, drawn with the planes lit in the text color, and the
+arrow marking one focal length is the caller's own artist in the same
+coordinates.
+
+```{code-cell} python
+roles = ep.SourceStyles(["aperture", "optics", "starlight", "detector"])
+hardware = {"Pupil": "aperture", "Focal": "optics", "Lyot": "aperture",
+            "Image": "detector"}
+
+fig, ax = plt.subplots(figsize=(8.0, 2.6), layout="constrained")
+ax.set(xlim=(-0.3, 10.4), ylim=(-2.0, 2.4), aspect="equal")
+ax.axis("off")
+coronagraph = ep.rail(
+    [("Pupil", "pupil"), ("Focal", "fpm"), ("Lyot", "lyot"), ("Image", "detector")],
+    ax=ax,
+    coords="data",
+    positions=(1.2, 4.0, 6.8, 9.6),
+    axis_y=0.0,
+    beam_half=1.0,
+    span=(0.0, 9.6),
+    fourier_lens="middle",
+    stops={"Lyot": 0.8},
+    colors={label: roles[role]["color"] for label, role in hardware.items()},
+    beam_color=roles["starlight"]["color"],
+    accent=plt.rcParams["text.color"],
+    highlight=["Pupil", "Image"],
+)
+ax.annotate("", xy=(2.6, -1.55), xytext=(1.2, -1.55),
+            arrowprops={"arrowstyle": "<->", "color": plt.rcParams["text.color"]})
+ax.text(1.9, -1.65, "f", ha="center", va="top", style="italic")
+```
+
+`update` relights a drawn rail in place. It restyles the existing markers,
+labels, and uncolored glyphs as if the rail had been drawn with the new
+`highlight`, and adds no artist, so an animation moves the highlight from
+frame to frame without clearing the axes and drawing the train again.
+
+```{code-cell} python
+n_artists = len(ax.get_children())
+coronagraph.update(highlight="Lyot")
+mask = [a for a in ax.get_children() if a.get_gid() == "rail/Focal/glyph"]
+print(f"artists before and after: {n_artists}, {len(ax.get_children())}; "
+      f"{len(coronagraph.artists['ellipse'])} lenses; mask glyph parts: {len(mask)}")
+fig
 ```
 
 ## Carrying a step forward, faded

@@ -98,8 +98,8 @@ Each key holds either a single matplotlib artist or a list of them. A list
 usually means one entry per panel, in panel order, from a multi-panel
 primitive drawing the same kind of artist in each. `lines` is the standing
 exception, defined below as several artists on one axes, and `fill`, `text`,
-and `arrow` are read the same way when a single-axes primitive draws several
-of them. A key names the kind of artist, not how many axes are involved.
+`ellipse`, and `arrow` are read the same way when a single-axes primitive
+draws several of them. A key names the kind of artist, not how many axes are involved.
 
 - `image`: the `AxesImage` from `imshow`, or a list of one per panel.
 - `cbar`: the `Colorbar` attached to an image or scalar mappable, or a list
@@ -113,8 +113,9 @@ of them. A key names the kind of artist, not how many axes are involved.
 - `hist`: the `BarContainer` from a filled `hist`, or the patch list a
   `histtype="step"` call returns, or a list of one per panel.
 - `scatter`: the `PathCollection` from `scatter`, or a list of one per panel.
-- `ellipse`: an `Ellipse`, or another `Patch`, marking a region, or a list of
-  one per panel.
+- `ellipse`: an `Ellipse`, or another `Patch`, marking a region. A list holds
+  either one per panel or several drawn together on one axes, as in a rail's
+  lenses.
 - `arrow`: a `FancyArrowPatch` drawn as a vector, such as a phasor on the
   complex plane. A list holds either one per panel or several drawn together
   on one axes, in the order they were given, as in a chain of phasors.
@@ -139,7 +140,10 @@ have to re-derive that clip and would eventually get it wrong. Instead
 existing `AxesImage`, creating no new artist. `imshow_diverging` returns an
 `update` as well, which converts the new data to float and calls `set_data`
 under the symmetric norm of the first draw, so every frame keeps the same
-zero and the same scale.
+zero and the same scale. `rail` returns an `update(highlight=...)` that
+relights its planes by restyling the existing artists, keeping the tones of
+the first draw, so a frame loop moves the highlight without clearing the
+axes.
 
 An `update` reuses the norm built from the first draw. Values outside that
 norm are not an error, they render clipped to the colormap's end colors, and
