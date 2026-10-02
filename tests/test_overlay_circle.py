@@ -101,3 +101,28 @@ def test_nonpositive_radius_raises(radius):
     with pytest.raises(ValueError, match="radius"):
         ep.overlay_circle(ax, (0, 0), radius)
     plt.close(fig)
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_default_circles_are_pinned(mode):
+    """The default call draws exactly these two circles and nothing else."""
+    hwostyle.use(mode)
+    fig, ax = plt.subplots()
+    ax.imshow(np.ones((4, 4)), extent=(-2, 2, -2, 2))
+    n_children = len(ax.get_children())
+    res = ep.overlay_circle(ax, (0.5, -0.25), 1.5)
+    assert set(res.artists) == {"ellipse"}
+    assert len(ax.get_children()) == n_children + 2
+    under, dash = res.artists["ellipse"]
+    light, dark = ep.images._light_and_dark()
+    assert dash.get_fill() is False and under.get_fill() is False
+    assert to_rgb(dash.get_edgecolor()) == pytest.approx(light)
+    assert to_rgb(under.get_edgecolor()) == pytest.approx(dark)
+    assert dash.get_linewidth() == pytest.approx(1.0)
+    assert under.get_linewidth() == pytest.approx(2.0)
+    assert dash.get_linestyle() == (0, (3, 2))
+    assert under.get_linestyle() in ("-", "solid")
+    assert dash.get_zorder() == under.get_zorder() == 4
+    assert dash.get_gid() is None and under.get_gid() is None
+    assert res.update is None
+    plt.close(fig)
