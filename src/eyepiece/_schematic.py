@@ -87,6 +87,10 @@ _DATA_X_PER_Y = 2.0
 # data coordinates, in units of the collimated half-width.
 _DATA_MARGIN = 1.5
 
+# Text properties that carry a plane's highlight, so `label_kw` may not set
+# them: `update` restyles them and would undo the caller's choice.
+_HIGHLIGHT_TEXT_KEYS = ("color", "c", "fontweight", "weight")
+
 
 class _Frame(NamedTuple):
     """Where the rail's layout units land on the axes.
@@ -193,7 +197,7 @@ def _paint(artist, color):
         artist.set_facecolor(color)
 
 
-def _draw_glyph(ax, glyph, x, frame, color):
+def _draw_glyph(ax, glyph, x, frame, color, lw_scale=1.0):
     """Draw one element glyph centered on the optical axis at `x`.
 
     Args:
@@ -202,6 +206,7 @@ def _draw_glyph(ax, glyph, x, frame, color):
         x: Glyph center, in the rail's coordinates.
         frame: The rail's `_Frame`: the axis height and the size units.
         color: Color for the glyph's ink.
+        lw_scale: Factor on the glyph's stroke widths.
 
     Returns:
         The artists drawn, in drawing order.
@@ -256,7 +261,7 @@ def _draw_glyph(ax, glyph, x, frame, color):
             x - 0.010 * ux + 0.003 * ux * np.sin(ys * 7.0 * np.pi / (0.24 * uy)),
             ys,
             color=color,
-            lw=0.8,
+            lw=0.8 * lw_scale,
             zorder=5,
         )
     elif glyph == "phase_mask":
@@ -310,7 +315,7 @@ def _draw_glyph(ax, glyph, x, frame, color):
                 0.20 * uy,
                 facecolor="none",
                 edgecolor=color,
-                lw=1.4,
+                lw=1.4 * lw_scale,
                 hatch="///",
                 zorder=5,
             )
@@ -337,6 +342,8 @@ def rail(
     axis_y=None,
     beam_half=None,
     span=None,
+    linewidth_scale=1.0,
+    label_kw=None,
 ):
     """Draw a miniature optical-train rail with chosen planes highlighted.
 
@@ -471,6 +478,17 @@ def rail(
             further, to reach the outer planes) in axes coordinates, and
             from 1.5 `beam_half` before the first plane to 1.5 `beam_half`
             after the last in data coordinates.
+        linewidth_scale: Factor, > 0, on every stroke width the rail
+            draws: the beam's edges and dotted axis, the plane markers (1
+            point plain and 2 lit at the default of 1), the lenses' rims,
+            and the deformable mirror's ripple and the detector's outline.
+            The widths are fixed in points, so a slide that draws text and
+            markers larger can thicken the rail to match; `update` keeps
+            the scaled widths. Filled glyphs, the beam's fill, and the
+            source star are not strokes and keep their size.
+        label_kw: Extra kwargs for every plane label's `Text` (for example
+            `fontsize` or a backing `bbox`), applied last. The color and
+            weight carry the highlight and cannot be set here.
 
     Returns:
         A `PlotResult` with artists `"fill"` (the beam-envelope
@@ -483,7 +501,8 @@ def rail(
         it restyles the existing markers, labels, and uncolored glyphs and
         adds no artist, so an animation can move the highlight per frame
         without clearing the axes. It validates `highlight` as `rail` does
-        and keeps the tones and accent of the first draw.
+        and keeps the tones, accent, stroke widths, and label properties of
+        the first draw.
 
     Raises:
         ValueError: If `planes` is empty, a glyph is not in `GLYPHS`,
@@ -494,7 +513,9 @@ def rail(
             `stops` names an unknown or image-like plane or a fraction
             outside (0, 1], `coords` is not `"axes"` or `"data"`, `axis_y`
             or `beam_half` is given in axes coordinates, `beam_half` is not
-            positive, or `span` does not bracket `positions`.
+            positive, `span` does not bracket `positions`,
+            `linewidth_scale` is not positive, or `label_kw` sets the color
+            or weight.
 
     Note:
         Every tone but the accent and the caller's colors is neutral
@@ -593,6 +614,17 @@ def rail(
             raise ValueError(f"unknown color plane {label!r}; known planes: {labels}")
         role[key] = color
 
+    lw_scale = float(linewidth_scale)
+    if not lw_scale > 0.0:
+        raise ValueError(f"linewidth_scale must be positive, got {linewidth_scale}")
+    label_kw = dict(label_kw or {})
+    taken = [key for key in _HIGHLIGHT_TEXT_KEYS if key in label_kw]
+    if taken:
+        raise ValueError(
+            f"label_kw cannot set {taken}: the highlight sets the label's "
+            "color and weight"
+        )
+
     frame = _frame(coords, axis_y, beam_half)
     y0, ux, uy = frame.y0, frame.ux, frame.uy
 
@@ -672,10 +704,12 @@ def rail(
     hf = np.interp(xf, xs, hs)
     fill = ax.fill_between(xf, y0 - hf, y0 + hf, color=beam, alpha=0.20, lw=0)
     fill.set_gid("rail/beam/fill")
-    (upper,) = ax.plot(xf, y0 + hf, color=beam, lw=0.7)
-    (lower,) = ax.plot(xf, y0 - hf, color=beam, lw=0.7)
+    (upper,) = ax.plot(xf, y0 + hf, color=beam, lw=0.7 * lw_scale)
+    (lower,) = ax.plot(xf, y0 - hf, color=beam, lw=0.7 * lw_scale)
     _tag([upper, lower], "rail/beam/edge")
-    (axis_line,) = ax.plot([left, right], [y0, y0], color=faint, lw=0.6, ls=":")
+    (axis_line,) = ax.plot(
+        [left, right], [y0, y0], color=faint, lw=0.6 * lw_scale, ls=":"
+    )
     axis_line.set_gid("rail/beam/axis")
 
     ellipses = []
@@ -687,7 +721,7 @@ def rail(
             2 * max(hm, 0.06 * uy) * 0.95,
             facecolor=faint,
             edgecolor=_style.neutral(0.7),
-            lw=0.7,
+            lw=0.7 * lw_scale,
             zorder=3,
         )
         ellipses.append(ax.add_patch(lens))
@@ -711,6 +745,7 @@ def rail(
 
     plain = _style.neutral(0.55)
     glyph_tone = _style.neutral(0.65)
+    marker_lw = {True: 2.0 * lw_scale, False: 1.0 * lw_scale}
     lines = []
     texts = []
     glyph_parts = []
@@ -723,13 +758,13 @@ def rail(
             [xp, xp],
             [y0 - hp - 0.06 * uy, y0 + hp + 0.06 * uy],
             color=color,
-            lw=2.0 if on else 1.0,
+            lw=marker_lw[on],
             ls="-" if on else "--",
             zorder=4,
         )
         line.set_gid(f"rail/{name}/marker")
         ink = role.get(key, accent_color if on else glyph_tone)
-        parts = _draw_glyph(ax, glyph, xp, frame, ink)
+        parts = _draw_glyph(ax, glyph, xp, frame, ink, lw_scale)
         _tag(parts, f"rail/{name}/glyph")
         text = ax.text(
             xp,
@@ -739,6 +774,7 @@ def rail(
             va="bottom",
             color=color,
             fontweight="bold" if on else "normal",
+            **label_kw,
         )
         text.set_gid(f"rail/{name}/label")
         lines.append(line)
@@ -752,7 +788,7 @@ def rail(
             on = key in now_lit
             color = accent_color if on else plain
             line.set_color(color)
-            line.set_linewidth(2.0 if on else 1.0)
+            line.set_linewidth(marker_lw[on])
             line.set_linestyle("-" if on else "--")
             text.set_color(color)
             text.set_fontweight("bold" if on else "normal")

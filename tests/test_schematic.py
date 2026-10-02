@@ -795,3 +795,75 @@ def test_default_stroke_widths_match_the_released_rail():
     assert all(t.get_fontsize() == size for t in res.artists["text"])
     assert all(t.get_bbox_patch() is None for t in res.artists["text"])
     plt.close(res.fig)
+
+
+def _stroke_widths(res):
+    """Every stroke width the rail draws, keyed by gid, markers by plane."""
+    return {
+        a.get_gid(): a.get_linewidth()
+        for a in res.ax.get_children()
+        if a.get_gid() is not None
+        and (
+            isinstance(a, (Line2D, Ellipse)) or (isinstance(a, Patch) and a.get_hatch())
+        )
+    }
+
+
+_SCALED = [("P", "pupil"), ("DM", "dm"), ("F", "fpm"), ("Det", "detector")]
+
+
+def test_linewidth_scale_scales_every_stroke():
+    plain = rail(_SCALED, highlight="DM")
+    thick = rail(_SCALED, highlight="DM", linewidth_scale=2.5)
+    base, scaled = _stroke_widths(plain), _stroke_widths(thick)
+    assert set(base) == set(scaled)
+    assert len(base) == 12  # 2 edges, axis, 4 markers, 3 lenses, ripple, box
+    for gid, width in base.items():
+        assert scaled[gid] == pytest.approx(2.5 * width), gid
+    # Fills keep their geometry: the pupil bars are the same rectangles.
+    for a, b in zip(
+        _gid(plain, "rail/P/glyph"), _gid(thick, "rail/P/glyph"), strict=True
+    ):
+        assert a.get_bbox().bounds == b.get_bbox().bounds
+    plt.close(plain.fig)
+    plt.close(thick.fig)
+
+
+def test_update_keeps_the_scaled_marker_widths():
+    res = rail(_SCALED, highlight="P", linewidth_scale=2.0)
+    res.update(highlight=["F", "Det"])
+    assert [m.get_linewidth() for m in res.artists["lines"]] == [2.0, 2.0, 4.0, 4.0]
+    fresh = rail(_SCALED, highlight=["F", "Det"], linewidth_scale=2.0)
+    assert _stroke_widths(res) == _stroke_widths(fresh)
+    res.update()
+    assert [m.get_linewidth() for m in res.artists["lines"]] == [2.0] * 4
+    plt.close(res.fig)
+    plt.close(fresh.fig)
+
+
+@pytest.mark.parametrize("scale", [0.0, -1.0])
+def test_nonpositive_linewidth_scale_raises(scale):
+    with pytest.raises(ValueError, match="linewidth_scale"):
+        rail(_SCALED, linewidth_scale=scale)
+
+
+def test_label_kw_reaches_every_label_and_survives_update():
+    bbox = {"facecolor": "white", "edgecolor": "none", "pad": 1.0}
+    res = rail(
+        _SCALED, highlight="P", label_kw={"fontsize": 17.0, "bbox": bbox, "zorder": 8}
+    )
+    res.update(highlight="Det")
+    for text in res.artists["text"]:
+        assert text.get_fontsize() == 17.0
+        assert text.get_zorder() == 8
+        assert text.get_bbox_patch() is not None
+    weights = [t.get_fontweight() for t in res.artists["text"]]
+    assert weights == ["normal", "normal", "normal", "bold"]
+    res.fig.savefig(io.BytesIO(), format="png", dpi=72)
+    plt.close(res.fig)
+
+
+@pytest.mark.parametrize("key", ["color", "c", "fontweight", "weight"])
+def test_label_kw_cannot_set_the_highlight_properties(key):
+    with pytest.raises(ValueError, match="label_kw"):
+        rail(_SCALED, label_kw={key: "red"})
