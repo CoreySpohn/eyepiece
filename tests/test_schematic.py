@@ -773,3 +773,25 @@ def test_data_coord_span_sets_the_beam_extent():
 def test_bad_coordinate_options_raise(kwargs, match):
     with pytest.raises(ValueError, match=match):
         rail(_FOUR, **kwargs)
+
+
+def test_default_stroke_widths_match_the_released_rail():
+    """Every rail stroke width in points, pinned, so a scale of 1 cannot move one."""
+    planes = [("P", "pupil"), ("DM", "dm"), ("F", "fpm"), ("Det", "detector")]
+    res = rail(planes, highlight="DM")
+    widths = {
+        a.get_gid(): a.get_linewidth()
+        for a in res.ax.get_children()
+        if a.get_gid() is not None and isinstance(a, (Line2D, Ellipse))
+    }
+    assert widths["rail/beam/edge/0"] == widths["rail/beam/edge/1"] == 0.7
+    assert widths["rail/beam/axis"] == 0.6
+    assert [m.get_linewidth() for m in res.artists["lines"]] == [1.0, 2.0, 1.0, 1.0]
+    assert widths["rail/DM/glyph/1"] == 0.8
+    assert [e.get_linewidth() for e in res.artists["ellipse"]] == [0.7, 0.7, 0.7]
+    (box,) = _gid(res, "rail/Det/glyph")
+    assert box.get_linewidth() == 1.4
+    size = matplotlib.rcParams["font.size"]
+    assert all(t.get_fontsize() == size for t in res.artists["text"])
+    assert all(t.get_bbox_patch() is None for t in res.artists["text"])
+    plt.close(res.fig)

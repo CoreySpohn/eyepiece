@@ -334,3 +334,57 @@ def test_a_closed_chain_raises_no_warning_built_or_updated():
     assert total.get_visible()
     assert total.get_window_extent().width > 0.0
     plt.close(fig)
+
+
+_PIN_RC = {"lines.linewidth": 1.5, "lines.markersize": 6.0}
+
+
+def test_default_geometry_matches_the_released_layout():
+    """The default path, pinned as numbers, so new options cannot move it."""
+    with matplotlib.rc_context(_PIN_RC):
+        res = ep.phasor([1 + 2j, -1j], show_sum=True, head_scale=[1.0, 0.5], ring=True)
+    arrows = res.artists["arrow"]
+    assert [_ends(a) for a in arrows] == [(0j, 1 + 2j), (0j, -1j), (0j, 1 + 1j)]
+    assert [a.get_linewidth() for a in arrows] == pytest.approx([1.5, 1.05, 2.25])
+    assert [a.get_zorder() for a in arrows] == [5, 5, 4]
+    nominal = [super(type(a), a).get_mutation_scale() for a in arrows]
+    assert nominal == pytest.approx([9.6, 4.8, 9.6])
+    # Square limits around every point, 0, and the ring's bounding box.
+    assert res.ax.get_xlim() == pytest.approx((-1.74, 1.74))
+    assert res.ax.get_ylim() == pytest.approx((-1.24, 2.24))
+    assert [ln.get_linewidth() for ln in res.artists["lines"]] == pytest.approx(
+        [1.05, 1.05]
+    )
+    assert [ln.get_zorder() for ln in res.artists["lines"]] == [1, 1]
+    small = matplotlib.font_manager.FontProperties(size="small").get_size_in_points()
+    texts = res.artists["text"]
+    assert [t.get_text() for t in texts] == [" Re", " Im"]
+    assert [t.get_position() for t in texts] == [(1.0, 0.0), (0.0, 1.0)]
+    assert [(t.get_ha(), t.get_va()) for t in texts] == [
+        ("right", "bottom"),
+        ("left", "top"),
+    ]
+    assert all(t.get_fontsize() == pytest.approx(small) for t in texts)
+    assert all(t.get_zorder() == 1 and t.get_bbox_patch() is None for t in texts)
+    ring = res.artists["collection"]
+    assert list(ring.get_linewidths()) == pytest.approx([4.5])
+    assert ring.get_zorder() == 2
+    assert len(ring.get_segments()) == 180
+    assert res.ax.get_aspect() == 1.0
+    assert not res.ax.get_xticks().size and not res.ax.get_yticks().size
+    assert not any(s.get_visible() for s in res.ax.spines.values())
+    plt.close(res.fig)
+
+
+def test_default_dial_is_a_data_unit_inset():
+    fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.set(xlim=(-4, 4), ylim=(-4, 4))
+    res = ep.phasor([1j], ax=ax, at=(1.5, -1.0), size=2.0)
+    locator = res.ax.get_axes_locator()
+    assert tuple(locator._bounds) == pytest.approx((0.5, -2.0, 2.0, 2.0))
+    assert locator._transform is ax.transData
+    assert res.ax.get_zorder() == 6
+    assert not res.ax.get_in_layout()
+    assert res.ax.patch.get_alpha() == 0.0
+    assert res.ax.get_anchor() == "C"
+    plt.close(fig)
