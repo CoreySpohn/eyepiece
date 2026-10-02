@@ -6,7 +6,10 @@ The second half of this file guards the mechanics the facade exists to own
 silently producing broken output.
 """
 
+import base64
+import io
 import logging
+import re
 import shutil
 import warnings
 
@@ -258,6 +261,46 @@ def test_record_freezes_layout_engine_after_first_frame(tmp_path):
         assert frozen_engine is not original_engine
         rec.frame()
         assert fig.get_layout_engine() is frozen_engine
+    plt.close(fig)
+
+
+def _html_frames(path):
+    """Decode every PNG frame an embedded-HTML sink wrote, losslessly."""
+    # The player wraps each base64 payload with backslash-newline continuations.
+    blobs = re.findall(r'data:image/png;base64,([^"]+)"', path.read_text())
+    frames = []
+    for blob in blobs:
+        png = base64.b64decode(re.sub(r"[^A-Za-z0-9+/=]", "", blob))
+        frames.append(np.asarray(Image.open(io.BytesIO(png)).convert("RGB")))
+    return frames
+
+
+def test_record_first_frame_shares_the_frozen_layout(tmp_path):
+    # Frame 0 used to be grabbed while the engine was still live, from a
+    # layout solved at the sink dpi, and only then was the layout re-solved
+    # at the figure dpi and frozen for every later frame. A constrained
+    # layout moves between solves whenever the dpi differs or the layout had
+    # not converged (here the engine rect changes after the settling draw,
+    # as a footer stamp does), so a looping video jumped at its seam.
+    fig, axes = plt.subplots(1, 2, figsize=(4, 2.5), dpi=100, layout="constrained")
+    rng = np.random.default_rng(0)
+    for ax in axes:
+        image = ax.imshow(rng.random((8, 8)), vmin=0, vmax=1)
+        fig.colorbar(image, ax=ax, label="intensity")
+        ax.set_title("a panel title")
+        ax.set_xlabel("x")
+    fig.suptitle("a static figure")
+    fig.canvas.draw()
+    fig.get_layout_engine().set(rect=(0, 0.1, 1, 0.9))
+    fig.text(0.01, 0.01, "footer", fontsize=6)
+    path = tmp_path / "static.html"
+    with record(fig, path, fps=5, dpi=73) as rec:
+        rec.hold(3)
+    frames = _html_frames(path)
+    assert len(frames) == 3
+    assert frames[0].shape[1] == 4 * 73  # rastered at the sink dpi, not the figure's
+    for later in frames[1:]:
+        np.testing.assert_array_equal(frames[0], later)
     plt.close(fig)
 
 

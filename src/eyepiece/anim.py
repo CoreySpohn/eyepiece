@@ -29,15 +29,21 @@ The mechanics this module does own, each closing a specific trap:
   bbox varies the frame size from frame to frame, which breaks a writer's
   fixed-size pipe. It is applied through `matplotlib.rc_context`, so it is
   scoped to the recording and never leaks into the caller's rcParams.
-- A constrained-layout figure has its layout engine frozen right after the
-  first frame is drawn, and the freeze is scoped to the recording exactly
-  like the `savefig.bbox` override: `record` restores whatever engine the
-  figure had when the caller's own context exits. Constrained layout
-  re-solves on every draw, which can shift axes between frames or resize
-  the canvas outright -- the same trap `savefig.bbox` closes, from the
-  other direction. Locking the engine after frame one, instead of at
-  `record`'s entry, means the freeze captures a layout solved against real
-  content rather than an empty figure.
+- A constrained-layout figure has its layout engine frozen on the first
+  `frame()` call, before that frame is grabbed, and the freeze is scoped to
+  the recording exactly like the `savefig.bbox` override: `record` restores
+  whatever engine the figure had when the caller's own context exits.
+  Constrained layout re-solves on every draw, which can shift axes between
+  frames or resize the canvas outright -- the same trap `savefig.bbox`
+  closes, from the other direction. Locking the engine at the first
+  `frame()` call, instead of at `record`'s entry, means the freeze captures
+  a layout solved against real content rather than an empty figure. The
+  freeze has to land BEFORE the first grab: a grab is itself a draw, and
+  two solves of the same figure need not agree (a layout that had not
+  converged keeps moving, and one solved at a different dpi lands
+  elsewhere), so grabbing first would give frame 0 a layout no other frame
+  has and a looping video would jump at its seam. The layout is solved at
+  the first sink's dpi, the dpi its frames are rasterized at.
 - Every grab passes `facecolor=fig.get_facecolor()`, so a dark-mode figure
   is not written onto a white background by savefig's own default.
 - mp4 sinks get `-vf crop=trunc(iw/2)*2:trunc(ih/2)*2`. h264 rejects odd
@@ -304,10 +310,11 @@ def _drift_warnings(first, current):
 class _Recorder:
     """Frame grabber yielded by `record`; fans one figure out to every sink."""
 
-    def __init__(self, fig, writers, counter, allow_rescale=False):
+    def __init__(self, fig, writers, counter, layout_dpi, allow_rescale=False):
         self.fig = fig
         self.writers = writers
         self._counter = counter
+        self._layout_dpi = layout_dpi
         self._layout_frozen = False
         self._allow_rescale = allow_rescale
         self._first_scales = None
@@ -319,19 +326,35 @@ class _Recorder:
         The figure's own facecolor is passed to each grab so a dark figure
         is not rasterized onto savefig's white default.
 
-        The first call also freezes the figure's layout engine, once this
-        frame's content has actually been drawn: see `record` for why the
+        The first call also freezes the figure's layout engine, against
+        this frame's content and before it is grabbed, so frame 0 carries
+        the same layout as every later frame: see `record` for why the
         freeze waits here instead of happening at `record`'s entry.
         """
+        if not self._layout_frozen:
+            self._freeze_layout()
         facecolor = self.fig.get_facecolor()
         for writer in self.writers:
             writer.grab_frame(facecolor=facecolor)
         self._counter["frames"] += 1
         self._check_scales()
-        if not self._layout_frozen:
-            self.fig.canvas.draw()
-            self.fig.set_layout_engine("none")
-            self._layout_frozen = True
+
+    def _freeze_layout(self):
+        """Solve the layout once at the sink dpi, then lock it in place.
+
+        The solve runs at the dpi the frames are rasterized at rather than
+        the figure's own, so the frozen layout is the one a grab at that dpi
+        would have solved. Every grab after this, frame 0's included, draws
+        that single layout.
+        """
+        figure_dpi = self.fig.dpi
+        self.fig.dpi = self._layout_dpi
+        try:
+            self.fig.draw_without_rendering()
+        finally:
+            self.fig.dpi = figure_dpi
+        self.fig.set_layout_engine("none")
+        self._layout_frozen = True
 
     def _check_scales(self):
         """Warn once if any axes changed what its numbers mean mid-recording.
@@ -384,8 +407,10 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=
     figure is never cleared: mutate its artists between `frame()` calls, or
     call `ax.clear()` yourself for redraw-style animation.
 
-    If `fig` has a constrained-layout engine, its layout is frozen the
-    moment the first `frame()` call finishes drawing, and restored to
+    If `fig` has a constrained-layout engine, its layout is solved once at
+    the first sink's dpi and frozen when the first `frame()` call starts,
+    before that frame is grabbed, so the first frame and every later one
+    share a single layout. The engine is restored to
     whatever it was before this call once the `with` block exits -- on
     the exception path too, the same as the writer cleanup this context
     manager already guarantees. A figure with no layout engine, or one
@@ -471,7 +496,13 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=
             stack.enter_context(
                 _sink(writer, fig, str(path), _sink_dpi(path, dpi), counter)
             )
-        yield _Recorder(fig, writers, counter, allow_rescale=allow_rescale)
+        yield _Recorder(
+            fig,
+            writers,
+            counter,
+            _sink_dpi(paths[0], dpi) if paths else fig.dpi,
+            allow_rescale=allow_rescale,
+        )
         if not counter["frames"]:
             # Raised here rather than per sink so the message can name them
             # all. It travels out through the sinks, which take their
