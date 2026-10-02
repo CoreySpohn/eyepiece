@@ -304,6 +304,52 @@ def test_record_first_frame_shares_the_frozen_layout(tmp_path):
     plt.close(fig)
 
 
+def _unsettled_figure():
+    """A constrained figure whose layout one solve does not bring to rest.
+
+    Titles wider than their fixed-aspect axes feed the axes width back into
+    the margins, so after the rect changes the layout takes a few solves to
+    settle instead of one.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(6, 2.5), dpi=100, layout="constrained")
+    for ax in axes:
+        image = ax.imshow(np.zeros((8, 8)), extent=(-2, 18, -9, 9))
+        fig.colorbar(image, ax=ax, label="brightness")
+        ax.set_title("a title that overhangs its narrow axes", fontsize=12)
+    fig.canvas.draw()
+    fig.get_layout_engine().set(rect=(0, 0.2, 1, 0.8))
+    return fig
+
+
+def _positions(fig):
+    return np.array([ax.get_position().bounds for ax in fig.axes])
+
+
+def test_record_freezes_the_settled_layout_not_the_first_solve(tmp_path):
+    sink_dpi = 73
+    reference = _unsettled_figure()
+    reference.dpi = sink_dpi
+    reference.draw_without_rendering()
+    one_solve = _positions(reference)
+    for _ in range(4):
+        reference.draw_without_rendering()
+    settled = _positions(reference)
+    # the premise: a single solve leaves the layout visibly unsettled
+    assert np.abs(settled - one_solve).max() * 6 * sink_dpi > 5.0
+    plt.close(reference)
+
+    fig = _unsettled_figure()
+    path = tmp_path / "settle.html"
+    with record(fig, path, fps=5, dpi=sink_dpi) as rec:
+        rec.hold(2)
+        frozen = _positions(fig)
+    # within the settling tolerance, as a fraction of the figure height
+    np.testing.assert_allclose(frozen, settled, atol=0.2 / (2.5 * sink_dpi))
+    first, second = _html_frames(path)
+    np.testing.assert_array_equal(first, second)
+    plt.close(fig)
+
+
 def test_record_restores_layout_engine_after_normal_exit(tmp_path):
     fig, ax = plt.subplots(layout="constrained")
     ax.plot([], [])

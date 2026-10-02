@@ -43,7 +43,8 @@ The mechanics this module does own, each closing a specific trap:
   converged keeps moving, and one solved at a different dpi lands
   elsewhere), so grabbing first would give frame 0 a layout no other frame
   has and a looping video would jump at its seam. The layout is solved at
-  the first sink's dpi, the dpi its frames are rasterized at.
+  the first sink's dpi, the dpi its frames are rasterized at, and re-solved
+  until the axes stop moving, so the frozen layout is the settled one.
 - Every grab passes `facecolor=fig.get_facecolor()`, so a dark-mode figure
   is not written onto a white background by savefig's own default.
 - mp4 sinks get `-vf crop=trunc(iw/2)*2:trunc(ih/2)*2`. h264 rejects odd
@@ -307,6 +308,27 @@ def _drift_warnings(first, current):
     return messages
 
 
+_SETTLE_PASSES = 5
+_SETTLE_TOL_PX = 0.1
+
+
+def _axes_pixels(fig):
+    """Every axes' position as (x0, y0, x1, y1) in display pixels."""
+    return [ax.get_position().transformed(fig.transFigure).extents for ax in fig.axes]
+
+
+def _max_shift(before, after):
+    """Largest coordinate change between two `_axes_pixels` snapshots."""
+    if len(before) != len(after):
+        return float("inf")
+    shifts = [
+        abs(a - b)
+        for old, new in zip(before, after, strict=True)
+        for a, b in zip(old, new, strict=True)
+    ]
+    return max(shifts, default=0.0)
+
+
 class _Recorder:
     """Frame grabber yielded by `record`; fans one figure out to every sink."""
 
@@ -340,17 +362,29 @@ class _Recorder:
         self._check_scales()
 
     def _freeze_layout(self):
-        """Solve the layout once at the sink dpi, then lock it in place.
+        """Settle the layout at the sink dpi, then lock it in place.
 
         The solve runs at the dpi the frames are rasterized at rather than
         the figure's own, so the frozen layout is the one a grab at that dpi
-        would have solved. Every grab after this, frame 0's included, draws
-        that single layout.
+        would have solved. It is repeated until no axes moves by more than
+        `_SETTLE_TOL_PX` sink pixels, at most `_SETTLE_PASSES` times: a
+        constrained layout whose inputs changed after its last solve (a
+        footer rect set after a settling draw, say) needs several solves to
+        come to rest, and freezing after one would lock in a layout tens of
+        pixels from where it is heading. Every grab after this, frame 0's
+        included, draws that single settled layout.
         """
         figure_dpi = self.fig.dpi
         self.fig.dpi = self._layout_dpi
         try:
-            self.fig.draw_without_rendering()
+            before = _axes_pixels(self.fig)
+            for _ in range(_SETTLE_PASSES):
+                self.fig.draw_without_rendering()
+                after = _axes_pixels(self.fig)
+                moved = _max_shift(before, after)
+                before = after
+                if moved < _SETTLE_TOL_PX:
+                    break
         finally:
             self.fig.dpi = figure_dpi
         self.fig.set_layout_engine("none")
@@ -407,8 +441,9 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=
     figure is never cleared: mutate its artists between `frame()` calls, or
     call `ax.clear()` yourself for redraw-style animation.
 
-    If `fig` has a constrained-layout engine, its layout is solved once at
-    the first sink's dpi and frozen when the first `frame()` call starts,
+    If `fig` has a constrained-layout engine, its layout is settled at the
+    first sink's dpi (re-solved until the axes stop moving, at most five
+    times) and frozen when the first `frame()` call starts,
     before that frame is grabbed, so the first frame and every later one
     share a single layout. The engine is restored to
     whatever it was before this call once the `with` block exits -- on
