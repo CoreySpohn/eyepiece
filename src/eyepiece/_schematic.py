@@ -17,6 +17,7 @@ what to draw, not what a simulation library calls its objects, so nothing
 here has to track another package's class names.
 """
 
+from collections import Counter
 from itertools import pairwise
 from typing import NamedTuple
 
@@ -141,6 +142,34 @@ def _plane_keys(names, keys, labels, what):
         if not isinstance(entry, str) or entry.lower() not in keys:
             raise ValueError(f"unknown {what} {entry!r}; known planes: {labels}")
     return {entry.lower() for entry in entries}
+
+
+def _plane_names(labels):
+    """The label segment of each plane's gids, unique across the train.
+
+    A label used by one plane is its own segment. A label shared by several
+    planes is suffixed with its occurrence, `<label>#0`, `<label>#1`, ...,
+    in optical order.
+    """
+    counts = Counter(labels)
+    seen = Counter()
+    names = []
+    for label in labels:
+        if counts[label] > 1:
+            names.append(f"{label}#{seen[label]}")
+            seen[label] += 1
+        else:
+            names.append(label)
+    return names
+
+
+def _tag(artists, gid):
+    """Give `artists` unique gids: `gid` for one, `gid/0`, `gid/1`, ... else."""
+    if len(artists) == 1:
+        artists[0].set_gid(gid)
+    else:
+        for i, artist in enumerate(artists):
+            artist.set_gid(f"{gid}/{i}")
 
 
 def _set_hatch_color(patch, color):
@@ -346,24 +375,30 @@ def rail(
         focal      a bowtie, the beam waist pinching to a point
         detector   a hatched, unfilled box
 
-    Every artist the rail draws carries a gid, `rail/<label>/<part>`, where
-    `<label>` is the plane's label exactly as given. The parts are::
+    Every artist the rail draws carries a gid that is unique on the axes,
+    `rail/<label>/<part>`, where `<label>` is the plane's label exactly as
+    given. The parts are::
 
         marker     the plane's marker line (also in artists["lines"])
         label      the plane's label text (also in artists["text"])
-        glyph      every artist of the plane's glyph (a bar pair, the dm's
-                   plate and ripple, and the bowtie's two wedges each share
-                   one gid)
-        lens       each lens in the gap that follows the plane (two for a
-                   relay; also in artists["ellipse"])
+        glyph      the artists of the plane's glyph
+        lens       the lenses in the gap that follows the plane (also in
+                   artists["ellipse"])
         cap        the detector block past the last plane
 
     and the beam, which belongs to no plane, uses the label `beam`:
     `rail/beam/fill` (the envelope, also artists["fill"]), `rail/beam/edge`
     (its two edge lines), and `rail/beam/axis` (the dotted optical axis).
-    Glyphs are not returned under an artist key because one glyph mixes
-    lines and patches; find them by gid, for instance
-    `[a for a in ax.get_children() if a.get_gid() == "rail/FPM/glyph"]`.
+    A part drawn with one artist has the bare gid; a part drawn with
+    several appends an index, as in `rail/Pupil/glyph/0` and `/1` for a
+    pupil's two bars, `rail/DM/glyph/0` and `/1` for a deformable mirror's
+    plate and ripple, and `rail/Pupil/lens/0` and `/1` for a relay's lens
+    pair. Labels may repeat; a label shared by several planes takes its
+    occurrence in optical order, `<label>#0`, `<label>#1`, ..., in place of
+    `<label>`. So a part is found by its gid or, whatever its count, by
+    prefix: the artists whose gid equals `rail/<label>/<part>` or starts
+    with `rail/<label>/<part>/`. Glyphs are not returned under an artist
+    key because one glyph mixes lines and patches.
 
     Args:
         planes: Sequence of `(label, glyph)` pairs in optical order.
@@ -594,15 +629,16 @@ def rail(
     # every other gap interpolates straight from one plane to the next.
     # `full` is the collimated half-width, which a stop narrows for the rest
     # of the train; a stop's step sits a hair past its plane so the control
-    # points stay strictly ordered. `owners` holds the label of the plane
+    # points stay strictly ordered. `owners` holds the gid name of the plane
     # each lens follows.
     full = wide
     steps = []
     xs, hs = [left], [heights[0]]
     lenses = []
     owners = []
-    rows = zip(positions, keys, planes, strict=True)
-    for i, (xp, key, (label, glyph)) in enumerate(rows):
+    names = _plane_names(labels)
+    rows = zip(positions, keys, planes, names, strict=True)
+    for i, (xp, key, (_, glyph), name) in enumerate(rows):
         xs.append(xp)
         hs.append(full if GLYPHS[glyph] else tight)
         if key in passed and passed[key] < 1.0:
@@ -625,7 +661,7 @@ def rail(
             xs += [xp + quarter, xp + 2 * quarter, x_next - quarter]
             hs += [full, middle, full]
             lenses += [xp + quarter, x_next - quarter]
-        owners += [label] * (len(lenses) - len(owners))
+        owners += [name] * (len(lenses) - len(owners))
     xs.append(right)
     hs.append(hs[-1])
     beam = _style.neutral(0.45) if beam_color is None else beam_color
@@ -638,13 +674,12 @@ def rail(
     fill.set_gid("rail/beam/fill")
     (upper,) = ax.plot(xf, y0 + hf, color=beam, lw=0.7)
     (lower,) = ax.plot(xf, y0 - hf, color=beam, lw=0.7)
-    upper.set_gid("rail/beam/edge")
-    lower.set_gid("rail/beam/edge")
+    _tag([upper, lower], "rail/beam/edge")
     (axis_line,) = ax.plot([left, right], [y0, y0], color=faint, lw=0.6, ls=":")
     axis_line.set_gid("rail/beam/axis")
 
     ellipses = []
-    for xm, owner in zip(lenses, owners, strict=True):
+    for xm in lenses:
         hm = float(np.interp(xm, xs, hs))
         lens = Ellipse(
             (xm, y0),
@@ -655,8 +690,10 @@ def rail(
             lw=0.7,
             zorder=3,
         )
-        lens.set_gid(f"rail/{owner}/lens")
         ellipses.append(ax.add_patch(lens))
+    for owner in dict.fromkeys(owners):
+        owned = [e for e, o in zip(ellipses, owners, strict=True) if o == owner]
+        _tag(owned, f"rail/{owner}/lens")
 
     if cap is None:
         cap = planes[-1][1] == "focal"
@@ -669,7 +706,7 @@ def rail(
             edgecolor="none",
             zorder=3,
         )
-        block.set_gid(f"rail/{labels[-1]}/cap")
+        block.set_gid(f"rail/{names[-1]}/cap")
         ax.add_patch(block)
 
     plain = _style.neutral(0.55)
@@ -677,7 +714,8 @@ def rail(
     lines = []
     texts = []
     glyph_parts = []
-    for (label, glyph), key, xp in zip(planes, keys, positions, strict=True):
+    rows = zip(planes, keys, positions, names, strict=True)
+    for (label, glyph), key, xp, name in rows:
         on = key in lit
         color = accent_color if on else plain
         hp = max(wide if GLYPHS[glyph] else tight, 0.13 * uy)
@@ -689,11 +727,10 @@ def rail(
             ls="-" if on else "--",
             zorder=4,
         )
-        line.set_gid(f"rail/{label}/marker")
+        line.set_gid(f"rail/{name}/marker")
         ink = role.get(key, accent_color if on else glyph_tone)
         parts = _draw_glyph(ax, glyph, xp, frame, ink)
-        for part in parts:
-            part.set_gid(f"rail/{label}/glyph")
+        _tag(parts, f"rail/{name}/glyph")
         text = ax.text(
             xp,
             y0 + hp + 0.10 * uy,
@@ -703,7 +740,7 @@ def rail(
             color=color,
             fontweight="bold" if on else "normal",
         )
-        text.set_gid(f"rail/{label}/label")
+        text.set_gid(f"rail/{name}/label")
         lines.append(line)
         texts.append(text)
         glyph_parts.append(parts)

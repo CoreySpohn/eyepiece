@@ -1,5 +1,8 @@
 """Optical-train rail smoke + highlight."""
 
+import io
+import re
+
 import hwostyle
 import matplotlib
 import matplotlib.pyplot as plt
@@ -489,7 +492,13 @@ def test_default_coronagraph_geometry_matches_the_released_layout():
 
 
 def _gid(res, gid):
-    return [a for a in res.ax.get_children() if a.get_gid() == gid]
+    """The artists of one rail part, found by gid prefix whatever their count."""
+    return [
+        a
+        for a in res.ax.get_children()
+        if a.get_gid() is not None
+        and (a.get_gid() == gid or a.get_gid().startswith(gid + "/"))
+    ]
 
 
 _FOUR = [("Pupil", "pupil"), ("Focal", "fpm"), ("Lyot", "lyot"), ("Image", "detector")]
@@ -555,33 +564,77 @@ def test_beam_color_reaches_the_envelope_and_its_edges():
     plt.close(res.fig)
 
 
-def test_every_rail_artist_carries_a_rail_gid():
-    planes = [*_FOUR[:3], ("End", "focal")]
-    res = rail(planes, gaps=["relay", "fourier", "fourier"], cap=True)
+def _rail_artists(res):
     frame = [res.ax.patch, *res.ax.spines.values()]
-    drawn = [
+    return [
         a
         for a in res.ax.get_children()
         if (isinstance(a, (Line2D, Patch, Collection)) and a not in frame)
         or (isinstance(a, Text) and a.get_text())
     ]
-    gids = {a.get_gid() for a in drawn}
+
+
+def test_every_rail_artist_carries_a_unique_rail_gid():
+    planes = [*_FOUR[:3], ("End", "focal")]
+    res = rail(planes, gaps=["relay", "fourier", "fourier"], cap=True)
+    gids = [a.get_gid() for a in _rail_artists(res)]
     assert all(gid is not None and gid.startswith("rail/") for gid in gids)
+    assert len(gids) == len(set(gids))
+    # One artist keeps the bare gid; several are indexed.
     assert {
         "rail/beam/fill",
-        "rail/beam/edge",
+        "rail/beam/edge/0",
+        "rail/beam/edge/1",
         "rail/beam/axis",
-        "rail/Pupil/lens",
+        "rail/Pupil/lens/0",
+        "rail/Pupil/lens/1",
         "rail/Focal/lens",
         "rail/Lyot/lens",
+        "rail/Lyot/glyph/0",
+        "rail/Lyot/glyph/1",
+        "rail/Focal/glyph",
         "rail/End/cap",
         "rail/End/marker",
         "rail/End/label",
-        "rail/End/glyph",
-    } <= gids
-    # The relay after the pupil draws two lenses, both owned by the pupil.
-    assert len(_gid(res, "rail/Pupil/lens")) == 2
+        "rail/End/glyph/0",
+        "rail/End/glyph/1",
+    } <= set(gids)
     plt.close(res.fig)
+
+
+def test_parts_are_found_by_gid_prefix():
+    res = rail(
+        [("P", "pupil"), ("DM", "dm"), ("I", "focal")], gaps=["relay", "fourier"]
+    )
+    assert len(_gid(res, "rail/P/lens")) == 2
+    assert len(_gid(res, "rail/DM/lens")) == 1
+    plate, ripple = _gid(res, "rail/DM/glyph")
+    assert isinstance(plate, Rectangle) and isinstance(ripple, Line2D)
+    # The prefix stops at the part, so one plane never picks up another's.
+    assert _gid(res, "rail/D") == []
+    plt.close(res.fig)
+
+
+def test_repeated_labels_get_occurrence_gids():
+    res = rail([("Stop", "pupil"), ("F", "focal"), ("Stop", "lyot")])
+    gids = [a.get_gid() for a in _rail_artists(res)]
+    assert len(gids) == len(set(gids))
+    assert len(_gid(res, "rail/Stop#0/glyph")) == 2
+    assert len(_gid(res, "rail/Stop#1/glyph")) == 2
+    assert _gid(res, "rail/Stop#1/marker") == [res.artists["lines"][2]]
+    plt.close(res.fig)
+
+
+def test_saved_svg_ids_are_unique():
+    planes = [("Stop", "pupil"), ("DM", "dm"), ("F", "fpm"), ("Stop", "lyot")]
+    res = rail(planes, gaps=["relay", "fourier", "fourier"], cap=True)
+    buf = io.BytesIO()
+    res.fig.savefig(buf, format="svg")
+    plt.close(res.fig)
+    ids = re.findall(r'\bid="([^"]+)"', buf.getvalue().decode())
+    rail_ids = [i for i in ids if i.startswith("rail/")]
+    assert len(rail_ids) == len(_rail_artists(res))
+    assert len(ids) == len(set(ids))
 
 
 def test_lenses_are_returned_under_ellipse_in_optical_order():

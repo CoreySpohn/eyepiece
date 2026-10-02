@@ -394,11 +394,15 @@ The rail returns its per-plane markers and labels in plane order under
 `lines` and `text`, alongside the beam envelope under `fill` and the lenses
 under `ellipse`, so a caller who wants a label reworded sets it on the
 artist instead of rebuilding the train. Every artist it draws also carries a
-gid of the form `rail/<label>/<part>`, with the parts `marker`, `label`,
-`glyph`, `lens` (the lenses in the gap after that plane), and `cap`, and
-`rail/beam/fill`, `rail/beam/edge`, and `rail/beam/axis` for the beam. A
-glyph mixes lines and patches, so glyphs are found by gid rather than under
-an artist key.
+gid of the form `rail/<label>/<part>`, unique on the axes, with the parts
+`marker`, `label`, `glyph`, `lens` (the lenses in the gap after that plane),
+and `cap`, and `rail/beam/fill`, `rail/beam/edge`, and `rail/beam/axis` for
+the beam. A part drawn with one artist has the bare gid, and a part drawn
+with several appends an index, so a pupil's two bars are
+`rail/Pupil/glyph/0` and `rail/Pupil/glyph/1`. A label shared by several
+planes takes its occurrence in optical order, `Stop#0` and `Stop#1`. A
+glyph mixes lines and patches, so glyphs are found by gid prefix rather
+than under an artist key, and the unique gids keep a saved SVG valid.
 
 ### Relays and collimated gaps
 
@@ -503,9 +507,17 @@ frame to frame without clearing the axes and drawing the train again.
 ```{code-cell} python
 n_artists = len(ax.get_children())
 coronagraph.update(highlight="Lyot")
-mask = [a for a in ax.get_children() if a.get_gid() == "rail/Focal/glyph"]
+
+
+def part(ax, gid):
+    """The artists of one rail part, whether it has one artist or several."""
+    return [a for a in ax.get_children()
+            if a.get_gid() == gid or (a.get_gid() or "").startswith(gid + "/")]
+
+
 print(f"artists before and after: {n_artists}, {len(ax.get_children())}; "
-      f"{len(coronagraph.artists['ellipse'])} lenses; mask glyph parts: {len(mask)}")
+      f"{len(coronagraph.artists['ellipse'])} lenses; "
+      f"Lyot stop bars: {[a.get_gid() for a in part(ax, 'rail/Lyot/glyph')]}")
 fig
 ```
 
