@@ -12,7 +12,7 @@ take their appearance from an explicit snapshot instead (`eyepiece.style`).
 
 import hwostyle
 import matplotlib
-from matplotlib.colors import to_hex, to_rgb
+from matplotlib.colors import to_hex, to_rgb, to_rgba
 
 _LIGHT_CMAPS = None
 _LIGHT_PALETTE = None
@@ -161,3 +161,25 @@ def neutral(level):
     front = to_rgb(matplotlib.rcParams["text.color"])
     frac = float(level)
     return tuple(b + (f - b) * frac for b, f in zip(back, front, strict=True))
+
+
+def backing(alpha=0.85):
+    """A `bbox` dict for a label that sits over marks or pixels.
+
+    A rounded box in the plot background color, mostly opaque and without
+    an edge, so a label written on top of a line, a band, or an image reads
+    without a stroked halo around its glyphs. The color is
+    `rcParams["axes.facecolor"]` at call time, so the box follows the mode.
+
+    Args:
+        alpha: Opacity of the box face.
+
+    Returns:
+        A dict for the `bbox` argument of `ax.text` or `Text.set_bbox`.
+    """
+    face = to_rgba(matplotlib.rcParams["axes.facecolor"], alpha)
+    return {
+        "boxstyle": "round,pad=0.15,rounding_size=0.25",
+        "facecolor": face,
+        "edgecolor": "none",
+    }

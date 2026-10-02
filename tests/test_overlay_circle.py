@@ -126,3 +126,67 @@ def test_default_circles_are_pinned(mode):
     assert dash.get_gid() is None and under.get_gid() is None
     assert res.update is None
     plt.close(fig)
+
+
+def test_ls_draws_a_solid_light_line_over_a_solid_underlay():
+    fig, ax = plt.subplots()
+    res = ep.overlay_circle(ax, (0, 0), 1.0, ls="-")
+    under, dash = res.artists["ellipse"]
+    assert dash.get_linestyle() in ("-", "solid")
+    assert under.get_linestyle() in ("-", "solid")
+    assert _lum(dash.get_edgecolor()) > _lum(under.get_edgecolor())
+    # circle_kw is applied last, so its line style still wins.
+    res = ep.overlay_circle(ax, (0, 0), 1.0, ls="-", circle_kw={"ls": ":"})
+    assert res.artists["ellipse"][-1].get_linestyle() == ":"
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("mode", ["light", "dark"])
+def test_label_sits_on_the_circle_on_a_backing_box(mode):
+    hwostyle.use(mode)
+    fig, ax = plt.subplots()
+    ax.imshow(np.ones((4, 4)), extent=(-2, 2, -2, 2))
+    res = ep.overlay_circle(ax, (0.5, 0.0), 1.0, label="stop", label_angle=90.0)
+    assert set(res.artists) == {"ellipse", "text"}
+    assert set(res.artists) <= ep.ARTIST_KEYS
+    text = res.artists["text"]
+    assert text.get_text() == "stop"
+    np.testing.assert_allclose(text.xy, (0.5, 1.0), atol=1e-12)
+    assert (text.get_ha(), text.get_va()) == ("center", "bottom")
+    # Offset outward (straight up at 90 degrees), never into the circle.
+    dx, dy = text.get_position()
+    assert dx == pytest.approx(0.0, abs=1e-12) and dy > 0.0
+    box = text.get_bbox_patch()
+    assert box is not None
+    assert to_rgb(box.get_facecolor()) == pytest.approx(
+        to_rgb(plt.rcParams["axes.facecolor"])
+    )
+    assert to_rgb(text.get_color()) == pytest.approx(to_rgb(plt.rcParams["text.color"]))
+    assert text.get_zorder() > res.artists["ellipse"][-1].get_zorder()
+    fig.canvas.draw()
+    plt.close(fig)
+
+
+@pytest.mark.parametrize(
+    ("angle", "ha", "va"),
+    [(45.0, "left", "bottom"), (-135.0, "right", "top"), (0.0, "left", "center")],
+)
+def test_label_grows_away_from_the_center(angle, ha, va):
+    fig, ax = plt.subplots()
+    res = ep.overlay_circle(ax, (0, 0), 1.0, label="x", label_angle=angle)
+    text = res.artists["text"]
+    assert (text.get_ha(), text.get_va()) == (ha, va)
+    plt.close(fig)
+
+
+def test_text_kw_reaches_the_label_and_adds_nothing_without_a_label():
+    fig, ax = plt.subplots()
+    res = ep.overlay_circle(
+        ax, (0, 0), 1.0, label="rim", text_kw={"color": "red", "bbox": None}
+    )
+    text = res.artists["text"]
+    assert to_rgb(text.get_color()) == to_rgb("red")
+    assert text.get_bbox_patch() is None
+    bare = ep.overlay_circle(ax, (0, 0), 1.0, text_kw={"color": "red"})
+    assert "text" not in bare.artists
+    plt.close(fig)

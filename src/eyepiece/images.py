@@ -1008,6 +1008,10 @@ def triptych(
     return MosaicResult(axes=axes, artists=artists)
 
 
+# How far a label sits outward from the point it labels, in points.
+_LABEL_OFFSET_PT = 3.0
+
+
 def _light_and_dark():
     """The style's background and text tones, ordered lighter first."""
     face = to_rgb(matplotlib.rcParams["axes.facecolor"])
@@ -1026,8 +1030,12 @@ def overlay_circle(
     *,
     color=None,
     underlay=True,
+    ls=None,
+    label=None,
+    label_angle=45.0,
     circle_kw=None,
     underlay_kw=None,
+    text_kw=None,
 ):
     """Draw a dashed circle over an image, legible on bright and dark pixels.
 
@@ -1052,6 +1060,15 @@ def overlay_circle(
         underlay: Whether to draw the solid dark underlay. True uses the
             darker of the style's background and text colors; a color draws
             it in that color; False omits it.
+        ls: Line style of the circle. None draws the default dash; `"-"`
+            draws a solid light line over the underlay, as for the rim of a
+            pupil where a dashed circle marks a stop drawn inside it. The
+            underlay stays solid either way.
+        label: Text written on the circle at `label_angle`, on a backing box
+            in the background color, just outside the circle and aligned
+            away from its center. None writes nothing.
+        label_angle: Where the label sits, in degrees counterclockwise from
+            the +x direction about `center`. Ignored without `label`.
         circle_kw: Extra kwargs for the dashed `Circle` (for example `lw`,
             `ls`, `zorder`, or `gid`), applied last. The underlay follows the
             dash's line width and z-order and stays solid.
@@ -1060,11 +1077,17 @@ def overlay_circle(
             solid line style, and the dash's z-order. Pass `lw` to set the
             underlay's width outright, or `gid` to tag it alongside the dash.
             Ignored when `underlay` is False.
+        text_kw: Extra kwargs for the label's `Text` (for example
+            `fontsize`, `color`, or `bbox=None` for bare text), applied
+            last. Ignored without `label`.
 
     Returns:
         A `PlotResult` whose `artists["ellipse"]` is the list of `Circle`
         patches in draw order: the underlay, when drawn, then the dash, so
-        `artists["ellipse"][-1]` is always the dashed circle.
+        `artists["ellipse"][-1]` is always the dashed circle. With `label`,
+        `artists["text"]` is the label, an `Annotation` anchored on the
+        circle and offset a few points outward. Like any annotation of a
+        data point, it is hidden while that point is outside the view.
 
     Raises:
         ValueError: If `radius` is not positive.
@@ -1073,6 +1096,8 @@ def overlay_circle(
 
         result = ep.imshow_log(psf, extent=extent)
         ep.overlay_circle(result.ax, (3.0, 0.0), 0.7)
+        ep.overlay_circle(result.ax, (0.0, 0.0), 0.5, ls="-", label="rim",
+                          label_angle=40.0)
     """
     radius = float(radius)
     if not radius > 0.0:
@@ -1083,7 +1108,7 @@ def overlay_circle(
         "fill": False,
         "edgecolor": light if color is None else color,
         "lw": 1.0,
-        "ls": (0, (3, 2)),
+        "ls": (0, (3, 2)) if ls is None else ls,
         "zorder": 4,
         **(circle_kw or {}),
     }
@@ -1102,4 +1127,40 @@ def overlay_circle(
         under.set(**(underlay_kw or {}))
         patches.append(ax.add_artist(under))
     patches.append(ax.add_artist(dash))
-    return PlotResult(ax=ax, artists={"ellipse": patches})
+    artists = {"ellipse": patches}
+    if label is not None:
+        artists["text"] = _circle_label(
+            ax, center, radius, label_angle, label, dash.get_zorder() + 1, text_kw
+        )
+    return PlotResult(ax=ax, artists=artists)
+
+
+def _outward_alignment(angle):
+    """Text alignment that puts a label on the far side of a point at `angle`.
+
+    A label anchored at a point on a circle and aligned this way grows away
+    from the center: a label at 45 degrees grows up and to the right, one at
+    90 degrees straight up, centered over its point.
+    """
+    c, s = np.cos(angle), np.sin(angle)
+    ha = "left" if c > 0.3 else "right" if c < -0.3 else "center"
+    va = "bottom" if s > 0.3 else "top" if s < -0.3 else "center"
+    return ha, va
+
+
+def _circle_label(ax, center, radius, angle_deg, text, zorder, text_kw):
+    """An annotation anchored on a circle at `angle_deg`, offset outward."""
+    angle = np.deg2rad(float(angle_deg))
+    point = (center[0] + radius * np.cos(angle), center[1] + radius * np.sin(angle))
+    ha, va = _outward_alignment(angle)
+    kw = {
+        "color": matplotlib.rcParams["text.color"],
+        "fontsize": "small",
+        "ha": ha,
+        "va": va,
+        "zorder": zorder,
+        "bbox": _style.backing(),
+        **(text_kw or {}),
+    }
+    offset = (_LABEL_OFFSET_PT * np.cos(angle), _LABEL_OFFSET_PT * np.sin(angle))
+    return ax.annotate(text, point, xytext=offset, textcoords="offset points", **kw)
