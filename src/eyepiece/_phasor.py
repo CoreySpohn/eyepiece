@@ -51,7 +51,11 @@ class _Arrow(FancyArrowPatch):
     the arrow, computed from the current transform each time it is read,
     so the cap follows later changes to the limits, the figure size, or
     the save dpi. `set_mutation_scale` still sets the nominal head size.
+    `heads` is the number of heads the arrow style draws; a double-headed
+    arrow caps each head at half its length, so the two never cross.
     """
+
+    heads = 1
 
     def __init__(self, posA, posB, **kwargs):
         super().__init__(posA, posB, **kwargs)
@@ -75,7 +79,7 @@ class _Arrow(FancyArrowPatch):
         length_pt = self._length_pt()
         if length_pt is None:
             return nominal
-        return min(nominal, length_pt / HEAD_LENGTH)
+        return min(nominal, length_pt / (HEAD_LENGTH * self.heads))
 
     def _vanishing(self):
         """True when the arrow is too short on screen to draw."""

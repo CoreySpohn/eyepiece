@@ -157,6 +157,7 @@ _EXPECTED_ALL = [
     "radial_profile_plot",
     "rail",
     "record",
+    "ruler",
     "save_fig",
     "schematic",
     "show_field",

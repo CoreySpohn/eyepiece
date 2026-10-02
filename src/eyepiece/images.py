@@ -16,9 +16,11 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import LogNorm, Normalize, to_rgb
+from matplotlib.lines import Line2D
 from matplotlib.patches import Circle
 
 from eyepiece import _style
+from eyepiece._phasor import HEAD_LENGTH, HEAD_PER_MARKER, HEAD_WIDTH, _Arrow
 from eyepiece._result import MosaicResult, PlotResult
 
 
@@ -1164,3 +1166,173 @@ def _circle_label(ax, center, radius, angle_deg, text, zorder, text_kw):
     }
     offset = (_LABEL_OFFSET_PT * np.cos(angle), _LABEL_OFFSET_PT * np.sin(angle))
     return ax.annotate(text, point, xytext=offset, textcoords="offset points", **kw)
+
+
+# Where a ruler's label sits: (alignment, unit offset direction).
+_RULER_SIDES = {
+    "above": (("center", "bottom"), (0.0, 1.0)),
+    "below": (("center", "top"), (0.0, -1.0)),
+    "left": (("right", "center"), (-1.0, 0.0)),
+    "right": (("left", "center"), (1.0, 0.0)),
+}
+
+
+class _DoubleArrow(_Arrow):
+    """A head-capped arrow with a head at each end."""
+
+    heads = 2
+
+
+def ruler(
+    ax,
+    p0,
+    p1,
+    text=None,
+    *,
+    side="above",
+    backing=True,
+    color=None,
+    offset_pt=3.0,
+    head_scale=1.0,
+    arrow_kw=None,
+    line_kw=None,
+    text_kw=None,
+):
+    """Draw a dimension arrow between two points, with its label on a box.
+
+    The arrow is double headed, running from `p0` to `p1` in the data
+    coordinates of `ax`, and its label sits at the midpoint, a few points to
+    one `side`. Over an image the arrow crosses bright and dark pixels, so by
+    default it is drawn in the text color over a wider line in the background
+    color, and the label sits on a backing box in the background color; that
+    pair reads on either end of a colormap in either mode. On a plain plot,
+    where the background is already behind it, `backing=False` drops both.
+
+    Heads are sized in points like a phasor's and grow with
+    `rcParams["lines.markersize"]`. On a ruler shorter on screen than its two
+    heads, each head shrinks to half its length, and a ruler of zero length
+    draws nothing but its label. The ruler is added without touching the
+    data limits.
+
+    Args:
+        ax: Axes to draw on.
+        p0: `(x, y)` of one end, in data units.
+        p1: `(x, y)` of the other end, in data units.
+        text: The label. None draws the arrow alone.
+        side: Where the label sits relative to the midpoint on screen:
+            `"above"`, `"below"`, `"left"`, or `"right"`.
+        backing: Draw the background-colored line under the arrow and the
+            backing box under the label.
+        color: Color of the arrow. None uses `rcParams["text.color"]`.
+        offset_pt: Distance from the midpoint to the label, in points.
+        head_scale: Head size relative to a full-size phasor head. 0 draws
+            a plain line with no heads.
+        arrow_kw: Extra kwargs for the `FancyArrowPatch` (for example `lw`,
+            `zorder`, or `gid`), applied last.
+        line_kw: Extra kwargs for the backing `Line2D`, applied last over
+            its defaults: the background color, 3.2 times the arrow's line
+            width, butt caps, and the arrow's z-order. Ignored when
+            `backing` is False.
+        text_kw: Extra kwargs for the label's `Text` (for example
+            `fontsize` or `color`), applied last.
+
+    Returns:
+        A `PlotResult` with artists `"arrow"` (the `FancyArrowPatch`),
+        `"lines"` (a list holding the backing `Line2D`, when `backing`),
+        and `"text"` (the label, an `Annotation` of the midpoint, when
+        `text` is given), and an `update(p0=None, p1=None, text=None)` that
+        moves the same artists to new ends and relabels them, keeping every
+        style; an argument of None keeps the last value. A label added by
+        `update` to a ruler drawn without one raises.
+
+    Raises:
+        ValueError: If `side` is not one of the four sides, or `update`
+            receives `text` for a ruler drawn without a label.
+
+    Example::
+
+        image = ep.imshow_log(psf, extent=extent)
+        ep.ruler(image.ax, (-1.22, -3.0), (1.22, -3.0), "2.44 lambda/D")
+    """
+    if side not in _RULER_SIDES:
+        raise ValueError(f"unknown ruler side: {side!r}; known: {list(_RULER_SIDES)}")
+    rc = matplotlib.rcParams
+    state = {"p0": _point(p0), "p1": _point(p1)}
+    lw = 0.8 * float(rc["lines.linewidth"])
+    head = float(head_scale)
+    style = f"<|-|>,head_length={HEAD_LENGTH},head_width={HEAD_WIDTH}"
+    akw = {
+        "arrowstyle": style if head > 0.0 else "-",
+        "mutation_scale": HEAD_PER_MARKER * float(rc["lines.markersize"]) * head,
+        "color": rc["text.color"] if color is None else color,
+        "lw": lw,
+        "shrinkA": 0.0,
+        "shrinkB": 0.0,
+        "zorder": 5,
+        **(arrow_kw or {}),
+    }
+    arrow = _DoubleArrow(state["p0"], state["p1"], **akw)
+    artists = {}
+    under = None
+    if backing:
+        lkw = {
+            "color": rc["axes.facecolor"],
+            "lw": 3.2 * arrow.get_linewidth(),
+            "solid_capstyle": "butt",
+            "zorder": arrow.get_zorder(),
+            **(line_kw or {}),
+        }
+        under = Line2D(*_line_data(state), **lkw)
+        ax.add_artist(under)
+        artists["lines"] = [under]
+    ax.add_artist(arrow)
+    artists["arrow"] = arrow
+
+    label = None
+    if text is not None:
+        (ha, va), (ux, uy) = _RULER_SIDES[side]
+        tkw = {
+            "color": rc["text.color"],
+            "fontsize": "small",
+            "ha": ha,
+            "va": va,
+            "zorder": arrow.get_zorder() + 1,
+            **({"bbox": _style.backing()} if backing else {}),
+            **(text_kw or {}),
+        }
+        offset = (ux * float(offset_pt), uy * float(offset_pt))
+        label = ax.annotate(
+            text, _midpoint(state), xytext=offset, textcoords="offset points", **tkw
+        )
+        artists["text"] = label
+
+    def update(p0=None, p1=None, text=None):
+        if text is not None and label is None:
+            raise ValueError("ruler update got text for a ruler drawn without a label")
+        if p0 is not None:
+            state["p0"] = _point(p0)
+        if p1 is not None:
+            state["p1"] = _point(p1)
+        arrow.set_positions(state["p0"], state["p1"])
+        if under is not None:
+            under.set_data(*_line_data(state))
+        if label is not None:
+            label.xy = _midpoint(state)
+            if text is not None:
+                label.set_text(text)
+
+    return PlotResult(ax=ax, artists=artists, update=update)
+
+
+def _point(p):
+    return (float(p[0]), float(p[1]))
+
+
+def _line_data(state):
+    (x0, y0), (x1, y1) = state["p0"], state["p1"]
+    return [x0, x1], [y0, y1]
+
+
+def _midpoint(state):
+    (x0, y0), (x1, y1) = state["p0"], state["p1"]
+    return (0.5 * (x0 + x1), 0.5 * (y0 + y1))
