@@ -28,6 +28,11 @@ def test_artist_keys_vocabulary():
     assert {"image", "cbar", "line", "title"} <= ARTIST_KEYS
 
 
+def test_artist_keys_name_arrows():
+    """Vector arrows have their own key, read like "text" and "fill"."""
+    assert "arrow" in ARTIST_KEYS
+
+
 def test_results_are_identity_based():
     """Equality and hashing must be identity-based, not value-based."""
     fig, axes = plt.subplots(2, 2)

@@ -14,7 +14,8 @@ drawing the same kind of artist in each. `lines` is the standing exception,
 defined below as several artists on ONE axes; `fill` and `text` are read
 the same way when a single-axes primitive draws several (the IWA and OWA
 shading regions and their labels on one contrast curve, or a rail's plane
-labels). The key names the KIND of artist, not how many axes are involved:
+labels), and so is `arrow` (the arrows of one phasor chain). The key
+names the KIND of artist, not how many axes are involved:
 
     image: the `AxesImage` from `imshow` (or a list of one per panel for
         a mosaic primitive).
@@ -32,6 +33,9 @@ labels). The key names the KIND of artist, not how many axes are involved:
         panel).
     ellipse: an `Ellipse` (or other `Patch`) artist marking a region
         (or a list of one per panel).
+    arrow: a `FancyArrowPatch` drawn as a vector, such as a phasor on the
+        complex plane (a list of one per panel, or of several drawn
+        together on one axes, in the order they were given).
     collection: a `Collection` artist not covered by a more specific key
         above -- an errorbar's `LineCollection`, or the `QuadMesh` that
         `pcolormesh` and `hist2d` draw (or a list of one per panel).
@@ -54,6 +58,7 @@ ARTIST_KEYS = frozenset(
         "hist",
         "scatter",
         "ellipse",
+        "arrow",
         "collection",
         "text",
         "title",

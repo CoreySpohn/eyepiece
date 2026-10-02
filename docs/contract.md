@@ -97,9 +97,9 @@ drew, so a missing key means "not drawn here", never "drawn and hidden".
 Each key holds either a single matplotlib artist or a list of them. A list
 usually means one entry per panel, in panel order, from a multi-panel
 primitive drawing the same kind of artist in each. `lines` is the standing
-exception, defined below as several artists on one axes, and `fill` and
-`text` are read the same way when a single-axes primitive draws several of
-them. A key names the kind of artist, not how many axes are involved.
+exception, defined below as several artists on one axes, and `fill`, `text`,
+and `arrow` are read the same way when a single-axes primitive draws several
+of them. A key names the kind of artist, not how many axes are involved.
 
 - `image`: the `AxesImage` from `imshow`, or a list of one per panel.
 - `cbar`: the `Colorbar` attached to an image or scalar mappable, or a list
@@ -115,6 +115,9 @@ them. A key names the kind of artist, not how many axes are involved.
 - `scatter`: the `PathCollection` from `scatter`, or a list of one per panel.
 - `ellipse`: an `Ellipse`, or another `Patch`, marking a region, or a list of
   one per panel.
+- `arrow`: a `FancyArrowPatch` drawn as a vector, such as a phasor on the
+  complex plane. A list holds either one per panel or several drawn together
+  on one axes, in the order they were given, as in a chain of phasors.
 - `collection`: a `Collection` artist not covered by a more specific key
   above, such as an errorbar's `LineCollection` or the `QuadMesh` that
   `pcolormesh` and `hist2d` draw, or a list of one per panel.
