@@ -455,7 +455,8 @@ def phasor(
             head and thins the shaft with a smaller one, to 0.4 of it at
             the least, so a small head is not lost in its shaft.
         head_scale: Head size relative to a full-size head, one value for
-            every arrow or one per vector.
+            every arrow or one per vector. 0 draws a plain shaft with no
+            head.
         sum_color: Color of the resultant. None uses `rcParams["text.color"]`.
         sum_head_scale: Head size of the resultant, relative to a full-size
             head. None uses the largest of `head_scale`. Ignored without
@@ -596,11 +597,13 @@ def phasor(
     head_pt = HEAD_PER_MARKER * float(rc["lines.markersize"])
     style = f"-|>,head_length={HEAD_LENGTH},head_width={HEAD_WIDTH}"
     arrows = []
+    # A head of zero size is a plain shaft: matplotlib's head geometry
+    # divides by the head's size, so a zero head never reaches it.
     for start, end, color, ls, lw, head, zorder in zip(
         starts, ends, colors, linestyles, widths, heads, zorders, strict=True
     ):
         kw = {
-            "arrowstyle": style,
+            "arrowstyle": style if head > 0.0 else "-",
             "mutation_scale": head_pt * head,
             "color": color,
             "linestyle": ls,

@@ -598,6 +598,26 @@ def test_phasor_ring_is_the_phase_ring():
     plt.close(alone.fig)
 
 
+@pytest.mark.filterwarnings("error::RuntimeWarning")
+def test_a_zero_head_draws_a_plain_shaft_without_warning():
+    res = ep.phasor(
+        [1.0, 1j, -1.0],
+        head_scale=[1.0, 0.0, 0.0],
+        show_sum=True,
+        sum_head_scale=0.0,
+    )
+    arrows = res.artists["arrow"]
+    assert type(arrows[0].get_arrowstyle()).__name__ == "CurveFilledB"
+    assert all(type(a.get_arrowstyle()).__name__ == "Curve" for a in arrows[1:])
+    res.fig.savefig(io.BytesIO(), format="png", dpi=72)
+    res.update([0.5, 0.5j, -0.5])
+    res.fig.savefig(io.BytesIO(), format="png", dpi=72)
+    for patch in arrows[1:]:
+        box = patch.get_window_extent()
+        assert max(box.width, box.height) > 0.0
+    plt.close(res.fig)
+
+
 def test_resultant_head_and_width_overrides_survive_update():
     with matplotlib.rc_context(_PIN_RC):
         res = ep.phasor(
