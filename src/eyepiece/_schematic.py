@@ -12,6 +12,9 @@ or draws in the caller's data coordinates beside other artists.
 come up constantly, an imager and a Lyot coronagraph, with hand-tuned
 plane positions.
 
+`rail_panels` hangs one empty axes under each chosen plane of a drawn rail,
+for a strip of per-plane images beneath a side view of the train.
+
 The glyph names are this library's own generic vocabulary. They describe
 what to draw, not what a simulation library calls its objects, so nothing
 here has to track another package's class names.
@@ -27,6 +30,7 @@ import numpy as np
 from matplotlib.colors import to_rgba
 from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse, Polygon, Rectangle
+from matplotlib.transforms import Bbox
 
 from eyepiece import _style
 from eyepiece._result import PlotResult
@@ -832,3 +836,172 @@ def schematic(kind, *, ax=None, highlight=None, accent=None):
         raise ValueError(f"unknown schematic kind: {kind!r}; known: {sorted(_PRESETS)}")
     train, positions = _PRESETS[kind]
     return rail(train, ax=ax, positions=positions, highlight=highlight, accent=accent)
+
+
+# Units `rail_panels` reads a panel's width, bottom, and height in.
+_PANEL_UNITS = ("data", "axes", "figure")
+
+
+class _StationLocator:
+    """Center a panel under a rail station, read at every draw.
+
+    The panel's x center is the station's x through the rail's data
+    transform as it is when drawn, so it stays under its plane through an
+    equal aspect, layout, and resizing. Its width, bottom, and height are
+    fractions of the rail axes' box (`"axes"`) or of the figure
+    (`"figure"`). Returns the box in the parent figure's coordinates.
+    """
+
+    def __init__(self, rail_ax, x, width, bottom, height, units):
+        self._rail = rail_ax
+        self._x = x
+        self._shape = (width, bottom, height)
+        self._units = units
+
+    def __call__(self, ax, renderer):
+        rail = self._rail
+        width, bottom, height = self._shape
+        cx = rail.transData.transform((self._x, 0.0))[0]
+        to_figure = rail.figure.transSubfigure.inverted()
+        if self._units == "axes":
+            box = rail.bbox
+            display = Bbox.from_bounds(
+                cx - 0.5 * width * box.width,
+                box.y0 + bottom * box.height,
+                width * box.width,
+                height * box.height,
+            )
+            return display.transformed(to_figure)
+        fx = to_figure.transform((cx, 0.0))[0]
+        return Bbox.from_bounds(fx - 0.5 * width, bottom, width, height)
+
+
+def _stations(rail_result):
+    """`(name, x)` for each plane of a drawn rail, in optical order.
+
+    The name is the label segment of the plane's gids: its label, or
+    `<label>#<k>` for a label several planes share.
+    """
+    stations = []
+    for line in rail_result.artists["lines"]:
+        gid = line.get_gid() or ""
+        if not (gid.startswith("rail/") and gid.endswith("/marker")):
+            raise ValueError(
+                f"rail_panels needs a rail result; got a line with gid {gid!r}"
+            )
+        stations.append(
+            (gid[len("rail/") : -len("/marker")], float(line.get_xdata()[0]))
+        )
+    return stations
+
+
+def rail_panels(
+    rail_result,
+    labels=None,
+    *,
+    width,
+    bottom,
+    height,
+    units="data",
+):
+    """Hang an empty axes under each chosen plane of a drawn rail.
+
+    A side view of an optical train often sits above a strip of images, one
+    per plane: the pupil, the field at the mask, the Lyot plane, the final
+    image. Each panel here is centered on its plane's station, read from the
+    rail as it is drawn, so the strip stays aligned under the train through
+    an equal aspect, layout, and resizing. It works with a rail drawn in its
+    own axes and with one drawn in data coordinates (`rail(coords="data")`).
+
+    The panels are inset axes of the rail's axes, kept out of the layout
+    engine like a phasor dial, so they take no room from the rail; leave
+    room for them where they hang, by limits that run below the train in
+    `"data"` units, or a figure whose rail axes do not reach its bottom.
+
+    Args:
+        rail_result: The `PlotResult` `rail` (or `schematic`) returned.
+        labels: The planes to hang a panel under, by label, matched
+            case-insensitively, in the order the panels are returned. A
+            label several planes share is named by its occurrence,
+            `<label>#0`, `<label>#1`, ..., as in the rail's gids. None
+            hangs one under every plane, in optical order.
+        width: Width of each panel, in `units`.
+        bottom: Height of each panel's bottom edge, in `units`.
+        height: Height of each panel, in `units`.
+        units: `"data"` (the default) gives `width`, `bottom`, and `height`
+            in the rail axes' data coordinates, the axes fractions of a
+            rail drawn in its own axes or the caller's coordinates of a rail
+            drawn with `coords="data"`. `"axes"` gives them as fractions of
+            the rail axes' box, and `"figure"` as fractions of the figure.
+            Either way each panel's center is its plane's station.
+
+    Returns:
+        A `PlotResult` on the rail's axes with no artists and the panels in
+        `result.insets`, a tuple in the order of `labels`. There is no
+        `update`.
+
+    Raises:
+        ValueError: If a label is not one of the rail's planes, names a
+            label several planes share without its occurrence, `width` or
+            `height` is not positive, or `units` is unknown.
+
+    Example::
+
+        train = ep.rail(
+            [("Pupil", "pupil"), ("FPM", "fpm"), ("Lyot", "lyot"),
+             ("Image", "detector")],
+            ax=ax,
+            coords="data",
+            positions=(1.0, 4.0, 7.0, 10.0),
+        )
+        ax.set(xlim=(-0.5, 11.5), ylim=(-6.0, 2.5), aspect="equal")
+        strip = ep.rail_panels(train, width=2.4, bottom=-5.5, height=2.4)
+        for panel, image in zip(strip.insets, images):
+            panel.imshow(image)
+    """
+    if units not in _PANEL_UNITS:
+        raise ValueError(
+            f"unknown rail_panels units: {units!r}; known: {list(_PANEL_UNITS)}"
+        )
+    width, bottom, height = float(width), float(bottom), float(height)
+    if not (width > 0.0 and height > 0.0):
+        raise ValueError(
+            f"rail_panels width and height must be positive, got {width}, {height}"
+        )
+    stations = _stations(rail_result)
+    by_name = {name.lower(): x for name, x in stations}
+    shared = {name.split("#")[0].lower() for name, _ in stations if "#" in name}
+    if labels is None:
+        chosen = [x for _, x in stations]
+    else:
+        entries = [labels] if isinstance(labels, str) else list(labels)
+        known = [name for name, _ in stations]
+        chosen = []
+        for entry in entries:
+            key = entry.lower() if isinstance(entry, str) else None
+            if key in shared:
+                raise ValueError(
+                    f"rail_panels label {entry!r} names several planes; "
+                    f"name one as in the rail's gids: {known}"
+                )
+            if key not in by_name:
+                raise ValueError(
+                    f"unknown rail_panels label {entry!r}; known planes: {known}"
+                )
+            chosen.append(by_name[key])
+
+    rail_ax = rail_result.ax
+    panels = []
+    for x in chosen:
+        if units == "data":
+            panel = rail_ax.inset_axes(
+                [x - 0.5 * width, bottom, width, height], transform=rail_ax.transData
+            )
+        else:
+            locator = _StationLocator(rail_ax, x, width, bottom, height, units)
+            panel = rail_ax.inset_axes([0.0, 0.0, 1.0, 1.0])
+            panel.set_axes_locator(locator)
+            panel.set_position(locator(panel, None))
+        panel.set_in_layout(False)
+        panels.append(panel)
+    return PlotResult(ax=rail_ax, artists={}, insets=tuple(panels))

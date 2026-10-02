@@ -158,6 +158,7 @@ _EXPECTED_ALL = [
     "provenance_text",
     "radial_profile_plot",
     "rail",
+    "rail_panels",
     "record",
     "ruler",
     "save_fig",
