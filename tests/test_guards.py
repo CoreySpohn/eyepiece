@@ -134,6 +134,7 @@ _EXPECTED_ALL = [
     "corner",
     "corner_overlay",
     "cov_ellipse",
+    "curve_insets",
     "display_limits",
     "extent_arcsec",
     "extent_au",

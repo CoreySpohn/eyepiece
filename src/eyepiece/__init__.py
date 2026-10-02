@@ -5,12 +5,12 @@ and animating simulated images (point spread functions, coronagraph
 detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
-``_schematic``, ``_phasor``, ``profiles``, ``emphasis``) are internal organization and
-are not part of the public API. The vocabularies a caller reads against are
-exported alongside the functions: ``ARTIST_KEYS``, the key set a result's
-``artists`` dict draws from; ``PRESETS``, the measured fps/dpi pairs for the
-usual animation destinations; and ``GLYPHS``, the optical-element names
-``rail`` draws.
+``_schematic``, ``_phasor``, ``insets``, ``profiles``, ``emphasis``) are
+internal organization and are not part of the public API. The vocabularies a
+caller reads against are exported alongside the functions: ``ARTIST_KEYS``,
+the key set a result's ``artists`` dict draws from; ``PRESETS``, the
+measured fps/dpi pairs for the usual animation destinations; and ``GLYPHS``,
+the optical-element names ``rail`` draws.
 
 Example::
 
@@ -54,6 +54,7 @@ __all__ = [
     "corner",
     "corner_overlay",
     "cov_ellipse",
+    "curve_insets",
     "display_limits",
     "extent_arcsec",
     "extent_au",
@@ -133,6 +134,7 @@ _LAZY_EXPORTS = {
     "trail": ("eyepiece.scene", "trail"),
     "phasor": ("eyepiece._phasor", "phasor"),
     "phase_ring": ("eyepiece._phasor", "phase_ring"),
+    "curve_insets": ("eyepiece.insets", "curve_insets"),
     "GLYPHS": ("eyepiece._schematic", "GLYPHS"),
     "rail": ("eyepiece._schematic", "rail"),
     "schematic": ("eyepiece._schematic", "schematic"),
