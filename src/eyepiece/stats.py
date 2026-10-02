@@ -1,5 +1,9 @@
 """Sample-distribution primitives: corner plots, hist-vs-pdf, covariance ellipses.
 
+`convergence` draws a sequence of samples beside its running mean or running
+sum, converging toward labeled reference values, and reveals the samples one
+at a time for an animation.
+
 `corner` and `corner_overlay` are a deliberate parity port of the classic
 triangle-plot idiom rather than a wrapper around a third-party corner-plot
 package: overlaying a second dataset into a caller's existing axes, and
@@ -9,9 +13,10 @@ table belongs to whichever consumer owns those parameter names, not to this
 library.
 """
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Ellipse
+from matplotlib.patches import Ellipse, Rectangle
 
 from eyepiece import _style
 from eyepiece._result import MosaicResult, PlotResult
@@ -368,3 +373,304 @@ def cov_ellipse(
         artists["text"] = ax.annotate(text, xy=tuple(tip), **tkw)
 
     return PlotResult(ax=ax, artists=artists)
+
+
+# What `convergence` draws as its line.
+_RUNNING = ("mean", "sum", None)
+
+# Where `convergence` writes a reference's label: (vertical alignment, sign of
+# the vertical offset).
+_LABEL_SIDES = {"above": ("bottom", 1.0), "below": ("top", -1.0)}
+
+# Fraction of the x span added right of the last sample when references are
+# labeled, so the labels sit past the data rather than over it.
+_LABEL_ROOM = 0.2
+
+
+def _per_ref(value, n, name):
+    """Broadcast a scalar (or None) or a length-`n` sequence to a list."""
+    if value is None or isinstance(value, str) or np.ndim(value) == 0:
+        return [value] * n
+    values = list(value)
+    if len(values) != n:
+        raise ValueError(f"convergence {name} has {len(values)} entries for {n} refs")
+    return values
+
+
+def _running(values, running):
+    if running == "mean":
+        return np.cumsum(values) / np.arange(1, values.size + 1)
+    if running == "sum":
+        return np.cumsum(values)
+    return values.copy()
+
+
+def _padded(lo, hi, frac):
+    span = hi - lo
+    if span == 0.0:
+        span = max(abs(lo), 1.0)
+    return lo - frac * span, hi + frac * span
+
+
+def convergence(
+    values,
+    *,
+    ax=None,
+    x=None,
+    refs=None,
+    ref_labels=None,
+    show_samples=True,
+    band=None,
+    running="mean",
+    color=None,
+    sample_color=None,
+    ref_linestyles=None,
+    label_side="above",
+    scatter_kw=None,
+    line_kw=None,
+    ref_kw=None,
+    fill_kw=None,
+    text_kw=None,
+):
+    """Draw samples beside their running mean or sum, converging on references.
+
+    Each sample is a dot, and the line is the mean (or sum) of the samples
+    up to that point, so the reader watches a scattered quantity settle onto
+    the value it is converging to. Each reference is a horizontal line across
+    the panel, labeled at its right end on a backing box, and a tolerance
+    band can be shaded around it. The samples and the line are data; the
+    references, their labels, and the bands are scenery in neutral tones.
+
+    The limits are set from the full data on the first draw -- every sample
+    (when shown), the whole running line, the references, and the bands --
+    and `update` never changes them, so an animation that reveals the
+    samples one at a time keeps one scale throughout. On axes that already
+    hold data, the limits grow to cover both, so two calls (two curves
+    converging to two references, say) share one panel.
+
+    Args:
+        values: 1D array-like of the samples, in order.
+        ax: Axes to draw into. None creates a new figure and axes.
+        x: Position of each sample along the horizontal axis. None uses
+            `1, 2, ..., n`, the number of samples taken so far.
+        refs: A reference value or a sequence of them, each drawn as a
+            horizontal line. None draws none.
+        ref_labels: One label per reference (an entry of None leaves that
+            reference unlabeled), written at the panel's right edge, just
+            `label_side` of its line. When any reference is labeled the
+            right limit leaves a fifth of the x span past the last sample,
+            so the labels sit beyond the data.
+        show_samples: Draw the samples as dots.
+        band: Half-width of a tolerance band shaded around the references:
+            one value for every reference, or one per reference (an entry of
+            None draws no band there). None draws no band.
+        running: What the line shows: `"mean"`, the mean of the first k
+            samples at sample k; `"sum"`, their sum; or None, the values
+            themselves, for a curve the caller already accumulated (usually
+            with `show_samples=False`).
+        color: Color of the line. None uses `_style.color(0)`.
+        sample_color: Color of the dots. None uses a neutral tone, so the
+            line is the data the eye follows.
+        ref_linestyles: One line style for every reference or one per
+            reference. None draws them dashed.
+        label_side: `"above"` or `"below"` the reference line.
+        scatter_kw: Extra kwargs for `ax.scatter`, applied last.
+        line_kw: Extra kwargs for the line's `ax.plot` call, applied last.
+            A head marker that follows the revealed end of the line is
+            `{"marker": "o", "markevery": [-1]}`.
+        ref_kw: Extra kwargs for every reference's `ax.axhline`, applied
+            last.
+        fill_kw: Extra kwargs for every band `Rectangle`, applied last.
+        text_kw: Extra kwargs for every reference label's `Text`, applied
+            last.
+
+    Returns:
+        A `PlotResult` with artists `"line"` (the running `Line2D`),
+        `"scatter"` (the samples' `PathCollection`, when shown), `"lines"`
+        (the reference `Line2D` list, when any), `"fill"` (the band
+        `Rectangle` list, in reference order, when any), and `"text"` (the
+        label list, in reference order, when any), and an
+        `update(k=None, *, values=None, refs=None)` that reveals the first
+        `k` samples and the line up to them, with no new artist. `values`
+        replaces the samples (same count) and recomputes the line; `refs`
+        moves the references (same count), their labels, and their bands. A
+        `k` of None keeps the current count, which starts at every sample.
+        The limits never change.
+
+    Raises:
+        ValueError: If `values` is empty, `x` does not match it, `running`
+            or `label_side` is unknown, a per-reference argument does not
+            match `refs`, `band` is given without `refs`, or `update`
+            receives a different number of values or references.
+
+    Example::
+
+        rng = np.random.default_rng(0)
+        looks = rng.exponential(1.0, 200)
+        res = ep.convergence(looks, refs=[1.0], ref_labels=["expected"], band=0.1)
+        for k in range(1, 201):
+            res.update(k)
+    """
+    values = np.asarray(values, dtype=float).ravel()
+    n = values.size
+    if n == 0:
+        raise ValueError("convergence needs at least one value")
+    if running not in _RUNNING:
+        raise ValueError(
+            f"unknown convergence running: {running!r}; known: {list(_RUNNING)}"
+        )
+    if label_side not in _LABEL_SIDES:
+        raise ValueError(
+            f"unknown convergence label_side: {label_side!r}; "
+            f"known: {list(_LABEL_SIDES)}"
+        )
+    x = np.arange(1.0, n + 1.0) if x is None else np.asarray(x, dtype=float).ravel()
+    if x.size != n:
+        raise ValueError(f"convergence x has {x.size} entries for {n} values")
+    if refs is None:
+        ref_values = []
+    elif np.ndim(refs) == 0:
+        ref_values = [float(refs)]
+    else:
+        ref_values = [float(r) for r in refs]
+    n_refs = len(ref_values)
+    if band is not None and n_refs == 0:
+        raise ValueError("convergence band= shades around a reference; pass refs")
+    labels = _per_ref(ref_labels, n_refs, "ref_labels")
+    styles = _per_ref(ref_linestyles, n_refs, "ref_linestyles")
+    bands = _per_ref(band, n_refs, "band")
+    curve = _running(values, running)
+
+    if ax is None:
+        _, ax = plt.subplots(layout="constrained")
+    had_data = ax.has_data()
+    old_limits = ax.get_xlim(), ax.get_ylim()
+
+    rc = matplotlib.rcParams
+    base_width = float(rc["lines.linewidth"])
+    artists = {}
+    rects = {}
+    for i, (ref, half) in enumerate(zip(ref_values, bands, strict=True)):
+        if half is None:
+            continue
+        half = float(half)
+        fkw = {
+            "facecolor": _style.neutral(0.18),
+            "edgecolor": "none",
+            "zorder": 0.5,
+            **(fill_kw or {}),
+        }
+        rect = Rectangle(
+            (0.0, ref - half),
+            1.0,
+            2.0 * half,
+            transform=ax.get_yaxis_transform(),
+            **fkw,
+        )
+        rects[i] = ax.add_artist(rect)
+    ref_lines = []
+    for ref, ls in zip(ref_values, styles, strict=True):
+        rkw = {
+            "color": _style.neutral(0.5),
+            "ls": "--" if ls is None else ls,
+            "lw": 0.9 * base_width,
+            "zorder": 1,
+            **(ref_kw or {}),
+        }
+        ref_lines.append(ax.axhline(ref, **rkw))
+    va, sign = _LABEL_SIDES[label_side]
+    texts = {}
+    for i, (ref, label) in enumerate(zip(ref_values, labels, strict=True)):
+        if label is None:
+            continue
+        tkw = {
+            "color": _style.neutral(0.65),
+            "fontsize": "small",
+            "ha": "right",
+            "va": va,
+            "zorder": 7,
+            "bbox": _style.backing(),
+            **(text_kw or {}),
+        }
+        texts[i] = ax.annotate(
+            label,
+            (1.0, ref),
+            xycoords=ax.get_yaxis_transform(),
+            xytext=(-2.0, 2.0 * sign),
+            textcoords="offset points",
+            **tkw,
+        )
+    scatter = None
+    if show_samples:
+        skw = {
+            "s": (0.45 * float(rc["lines.markersize"])) ** 2,
+            "color": _style.neutral(0.55) if sample_color is None else sample_color,
+            "lw": 0,
+            "zorder": 5,
+            **(scatter_kw or {}),
+        }
+        scatter = ax.scatter(x, values, **skw)
+        artists["scatter"] = scatter
+    lkw = {"color": _style.color(0, color), "zorder": 6, **(line_kw or {})}
+    (line,) = ax.plot(x, curve, **lkw)
+    artists["line"] = line
+    if ref_lines:
+        artists["lines"] = ref_lines
+    if rects:
+        artists["fill"] = [rects[i] for i in sorted(rects)]
+    if texts:
+        artists["text"] = [texts[i] for i in sorted(texts)]
+
+    finite_x = x[np.isfinite(x)]
+    x_lo, x_hi = float(finite_x.min()), float(finite_x.max())
+    span = x_hi - x_lo
+    xlim = _padded(x_lo, x_hi, 0.02)
+    if texts:
+        xlim = (xlim[0], x_hi + _LABEL_ROOM * (span if span > 0.0 else 1.0))
+    ys = [curve]
+    if show_samples:
+        ys.append(values)
+    ys.append(np.asarray(ref_values, dtype=float))
+    for ref, half in zip(ref_values, bands, strict=True):
+        if half is not None:
+            ys.append(np.array([ref - float(half), ref + float(half)]))
+    ys = np.concatenate(ys)
+    ys = ys[np.isfinite(ys)]
+    ylim = _padded(float(ys.min()), float(ys.max()), 0.06)
+    if had_data:
+        xlim = (min(xlim[0], old_limits[0][0]), max(xlim[1], old_limits[0][1]))
+        ylim = (min(ylim[0], old_limits[1][0]), max(ylim[1], old_limits[1][1]))
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+
+    state = {"k": n, "values": values, "curve": curve, "refs": ref_values}
+
+    def update(k=None, *, values=None, refs=None):
+        if values is not None:
+            new = np.asarray(values, dtype=float).ravel()
+            if new.size != n:
+                raise ValueError(f"convergence update got {new.size} values for {n}")
+            state["values"] = new
+            state["curve"] = _running(new, running)
+        if refs is not None:
+            new_refs = [float(refs)] if np.ndim(refs) == 0 else [float(r) for r in refs]
+            if len(new_refs) != n_refs:
+                raise ValueError(
+                    f"convergence update got {len(new_refs)} refs for {n_refs}"
+                )
+            state["refs"] = new_refs
+            for i, ref in enumerate(new_refs):
+                ref_lines[i].set_ydata([ref, ref])
+                if i in texts:
+                    texts[i].xy = (1.0, ref)
+                if i in rects:
+                    rects[i].set_y(ref - float(bands[i]))
+        if k is not None:
+            state["k"] = min(max(int(k), 0), n)
+        shown = state["k"]
+        if scatter is not None:
+            offsets = np.column_stack([x[:shown], state["values"][:shown]])
+            scatter.set_offsets(offsets.reshape(-1, 2))
+        line.set_data(x[:shown], state["curve"][:shown])
+
+    return PlotResult(ax=ax, artists=artists, update=update)

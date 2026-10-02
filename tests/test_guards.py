@@ -130,6 +130,7 @@ _EXPECTED_ALL = [
     "capture",
     "compare_grid",
     "compare_row",
+    "convergence",
     "corner",
     "corner_overlay",
     "cov_ellipse",
