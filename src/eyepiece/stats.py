@@ -19,6 +19,7 @@ import numpy as np
 from matplotlib.patches import Ellipse, Rectangle
 
 from eyepiece import _style
+from eyepiece._phasor import _is_linestyle, _is_number
 from eyepiece._result import MosaicResult, PlotResult
 
 
@@ -387,14 +388,22 @@ _LABEL_SIDES = {"above": ("bottom", 1.0), "below": ("top", -1.0)}
 _LABEL_ROOM = 0.2
 
 
-def _per_ref(value, n, name):
-    """Broadcast a scalar (or None) or a length-`n` sequence to a list."""
-    if value is None or isinstance(value, str) or np.ndim(value) == 0:
+def _per_ref(value, n, name, single=_is_number):
+    """Broadcast one value (or None) or a length-`n` sequence to a list.
+
+    `single` decides whether `value` is one value for every reference; no
+    array is built from `value`, so a sequence may mix kinds of entry.
+    """
+    if value is None or single(value):
         return [value] * n
     values = list(value)
     if len(values) != n:
         raise ValueError(f"convergence {name} has {len(values)} entries for {n} refs")
     return values
+
+
+def _is_label(value):
+    return isinstance(value, str)
 
 
 def _running(values, running):
@@ -472,7 +481,8 @@ def convergence(
         sample_color: Color of the dots. None uses a neutral tone, so the
             line is the data the eye follows.
         ref_linestyles: One line style for every reference or one per
-            reference. None draws them dashed.
+            reference, each a name such as `":"` or a dash pattern such as
+            `(0, (3, 2))`, in any mix. None draws them dashed.
         label_side: `"above"` or `"below"` the reference line.
         scatter_kw: Extra kwargs for `ax.scatter`, applied last.
         line_kw: Extra kwargs for the line's `ax.plot` call, applied last.
@@ -536,8 +546,8 @@ def convergence(
     n_refs = len(ref_values)
     if band is not None and n_refs == 0:
         raise ValueError("convergence band= shades around a reference; pass refs")
-    labels = _per_ref(ref_labels, n_refs, "ref_labels")
-    styles = _per_ref(ref_linestyles, n_refs, "ref_linestyles")
+    labels = _per_ref(ref_labels, n_refs, "ref_labels", single=_is_label)
+    styles = _per_ref(ref_linestyles, n_refs, "ref_linestyles", single=_is_linestyle)
     bands = _per_ref(band, n_refs, "band")
     curve = _running(values, running)
 

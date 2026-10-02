@@ -188,3 +188,16 @@ def test_bad_arguments_raise(kwargs, match):
 def test_empty_values_raise():
     with pytest.raises(ValueError, match="at least one"):
         ep.convergence([])
+
+
+def test_reference_styles_may_mix_names_and_dash_patterns():
+    res = ep.convergence(_looks(), refs=[1.0, 0.5], ref_linestyles=["--", (0, (3, 2))])
+    first, second = res.artists["lines"]
+    assert first.get_linestyle() == "--"
+    assert second.get_linestyle() == "--"
+    assert second._unscaled_dash_pattern == (0, (3, 2))
+    single = ep.convergence(_looks(), refs=[1.0, 0.5], ref_linestyles=(0, (3, 2)))
+    assert len(single.artists["lines"]) == 2
+    bands = ep.convergence(_looks(), refs=[1.0, 0.5], band=np.float64(0.1))
+    assert len(bands.artists["fill"]) == 2
+    plt.close("all")
