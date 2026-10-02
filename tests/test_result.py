@@ -43,3 +43,15 @@ def test_results_are_identity_based():
     hash(res1)
     hash(PlotResult(ax=axes.flat[0], artists={}))
     plt.close(fig)
+
+
+def test_plotresult_insets_default_to_empty_and_stay_positional_compatible():
+    fig, ax = plt.subplots()
+    res = PlotResult(ax, {}, None)
+    assert res.insets == ()
+    child = ax.inset_axes([0.1, 0.1, 0.2, 0.2])
+    res = PlotResult(ax=ax, artists={}, insets=(child,))
+    assert res.insets == (child,)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        res.insets = ()
+    plt.close(fig)

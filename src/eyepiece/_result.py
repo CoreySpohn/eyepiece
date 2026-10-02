@@ -44,6 +44,12 @@ names the KIND of artist, not how many axes are involved:
         of one per panel, or of several drawn together on one axes).
     title: the `Text` artist returned by `set_title` (or a list of one
         per panel).
+
+Axes a primitive creates beside the one it draws on -- insets standing over
+points of a curve, or panels hung under the planes of a rail -- are not
+artists in this sense and never go under an artist key. A `PlotResult`
+returns them in its own `insets` attribute, a tuple in the order the
+primitive documents, which is empty for every primitive that creates none.
 """
 
 from collections.abc import Callable
@@ -79,11 +85,15 @@ class PlotResult:
             transform (log floor, phase NaN-mask, decade titles, ...) the
             primitive applied on first draw. None when the primitive has
             no such transform to reuse.
+        insets: Tuple of the Axes the primitive created beside `ax`, for
+            the caller to fill, in the order the primitive documents.
+            Empty when it created none.
     """
 
     ax: object
     artists: dict
     update: Callable | None = None
+    insets: tuple = ()
 
     @property
     def fig(self):
