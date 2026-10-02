@@ -148,6 +148,7 @@ _EXPECTED_ALL = [
     "label_au",
     "label_lod",
     "overlay_circle",
+    "phase_ring",
     "phasor",
     "plot_contrast_curve",
     "plot_radial",

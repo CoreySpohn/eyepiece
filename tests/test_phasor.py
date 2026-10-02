@@ -388,3 +388,211 @@ def test_default_dial_is_a_data_unit_inset():
     assert res.ax.patch.get_alpha() == 0.0
     assert res.ax.get_anchor() == "C"
     plt.close(fig)
+
+
+def test_starts_place_each_arrow_and_the_resultant_keeps_the_origin():
+    res = ep.phasor([1.0, 0.5j], starts=[0j, 1.0], show_sum=True, origin=0j)
+    e1, e2, total = res.artists["arrow"]
+    assert _ends(e1) == pytest.approx((0j, 1.0))
+    assert _ends(e2) == pytest.approx((1.0, 1.0 + 0.5j))
+    assert _ends(total) == pytest.approx((0j, 1.0 + 0.5j))
+    plt.close(res.fig)
+
+
+def test_automatic_limits_include_the_starts():
+    res = ep.phasor([0.5], starts=[3.0 + 3.0j], cross=False)
+    x0, x1 = res.ax.get_xlim()
+    y0, y1 = res.ax.get_ylim()
+    assert x0 < 3.0 and x1 > 3.5 and y0 < 3.0 < y1
+    plt.close(res.fig)
+
+
+def test_starts_on_a_chain_or_of_the_wrong_length_raise():
+    with pytest.raises(ValueError, match="not chained"):
+        ep.phasor([1.0, 1j], starts=[0j, 1.0], chain=True)
+    with pytest.raises(ValueError, match="1 starts for 2 vectors"):
+        ep.phasor([1.0, 1j], starts=[0j])
+
+
+def test_update_takes_new_starts_and_otherwise_keeps_the_last():
+    res = ep.phasor([1.0, 1j], starts=[0j, 1.0], show_sum=True)
+    arrows = res.artists["arrow"]
+    res.update([2.0, -1j], starts=[1j, 2.0 + 1j])
+    assert _ends(arrows[0]) == pytest.approx((1j, 2.0 + 1j))
+    assert _ends(arrows[1]) == pytest.approx((2.0 + 1j, 2.0))
+    assert _ends(arrows[2]) == pytest.approx((0j, 2.0 - 1j))
+    res.update([1.0, 1.0], origin=0.5)
+    assert _ends(arrows[0]) == pytest.approx((1j, 1.0 + 1j))
+    assert _ends(arrows[1]) == pytest.approx((2.0 + 1j, 3.0 + 1j))
+    assert _ends(arrows[2]) == pytest.approx((0.5, 2.5))
+    with pytest.raises(ValueError, match="3 starts for 2 vectors"):
+        res.update([1.0, 1.0], starts=[0j, 0j, 0j])
+    plt.close(res.fig)
+
+
+def test_update_can_place_arrows_drawn_from_the_origin_but_not_a_chain():
+    res = ep.phasor([1.0, 1j])
+    res.update([1.0, 1j], starts=[0j, 1.0])
+    assert _ends(res.artists["arrow"][1]) == pytest.approx((1.0, 1.0 + 1j))
+    plt.close(res.fig)
+    res = ep.phasor([1.0, 1j], chain=True)
+    with pytest.raises(ValueError, match="not chained"):
+        res.update([1.0, 1j], starts=[0j, 1.0])
+    plt.close(res.fig)
+
+
+def _dial_box(dial, parent):
+    """The dial's on-screen box: center in parent data units, side in pixels."""
+    box = dial.get_window_extent()
+    center = parent.transData.inverted().transform(
+        [0.5 * (box.x0 + box.x1), 0.5 * (box.y0 + box.y1)]
+    )
+    return center, box.width, box.height
+
+
+def test_axes_units_size_the_dial_by_the_parents_shorter_side():
+    fig, ax = plt.subplots(figsize=(6.0, 3.0), layout="constrained")
+    ax.set(xlim=(0, 10), ylim=(0, 2))
+    res = ep.phasor([1j], ax=ax, at=(7.0, 1.5), size=0.4, size_units="axes", ring=True)
+    for figsize in ((6.0, 3.0), (4.0, 5.0), (8.0, 2.5)):
+        fig.set_size_inches(figsize)
+        fig.canvas.draw()
+        parent = ax.get_window_extent()
+        center, width, height = _dial_box(res.ax, ax)
+        np.testing.assert_allclose(center, (7.0, 1.5), atol=1e-6)
+        side = 0.4 * min(parent.width, parent.height)
+        assert width == pytest.approx(side, rel=1e-6)
+        assert height == pytest.approx(side, rel=1e-6)
+    # Moving the parent's limits keeps the dial on its point.
+    ax.set_xlim(5, 9)
+    fig.canvas.draw()
+    np.testing.assert_allclose(_dial_box(res.ax, ax)[0], (7.0, 1.5), atol=1e-6)
+    assert not res.ax.get_in_layout()
+    fig.savefig(io.BytesIO(), format="png", dpi=72, bbox_inches="tight")
+    plt.close(fig)
+
+
+def test_unknown_size_units_raise():
+    fig, ax = plt.subplots()
+    with pytest.raises(ValueError, match="size_units"):
+        ep.phasor([1j], ax=ax, at=(0.5, 0.5), size_units="inches")
+    plt.close(fig)
+
+
+def test_separate_moves_the_resultant_of_a_straight_chain_beneath_it():
+    res = ep.phasor([1.0, 0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
+    e1, e2, total = res.artists["arrow"]
+    # Consecutive links touch at a point only and stay on the line.
+    assert _ends(e1) == pytest.approx((0j, 1.0))
+    assert _ends(e2) == pytest.approx((1.0, 1.5))
+    # The rightward resultant moves clockwise from its direction: below.
+    assert _ends(total) == pytest.approx((-0.14j, 1.5 - 0.14j))
+    plt.close(res.fig)
+
+
+def test_separate_draws_a_folded_back_link_beside_the_one_before_it():
+    res = ep.phasor([1.0, -0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
+    e1, e2, total = res.artists["arrow"]
+    assert _ends(e1) == pytest.approx((0j, 1.0))
+    # Leftward, so clockwise from its direction is up.
+    assert _ends(e2) == pytest.approx((1.0 + 0.14j, 0.5 + 0.14j))
+    assert _ends(total) == pytest.approx((-0.14j, 0.5 - 0.14j))
+    plt.close(res.fig)
+
+
+def test_separate_leaves_arrows_that_only_touch_or_cross_alone():
+    values = [1.0, -1.0, 1j, 1 + 1j]
+    plain = ep.phasor(values, lim=2.0)
+    moved = ep.phasor(values, lim=2.0, separate=0.3)
+    assert [_ends(a) for a in moved.artists["arrow"]] == [
+        _ends(a) for a in plain.artists["arrow"]
+    ]
+    plt.close(plain.fig)
+    plt.close(moved.fig)
+
+
+def test_separate_moves_a_shorter_arrow_along_a_longer_one_from_the_origin():
+    res = ep.phasor([1j, 0.5j], lim=(-1.0, 3.0, -1.0, 1.0), separate=0.1)
+    first, second = res.artists["arrow"]
+    assert _ends(first) == pytest.approx((0j, 1j))
+    # Half the larger span of the limits is 2.0; upward, so clockwise is right.
+    assert _ends(second) == pytest.approx((0.2, 0.2 + 0.5j))
+    plt.close(res.fig)
+
+
+def test_update_separates_with_the_first_draws_offset():
+    res = ep.phasor([1.0, 0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
+    total = res.artists["arrow"][-1]
+    res.update([1.0, 0.5j])
+    assert _ends(total) == pytest.approx((0j, 1.0 + 0.5j))
+    res.update([0.5j, 0.5j])
+    assert _ends(total) == pytest.approx((0.14, 0.14 + 1j))
+    plt.close(res.fig)
+
+
+def test_text_kw_reaches_both_axis_labels():
+    bbox = {"facecolor": "white", "edgecolor": "none", "pad": 1.0}
+    res = ep.phasor(
+        [1j],
+        text_kw={"fontsize": 15.0, "zorder": 9, "color": "red", "bbox": bbox},
+    )
+    for text in res.artists["text"]:
+        assert text.get_fontsize() == 15.0
+        assert text.get_zorder() == 9
+        assert to_rgba(text.get_color()) == to_rgba("red")
+        assert text.get_bbox_patch() is not None
+    plt.close(res.fig)
+
+
+def test_phase_ring_alone_draws_one_collection():
+    res = ep.phase_ring(radius=0.5, center=1.0 - 2.0j)
+    assert set(res.artists) == {"collection"} <= ep.ARTIST_KEYS
+    assert res.update is None
+    assert res.ax.get_aspect() == 1.0
+    assert type(res.fig.get_layout_engine()).__name__ == "ConstrainedLayoutEngine"
+    ring = res.artists["collection"]
+    assert isinstance(ring, LineCollection)
+    mid = np.array([0.5 * (s[0] + s[1]) for s in ring.get_segments()])
+    np.testing.assert_allclose(
+        np.hypot(mid[:, 0] - 1.0, mid[:, 1] + 2.0), 0.5, rtol=1e-3
+    )
+    phi = np.arctan2(mid[:, 1] + 2.0, mid[:, 0] - 1.0)
+    expected = _style.cmap("phase")((phi + np.pi) / (2.0 * np.pi))
+    np.testing.assert_allclose(ring.get_colors(), expected, atol=1e-6)
+    lw = matplotlib.rcParams["lines.linewidth"]
+    assert list(ring.get_linewidths()) == pytest.approx([3.0 * lw])
+    assert ring.get_zorder() == 2
+    plt.close(res.fig)
+
+
+def test_phase_ring_options_and_no_side_effects_on_a_given_axes():
+    fig, ax = plt.subplots()
+    ax.set(xlim=(-3, 3), ylim=(-2, 2))
+    ticks = list(ax.get_xticks()), list(ax.get_yticks())
+    res = ep.phase_ring(ax, cmap="twilight", width=2.5, zorder=7)
+    assert res.ax is ax
+    assert ax.get_xlim() == (-3.0, 3.0) and ax.get_ylim() == (-2.0, 2.0)
+    assert ax.get_aspect() == "auto"
+    assert (list(ax.get_xticks()), list(ax.get_yticks())) == ticks
+    assert all(s.get_visible() for s in ax.spines.values())
+    ring = res.artists["collection"]
+    assert list(ring.get_linewidths()) == [2.5]
+    assert ring.get_zorder() == 7
+    mid = np.array([0.5 * (s[0] + s[1]) for s in ring.get_segments()])
+    phi = np.arctan2(mid[:, 1], mid[:, 0])
+    expected = matplotlib.colormaps["twilight"]((phi + np.pi) / (2.0 * np.pi))
+    np.testing.assert_allclose(ring.get_colors(), expected, atol=1e-6)
+    plt.close(fig)
+
+
+def test_phasor_ring_is_the_phase_ring():
+    res = ep.phasor([1.0], ring=True, ring_radius=0.8, ring_cmap="twilight")
+    alone = ep.phase_ring(radius=0.8, cmap="twilight")
+    ring, ref = res.artists["collection"], alone.artists["collection"]
+    np.testing.assert_array_equal(
+        np.asarray(ring.get_segments()), np.asarray(ref.get_segments())
+    )
+    np.testing.assert_array_equal(ring.get_colors(), ref.get_colors())
+    assert list(ring.get_linewidths()) == list(ref.get_linewidths())
+    plt.close(res.fig)
+    plt.close(alone.fig)
