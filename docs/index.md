@@ -129,23 +129,28 @@ the API reference, and the groups are:
   field as real, imaginary, amplitude, and phase panels, `compare_row` for
   several images under one shared norm and colorbar, and `triptych` for A,
   B, and a ratio or residual panel, plus `overlay_circle` for an aperture
-  or ring drawn over an image.
-- **Distributions.** `corner`, `corner_overlay`, `hist_vs_pdf`, and
-  `cov_ellipse`.
+  or ring drawn over an image, with an optional label, and `ruler` for a
+  labeled dimension arrow.
+- **Distributions.** `corner`, `corner_overlay`, `hist_vs_pdf`,
+  `cov_ellipse`, and `convergence` for samples and their running mean or sum
+  against labeled references.
 - **Profiles.** `plot_radial`, `plot_contrast_curve`, and
   `radial_profile_plot`.
 - **Scenes.** `trail`, `sky_fan`, and `fading_track`.
 - **Phasors.** `phasor` for complex numbers as arrows on the complex plane,
   separate or chained tip to tail with their resultant, with a phase-colored
   ring as the key, or as a small dial inset beside a feature of another panel,
-  and `phase_ring` for that key drawn alone on any axes.
+  and `phase_ring` for that key drawn alone on any axes. `curve_insets`
+  stands small insets, chains of arrows or anything a callback draws, over
+  marked points of a curve.
 - **Emphasis.** `fade`, which blends any drawn artists toward their
   background so an element carried from an earlier figure reads as already
   seen, `capture`, which collects what a block of code drew so it can be
   faded as one group, and `blend`, the same color blend for a single color.
 - **Schematics.** `rail` for an optical train built from a plain
   `(label, glyph)` list over the `GLYPHS` vocabulary, in its own axes or in
-  the caller's data coordinates, and `schematic`, a preset wrapper over it.
+  the caller's data coordinates, `schematic`, a preset wrapper over it, and
+  `rail_panels` for a strip of axes hung under the planes of a drawn rail.
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus
   `Frame` and `SourceStyles` for keeping several panels of one scene

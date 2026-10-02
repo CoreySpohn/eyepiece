@@ -76,10 +76,18 @@ returns a `MosaicResult`, and both are frozen dataclasses, so an attribute
 cannot be reassigned out from under the figure. To change what is drawn,
 call the primitive again or use the `update` described below.
 
-`PlotResult` carries `.ax`, `.artists`, `.update`, and a `.fig` property
-that reads the figure off the axes. `MosaicResult` carries `.axes` (the
-panel array, as `plt.subplots` returns it), the same `.artists` and
+`PlotResult` carries `.ax`, `.artists`, `.update`, `.insets`, and a `.fig`
+property that reads the figure off the axes. `MosaicResult` carries `.axes`
+(the panel array, as `plt.subplots` returns it), the same `.artists` and
 `.update`, and a `.fig` property that reads the figure off the first panel.
+
+`.insets` is a tuple of the axes a primitive created beside the one it drew
+on, for the caller to fill: the insets `curve_insets` stands over the marks
+of a curve, or the panels `rail_panels` hangs under the planes of a rail.
+They are axes, not artists, so they never go under an artist key, and the
+tuple is empty for every primitive that creates none. A dial drawn by
+`phasor(at=...)` is different: there the inset is the axes the phasor draws
+on, so it is the result's `.ax`.
 
 The prepared renderers return their own result types, described under
 {ref}`prepared-contract`: `eyepiece.mpl.render` returns an `MplResult`,
@@ -143,7 +151,9 @@ under the symmetric norm of the first draw, so every frame keeps the same
 zero and the same scale. `rail` returns an `update(highlight=...)` that
 relights its planes by restyling the existing artists, keeping the tones of
 the first draw, so a frame loop moves the highlight without clearing the
-axes.
+axes. `convergence` returns an `update(k)` that reveals the first `k`
+samples under the limits the full data set on the first draw, and `ruler`
+an `update(p0, p1, text)` that moves its arrow and label.
 
 An `update` reuses the norm built from the first draw. Values outside that
 norm are not an error, they render clipped to the colormap's end colors, and

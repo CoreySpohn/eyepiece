@@ -194,3 +194,56 @@ adjustment a matter of setting a property rather than redrawing the figure.
 ```{code-cell} python
 print(sorted(one.artists), type(one.artists["ellipse"]).__name__)
 ```
+
+## Samples converging on a reference
+
+`convergence` draws a sequence of samples as dots beside their running mean
+(or, with `running="sum"`, their running sum), with each reference value as
+a labeled horizontal line and an optional tolerance band shaded around it.
+The dots are a neutral tone and the running line carries the color, so the
+eye follows the estimate settling while the scatter shows how noisy each
+sample is. The reference labels sit at the right edge on backing boxes, and
+the right limit leaves room for them past the last sample.
+
+The samples below are the intensities of one speckle in independent frames,
+which follow an exponential distribution: any one frame can be several times
+the mean, and the running mean still closes on it rather than on the median,
+the value half the frames fall below.
+
+```{code-cell} python
+rng = np.random.default_rng(3)
+looks = rng.exponential(1.0, 240)
+
+fig, ax = plt.subplots(figsize=(6.4, 3.6), layout="constrained")
+ax.set(xlabel="frames averaged", ylabel="intensity / mean")
+res = ep.convergence(
+    looks,
+    ax=ax,
+    refs=[1.0, np.log(2.0)],
+    ref_labels=["mean", "median"],
+    ref_linestyles=["--", ":"],
+    band=[0.1, None],
+)
+```
+
+The limits are fixed from the full data on the first draw, and
+`update(k)` reveals only the first `k` samples and the line up to them,
+creating no artist, so an animation that adds one frame at a time keeps one
+scale from start to finish. The three panels below are one call each, frozen
+at three counts, as three frames of that animation would be.
+
+```{code-cell} python
+fig, axes = plt.subplots(1, 3, figsize=(9.0, 2.6), layout="constrained",
+                         sharey=True)
+for ax, k in zip(axes, [10, 60, 240]):
+    frame = ep.convergence(looks, ax=ax, refs=1.0, ref_labels="mean", band=0.1)
+    frame.update(k)
+    ax.set_title(f"{k} frames")
+```
+
+`update` also takes `values=` and `refs=`, which replace the samples and move
+the references, their labels, and their bands, for a figure whose parameter
+changes between frames. With `running=None` the line is the values as given,
+for a curve the caller already accumulated, and a second call on the same
+axes widens the limits to cover both, so two curves converging on two
+references share one panel.

@@ -252,6 +252,60 @@ ep.overlay_circle(ax, (2.6, 1.4), 0.7, circle_kw={"lw": 1.5},
 ep.label_lod(ax)
 ```
 
+`ls` sets the line style of the light line, so a solid circle can mark a
+hard edge, the rim of a pupil say, while a dashed one inside it marks a stop
+or a working angle; the underlay stays solid either way. `label` writes a
+name on the circle at `label_angle`, in degrees counterclockwise from +x,
+just outside the circle and aligned away from its center, on a backing box
+in the background color so it reads over any pixel. The label comes back
+under `text`.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
+pupil_image = (r <= 10.0) * (1.0 + 0.2 * np.cos(x))
+ax.imshow(pupil_image, extent=EXTENT, origin="lower", cmap="magma",
+          interpolation="nearest")
+ep.overlay_circle(ax, (0.0, 0.0), 10.0, ls="-", label="rim", label_angle=40.0)
+stop = ep.overlay_circle(ax, (0.0, 0.0), 8.0, label="stop", label_angle=-135.0)
+ax.set_axis_off()
+print(sorted(stop.artists))
+```
+
+## A ruler over an image
+
+`ruler` draws a double-headed dimension arrow between two points in data
+coordinates, with its label at the midpoint on a backing box. Over an image
+the arrow is the text color on a wider line in the background color, the
+same ink-on-paper pair as the label, so it reads across the bright core and
+the dark halo alike; `backing=False` drops the line and the box for a ruler
+on a plain plot. The heads are sized in points like a phasor's, and a ruler
+shorter than its two heads shrinks them to fit, so an animated ruler can
+grow from nothing. Like `overlay_circle`, it leaves the limits alone.
+
+Below, the ruler spans the first dark ring of the core, 2.44 lambda over D
+across, and a second ruler runs from the star to the companion.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
+ep.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
+width = ep.ruler(ax, (-1.22, -2.4), (1.22, -2.4), r"$2.44\,\lambda/D$",
+                 side="below")
+ep.overlay_circle(ax, (0.0, 0.0), 1.22)
+ep.ruler(ax, (0.0, 0.0), (2.6, 1.4), "companion", side="left")
+ax.set(xlim=(-4.5, 4.5), ylim=(-4.5, 4.5))
+ep.label_lod(ax)
+```
+
+`update(p0=None, p1=None, text=None)` moves the same arrow, backing line,
+and label, so a frame loop can grow a ruler toward its final length.
+
+```{code-cell} python
+n_artists = len(ax.get_children())
+for end in np.linspace(-1.22, 1.22, 6):
+    width.update(p1=(end, -2.4), text=f"{end + 1.22:.2f}")
+print(len(ax.get_children()) == n_artists, width.artists["text"].get_text())
+```
+
 ## Ratio and residual
 
 `triptych` draws A and B through `compare_row`, so the first two panels

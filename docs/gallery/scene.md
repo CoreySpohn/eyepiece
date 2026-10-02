@@ -521,6 +521,46 @@ print(f"artists before and after: {n_artists}, {len(ax.get_children())}; "
 fig
 ```
 
+### Panels under the planes
+
+A side view of a train often sits over a strip of images, one per plane.
+`rail_panels` hangs an empty axes under each chosen plane of a drawn rail,
+centered on its station, and returns them in `result.insets` in the order the
+labels were given. With the default `units="data"`, the width, bottom, and
+height are in the rail axes' data coordinates, so under a rail drawn with
+`coords="data"` the strip is laid out in the same units as the train and
+follows it through the equal aspect and any resizing. `"axes"` and
+`"figure"` give them instead as fractions of the rail axes or the figure,
+with each panel still centered on its plane. The panels are inset axes kept
+out of the layout engine, so the limits below run far enough under the train
+to leave room for them.
+
+The strip below holds the four planes of the coronagraph propagated earlier
+on this page.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 4.2), layout="constrained")
+ax.set(xlim=(-0.3, 10.9), ylim=(-5.6, 2.4), aspect="equal")
+ax.axis("off")
+train = ep.rail(
+    [("Pupil", "pupil"), ("FPM", "fpm"), ("Lyot", "lyot"), ("Focal", "focal")],
+    ax=ax,
+    coords="data",
+    positions=(1.2, 4.0, 6.8, 9.6),
+    fourier_lens="middle",
+    stops={"Lyot": 0.85},
+    highlight="FPM",
+)
+strip = ep.rail_panels(train, width=2.5, bottom=-5.4, height=2.5)
+for panel, (plane, data, is_focal) in zip(strip.insets, panels, strict=True):
+    if is_focal:
+        ep.imshow_log(data, ax=panel, floor=1e-8, vmax=1.0, colorbar=False)
+    else:
+        panel.imshow(data, origin="lower", interpolation="nearest", cmap="magma")
+        panel.set_xticks([])
+        panel.set_yticks([])
+```
+
 ### Strokes and labels for a slide
 
 Every stroke on a rail, the beam's edges and dotted axis, the plane markers,

@@ -196,6 +196,80 @@ for t0 in (1.0, 4.5, 8.0):
     )
 ```
 
+## Chains standing over a curve
+
+`curve_insets` stands a small square inset above each marked point of a
+curve, joined to its point by a thin connector, with the point marked by a
+dot. Given `chains`, one complex array per mark, each inset holds that
+mark's chain of arrows and its resultant, drawn by `phasor` on one frame
+fitted around every chain so arrow lengths compare between insets. The curve
+below is a slit's brightness against angle, and above each mark is the chain
+whose squared resultant is that brightness: straight on the axis, curled
+halfway to the first dark fringe, and closed at it. `heights` stands the
+insets on a level row instead of on their points, here lowered past the
+first fringe where the curve is nearly dark.
+
+The insets are placed each time the figure is drawn, from the parent's data
+transform, so they keep to their points through layout and resizing as a
+dial does, and they come back in `result.insets`, a tuple in mark order;
+the dots and connectors are the result's `scatter` and `lines`.
+
+```{code-cell} python
+theta = np.linspace(0.0, 2.6, 400)
+brightness = np.sinc(theta) ** 2
+marks = [0.0, 0.5, 1.0, 1.5, 2.0]
+n_arrows = 16
+chains = [
+    np.exp(2j * np.pi * m * (np.arange(n_arrows) + 0.5) / n_arrows) / n_arrows
+    for m in marks
+]
+
+fig, ax = plt.subplots(figsize=(8.0, 3.4), layout="constrained")
+ax.plot(theta, brightness, color=ep._style.color(0))
+ax.set(xlim=(-0.25, 2.8), ylim=(-0.05, 1.9), xlabel=r"$\sin\theta$ ($\lambda/b$)",
+       ylabel="brightness")
+stand = ep.curve_insets(
+    ax,
+    theta,
+    brightness,
+    marks,
+    heights=[1.2, 1.2, 1.2, 0.45, 0.45],
+    above=0.03,
+    chains=chains,
+    phasor_kw={"head_scale": 0.35},
+)
+print(len(stand.insets), sorted(stand.artists))
+```
+
+Without `chains`, `build(inset_ax, i)` fills each inset however the figure
+needs, and `size_units="data"` sizes the insets in the parent's x units
+rather than as a fraction of its shorter side. Below, each inset is the
+point source a curve of throughput was read from, at that separation.
+
+```{code-cell} python
+sep = np.linspace(0.0, 6.0, 300)
+throughput = 1.0 - np.exp(-0.5 * (sep / 1.5) ** 2)
+grid = np.linspace(-4.0, 4.0, 33)
+gx, gy = np.meshgrid(grid, grid)
+shown = [1.0, 2.5, 4.5]
+
+
+def spot(inset, i):
+    """A point source offset by the i-th separation, drawn in the inset."""
+    image = np.exp(-0.5 * (np.hypot(gx - shown[i] + 2.0, gy) / 0.5) ** 2)
+    inset.imshow(image, origin="lower", cmap="magma", interpolation="nearest")
+    inset.set_xticks([])
+    inset.set_yticks([])
+
+
+fig, ax = plt.subplots(figsize=(7.0, 3.2), layout="constrained")
+ax.plot(sep, throughput, color=ep._style.color(0))
+ax.set(xlim=(0.0, 6.0), ylim=(0.0, 2.2), xlabel="separation", ylabel="throughput")
+res = ep.curve_insets(
+    ax, sep, throughput, shown, size=0.9, size_units="data", above=0.05, build=spot
+)
+```
+
 ## The phase key alone
 
 `phase_ring` draws the ring by itself, a circle of `radius` about `center`
