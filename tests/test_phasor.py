@@ -596,3 +596,31 @@ def test_phasor_ring_is_the_phase_ring():
     assert list(ring.get_linewidths()) == list(ref.get_linewidths())
     plt.close(res.fig)
     plt.close(alone.fig)
+
+
+def test_resultant_head_and_width_overrides_survive_update():
+    with matplotlib.rc_context(_PIN_RC):
+        res = ep.phasor(
+            [1.0, 1j],
+            chain=True,
+            show_sum=True,
+            head_scale=0.3,
+            sum_head_scale=0.55,
+            sum_width=3.0,
+        )
+    total = res.artists["arrow"][-1]
+    nominal = super(type(total), total).get_mutation_scale()
+    assert nominal == pytest.approx(HEAD_PER_MARKER * 6.0 * 0.55)
+    assert total.get_linewidth() == 3.0
+    res.update([0.5, -1j])
+    assert super(type(total), total).get_mutation_scale() == pytest.approx(nominal)
+    assert total.get_linewidth() == 3.0
+    plt.close(res.fig)
+
+
+def test_resultant_head_alone_sets_its_default_width():
+    with matplotlib.rc_context(_PIN_RC):
+        res = ep.phasor([1.0, 1j], show_sum=True, sum_head_scale=0.5)
+    total = res.artists["arrow"][-1]
+    assert total.get_linewidth() == pytest.approx(1.5 * 1.5 * 0.7)
+    plt.close(res.fig)

@@ -394,6 +394,8 @@ def phasor(
     widths=None,
     head_scale=1.0,
     sum_color=None,
+    sum_head_scale=None,
+    sum_width=None,
     at=None,
     size=0.25,
     size_units="data",
@@ -453,8 +455,15 @@ def phasor(
             head and thins the shaft with a smaller one, to 0.4 of it at
             the least, so a small head is not lost in its shaft.
         head_scale: Head size relative to a full-size head, one value for
-            every arrow or one per vector. The resultant takes the largest.
+            every arrow or one per vector.
         sum_color: Color of the resultant. None uses `rcParams["text.color"]`.
+        sum_head_scale: Head size of the resultant, relative to a full-size
+            head. None uses the largest of `head_scale`. Ignored without
+            `show_sum`.
+        sum_width: Shaft width of the resultant in points. None uses 1.5
+            times `rcParams["lines.linewidth"]`, thinned with a smaller
+            resultant head as the default shafts are. Ignored without
+            `show_sum`.
         at: `(x, y)` in the data coordinates of `ax`. When given, the plane
             is drawn in a transparent inset (a dial) centered at that point
             and `result.ax` is the inset. The parent's position and limits
@@ -509,10 +518,11 @@ def phasor(
         lines, if drawn), `"collection"` (the ring, if drawn), and `"text"`
         (the axis labels, if drawn), and an
         `.update(vectors, origin=None, starts=None)` that moves the same
-        arrows to new values, keeping every style. It re-chains, recomputes
-        the resultant, and separates overlapping arrows as on the first
-        draw, with the offset of the first draw; an `origin` or `starts` of
-        None keeps the last one. It never rescales the limits or the heads'
+        arrows to new values, keeping every style (the resultant's head and
+        width among them). It re-chains, recomputes the resultant, and
+        separates overlapping arrows as on the first draw, with the offset
+        of the first draw; an `origin` or `starts` of None keeps the last
+        one. It never rescales the limits or the heads'
         nominal size.
 
     Raises:
@@ -559,10 +569,15 @@ def phasor(
     widths = _per_arrow(widths, n, base_width, "widths")
     zorders = [5] * n
     if show_sum:
-        sum_head = max(heads, default=1.0)
+        if sum_head_scale is None:
+            sum_head = max(heads, default=1.0)
+        else:
+            sum_head = float(sum_head_scale)
+        if sum_width is None:
+            sum_width = 1.5 * base_width * _shaft_fraction(sum_head)
         colors.append(rc["text.color"] if sum_color is None else sum_color)
         linestyles.append("-")
-        widths.append(1.5 * base_width * _shaft_fraction(sum_head))
+        widths.append(float(sum_width))
         heads.append(sum_head)
         zorders.append(4)
 
