@@ -16,6 +16,7 @@ import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgba
 from matplotlib.patches import FancyArrowPatch
+from matplotlib.path import Path
 
 from eyepiece import _style
 from eyepiece._result import PlotResult
@@ -71,14 +72,33 @@ class _Arrow(FancyArrowPatch):
             return nominal
         return min(nominal, length_pt / HEAD_LENGTH)
 
+    def _vanishing(self):
+        """True when the arrow is too short on screen to draw."""
+        length_pt = self._length_pt()
+        return length_pt is not None and length_pt < MIN_LENGTH_PT
+
+    def get_path(self):
+        """The arrow's path, or a single point for a vanishing arrow.
+
+        Matplotlib builds the head from the shaft's direction, which a
+        zero-length arrow does not have (a 0/0 in the head geometry), and
+        it asks for the path outside of drawing too: when the patch is
+        added, and for window and tight extents. A vanishing arrow is
+        therefore its start point, so it never reaches the head geometry.
+        """
+        if self._vanishing():
+            start = np.asarray(self._ends[0], dtype=float)
+            return Path(np.array([start, start]))
+        return super().get_path()
+
     def draw(self, renderer):
         """Draw nothing for a vanishing arrow, whose stroke would leave a dot.
 
         A chain that closes has a zero resultant, and a dot at the origin
-        would read as a value.
+        would read as a value. Visibility is left alone, so the arrow draws
+        again as soon as an update gives it length.
         """
-        length_pt = self._length_pt()
-        if length_pt is not None and length_pt < MIN_LENGTH_PT:
+        if self._vanishing():
             return
         super().draw(renderer)
 

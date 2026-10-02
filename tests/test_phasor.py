@@ -1,5 +1,6 @@
 """phasor: arrows, chains, resultants, and dials on the complex plane."""
 
+import io
 import itertools
 
 import hwostyle
@@ -295,3 +296,41 @@ def test_a_closed_chain_draws_without_error_and_skips_the_zero_resultant():
     assert total._length_pt() < 0.05
     res.fig.canvas.draw()
     plt.close(res.fig)
+
+
+def _centered_steps(turns, n=24):
+    """Slit wavelets with phases centered on zero, winding `turns` full turns."""
+    k = np.arange(n) + 0.5
+    return np.exp(1j * (2.0 * np.pi * turns * k / n - np.pi * turns)) / n
+
+
+@pytest.mark.filterwarnings("error::RuntimeWarning")
+def test_a_closed_chain_raises_no_warning_built_or_updated():
+    """A vanishing resultant never reaches the arrowhead geometry (a 0/0 there).
+
+    Matplotlib asks for an arrow's path when it is added and for its extents,
+    not only when drawing, so construction, layout, saving, and an update
+    into and out of the closed state are all exercised.
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(9, 3.2), layout="constrained")
+    results = [
+        ep.phasor(
+            _centered_steps(turns),
+            ax=ax,
+            chain=True,
+            show_sum=True,
+            head_scale=0.3,
+            lim=0.65,
+        )
+        for ax, turns in zip(axes, (0.0, 0.5, 1.0), strict=True)
+    ]
+    fig.savefig(io.BytesIO(), format="png", dpi=110)
+    res = results[0]
+    total = res.artists["arrow"][-1]
+    for turns in (1.0, 0.5, 1.0, 0.0):
+        res.update(_centered_steps(turns))
+        fig.savefig(io.BytesIO(), format="png", dpi=110)
+        total.get_window_extent()
+    assert total.get_visible()
+    assert total.get_window_extent().width > 0.0
+    plt.close(fig)
