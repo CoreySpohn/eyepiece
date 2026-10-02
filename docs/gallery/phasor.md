@@ -55,6 +55,52 @@ res = ep.phasor(
 )
 ```
 
+## Two waves, and arrows that lie on one another
+
+`starts` gives each arrow its own start, one per vector, so arrows from the
+origin and arrows placed elsewhere share one call. Arrow i runs from
+`starts[i]` to `starts[i] + vectors[i]`, and the resultant of `show_sum`
+still starts at `origin`. It is for a plane that is not chained, and
+combining it with `chain=True` raises.
+
+Two waves in step add along one line, and two waves half a turn apart fold
+back along it, so their arrows lie on one another. `separate` draws such
+arrows apart. Taking the arrows in the returned order, with the resultant
+last, it moves each arrow that lies on the same line as an arrow before it
+and shares a length with it, at their unshifted positions, by that fraction
+of the plane's half-width, perpendicular to itself and clockwise from its
+own direction. The resultant of the in-step pair therefore runs just
+beneath the pair, and in the folded pair the second wave runs back above the
+first while the resultant runs below. Arrows that meet at a single point,
+as consecutive links of a chain or two arrows from one origin do, never
+move. The automatic limits are fitted to the unshifted arrows.
+
+`text_kw` styles the axis labels, here larger and on a backing box in the
+page color.
+
+```{code-cell} python
+e1, e2 = 1.0, 0.6
+fig, axes = plt.subplots(1, 3, figsize=(9.0, 3.2), layout="constrained")
+turns = [0.0, 0.2, 0.5]
+titles = ["in step", "a fifth of a turn apart", "half a turn apart"]
+for ax, turn, title in zip(axes, turns, titles):
+    wave2 = e2 * np.exp(2j * np.pi * turn)
+    ep.phasor(
+        [e1, wave2],
+        ax=ax,
+        starts=[0.0, e1],
+        show_sum=True,
+        colors=[ep._style.color(0), ep._style.color(2)],
+        lim=(-0.3, 1.9, -0.9, 1.3),
+        separate=0.08,
+        text_kw={
+            "fontsize": "medium",
+            "bbox": {"facecolor": plt.rcParams["axes.facecolor"], "edgecolor": "none"},
+        },
+    )
+    ax.set_title(title)
+```
+
 ## A slit as a chain of wavelets
 
 A slit seen from a point on a distant screen is a row of wavelets whose phases
@@ -124,11 +170,58 @@ for (cx, cy), field in zip(centers, fields):
     )
 ```
 
+`size_units="axes"` gives `size` instead as a fraction of the parent axes'
+shorter side on screen, which suits a dial that should read at one size on
+panels of different scales. The square is worked out from the parent's box
+each time the figure is drawn, so it keeps its share of the panel through
+layout and resizing, just as the dial keeps to its data point. Below, the
+dials on a wide panel are each a third of its height, whatever its data
+units.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 2.6), layout="constrained")
+t = np.linspace(0.0, 10.0, 400)
+ax.plot(t, np.cos(2.0 * np.pi * t / 4.0), color=ep._style.neutral(0.6))
+ax.set(xlim=(0.0, 10.0), ylim=(-1.6, 1.6), xlabel="time (s)")
+for t0 in (1.0, 4.5, 8.0):
+    ep.phasor(
+        [np.exp(2j * np.pi * t0 / 4.0)],
+        ax=ax,
+        at=(t0, 0.0),
+        size=0.33,
+        size_units="axes",
+        ring=True,
+        lim=1.25,
+        cross=False,
+    )
+```
+
+## The phase key alone
+
+`phase_ring` draws the ring by itself, a circle of `radius` about `center`
+colored by the phase colormap, onto any axes, and `phasor(ring=True)` draws
+its ring through it. On a given axes it adds the one collection and touches
+nothing else: not the aspect, the ticks, the spines, or limits that were
+set. Called without an axes, it makes a new one with an equal aspect so the
+ring is round.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(3.4, 3.4), layout="constrained")
+ax.set(xlim=(-1.4, 1.4), ylim=(-1.4, 1.4), aspect="equal")
+ax.set_axis_off()
+ring = ep.phase_ring(ax, radius=1.0, width=6.0)
+marks = {"0": 0.0, r"$\pi/2$": np.pi / 2, r"$\pm\pi$": np.pi, r"$-\pi/2$": -np.pi / 2}
+for label, phi in marks.items():
+    ax.text(1.22 * np.cos(phi), 1.22 * np.sin(phi), label, ha="center", va="center")
+```
+
 ## Moving arrows in an animation
 
-The returned `.update(vectors, origin=None)` moves the same arrow patches to
-new values, re-chaining them and recomputing the resultant as the first draw
-did, and keeps every color, line style, and width. A frame loop therefore
+The returned `.update(vectors, origin=None, starts=None)` moves the same
+arrow patches to new values, re-chaining them, recomputing the resultant,
+and separating overlapping arrows as the first draw did, and keeps every
+color, line style, and width. An `origin` or `starts` of None keeps the last
+one. A frame loop therefore
 mutates the figure rather than clearing it. The number of vectors is fixed by
 the first draw, and a different count raises. Below, the slit chain is drawn
 once on the axis and then stepped to the first dark fringe; in a recorded

@@ -137,7 +137,8 @@ the API reference, and the groups are:
 - **Scenes.** `trail`, `sky_fan`, and `fading_track`.
 - **Phasors.** `phasor` for complex numbers as arrows on the complex plane,
   separate or chained tip to tail with their resultant, with a phase-colored
-  ring as the key, or as a small dial inset beside a feature of another panel.
+  ring as the key, or as a small dial inset beside a feature of another panel,
+  and `phase_ring` for that key drawn alone on any axes.
 - **Emphasis.** `fade`, which blends any drawn artists toward their
   background so an element carried from an earlier figure reads as already
   seen, `capture`, which collects what a block of code drew so it can be

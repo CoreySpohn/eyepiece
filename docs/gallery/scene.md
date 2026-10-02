@@ -521,6 +521,35 @@ print(f"artists before and after: {n_artists}, {len(ax.get_children())}; "
 fig
 ```
 
+### Strokes and labels for a slide
+
+Every stroke on a rail, the beam's edges and dotted axis, the plane markers,
+the lenses' rims, and the outlines of the deformable mirror and the
+detector, is a fixed width in points, which can look thin once a slide style
+has made the text and markers larger. `linewidth_scale` multiplies all of
+them, and `update` keeps the scaled widths when it moves the highlight.
+`label_kw` passes extra properties to every plane label, such as a font size
+or a backing box; the color and weight carry the highlight, so they are not
+among them.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 1.9), layout="constrained")
+slide = ep.rail(
+    [("Pupil", "pupil"), ("DM", "dm"), ("FPM", "fpm"), ("Lyot", "lyot"),
+     ("Image", "detector")],
+    ax=ax,
+    highlight="FPM",
+    linewidth_scale=2.0,
+    label_kw={
+        "fontsize": "large",
+        "bbox": {"facecolor": plt.rcParams["axes.facecolor"], "edgecolor": "none",
+                 "pad": 1.5},
+    },
+)
+slide.update(highlight="Lyot")
+print([round(line.get_linewidth(), 1) for line in slide.artists["lines"]])
+```
+
 ## Carrying a step forward, faded
 
 A figure that builds toward a whole in steps shows each earlier step again
