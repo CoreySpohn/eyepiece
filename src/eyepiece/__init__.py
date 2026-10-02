@@ -5,7 +5,7 @@ and animating simulated images (point spread functions, coronagraph
 detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
-``_schematic``, ``profiles``, ``emphasis``) are internal organization and
+``_schematic``, ``_phasor``, ``profiles``, ``emphasis``) are internal organization and
 are not part of the public API. The vocabularies a caller reads against are
 exported alongside the functions: ``ARTIST_KEYS``, the key set a result's
 ``artists`` dict draws from; ``PRESETS``, the measured fps/dpi pairs for the
@@ -68,6 +68,7 @@ __all__ = [
     "label_au",
     "label_lod",
     "overlay_circle",
+    "phasor",
     "plot_contrast_curve",
     "plot_radial",
     "provenance_fields",
@@ -126,6 +127,7 @@ _LAZY_EXPORTS = {
     "fading_track": ("eyepiece.scene", "fading_track"),
     "sky_fan": ("eyepiece.scene", "sky_fan"),
     "trail": ("eyepiece.scene", "trail"),
+    "phasor": ("eyepiece._phasor", "phasor"),
     "GLYPHS": ("eyepiece._schematic", "GLYPHS"),
     "rail": ("eyepiece._schematic", "rail"),
     "schematic": ("eyepiece._schematic", "schematic"),
