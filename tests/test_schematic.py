@@ -5,8 +5,11 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.collections import Collection
 from matplotlib.colors import to_rgba
-from matplotlib.patches import Ellipse, Polygon, Rectangle
+from matplotlib.lines import Line2D
+from matplotlib.patches import Ellipse, Patch, Polygon, Rectangle
+from matplotlib.text import Text
 
 import eyepiece
 from eyepiece._schematic import GLYPHS, rail, schematic
@@ -449,3 +452,271 @@ def test_a_full_stop_leaves_the_beam_alone():
 def test_bad_fourier_lens_or_stops_raise(kwargs, match):
     with pytest.raises(ValueError, match=match):
         rail(_TRAIN, **kwargs)
+
+
+# The axes-coordinate layout of the released rail, pinned as numbers: the
+# optical axis sits at 0.52, the collimated beam is 0.20 either side of it
+# and a focus 0.018, a pupil-like marker reaches 0.06 past the beam and an
+# image-like one 0.06 past a 0.13 floor, labels sit 0.04 above the marker,
+# and a lens follows its plane by 0.035.
+_CORONAGRAPH_AT = (0.10, 0.36, 0.63, 0.92)
+
+
+def test_default_coronagraph_geometry_matches_the_released_layout():
+    res = schematic("coronagraph", highlight="lyot")
+    markers = res.artists["lines"]
+    assert [float(m.get_xdata()[0]) for m in markers] == pytest.approx(_CORONAGRAPH_AT)
+    spans = [tuple(float(y) for y in m.get_ydata()) for m in markers]
+    pupil_like, image_like = (0.26, 0.78), (0.33, 0.71)
+    assert spans == [
+        pytest.approx(pupil_like),
+        pytest.approx(image_like),
+        pytest.approx(pupil_like),
+        pytest.approx(image_like),
+    ]
+    tops = [float(t.get_position()[1]) for t in res.artists["text"]]
+    assert tops == pytest.approx([0.82, 0.75, 0.82, 0.75])
+    # Collimated before the pupil; the drawn envelope is sampled, so a plane's
+    # corner is matched to the sampling.
+    assert _half_width_at(res, 0.05) == pytest.approx(0.20)
+    for x, half in zip(_CORONAGRAPH_AT, (0.20, 0.018, 0.20, 0.018), strict=True):
+        assert _half_width_at(res, x) == pytest.approx(half, abs=0.003)
+    assert _lenses(res) == pytest.approx([0.135, 0.395, 0.665])
+    assert res.ax.get_xlim() == (0.0, 1.0)
+    assert res.ax.get_ylim() == (0.0, 1.0)
+    assert not res.ax.axison
+    plt.close(res.fig)
+
+
+def _gid(res, gid):
+    return [a for a in res.ax.get_children() if a.get_gid() == gid]
+
+
+_FOUR = [("Pupil", "pupil"), ("Focal", "fpm"), ("Lyot", "lyot"), ("Image", "detector")]
+
+
+def test_highlight_sequence_lights_exactly_the_named_planes():
+    res = rail(_FOUR, highlight=["pupil", "IMAGE"], accent="#123456")
+    widths = [line.get_linewidth() for line in res.artists["lines"]]
+    weights = [text.get_fontweight() for text in res.artists["text"]]
+    assert widths == [2.0, 1.0, 1.0, 2.0]
+    assert weights == ["bold", "normal", "normal", "bold"]
+    lit = to_rgba("#123456")
+    assert to_rgba(_gid(res, "rail/Pupil/glyph")[0].get_facecolor()) == lit
+    assert to_rgba(_gid(res, "rail/Lyot/glyph")[0].get_facecolor()) != lit
+    plt.close(res.fig)
+
+
+def test_empty_highlight_sequence_lights_nothing():
+    plain = rail(_FOUR)
+    empty = rail(_FOUR, highlight=[])
+    assert [ln.get_color() for ln in plain.artists["lines"]] == [
+        ln.get_color() for ln in empty.artists["lines"]
+    ]
+    plt.close(plain.fig)
+    plt.close(empty.fig)
+
+
+@pytest.mark.parametrize("highlight", [["Pupil", "nope"], ["Pupil", 3], 3.5])
+def test_highlight_sequence_with_an_unknown_label_raises(highlight):
+    with pytest.raises(ValueError, match="highlight"):
+        rail(_FOUR, highlight=highlight)
+
+
+def test_colors_reach_the_glyph_artists_by_gid():
+    res = rail(_FOUR, colors={"lyot": "#00ff00", "Image": "#ff00ff"}, highlight="Lyot")
+    bars = _gid(res, "rail/Lyot/glyph")
+    assert len(bars) == 2
+    # A colored glyph keeps its role color when its plane is lit.
+    assert all(to_rgba(b.get_facecolor()) == to_rgba("#00ff00") for b in bars)
+    (box,) = _gid(res, "rail/Image/glyph")
+    assert to_rgba(box.get_edgecolor()) == to_rgba("#ff00ff")
+    assert _hatch_color(box) == to_rgba("#ff00ff")
+    # An uncolored glyph keeps the neutral tone of a plain rail.
+    plain = rail(_FOUR)
+    neutral = _gid(plain, "rail/Pupil/glyph")[0].get_facecolor()
+    assert _gid(res, "rail/Pupil/glyph")[0].get_facecolor() == neutral
+    plt.close(res.fig)
+    plt.close(plain.fig)
+
+
+def test_unknown_color_plane_raises():
+    with pytest.raises(ValueError, match="unknown color plane"):
+        rail(_FOUR, colors={"Nowhere": "red"})
+
+
+def test_beam_color_reaches_the_envelope_and_its_edges():
+    res = rail(_FOUR, beam_color="#abcdef")
+    fill = to_rgba(np.ravel(res.artists["fill"].get_facecolor())[:3])
+    assert fill == to_rgba("#abcdef")
+    edges = _gid(res, "rail/beam/edge")
+    assert len(edges) == 2
+    assert all(to_rgba(e.get_color()) == to_rgba("#abcdef") for e in edges)
+    plt.close(res.fig)
+
+
+def test_every_rail_artist_carries_a_rail_gid():
+    planes = [*_FOUR[:3], ("End", "focal")]
+    res = rail(planes, gaps=["relay", "fourier", "fourier"], cap=True)
+    frame = [res.ax.patch, *res.ax.spines.values()]
+    drawn = [
+        a
+        for a in res.ax.get_children()
+        if (isinstance(a, (Line2D, Patch, Collection)) and a not in frame)
+        or (isinstance(a, Text) and a.get_text())
+    ]
+    gids = {a.get_gid() for a in drawn}
+    assert all(gid is not None and gid.startswith("rail/") for gid in gids)
+    assert {
+        "rail/beam/fill",
+        "rail/beam/edge",
+        "rail/beam/axis",
+        "rail/Pupil/lens",
+        "rail/Focal/lens",
+        "rail/Lyot/lens",
+        "rail/End/cap",
+        "rail/End/marker",
+        "rail/End/label",
+        "rail/End/glyph",
+    } <= gids
+    # The relay after the pupil draws two lenses, both owned by the pupil.
+    assert len(_gid(res, "rail/Pupil/lens")) == 2
+    plt.close(res.fig)
+
+
+def test_lenses_are_returned_under_ellipse_in_optical_order():
+    res = rail(_FOUR)
+    ellipses = res.artists["ellipse"]
+    assert [e.center[0] for e in ellipses] == _lenses(res)
+    assert set(res.artists) <= set(eyepiece.ARTIST_KEYS)
+    plt.close(res.fig)
+
+
+def test_a_rail_without_lenses_omits_the_ellipse_key():
+    res = rail([("Only", "pupil")])
+    assert "ellipse" not in res.artists
+    plt.close(res.fig)
+
+
+def _styles(res):
+    lines = [
+        (ln.get_color(), ln.get_linewidth(), ln.get_linestyle())
+        for ln in res.artists["lines"]
+    ]
+    texts = [(t.get_color(), t.get_fontweight()) for t in res.artists["text"]]
+    glyphs = [
+        to_rgba(a.get_color() if isinstance(a, Line2D) else a.get_facecolor())
+        for label, _ in _FOUR
+        for a in _gid(res, f"rail/{label}/glyph")
+        if not (isinstance(a, Patch) and a.get_hatch())
+    ]
+    return lines, texts, glyphs
+
+
+def test_update_relights_in_place_like_a_fresh_draw():
+    res = rail(_FOUR, highlight="Pupil", colors={"Lyot": "#00ff00"})
+    before = len(res.ax.get_children())
+    res.update(highlight=["Focal", "Lyot"])
+    assert len(res.ax.get_children()) == before
+    fresh = rail(_FOUR, highlight=["Focal", "Lyot"], colors={"Lyot": "#00ff00"})
+    assert _styles(res) == _styles(fresh)
+    res.update()
+    plain = rail(_FOUR, colors={"Lyot": "#00ff00"})
+    assert _styles(res) == _styles(plain)
+    plt.close(res.fig)
+    plt.close(fresh.fig)
+    plt.close(plain.fig)
+
+
+def test_update_recolors_a_detector_hatch_with_its_edge():
+    res = rail(_FOUR, accent="#123456")
+    res.update(highlight="Image")
+    (box,) = _gid(res, "rail/Image/glyph")
+    assert to_rgba(box.get_edgecolor()) == to_rgba("#123456")
+    assert _hatch_color(box) == to_rgba("#123456")
+    plt.close(res.fig)
+
+
+def test_update_rejects_an_unknown_label():
+    res = rail(_FOUR)
+    with pytest.raises(ValueError, match="highlight"):
+        res.update(highlight="nope")
+    plt.close(res.fig)
+
+
+_DATA_AT = (1.2, 4.0, 6.8, 9.6)
+
+
+def _data_rail(**kwargs):
+    _, ax = plt.subplots()
+    ax.set(xlim=(-0.3, 10.4), ylim=(-1.9, 2.0))
+    ax.set_aspect("equal")
+    options = {
+        "coords": "data",
+        "positions": _DATA_AT,
+        "axis_y": 0.25,
+        "beam_half": 1.0,
+        "fourier_lens": "middle",
+    }
+    return rail(_FOUR, ax=ax, **{**options, **kwargs})
+
+
+def test_data_coords_place_the_train_in_data_units():
+    res = _data_rail()
+    markers = [float(m.get_xdata()[0]) for m in res.artists["lines"]]
+    assert markers == pytest.approx(_DATA_AT)
+    lens_x = [e.center[0] for e in res.artists["ellipse"]]
+    assert lens_x == pytest.approx([2.6, 5.4, 8.2])
+    assert all(e.center[1] == pytest.approx(0.25) for e in res.artists["ellipse"])
+    upper = _gid(res, "rail/beam/edge")[0]
+    for x in (1.2, 2.0, 6.0, 6.8):  # collimated around both pupils
+        top = float(np.interp(x, upper.get_xdata(), upper.get_ydata()))
+        assert top - 0.25 == pytest.approx(1.0)
+    plt.close(res.fig)
+
+
+def test_data_coords_leave_the_callers_limits_and_axis_alone():
+    res = _data_rail()
+    assert res.ax.get_xlim() == pytest.approx((-0.3, 10.4))
+    assert res.ax.get_ylim() == pytest.approx((-1.9, 2.0))
+    assert res.ax.axison
+    assert res.ax.get_aspect() == 1.0
+    plt.close(res.fig)
+
+
+def _bar_height(res):
+    bar = _gid(res, "rail/Pupil/glyph")[0]
+    return bar.get_height(), bar.get_width()
+
+
+def test_data_coord_glyphs_scale_with_beam_half():
+    small = _data_rail(beam_half=0.5)
+    big = _data_rail(beam_half=1.5)
+    (h_small, w_small), (h_big, w_big) = _bar_height(small), _bar_height(big)
+    assert h_big / h_small == pytest.approx(3.0)
+    assert w_big / w_small == pytest.approx(3.0)
+    plt.close(small.fig)
+    plt.close(big.fig)
+
+
+def test_data_coord_span_sets_the_beam_extent():
+    res = _data_rail(span=(0.0, 9.6))
+    axis = _gid(res, "rail/beam/axis")[0]
+    assert tuple(axis.get_xdata()) == pytest.approx((0.0, 9.6))
+    plt.close(res.fig)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"coords": "figure"}, "unknown coords"),
+        ({"axis_y": 0.5}, "need coords"),
+        ({"beam_half": 0.1}, "need coords"),
+        ({"coords": "data", "positions": _DATA_AT, "beam_half": 0.0}, "positive"),
+        ({"coords": "data"}, "positions are required"),
+        ({"positions": (0.1, 0.4, 0.6, 0.9), "span": (0.2, 1.0)}, "bracket"),
+    ],
+)
+def test_bad_coordinate_options_raise(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        rail(_FOUR, **kwargs)
