@@ -151,9 +151,13 @@ under the symmetric norm of the first draw, so every frame keeps the same
 zero and the same scale. `rail` returns an `update(highlight=...)` that
 relights its planes by restyling the existing artists, keeping the tones of
 the first draw, so a frame loop moves the highlight without clearing the
-axes. `convergence` returns an `update(k)` that reveals the first `k`
-samples under the limits the full data set on the first draw, and `ruler`
-an `update(p0, p1, text)` that moves its arrow and label.
+axes. `convergence`, `signed_trace`, and `hist_fill` return an `update(k)`
+that reveals the first `k` samples under the limits the full data set on the
+first draw; `ruler` an `update(p0, p1, text)` that moves its arrow and label;
+`overlay_line` an `update(x, y)` that moves its path; `fading_track` an
+`update(xy)` that redraws its ramp along a new path; and `step_list` an
+`update(current, done)` that moves the reader's place. `kymograph` returns
+the `update` of `imshow_log`, which it draws through.
 
 An `update` reuses the norm built from the first draw. Values outside that
 norm are not an error, they render clipped to the colormap's end colors, and

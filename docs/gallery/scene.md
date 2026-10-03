@@ -256,10 +256,28 @@ print(f"{len(alphas)} segments, alpha {alphas[0]:.2f} at the tail to "
       f"{alphas[-1]:.2f} at the head")
 ```
 
+`update(xy)` redraws the same collection along a new path, rebuilding the
+ramp across however many segments the new path has, so the trail of a
+moving point grows frame by frame without a new artist. A track can start
+empty, since a path of fewer than two points draws nothing.
+
+```{code-cell} python
+fig, axes = plt.subplots(1, 3, figsize=(8.4, 2.8), layout="constrained")
+for ax, k in zip(axes, [60, 220, 500]):
+    ax.set(xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), aspect="equal")
+    growing = ep.fading_track(np.empty((0, 2)), ax=ax, alpha_range=(0.05, 1.0))
+    growing.update(spiral[:k])
+    ax.plot(*spiral[k - 1], marker="o", ms=5,
+            color=growing.artists["collection"].get_colors()[-1][:3])
+    ax.set_title(f"{k} samples")
+    ax.set_xticks([])
+    ax.set_yticks([])
+```
+
 ## The glyph vocabulary
 
 `rail` builds a miniature optical train from a list of `(label, glyph)`
-pairs, where the glyph is one of the ten names in `GLYPHS`. The names are
+pairs, where the glyph is one of the thirteen names in `GLYPHS`. The names are
 this library's own vocabulary, chosen to say what to draw rather than to
 match any simulation package's class names, and the mapping they carry is
 whether the beam is wide at that plane or pinched. The envelope in every
@@ -271,7 +289,7 @@ print({name: "pupil-like" if wide else "image-like"
        for name, wide in sorted(ep.GLYPHS.items())})
 ```
 
-The rail below is assembled to show all ten glyphs once rather than to
+The rail below is assembled to show all thirteen glyphs once rather than to
 describe a real instrument. A lens is drawn after every plane but the last,
 the planes are spaced evenly because no `positions` were given, and the
 train is capped with a detector block only when it ends on a `focal` plane,
@@ -283,15 +301,18 @@ vocabulary = [
     ("Pupil", "pupil"),
     ("Apodizer", "apodizer"),
     ("DM", "dm"),
+    ("Flat", "flat_mirror"),
+    ("Splitter", "beam_splitter"),
     ("FPM", "fpm"),
     ("Vortex", "phase_mask"),
     ("Lyot", "lyot"),
     ("Mask", "mask"),
     ("Focal", "focal"),
+    ("Field stop", "field_stop"),
     ("Detector", "detector"),
 ]
 
-fig, ax = plt.subplots(figsize=(11.0, 2.2), layout="constrained")
+fig, ax = plt.subplots(figsize=(13.0, 2.2), layout="constrained")
 glyphs = ep.rail(vocabulary, ax=ax, highlight="FPM")
 ```
 
@@ -561,6 +582,78 @@ for panel, (plane, data, is_focal) in zip(strip.insets, panels, strict=True):
         panel.set_yticks([])
 ```
 
+### What a plane holds, and what groups them
+
+Not every marked plane holds an element. An intermediate focus or a pupil
+image is a place the light passes, and `bare` names the planes whose glyph
+is not drawn while their marker, label, and effect on the beam's width stay.
+`optional` draws an element a train may or may not carry with a faint glyph
+and an italic label. `marker_colors` colors each unlit plane's marker and
+label, so the kind of each plane, a pupil or a focus, reads off the rail
+while the glyphs keep their own role colors, and `label_y` puts every label
+on one row instead of setting each just over its own marker. `beam=False`
+leaves out the envelope, for a train whose beam the caller traces itself.
+
+`bracket` groups a run of things along the horizontal axis under one label,
+a bar with a tick at each end pointing toward what it groups. It is a plain
+annotation in data coordinates and leaves the limits alone, so it works
+over a rail drawn with `coords="data"` as over any other panel.
+
+```{code-cell} python
+kind = {"pupil": "tab:purple", "focus": "tab:green"}
+instrument = [
+    ("telescope", "pupil", "pupil"),
+    ("FSM", "flat_mirror", "pupil"),
+    ("dichroic", "beam_splitter", "pupil"),
+    ("DM", "dm", "pupil"),
+    ("(apodizer)", "apodizer", "pupil"),
+    ("vortex", "phase_mask", "focus"),
+    ("Lyot stop", "lyot", "pupil"),
+    ("field stop", "field_stop", "focus"),
+    ("detector", "detector", "focus"),
+]
+xs = (1.0, 4.0, 6.5, 9.0, 12.0, 14.6, 17.2, 20.0, 23.0)
+
+fig, ax = plt.subplots(figsize=(9.6, 2.4), layout="constrained")
+ax.set(xlim=(-0.2, 24.2), ylim=(-1.8, 3.6), aspect="equal")
+ax.axis("off")
+full = ep.rail(
+    [(label, glyph) for label, glyph, _ in instrument],
+    ax=ax,
+    coords="data",
+    positions=xs,
+    span=(0.0, 23.0),
+    gaps=["relay", "none", "none", "relay", "fourier", "fourier", "fourier",
+          "relay"],
+    fourier_lens="middle",
+    stops={"Lyot stop": 0.8},
+    optional="(apodizer)",
+    marker_colors={label: kind[k] for label, _, k in instrument},
+    label_y=1.5,
+    label_kw={"fontsize": "small"},
+)
+ep.bracket(ax, 0.4, 14.6, 2.6, "upstream of the mask", depth=0.25)
+ep.bracket(ax, 17.2, 23.6, 2.6, "downstream", depth=0.25)
+
+fig, ax = plt.subplots(figsize=(9.6, 1.6), layout="constrained")
+ax.set(xlim=(-0.2, 10.2), ylim=(-1.4, 2.0), aspect="equal")
+ax.axis("off")
+relay = ep.rail(
+    [("pupil", "pupil"), ("focus", "focal"), ("pupil image", "pupil")],
+    ax=ax,
+    coords="data",
+    positions=(1.0, 5.0, 9.0),
+    gaps=["fourier", "fourier"],
+    fourier_lens="middle",
+    beam=False,
+    bare=["focus", "pupil image"],
+    marker_colors={"pupil": kind["pupil"], "focus": kind["focus"],
+                   "pupil image": kind["pupil"]},
+    label_y=1.4,
+)
+print(sorted(relay.artists))
+```
+
 ### Strokes and labels for a slide
 
 Every stroke on a rail, the beam's edges and dotted axis, the plane markers,
@@ -659,4 +752,54 @@ as a hatch that should recede less than the region it fills. With no
 ```{code-cell} python
 face = axes[1].get_facecolor()
 print(ep.blend(cast["b"]["color"], 0.45, background=face))
+```
+
+### Arriving instead of receding
+
+A color fade suits an element the reader has already seen. An element that
+arrives during a build-up wants the opposite: to appear over what is already
+drawn without painting the background color across it. `fade(..., by="alpha")`
+scales each artist's own opacity by `level`, counting an unset alpha as 1,
+and hides the artist outright at 0, so nothing is drawn until it arrives.
+Restoring the previous handle before each new fade keeps every step relative
+to the opacity the artists were drawn with, which is how an animation brings
+a group in over several frames.
+
+```{code-cell} python
+fig, axes = plt.subplots(1, 3, figsize=(8.4, 2.6), layout="constrained")
+for ax, u in zip(axes, [0.0, 0.4, 1.0]):
+    with ep.capture(ax) as earlier:
+        planet = first_step(ax)
+    ep.fade(earlier, 0.3)
+    with ep.capture(ax) as arriving:
+        ax.plot([0.0, planet[0]], [0.0, planet[1]], lw=2.0,
+                color=cast["separation"]["color"])
+        ax.text(planet[0] / 2, planet[1] / 2 + 0.08, "separation", ha="center",
+                color=cast["separation"]["color"])
+    arrival = ep.fade(arriving, u, by="alpha")
+    ax.set_title(f"level {u:g}")
+print(len(arrival.artists), "artists arriving")
+```
+
+## Narrating the steps
+
+`step_list` writes the steps of a build-up as a numbered list that keeps the
+reader's place: `update(current)` shows the current step bright and bold,
+the steps already taken dim, and the steps still to come not at all, and
+`update(current, done=True)` shows the finished list. Each row is a heading
+or a `(heading, detail)` pair, and the list fills its own axes, so it can
+sit beside the figure it narrates and move with it frame by frame.
+
+```{code-cell} python
+steps = [
+    ("Steer", "a steering mirror holds the star on the mask"),
+    ("Correct", "deformable mirrors flatten the wavefront"),
+    ("Block", "the mask and stop remove the starlight"),
+]
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 1.9), layout="constrained")
+for ax, current in zip(axes, [0, 2, 2]):
+    narration = ep.step_list(steps, ax=ax, current=current,
+                             text_kw={"fontsize": "small"}, gap=0.32)
+narration.update(2, done=True)  # the last panel: the finished list
+print([t.get_text() for t in narration.artists["text"]][:2])
 ```

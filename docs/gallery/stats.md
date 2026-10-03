@@ -247,3 +247,76 @@ changes between frames. With `running=None` the line is the values as given,
 for a curve the caller already accumulated, and a second call on the same
 axes widens the limits to cover both, so two curves converging on two
 references share one panel.
+
+## A trace about a level
+
+`signed_trace` draws a sequence against a reference level and shades the
+area between them in two colors, one where the trace is above the level and
+one where it is below, with the crossings interpolated. The two colors are
+the ends of the diverging colormap a signed map is drawn with, so a trace
+beside a residual image shares its key. The limits are fixed from the full
+trace on the first draw, and `update(k)` shows only the first `k` samples,
+redrawing the two fills in the same `"fill"` list, so an animation keeps one
+scale and one set of artists.
+
+Below, a pixel's brightness wanders over ten hours about its static value:
+brighter where the field it adds lines up with the static one, dimmer where
+it opposes it.
+
+```{code-cell} python
+rng = np.random.default_rng(5)
+t_hours = np.linspace(0.0, 10.0, 241)
+drift = np.cumsum(rng.normal(0.0, 0.05, t_hours.size))
+drift -= np.linspace(0.0, drift[-1], t_hours.size)
+brightness = np.abs(1.0 + 0.35 * drift * np.exp(1j * 0.6 * t_hours)) ** 2
+
+fig, axes = plt.subplots(1, 2, figsize=(9.0, 2.8), layout="constrained",
+                         sharey=True)
+for ax, k in zip(axes, [90, 241]):
+    trace = ep.signed_trace(brightness, ax=ax, x=t_hours, level=1.0,
+                            level_label="static")
+    trace.update(k)
+    ax.set(xlabel="time (h)", title=f"{t_hours[k - 1]:.1f} h")
+axes[0].set_ylabel("brightness / static")
+print(sorted(trace.artists), len(trace.artists["fill"]), "fills")
+```
+
+`fill_colors=(above, below)` sets the two colors outright, `cmap=` samples
+another diverging map, and `show_level=True` draws the level line without a
+label.
+
+## A histogram that fills
+
+`hist_fill` counts samples into fixed bins and pins the y axis on the first
+draw to the final counts, or to the expected counts of a law when one is
+given, so `update(k)` counts only the first `k` samples into the same bars
+and the histogram grows into a frame that never rescales. A frame that
+rescaled to its tallest bar would make five samples look as settled as five
+hundred. The law is drawn as expected counts, the number of samples times
+the bin width times the density, which is what the bars converge to.
+
+A count of one is a sliver on that frame, so `rug=` draws the first few
+samples as dots on the baseline, one at each sample's value. The rug marks
+where samples fell, not how many, and `update(k, rug_alpha=...)` fades it as
+the bars take over. The law's curve is the expected count for every sample,
+so `update(..., show_law=False)` keeps it hidden until the last one is in.
+The speckle intensities below follow the exponential law of a fully
+developed speckle field.
+
+```{code-cell} python
+looks = np.random.default_rng(8).exponential(1.0, 400)
+edges = np.arange(0.0, 6.01, 0.25)
+
+fig, axes = plt.subplots(1, 3, figsize=(9.6, 2.6), layout="constrained",
+                         sharey=True)
+for ax, k in zip(axes, [6, 60, 400]):
+    hist = ep.hist_fill(looks, edges, ax=ax, law=lambda v: np.exp(-v),
+                        law_label="exponential", law_label_x=1.4, rug=12)
+    hist.update(k, rug_alpha=max(0.0, 1.0 - k / 60.0), show_law=k == 400)
+    ax.set(xlabel="intensity / mean", title=f"{k} samples")
+axes[0].set_ylabel("samples per bin")
+print(sorted(hist.artists), axes[0].get_ylim())
+```
+
+`bins` may also be a count of equal bins spanning the samples. A law needs
+equal bins, since expected counts per bin are a density times one width.

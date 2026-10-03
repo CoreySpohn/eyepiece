@@ -101,6 +101,37 @@ for ax, turn, title in zip(axes, turns, titles):
     ax.set_title(title)
 ```
 
+## Circles of equal brightness
+
+Brightness is the squared length of the resultant, so every tip on a circle
+about 0 is equally bright, and a change that moves the tip along the circle
+changes only the phase. `levels` draws dashed neutral circles of the given
+radii, and `level_labels` writes a name just outside each at
+`level_label_angle`, aligned away from the center.
+
+Below, a static field of length 1 gains a small change. Added along the
+static field it lengthens the resultant, so the pixel brightens; added
+across it the resultant turns but barely lengthens, staying near the circle
+of the static field's own brightness.
+
+```{code-cell} python
+fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.6), layout="constrained")
+for ax, change, title in zip(axes, [0.3, 0.3j], ["along", "across"]):
+    ep.phasor(
+        [1.0, change],
+        ax=ax,
+        starts=[0.0, 1.0],
+        show_sum=True,
+        colors=[ep._style.color(0), ep._style.color(2)],
+        levels=1.0,
+        level_labels="same brightness",
+        level_label_angle=135.0,
+        lim=(-1.2, 1.5, -1.2, 1.2),
+        separate=0.06,
+    )
+    ax.set_title(title)
+```
+
 ## A slit as a chain of wavelets
 
 A slit seen from a point on a distant screen is a row of wavelets whose phases

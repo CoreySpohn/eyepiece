@@ -44,12 +44,21 @@ implement them are internal organization.
 
 - **Images.** `imshow_log` (log scale clipped to a floor, so a zero-valued
   pixel cannot break the norm), `imshow_diverging` (symmetric norm about
-  zero), `show_field` (amplitude and phase panels of a complex field),
-  `compare_row` (several images sharing one norm and colorbar), `compare_grid`
-  (the same on a 2D layout with empty cells allowed), and
-  `triptych` (A, B, and a ratio or residual comparison panel, side by side).
-- **Distributions.** `corner`, `corner_overlay` (a second sample set laid
-  over an existing triangle plot), `hist_vs_pdf`, and `cov_ellipse`.
+  zero), both placed by `extent` or by pixel `centers`, `kymograph` (a cut
+  stacked against time or wavelength), `show_field` (amplitude and phase
+  panels of a complex field), `compare_row` (several images sharing one norm
+  and colorbar), `compare_grid` (the same on a 2D layout with empty cells
+  allowed), and `triptych` (A, B, and a ratio or residual comparison panel,
+  side by side).
+- **Annotations.** `overlay_circle` and `overlay_line` (dashed circles and
+  paths that read over bright and dark pixels), `ruler` (a dimension arrow),
+  and `bracket` (a labeled span).
+- **Distributions and sequences.** `corner`, `corner_overlay` (a second
+  sample set laid over an existing triangle plot), `hist_vs_pdf`,
+  `cov_ellipse`, and three that reveal samples one at a time:
+  `convergence` (a running mean or sum), `signed_trace` (a trace shaded
+  above and below a level), and `hist_fill` (a histogram filling on a
+  pinned scale).
 - **Profiles.** `plot_radial` (a precomputed radial profile line),
   `plot_contrast_curve` (a contrast curve with inner/outer working angle
   shading and reference floor curves, drawn once per axes even across

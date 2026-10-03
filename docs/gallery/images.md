@@ -306,6 +306,58 @@ for end in np.linspace(-1.22, 1.22, 6):
 print(len(ax.get_children()) == n_artists, width.artists["text"].get_text())
 ```
 
+## A cut against wavelength
+
+A cut through an image, stacked row by row against a second variable, is a
+kymograph: one row per time, wavelength, or roll angle, one column per
+sample along the cut. A feature fixed on the sky stands as a vertical
+stripe, and one that moves with the second variable leans. `kymograph`
+draws it as a log image from the pixel centers of both axes, with no
+interpolation and an `"auto"` aspect, since the two axes carry different
+units. It is `imshow_log` with `centers=(x, y)`, an alternative to `extent`
+that every image primitive takes, which builds the pixel-edge extent half a
+step past the outer centers and refuses an unevenly spaced axis, which
+`imshow` cannot draw.
+
+The cut below runs outward from a star through a planet at 6 lambda over D,
+across a band from 450 to 650 nm. A speckle is a diffraction feature, so its
+distance from the star grows in proportion to the wavelength and it leans
+outward, while the planet stays put. `overlay_line` draws a guide over the
+image in the same light dash on a dark underlay as `overlay_circle`, so it
+reads over the bright stripes and the dark gaps alike, with its label on a
+backing box at a fraction of the way along the path.
+
+```{code-cell} python
+cut = np.linspace(0.0, 10.0, 161)
+wavelength_nm = np.linspace(450.0, 650.0, 81)
+lam = wavelength_nm[:, None] / 550.0
+
+
+def spot(center, width=0.35):
+    return np.exp(-0.5 * ((cut[None, :] - center) / width) ** 2)
+
+
+halo = 1e-6 * (1.0 + cut[None, :]) ** -2.5 * np.ones_like(lam)
+speckle_r = (2.5, 4.2, 7.6, 8.8)
+cuts = halo + sum(3e-7 * spot(r0 * lam) for r0 in speckle_r) + 2e-7 * spot(6.0)
+
+fig, ax = plt.subplots(figsize=(5.4, 3.6), layout="constrained")
+kymo = ep.kymograph(cuts, cut, wavelength_nm, ax=ax, vmin=1e-9, vmax=1e-6,
+                    cbar_label="brightness")
+ep.overlay_line(ax, 7.6 * wavelength_nm / 550.0, wavelength_nm, ls=":",
+                label=r"speckle, $r \propto \lambda$", label_at=0.85)
+ep.overlay_line(ax, [6.0, 6.0], wavelength_nm[[0, -1]], label="planet",
+                label_at=0.5)
+ax.set(xlabel=r"distance from the star along the cut ($\lambda/D$)",
+       ylabel="wavelength (nm)")
+print(kymo.artists["image"].get_extent())
+```
+
+The guide's `update(x, y)` moves the same lines and label along a new path,
+which may have a different number of points, as a cut swept around a star
+during a roll does; `kymo.update(new_cuts)` redraws the kymograph under the
+floor and norm of its first draw.
+
 ## Ratio and residual
 
 `triptych` draws A and B through `compare_row`, so the first two panels
