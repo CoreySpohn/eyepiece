@@ -152,6 +152,52 @@ def test_fading_track_alpha_ramps():
     plt.close(res.fig)
 
 
+def test_fading_track_update_redraws_along_a_new_path():
+    fig, ax = plt.subplots()
+    ax.set(xlim=(-2, 2), ylim=(-2, 2))
+    res = fading_track(
+        np.empty((0, 2)), ax=ax, color="tab:red", alpha_range=(0.15, 1.0)
+    )
+    coll = res.artists["collection"]
+    assert len(coll.get_segments()) == 0
+    n_children = len(ax.get_children())
+    t = np.linspace(0, np.pi, 12)
+    path = np.column_stack([np.cos(t), np.sin(t)])
+    for k in (1, 2, 7, 12):
+        res.update(path[:k])
+        fig.canvas.draw()
+        segments = coll.get_segments()
+        assert len(segments) == max(k - 1, 0)
+        assert len(ax.get_children()) == n_children
+        assert ax.get_xlim() == (-2, 2)
+    np.testing.assert_allclose(np.array(segments)[:, 0], path[:-1])
+    np.testing.assert_allclose(np.array(segments)[:, 1], path[1:])
+    colors = coll.get_colors()
+    np.testing.assert_allclose(colors[:, 3], np.linspace(0.15, 1.0, 11))
+    np.testing.assert_allclose(
+        colors[:, :3], [matplotlib.colors.to_rgb("tab:red")] * 11
+    )
+    plt.close(fig)
+
+
+def test_fading_track_update_matches_a_fresh_draw():
+    t = np.linspace(0, 1, 20)
+    path = np.column_stack([t, np.sin(5 * t)])
+    grown = fading_track(path[:3], alpha_range=(0.2, 0.9))
+    grown.update(path)
+    fresh = fading_track(path, alpha_range=(0.2, 0.9))
+    np.testing.assert_allclose(
+        np.array(grown.artists["collection"].get_segments()),
+        np.array(fresh.artists["collection"].get_segments()),
+    )
+    np.testing.assert_allclose(
+        grown.artists["collection"].get_colors(),
+        fresh.artists["collection"].get_colors(),
+    )
+    plt.close(grown.fig)
+    plt.close(fresh.fig)
+
+
 def test_trail_accepts_a_source_styles_entry():
     # the linked-views case is the whole reason this library exists, and its
     # two halves have to compose: `trail(track, style=styles[name])` was a

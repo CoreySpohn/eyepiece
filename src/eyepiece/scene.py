@@ -375,6 +375,21 @@ def sky_fan(
     return PlotResult(ax=ax, artists=artists)
 
 
+def _fading_segments(xy):
+    """`(N - 1, 2, 2)` segments of an `(N, 2)` path; empty below two points."""
+    points = np.asarray(xy, dtype=float).reshape(-1, 1, 2)
+    if len(points) < 2:
+        return np.empty((0, 2, 2))
+    return np.concatenate([points[:-1], points[1:]], axis=1)
+
+
+def _fading_colors(rgb, alpha_range, n_segments):
+    """Per-segment RGBA: one color, alpha ramping linearly tail to head."""
+    rgba = np.tile(np.array([*rgb, 1.0]), (n_segments, 1))
+    rgba[:, 3] = np.linspace(alpha_range[0], alpha_range[1], n_segments)
+    return rgba
+
+
 def fading_track(
     xy, *, ax=None, color=None, alpha_range=(0.1, 1.0), collection_kw=None
 ):
@@ -385,6 +400,9 @@ def fading_track(
     time means `LineCollection.get_colors()` does not return the alpha a
     caller expects, so the ramp is baked into the colors array up front
     instead.
+
+    A path of fewer than two points draws no segment, so a track can start
+    empty and grow through `update`, as the trail of a moving tip does.
 
     Args:
         xy: `(N, 2)` array-like path.
@@ -397,25 +415,35 @@ def fading_track(
             here.
 
     Returns:
-        A `PlotResult` with artist `"collection"` (the `LineCollection`).
-    """
-    positions = np.asarray(xy, dtype=float)
+        A `PlotResult` with artist `"collection"` (the `LineCollection`) and
+        an `update(xy)` that redraws the same collection along a new path,
+        with the ramp rebuilt from the first draw's color and
+        `alpha_range` across however many segments the new path has. It
+        adds no artist and leaves the limits alone.
 
+    Example::
+
+        res = ep.fading_track(np.empty((0, 2)), ax=ax, alpha_range=(0.15, 1.0))
+        for k in range(1, len(tips) + 1):
+            res.update(tips[:k])
+    """
     created = ax is None
     if created:
         _, ax = plt.subplots(layout="constrained")
 
-    points = positions.reshape(-1, 1, 2)
-    segments = np.concatenate([points[:-1], points[1:]], axis=1)
-    n_segments = len(segments)
-
+    segments = _fading_segments(xy)
     rgb = to_rgb(_style.color(0, color))
-    rgba = np.tile(np.array([*rgb, 1.0]), (n_segments, 1))
-    rgba[:, 3] = np.linspace(alpha_range[0], alpha_range[1], n_segments)
+    rgba = _fading_colors(rgb, alpha_range, len(segments))
 
     ckw = {"colors": rgba, "lw": 1.5, **(collection_kw or {})}
     collection = LineCollection(segments, **ckw)
     ax.add_collection(collection)
-    ax.autoscale_view()
+    if len(segments):
+        ax.autoscale_view()
 
-    return PlotResult(ax=ax, artists={"collection": collection})
+    def update(new_xy):
+        new_segments = _fading_segments(new_xy)
+        collection.set_segments(new_segments)
+        collection.set_color(_fading_colors(rgb, alpha_range, len(new_segments)))
+
+    return PlotResult(ax=ax, artists={"collection": collection}, update=update)
