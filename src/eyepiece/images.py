@@ -10,6 +10,12 @@ All three functions route colormaps through `_style.cmap` (never a
 hardcoded colormap name) and default `imshow` to `interpolation="nearest"`,
 per the house rule that interpolating simulated detector data misrepresents
 the pixels.
+
+`kymograph` stacks a cut through an image against a second variable (a
+time, a wavelength) as a log image on the pixel centers given. The overlay
+annotations, `overlay_circle`, `overlay_line`, and `ruler`, draw scenery that
+stays legible over bright and dark pixels alike, and `bracket` groups a run
+of things along the horizontal axis under one label.
 """
 
 import matplotlib
@@ -100,11 +106,60 @@ def display_limits(image, *, low=1.0, high=99.5, low_scale=1.0, positive=False):
     return (vmin, vmax)
 
 
+def _centers_extent(centers, extent, shape, origin):
+    """The pixel-edge extent of an image sampled at 1D pixel centers.
+
+    `centers` is `(x, y)`: the horizontal coordinate of each column and the
+    vertical coordinate of each row, in row order. Each axis must be evenly
+    spaced, because `imshow` draws one uniform grid; an uneven axis belongs
+    in `pcolormesh`. The extent runs half a step past the first and last
+    center, and with `origin="upper"` its bottom and top swap, so row 0
+    sits at `y[0]` either way.
+
+    Returns:
+        `extent` unchanged when `centers` is None, else the extent tuple.
+
+    Raises:
+        ValueError: If both are given, an axis is not 1D, holds fewer than
+            two centers, does not match the image's shape, or is unevenly
+            spaced.
+    """
+    if centers is None:
+        return extent
+    if extent is not None:
+        raise ValueError("pass extent or centers, not both")
+    if len(centers) != 2:
+        raise ValueError("centers must be (x, y): column centers, row centers")
+    n_rows, n_cols = shape[0], shape[1]
+    edges = []
+    for name, values, count in (("x", centers[0], n_cols), ("y", centers[1], n_rows)):
+        values = np.asarray(values, dtype=float)
+        if values.ndim != 1 or values.size < 2:
+            raise ValueError(f"centers {name} must be 1D with at least two entries")
+        if values.size != count:
+            raise ValueError(
+                f"centers {name} has {values.size} entries for {count} pixels"
+            )
+        steps = np.diff(values)
+        if not np.allclose(steps, steps[0], rtol=1e-6, atol=0.0):
+            raise ValueError(
+                f"centers {name} must be evenly spaced for imshow; use "
+                "pcolormesh for an uneven grid"
+            )
+        half = 0.5 * float(steps[0])
+        edges.append((float(values[0]) - half, float(values[-1]) + half))
+    (left, right), (bottom, top) = edges
+    if origin == "upper":
+        bottom, top = top, bottom
+    return (left, right, bottom, top)
+
+
 def imshow_log(
     image,
     *,
     ax=None,
     extent=None,
+    centers=None,
     floor=1e-20,
     vmin=None,
     vmax=None,
@@ -130,6 +185,11 @@ def imshow_log(
         image: 2D array-like of intensities.
         ax: Axes to draw into. None creates a new figure and axes.
         extent: `(left, right, bottom, top)` passed to `imshow`.
+        centers: `(x, y)` 1D arrays of the column and row pixel centers,
+            evenly spaced, from which the pixel-edge extent is built (half
+            a step past the outer centers). An alternative to `extent`, for
+            data sampled on known coordinates, such as a cut against time
+            or wavelength.
         floor: Minimum value the data is clipped to before norm/display.
         vmin: Norm lower bound. None uses `max(data.min(), floor)`.
         vmax: Norm upper bound. None uses `data.max()`.
@@ -148,10 +208,16 @@ def imshow_log(
     Returns:
         A `PlotResult` with artists `"image"` (and `"cbar"` if drawn) and an
         `.update(new_image)` callable.
+
+    Raises:
+        ValueError: If `colorbar` is not a known mode, or `centers` is given
+            with `extent`, or does not match the image (see `centers`).
     """
     _check_colorbar(colorbar)
     img = np.asarray(image, dtype=float)
     data = np.clip(img, floor, None)
+    kw = {"interpolation": "nearest", "origin": "lower", **(imshow_kw or {})}
+    extent = _centers_extent(centers, extent, data.shape, kw["origin"])
     created = ax is None
     if created:
         _, ax = plt.subplots(layout="constrained")
@@ -160,7 +226,6 @@ def imshow_log(
     hi = float(np.nanmax(data)) if vmax is None else vmax
     norm = LogNorm(vmin=lo, vmax=hi)
 
-    kw = {"interpolation": "nearest", "origin": "lower", **(imshow_kw or {})}
     im = ax.imshow(
         data, norm=norm, cmap=_style.cmap("intensity", cmap), extent=extent, **kw
     )
@@ -228,6 +293,7 @@ def imshow_diverging(
     *,
     ax=None,
     extent=None,
+    centers=None,
     vlim=None,
     cmap=None,
     colorbar=True,
@@ -241,6 +307,9 @@ def imshow_diverging(
         image: 2D array-like, typically a signed residual or difference map.
         ax: Axes to draw into. None creates a new figure and axes.
         extent: `(left, right, bottom, top)` passed to `imshow`.
+        centers: `(x, y)` 1D arrays of the column and row pixel centers,
+            evenly spaced, from which the pixel-edge extent is built, as in
+            `imshow_log`. An alternative to `extent`.
         vlim: Symmetric norm bound; the norm spans `(-vlim, vlim)`. None
             uses `max(abs(data.min()), abs(data.max()))`.
         cmap: Colormap override; None uses the semantic "residual" cmap.
@@ -260,9 +329,15 @@ def imshow_diverging(
         `.update(new_image)` that redraws new data under the first draw's
         symmetric norm, which is never refitted, so an animated residual
         keeps one zero and one scale across frames.
+
+    Raises:
+        ValueError: If `colorbar` is not a known mode, or `centers` is given
+            with `extent`, or does not match the image.
     """
     _check_colorbar(colorbar)
     data = np.asarray(image, dtype=float)
+    origin = (imshow_kw or {}).get("origin", "lower")
+    extent = _centers_extent(centers, extent, data.shape, origin)
     created = ax is None
     if created:
         _, ax = plt.subplots(layout="constrained")
@@ -1336,3 +1411,320 @@ def _line_data(state):
 def _midpoint(state):
     (x0, y0), (x1, y1) = state["p0"], state["p1"]
     return (0.5 * (x0 + x1), 0.5 * (y0 + y1))
+
+
+def kymograph(
+    values,
+    x,
+    y,
+    *,
+    ax=None,
+    floor=1e-20,
+    vmin=None,
+    vmax=None,
+    cmap=None,
+    colorbar=True,
+    cbar_label=None,
+    imshow_kw=None,
+    cbar_kw=None,
+):
+    """Draw a cut through an image stacked against a second variable.
+
+    Each row of `values` is the brightness along one cut (a line through a
+    star and a planet, say) at one value of a second variable: a time, a
+    wavelength, a roll angle. Stacked, a feature fixed on the sky stands as
+    a vertical stripe, and one that moves with the second variable leans,
+    so the eye reads at once which features belong to the sky and which to
+    the instrument. The image is log scaled like `imshow_log`, from the
+    pixel centers given, with no interpolation, and on an `"auto"` aspect,
+    since the two axes carry different units.
+
+    Draw guides over it, such as the path a feature should follow, with
+    `overlay_line`, which stays legible over the bright and the dark pixels.
+
+    Args:
+        values: 2D array-like indexed `[y, x]`: one row per value of the
+            second variable, one column per sample along the cut.
+        x: 1D, evenly spaced positions of the samples along the cut (the
+            column centers), drawn on the horizontal axis.
+        y: 1D, evenly spaced values of the second variable (the row
+            centers), drawn on the vertical axis.
+        ax: Axes to draw into. None creates a new figure and axes.
+        floor: Minimum value the data is clipped to before norm and
+            display, as in `imshow_log`.
+        vmin: Norm lower bound. None uses `max(data.min(), floor)`.
+        vmax: Norm upper bound. None uses `data.max()`.
+        cmap: Colormap override; None uses the semantic "intensity" cmap.
+        colorbar: True (an inset beside `ax`), `"figure"`, or False, as in
+            `imshow_log`.
+        cbar_label: Label for the colorbar.
+        imshow_kw: Extra kwargs passed to `ax.imshow`, applied last over
+            the `"auto"` aspect.
+        cbar_kw: Extra kwargs passed to `fig.colorbar`.
+
+    Returns:
+        The `PlotResult` of `imshow_log`: artists `"image"` (and `"cbar"`
+        if drawn) and an `.update(new_values)` that redraws the same image
+        under the first draw's floor and norm.
+
+    Raises:
+        ValueError: If `x` or `y` is not 1D, holds fewer than two entries,
+            does not match `values`, or is unevenly spaced.
+
+    Example::
+
+        res = ep.kymograph(cuts, x_lod, t_hours, vmin=1e-9, vmax=1e-6)
+        ep.overlay_line(res.ax, [r_planet, r_planet], [t_hours[0], t_hours[-1]])
+    """
+    return imshow_log(
+        values,
+        ax=ax,
+        centers=(x, y),
+        floor=floor,
+        vmin=vmin,
+        vmax=vmax,
+        cmap=cmap,
+        colorbar=colorbar,
+        cbar_label=cbar_label,
+        imshow_kw={"aspect": "auto", **(imshow_kw or {})},
+        cbar_kw=cbar_kw,
+    )
+
+
+def _along(xs, ys, fraction):
+    """The point `fraction` of the way along a polyline, by length."""
+    if xs.size == 1:
+        return float(xs[0]), float(ys[0])
+    lengths = np.hypot(np.diff(xs), np.diff(ys))
+    run = np.concatenate([[0.0], np.cumsum(lengths)])
+    if run[-1] == 0.0:
+        return float(xs[0]), float(ys[0])
+    target = float(np.clip(fraction, 0.0, 1.0)) * run[-1]
+    return float(np.interp(target, run, xs)), float(np.interp(target, run, ys))
+
+
+def _path(x, y):
+    xs = np.asarray(x, dtype=float).ravel()
+    ys = np.asarray(y, dtype=float).ravel()
+    if xs.size != ys.size or xs.size == 0:
+        raise ValueError(
+            f"overlay_line needs matching, nonempty x and y; got {xs.size} and "
+            f"{ys.size} points"
+        )
+    return xs, ys
+
+
+def overlay_line(
+    ax,
+    x,
+    y,
+    *,
+    color=None,
+    underlay=True,
+    ls=None,
+    label=None,
+    label_at=0.5,
+    line_kw=None,
+    underlay_kw=None,
+    text_kw=None,
+):
+    """Draw a dashed path over an image, legible on bright and dark pixels.
+
+    The line counterpart of `overlay_circle`, for a cut through an image, a
+    guide over a kymograph, or an arc of fixed radius: a light dash over a
+    thin, solid, dark underlay, the two tones being the style's background
+    and text colors ordered by lightness, so where the pixels are bright the
+    underlay outlines the path and where they are dark the dash does. The
+    path is added without touching the data limits.
+
+    Args:
+        ax: Axes to draw on, in its data coordinates.
+        x: The path's x coordinates, in data units: two points for a
+            straight line, more for a polyline or an arc.
+        y: The path's y coordinates, one per x.
+        color: Color of the dash. None uses the lighter of the style's
+            background and text colors.
+        underlay: Whether to draw the solid dark underlay. True uses the
+            darker of the two tones; a color draws it in that color; False
+            omits it.
+        ls: Line style of the dash. None draws the dash `overlay_circle`
+            draws; `":"` a dotted guide, `"-"` a solid line. The underlay
+            stays solid either way.
+        label: Text written on the path at `label_at`, centered on a backing
+            box in the background color. None writes nothing.
+        label_at: Where the label sits, as a fraction of the path's length
+            in data units from its first point (0) to its last (1).
+        line_kw: Extra kwargs for the dash's `Line2D` (for example `lw`,
+            `zorder`, or `gid`), applied last.
+        underlay_kw: Extra kwargs for the underlay's `Line2D`, applied last
+            over its defaults: a line width 1 pt wider than the dash's, a
+            solid line style, and the dash's z-order. Ignored when
+            `underlay` is False.
+        text_kw: Extra kwargs for the label's `Text` (for example `ha`,
+            `va`, `fontsize`, or `bbox=None` for bare text), applied last.
+
+    Returns:
+        A `PlotResult` whose `artists["lines"]` holds the `Line2D` artists
+        in draw order: the underlay, when drawn, then the dash, so
+        `artists["lines"][-1]` is always the dash. With `label`,
+        `artists["text"]` is the label. Its `update(x, y)` moves the same
+        lines, and the label to the same fraction of the new path, keeping
+        every style; the new path may have a different number of points.
+
+    Raises:
+        ValueError: If `x` and `y` differ in length or are empty, here or in
+            `update`.
+
+    Example::
+
+        res = ep.imshow_log(image, extent=extent)
+        ep.overlay_line(res.ax, [-6.0, 6.0], [-2.0, 2.0], label="cut",
+                        label_at=1.0)
+        phi = np.linspace(0.0, np.pi / 2, 90)
+        ep.overlay_line(res.ax, 4.0 * np.cos(phi), 4.0 * np.sin(phi), ls=":")
+    """
+    xs, ys = _path(x, y)
+    light, dark = _light_and_dark()
+    kw = {
+        "color": light if color is None else color,
+        "lw": 1.0,
+        "ls": (0, (3, 2)) if ls is None else ls,
+        "zorder": 4,
+        **(line_kw or {}),
+    }
+    dash = Line2D(xs, ys, **kw)
+    lines = []
+    if underlay is not False and underlay is not None:
+        under = Line2D(
+            xs,
+            ys,
+            color=dark if underlay is True else underlay,
+            lw=dash.get_linewidth() + 1.0,
+            ls="-",
+            zorder=dash.get_zorder(),
+        )
+        under.set(**(underlay_kw or {}))
+        lines.append(ax.add_artist(under))
+    lines.append(ax.add_artist(dash))
+    artists = {"lines": lines}
+    text = None
+    if label is not None:
+        tkw = {
+            "color": matplotlib.rcParams["text.color"],
+            "fontsize": "small",
+            "ha": "center",
+            "va": "center",
+            "zorder": dash.get_zorder() + 1,
+            "bbox": _style.backing(),
+            **(text_kw or {}),
+        }
+        text = ax.text(*_along(xs, ys, label_at), label, **tkw)
+        artists["text"] = text
+
+    def update(new_x, new_y):
+        nx, ny = _path(new_x, new_y)
+        for line in lines:
+            line.set_data(nx, ny)
+        if text is not None:
+            text.set_position(_along(nx, ny, label_at))
+
+    return PlotResult(ax=ax, artists=artists, update=update)
+
+
+# Where a bracket's label sits and which way its ticks point.
+_BRACKET_SIDES = {
+    "above": ("bottom", 1.0),
+    "below": ("top", -1.0),
+}
+
+
+def bracket(
+    ax,
+    x0,
+    x1,
+    y,
+    text=None,
+    *,
+    depth,
+    side="above",
+    color=None,
+    offset_pt=2.0,
+    line_kw=None,
+    text_kw=None,
+):
+    """Draw a square bracket spanning `x0` to `x1`, labeled on its far side.
+
+    A bracket groups a run of things along the horizontal axis (the
+    elements of a train upstream of a mask, the frames of one exposure)
+    under one label: a bar at height `y` with a tick at each end pointing
+    toward the things grouped, and the label centered on the bar's other
+    side. It is drawn in the text color as scenery and added without
+    touching the data limits.
+
+    Args:
+        ax: Axes to draw on, in its data coordinates.
+        x0: Left end of the bar, in data units.
+        x1: Right end of the bar, in data units.
+        y: Height of the bar, in data units.
+        text: The label. None draws the bracket alone.
+        depth: Length of the end ticks, in data units, > 0.
+        side: Where the label sits: `"above"` the bar, with the ticks
+            pointing down toward what is grouped beneath it, or `"below"`,
+            with the ticks pointing up.
+        color: Color of the bracket. None uses `rcParams["text.color"]`.
+        offset_pt: Gap between the bar and the label, in points.
+        line_kw: Extra kwargs for the bracket's `Line2D` (for example `lw`,
+            `zorder`, or `gid`), applied last.
+        text_kw: Extra kwargs for the label's `Text` (for example
+            `fontsize`, `color`, or a backing `bbox`), applied last.
+
+    Returns:
+        A `PlotResult` with artists `"line"` (the bracket, one `Line2D`
+        through both ticks and the bar) and `"text"` (the label, an
+        `Annotation` of the bar's midpoint, when `text` is given). There is
+        no `update`.
+
+    Raises:
+        ValueError: If `side` is not `"above"` or `"below"`, or `depth` is
+            not positive.
+
+    Example::
+
+        ep.bracket(ax, 0.9, 17.0, 2.75, "upstream of the mask", depth=0.25)
+    """
+    if side not in _BRACKET_SIDES:
+        raise ValueError(
+            f"unknown bracket side: {side!r}; known: {list(_BRACKET_SIDES)}"
+        )
+    depth = float(depth)
+    if not depth > 0.0:
+        raise ValueError(f"bracket depth must be positive, got {depth}")
+    rc = matplotlib.rcParams
+    va, sign = _BRACKET_SIDES[side]
+    x0, x1, y = float(x0), float(x1), float(y)
+    tip = y - sign * depth
+    lkw = {
+        "color": rc["text.color"] if color is None else color,
+        "lw": 0.8 * float(rc["lines.linewidth"]),
+        "zorder": 3,
+        **(line_kw or {}),
+    }
+    line = ax.add_artist(Line2D([x0, x0, x1, x1], [tip, y, y, tip], **lkw))
+    artists = {"line": line}
+    if text is not None:
+        tkw = {
+            "color": rc["text.color"] if color is None else color,
+            "fontsize": "small",
+            "ha": "center",
+            "va": va,
+            "zorder": line.get_zorder(),
+            **(text_kw or {}),
+        }
+        artists["text"] = ax.annotate(
+            text,
+            (0.5 * (x0 + x1), y),
+            xytext=(0.0, sign * float(offset_pt)),
+            textcoords="offset points",
+            **tkw,
+        )
+    return PlotResult(ax=ax, artists=artists)
