@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.7.0](https://github.com/CoreySpohn/eyepiece/compare/v0.6.0...v0.7.0) (2026-10-03)
+
+
+### Features
+
+* **emphasis:** add fade by alpha for arrivals and step_list for narrated build-ups ([0b5299d](https://github.com/CoreySpohn/eyepiece/commit/0b5299d5ed95096e1c42ad52adf0d9b4c9364c02))
+* **images:** add centers= to the image primitives, kymograph, overlay_line, and bracket ([2faa8a0](https://github.com/CoreySpohn/eyepiece/commit/2faa8a040c00c36eb521b9a0f21fe70f3d2ef0b1))
+* **images:** add ruler, a dimension arrow with its label on a backing box ([13e410f](https://github.com/CoreySpohn/eyepiece/commit/13e410fd161acfc58847c364947e856ea40ce942))
+* **images:** give overlay_circle a line style and a label on a backing box ([44dd250](https://github.com/CoreySpohn/eyepiece/commit/44dd25098c41a1e12f544e3f3a461508f6ba757f))
+* **insets:** add curve_insets, square insets standing over marked points of a curve ([76f907e](https://github.com/CoreySpohn/eyepiece/commit/76f907e58a489ef58cd0440f08240dde68d08b96))
+* **phasor:** add levels, dashed equal-brightness circles about zero with labels ([e74c4c1](https://github.com/CoreySpohn/eyepiece/commit/e74c4c15ef136414b400121287ad1389fc4bc524))
+* **phasor:** add per-arrow starts, overlap separation, axes-unit dial size, axis-label text_kw, and a public phase_ring ([2336b37](https://github.com/CoreySpohn/eyepiece/commit/2336b3719ebad95afb27ad81b78bc842b908ed10))
+* **phasor:** add phasor, arrows and chains on the complex plane with a phase ring and inset dials ([104d9dd](https://github.com/CoreySpohn/eyepiece/commit/104d9dd684a0a79dc5548815118bc4ba1ecbe7ec))
+* **phasor:** add sum_head_scale and sum_width for the resultant ([fe1e8fc](https://github.com/CoreySpohn/eyepiece/commit/fe1e8fc6322d0a6745f0250ace88687cee8a4acc))
+* **result:** add "arrow" to ARTIST_KEYS ([97323d3](https://github.com/CoreySpohn/eyepiece/commit/97323d33ec009b442f96db547600e790a13c4e2d))
+* **result:** add an insets slot for axes a primitive creates beside its own ([1ad9896](https://github.com/CoreySpohn/eyepiece/commit/1ad9896816654cd0b399fbb9068542d918dea12a))
+* **scene:** give fading_track an update that redraws the ramp along a new path ([fd1ce28](https://github.com/CoreySpohn/eyepiece/commit/fd1ce28f1c1674916802fe3aca6e74bd44c5c080))
+* **schematic:** add data coordinates, per-glyph colors, multi-plane highlight, gids and an in-place update to rail ([bfc43c6](https://github.com/CoreySpohn/eyepiece/commit/bfc43c6610d2cf94453f639111bc16522d94b739))
+* **schematic:** add rail beam, bare, optional, marker_colors, label_y, and flat_mirror, beam_splitter, field_stop glyphs ([361958a](https://github.com/CoreySpohn/eyepiece/commit/361958a6a8b3c7378a147e5472ff50e38973d736))
+* **schematic:** add rail linewidth_scale and label_kw, and keep scaled marker widths through update ([4425a30](https://github.com/CoreySpohn/eyepiece/commit/4425a30c29697f09f6ee5298da888e9b863bbd38))
+* **schematic:** add rail_panels, axes hung under the planes of a drawn rail ([9b943aa](https://github.com/CoreySpohn/eyepiece/commit/9b943aaae245db111d0bb563335fc4ba80dfa1b4))
+* **stats:** add convergence, samples and their running mean or sum against labeled references ([9d1fc45](https://github.com/CoreySpohn/eyepiece/commit/9d1fc45dd3b2542f8e1a978358c69ddd36096947))
+* **stats:** add signed_trace and hist_fill, sample-by-sample reveals about a level and into bins ([9e0e5b6](https://github.com/CoreySpohn/eyepiece/commit/9e0e5b6c6e95e8f45f28976438b7dabdf028e682))
+
+
+### Bug Fixes
+
+* **anim:** freeze the layout before the first grab so frame 0 matches every later frame ([5bc3ee7](https://github.com/CoreySpohn/eyepiece/commit/5bc3ee77b918a57f852b5efc24ec598e00e73a89))
+* **anim:** settle the constrained layout at the sink dpi before freezing it ([6fa7ed0](https://github.com/CoreySpohn/eyepiece/commit/6fa7ed014e662c1b3a77f50d63e6eb3afe51f941))
+* **phasor:** accept per-arrow colors and line styles that mix kinds of spec ([11325ea](https://github.com/CoreySpohn/eyepiece/commit/11325ea64bfe60978aee7ee2e02073497f388fe7))
+* **phasor:** draw a zero-size head as a plain shaft instead of dividing by zero ([be7c88f](https://github.com/CoreySpohn/eyepiece/commit/be7c88fbafafca78ee09fb3d7595b51f1e27e70c))
+* **phasor:** keep zero-length arrows out of the arrowhead geometry ([c03a87c](https://github.com/CoreySpohn/eyepiece/commit/c03a87c71090d80dc093e594b50eac76d86a6be3))
+* **schematic:** make rail gids unique with indexed parts and occurrence-named repeated labels ([e7b4b6f](https://github.com/CoreySpohn/eyepiece/commit/e7b4b6fa3964360c9f8ff078d926a750f11421bc))
+* **stats:** let convergence reference styles mix names and dash patterns ([e4d57f6](https://github.com/CoreySpohn/eyepiece/commit/e4d57f67c4a7046e840fd23904aa48db76d4ce05))
+
 ## [0.6.0](https://github.com/CoreySpohn/eyepiece/compare/v0.5.0...v0.6.0) (2026-09-29)
 
 
