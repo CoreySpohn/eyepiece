@@ -171,6 +171,7 @@ _EXPECTED_ALL = [
     "signed_trace",
     "sky_fan",
     "stamp",
+    "step_list",
     "trail",
     "triptych",
 ]

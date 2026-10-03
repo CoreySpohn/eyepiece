@@ -91,6 +91,7 @@ __all__ = [
     "signed_trace",
     "sky_fan",
     "stamp",
+    "step_list",
     "trail",
     "triptych",
 ]
@@ -109,6 +110,7 @@ _LAZY_EXPORTS = {
     "blend": ("eyepiece.emphasis", "blend"),
     "capture": ("eyepiece.emphasis", "capture"),
     "fade": ("eyepiece.emphasis", "fade"),
+    "step_list": ("eyepiece.emphasis", "step_list"),
     "compare_grid": ("eyepiece.images", "compare_grid"),
     "compare_row": ("eyepiece.images", "compare_row"),
     "display_limits": ("eyepiece.images", "display_limits"),

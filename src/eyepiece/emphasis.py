@@ -1,4 +1,4 @@
-"""Fade drawn artists toward the background, and collect what a block drew.
+"""Fade drawn artists, collect what a block drew, and narrate steps.
 
 A figure that builds toward a whole in steps carries the elements a reader
 has already seen into the next step, and shows them as "already seen": still
@@ -12,11 +12,16 @@ faded element reads correctly on a light page and a dark one alike.
 block of drawing code added to an axes, so a caller can fade exactly that
 group later without tagging each artist by hand. `blend` is the color blend
 itself, for a single color rather than a drawn artist.
+
+`step_list` is the narration beside such a build-up: a numbered list whose
+current step is bright, whose finished steps are dim, and whose later steps
+are not yet shown.
 """
 
 import contextlib
 
 import matplotlib
+import matplotlib.pyplot as plt
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.collections import Collection
@@ -27,6 +32,9 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.text import Text
 
+from eyepiece import _style
+from eyepiece._result import PlotResult
+
 _IMAGES = (AxesImage, BboxImage, FigureImage)
 
 
@@ -34,8 +42,9 @@ class Faded:
     """Handle returned by `fade`: the artists it changed and how to undo it.
 
     Attributes:
-        artists: The leaf artists whose colors (or, for images, opacity)
-            `fade` changed, in the order it visited them.
+        artists: The leaf artists whose colors (or, for images and under
+            `by="alpha"`, opacity) `fade` changed, in the order it visited
+            them.
     """
 
     def __init__(self):
@@ -217,6 +226,16 @@ def _fade_image(image, level, handle):
     image.set_alpha(level * (1.0 if alpha is None else alpha))
 
 
+def _fade_alpha(artist, level, handle):
+    """Scale an artist's own alpha by `level`; hide it outright at 0."""
+    alpha = artist.get_alpha()
+    handle._record(artist, artist.set_alpha, alpha)
+    artist.set_alpha(level * (1.0 if alpha is None else alpha))
+    if level == 0.0:
+        handle._record(artist, artist.set_visible, artist.get_visible())
+        artist.set_visible(False)
+
+
 def _own_background(artist):
     """The face a container paints itself, or None when it paints none."""
     if isinstance(artist, Axes):
@@ -225,13 +244,14 @@ def _own_background(artist):
     return face if _opaque(face) else None
 
 
-def _visit(artist, level, explicit, inherited, keep, handle, seen):
+def _visit(artist, level, explicit, inherited, keep, handle, seen, by="color"):
     """Fade one artist, or recurse into a container's children.
 
     `explicit` is the caller's background, which wins everywhere.
     `inherited` is the background resolved for the container this artist
     was reached from; a container that paints its own face overrides it
-    for its children.
+    for its children. `by="alpha"` scales each leaf's own alpha instead of
+    blending its colors, and needs no background.
     """
     if id(artist) in seen:
         return
@@ -239,7 +259,9 @@ def _visit(artist, level, explicit, inherited, keep, handle, seen):
     if keep is not None and keep(artist):
         return
     container = isinstance(artist, (Axes, FigureBase))
-    if explicit is not None:
+    if by == "alpha":
+        bg = None
+    elif explicit is not None:
         bg = explicit
     elif container and _own_background(artist) is not None:
         bg = _own_background(artist)
@@ -249,12 +271,20 @@ def _visit(artist, level, explicit, inherited, keep, handle, seen):
         bg = _resolve_background(artist)
 
     def recurse(child):
-        _visit(child, level, explicit, bg, keep, handle, seen)
+        _visit(child, level, explicit, bg, keep, handle, seen, by)
 
     if container:
         for child in artist.get_children():
             if child is not artist.patch:
                 recurse(child)
+        return
+    leaf = isinstance(artist, (Text, Line2D, Patch, Collection, *_IMAGES))
+    if by == "alpha" and leaf:
+        _fade_alpha(artist, level, handle)
+        if isinstance(artist, Text):
+            for part in (artist.get_bbox_patch(), getattr(artist, "arrow_patch", None)):
+                if part is not None:
+                    recurse(part)
         return
     if isinstance(artist, Text):
         _fade_text(artist, level, bg, handle)
@@ -278,8 +308,12 @@ def _visit(artist, level, explicit, inherited, keep, handle, seen):
             recurse(child)
 
 
-def fade(target, level, *, background=None, keep=None):
-    """Blend artists toward the background they sit on.
+# How `fade` quiets an artist.
+_FADE_BY = ("color", "alpha")
+
+
+def fade(target, level, *, background=None, keep=None, by="color"):
+    """Blend artists toward the background they sit on, or lower their opacity.
 
     Every color an artist draws with moves toward the background, keeping
     `level` of its contrast: a line's color and marker colors, a patch's
@@ -296,6 +330,22 @@ def fade(target, level, *, background=None, keep=None):
     Fading twice compounds: two fades at 0.5 leave a quarter of the
     contrast. Colors are read at call time, so fade after the artists take
     their final colors.
+
+    `by="alpha"` fades by opacity instead, for an element that should come
+    and go rather than recede, such as a part of a figure that arrives
+    during a build-up and must not paint the background color over what is
+    already drawn: every leaf artist's own alpha becomes `level` times the
+    alpha it had (None counting as 1), and at `level` 0 the artist is also
+    hidden, so it draws nothing at all. An artist that carries its
+    transparency only in its colors, with no alpha of its own, is drawn at
+    `level` times full opacity. To animate an arrival from the drawn
+    opacities, restore the previous handle before each new fade, which
+    keeps every step relative to the alpha the artists were drawn with::
+
+        faded = ep.fade(group, 0.0, by="alpha")
+        for u in np.linspace(0.0, 1.0, 12):
+            faded.restore()
+            faded = ep.fade(group, u, by="alpha")
 
     Args:
         target: What to fade. An Artist; an Axes, which fades everything it
@@ -314,14 +364,18 @@ def fade(target, level, *, background=None, keep=None):
         keep: Optional predicate called on every artist visited, containers
             included. Where it returns True the artist, and everything
             inside it, is left untouched.
+        by: `"color"` (the default) blends colors toward the background;
+            `"alpha"` scales each artist's own opacity and hides it at 0.
+            `background` is ignored under `"alpha"`.
 
     Returns:
         A `Faded` handle. Its `artists` lists the leaf artists changed, and
-        its `restore()` puts every original color back, so an animation can
-        toggle a region without redrawing it.
+        its `restore()` puts every original color (or alpha and visibility)
+        back, so an animation can toggle a region without redrawing it.
 
     Raises:
-        ValueError: If `level` is outside [0, 1].
+        ValueError: If `level` is outside [0, 1], or `by` is not `"color"`
+            or `"alpha"`.
 
     Example::
 
@@ -331,11 +385,13 @@ def fade(target, level, *, background=None, keep=None):
         ep.fade(earlier, 0.3)
     """
     level = _check_level(level)
+    if by not in _FADE_BY:
+        raise ValueError(f"unknown fade by: {by!r}; known: {list(_FADE_BY)}")
     targets = [target] if isinstance(target, Artist) else list(target)
     handle = Faded()
     seen = set()
     for item in targets:
-        _visit(item, level, background, None, keep, handle, seen)
+        _visit(item, level, background, None, keep, handle, seen, by)
     return handle
 
 
@@ -372,3 +428,113 @@ def capture(container):
         added.extend(
             child for child in container.get_children() if id(child) not in before
         )
+
+
+def _step_rows(rows):
+    """`(heading, detail or None)` for each row: a string or a pair."""
+    out = []
+    for row in rows:
+        if isinstance(row, str):
+            out.append((row, None))
+        else:
+            heading, detail = row
+            out.append((heading, detail))
+    return out
+
+
+def step_list(
+    rows,
+    *,
+    ax=None,
+    current=None,
+    numbered=True,
+    gap=0.2,
+    indent=0.05,
+    detail_offset=0.075,
+    dim=None,
+    text_kw=None,
+):
+    """Write a numbered list of steps whose current step stands out.
+
+    A narrated build-up, or a tour of a figure one part at a time, reads
+    better beside a list of its steps that keeps the reader's place: the
+    current step bright and bold, the steps already taken dim, and the steps
+    still to come not yet shown. `update` moves the place without drawing
+    anything new, so an animation can step it per frame.
+
+    The list fills its own axes, top down, in axes coordinates, with the
+    axis turned off.
+
+    Args:
+        rows: The steps, in order. Each is a heading string, or a
+            `(heading, detail)` pair whose detail is written under the
+            heading, indented.
+        ax: Axes to write into. None creates a new figure and axes.
+        current: The step to show as current on the first draw, 0-based;
+            -1 shows none yet. None shows every step plain, as a static
+            list.
+        numbered: Prefix each heading with its step number, `"1. "`.
+        gap: Vertical distance between consecutive steps, as a fraction of
+            the axes height. The first heading's top sits at 0.95.
+        indent: Horizontal indent of a detail, as a fraction of the axes
+            width.
+        detail_offset: Distance from a heading's top down to its detail's
+            top, as a fraction of the axes height.
+        dim: Color of a finished step. None uses a neutral tone halfway
+            between the background and the text color.
+        text_kw: Extra kwargs for every `Text` (for example `fontsize`),
+            applied last. Color and weight carry the step's state and are
+            set by `update`.
+
+    Returns:
+        A `PlotResult` whose `artists["text"]` lists the `Text` artists in
+        row order, each heading followed by its detail when the row has
+        one, and an `update(current, done=False)` that shows steps 0 to
+        `current` (-1 for none), the current one in the text color and
+        bold and the earlier ones dim, and hides the rest; `done=True` shows
+        every step dim, as a finished list.
+
+    Raises:
+        ValueError: If `rows` is empty.
+
+    Example::
+
+        res = ep.step_list([("Steer", "hold the star on the mask"),
+                            ("Correct", "dig the dark hole")], current=-1)
+        for step in range(2):
+            res.update(step)
+    """
+    entries = _step_rows(rows)
+    if not entries:
+        raise ValueError("step_list needs at least one row")
+    if ax is None:
+        _, ax = plt.subplots(layout="constrained")
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    ax.axis("off")
+    ink = matplotlib.rcParams["text.color"]
+    faint = _style.neutral(0.55) if dim is None else dim
+    kw = {"ha": "left", "va": "top", "color": ink, **(text_kw or {})}
+    texts = []
+    groups = []
+    for i, (heading, detail) in enumerate(entries):
+        y = 0.95 - i * gap
+        head_text = f"{i + 1}. {heading}" if numbered else heading
+        group = [ax.text(0.0, y, head_text, **kw)]
+        if detail is not None:
+            group.append(ax.text(indent, y - detail_offset, detail, **kw))
+        texts += group
+        groups.append(group)
+
+    def update(current, done=False):
+        current = int(current)
+        for i, group in enumerate(groups):
+            shown = done or i <= current
+            now = i == current and not done
+            for text in group:
+                text.set_visible(shown)
+                text.set_color(ink if now else faint)
+            group[0].set_fontweight("bold" if now else "normal")
+
+    if current is not None:
+        update(current)
+    return PlotResult(ax=ax, artists={"text": texts}, update=update)
