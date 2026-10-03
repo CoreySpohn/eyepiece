@@ -1,8 +1,11 @@
-"""Sample-distribution primitives: corner plots, hist-vs-pdf, covariance ellipses.
+"""Sample primitives: corner plots, histograms, covariance ellipses, and traces.
 
 `convergence` draws a sequence of samples beside its running mean or running
 sum, converging toward labeled reference values, and reveals the samples one
-at a time for an animation.
+at a time for an animation. `signed_trace` draws a sequence about a
+reference level, shaded one color above it and another below, and
+`hist_fill` a histogram that fills as samples arrive on a pinned scale; both
+reveal their samples one at a time the same way.
 
 `corner` and `corner_overlay` are a deliberate parity port of the classic
 triangle-plot idiom rather than a wrapper around a third-party corner-plot
@@ -683,4 +686,400 @@ def convergence(
             scatter.set_offsets(offsets.reshape(-1, 2))
         line.set_data(x[:shown], state["curve"][:shown])
 
+    return PlotResult(ax=ax, artists=artists, update=update)
+
+
+# Where a signed trace's two fills sample the diverging colormap: above the
+# level, then below it. Near the ends, short of the extremes, so a fill at
+# half opacity stays a clear hue on a light page and a dark one.
+_SIGNED_ENDS = (0.85, 0.15)
+
+
+def _signed_fills(ax, x, values, level, colors, fkw):
+    """The fill above `level` and the fill below it, as two new collections."""
+    fills = []
+    for mask, fill_color in zip((values >= level, values < level), colors, strict=True):
+        fills.append(
+            ax.fill_between(
+                x,
+                level,
+                values,
+                where=mask,
+                interpolate=True,
+                **{"color": fill_color, **fkw},
+            )
+        )
+    return fills
+
+
+def signed_trace(
+    values,
+    *,
+    ax=None,
+    x=None,
+    level=0.0,
+    color=None,
+    cmap=None,
+    fill_colors=None,
+    fill_alpha=0.5,
+    show_level=False,
+    level_label=None,
+    line_kw=None,
+    fill_kw=None,
+    level_kw=None,
+    text_kw=None,
+):
+    """Draw a trace about a reference level, filled one color above, another below.
+
+    The area between the trace and `level` is shaded in two colors, one
+    where the trace is above the level and one where it is below, with the
+    crossings interpolated, so the reader sees at a glance which way the
+    quantity moved and for how long: a pixel brightening and dimming about
+    its static value, a residual wandering about zero. The colors come from
+    the two ends of the diverging colormap a signed map is drawn with, so
+    the fills agree with a signed image beside the trace.
+
+    The limits are set from the full trace and the level on the first draw
+    (the x range edge to edge, the y range padded) and `update` never
+    changes them, so an animation that reveals the trace sample by sample
+    keeps one scale. On axes that already hold data, the limits grow to
+    cover both.
+
+    Args:
+        values: 1D array-like of the samples, in order.
+        ax: Axes to draw into. None creates a new figure and axes.
+        x: Position of each sample, such as its time. None uses
+            `0, 1, ..., n - 1`.
+        level: The reference level the fills are drawn from.
+        color: Color of the trace. None uses `_style.color(0)`.
+        cmap: Diverging colormap whose ends color the fills (above at 0.85
+            of the way along it, below at 0.15). None uses the semantic
+            "residual" cmap.
+        fill_colors: `(above, below)` colors for the fills, overriding
+            `cmap`.
+        fill_alpha: Opacity of both fills.
+        show_level: Draw the level as a dashed neutral line across the
+            panel.
+        level_label: Text written at the right end of the level line on a
+            backing box; implies `show_level`. None writes nothing.
+        line_kw: Extra kwargs for the trace's `ax.plot` call, applied last.
+        fill_kw: Extra kwargs for both `ax.fill_between` calls, applied
+            last, on every update as on the first draw.
+        level_kw: Extra kwargs for the level's `ax.axhline`, applied last.
+        text_kw: Extra kwargs for the level label's `Text`, applied last.
+
+    Returns:
+        A `PlotResult` with artists `"line"` (the trace `Line2D`), `"fill"`
+        (a list holding the fill above the level, then the fill below it,
+        while two or more samples are shown, else empty), and, with the
+        level drawn, `"lines"` (a list holding the level's `Line2D`) and
+        `"text"` (the label, when given). Its
+        `update(k=None, *, values=None)` shows the first `k` samples: it
+        sets the trace's data and redraws the two fills, removing the old
+        pair and putting the new one in the same `"fill"` list, so the axes
+        hold the same number of artists after every update. `values`
+        replaces the samples (same count). A `k` of None keeps the current
+        count, which starts at every sample. The limits never change.
+
+    Raises:
+        ValueError: If `values` is empty, `x` does not match it, or
+            `update` receives a different number of values.
+
+    Example::
+
+        res = ep.signed_trace(brightness, x=t_hours, level=static,
+                              show_level=True, level_label="static")
+        for k in range(1, len(t_hours) + 1):
+            res.update(k)
+    """
+    values = np.asarray(values, dtype=float).ravel()
+    n = values.size
+    if n == 0:
+        raise ValueError("signed_trace needs at least one value")
+    x = np.arange(float(n)) if x is None else np.asarray(x, dtype=float).ravel()
+    if x.size != n:
+        raise ValueError(f"signed_trace x has {x.size} entries for {n} values")
+    level = float(level)
+    if fill_colors is None:
+        diverging = _style.cmap("residual", cmap)
+        fill_colors = tuple(diverging(end) for end in _SIGNED_ENDS)
+    else:
+        fill_colors = tuple(fill_colors)
+
+    if ax is None:
+        _, ax = plt.subplots(layout="constrained")
+    had_data = ax.has_data()
+    old_limits = ax.get_xlim(), ax.get_ylim()
+
+    rc = matplotlib.rcParams
+    artists = {}
+    show_level = show_level or level_label is not None
+    if show_level:
+        rkw = {
+            "color": _style.neutral(0.5),
+            "ls": "--",
+            "lw": 0.9 * float(rc["lines.linewidth"]),
+            "zorder": 2,
+            **(level_kw or {}),
+        }
+        artists["lines"] = [ax.axhline(level, **rkw)]
+    if level_label is not None:
+        tkw = {
+            "color": _style.neutral(0.65),
+            "fontsize": "small",
+            "ha": "right",
+            "va": "bottom",
+            "zorder": 7,
+            "bbox": _style.backing(),
+            **(text_kw or {}),
+        }
+        artists["text"] = ax.annotate(
+            level_label,
+            (1.0, level),
+            xycoords=ax.get_yaxis_transform(),
+            xytext=(-2.0, 2.0),
+            textcoords="offset points",
+            **tkw,
+        )
+    fkw = {"alpha": fill_alpha, "lw": 0, "zorder": 1, **(fill_kw or {})}
+    lkw = {"color": _style.color(0, color), "zorder": 3, **(line_kw or {})}
+    (line,) = ax.plot(x, values, **lkw)
+    artists["line"] = line
+    fills = []
+    artists["fill"] = fills
+
+    finite_x = x[np.isfinite(x)]
+    xlim = (float(finite_x.min()), float(finite_x.max()))
+    if xlim[0] == xlim[1]:
+        xlim = _padded(xlim[0], xlim[1], 0.5)
+    ys = np.append(values, level)
+    ys = ys[np.isfinite(ys)]
+    ylim = _padded(float(ys.min()), float(ys.max()), 0.06)
+    if had_data:
+        xlim = (min(xlim[0], old_limits[0][0]), max(xlim[1], old_limits[0][1]))
+        ylim = (min(ylim[0], old_limits[1][0]), max(ylim[1], old_limits[1][1]))
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+
+    state = {"k": n, "values": values}
+
+    def update(k=None, *, values=None):
+        if values is not None:
+            new = np.asarray(values, dtype=float).ravel()
+            if new.size != n:
+                raise ValueError(f"signed_trace update got {new.size} values for {n}")
+            state["values"] = new
+        if k is not None:
+            state["k"] = min(max(int(k), 0), n)
+        shown = state["k"]
+        xs, vs = x[:shown], state["values"][:shown]
+        line.set_data(xs, vs)
+        for fill in fills:
+            fill.remove()
+        fills.clear()
+        if shown >= 2:
+            fills.extend(_signed_fills(ax, xs, vs, level, fill_colors, fkw))
+
+    update()
+    return PlotResult(ax=ax, artists=artists, update=update)
+
+
+def _bin_edges(values, bins):
+    """Bin edges from an edge array, or `bins` equal bins over the finite data."""
+    if np.ndim(bins) == 0:
+        finite = values[np.isfinite(values)]
+        lo, hi = (0.0, 1.0) if finite.size == 0 else (finite.min(), finite.max())
+        if lo == hi:
+            lo, hi = lo - 0.5, hi + 0.5
+        return np.linspace(lo, hi, int(bins) + 1)
+    edges = np.asarray(bins, dtype=float).ravel()
+    if edges.size < 2 or np.any(np.diff(edges) <= 0.0):
+        raise ValueError("hist_fill bins must be a count or increasing edges")
+    return edges
+
+
+def hist_fill(
+    values,
+    bins=30,
+    *,
+    ax=None,
+    ymax=None,
+    law=None,
+    law_label=None,
+    law_label_x=None,
+    rug=0,
+    color=None,
+    rug_color=None,
+    bar_kw=None,
+    line_kw=None,
+    scatter_kw=None,
+    text_kw=None,
+):
+    """Draw a histogram that fills as samples arrive, on a pinned scale.
+
+    The bars count the samples per bin, and `update(k)` counts only the
+    first `k`, so an animation shows the distribution building up sample by
+    sample. The y axis is pinned on the first draw to the final counts (and
+    to the law's expected counts, when given), so the histogram grows into
+    a fixed frame rather than rescaling every frame and hiding how few
+    samples the early shape rests on. A law drawn as expected counts shows
+    what the bars are converging to.
+
+    On that frame a count of one is a sliver, so the first `rug` samples can
+    also be drawn as dots on the baseline, one at each sample's value and
+    all at one height: a rug marks where samples fell, not how many, and
+    can fade (`rug_alpha`) once the bars take over.
+
+    Args:
+        values: 1D array-like of every sample, in arrival order.
+        bins: A number of equal bins spanning the finite samples, or the
+            bin edges, increasing. Samples outside the edges are not
+            counted.
+        ax: Axes to draw into. None creates a new figure and axes.
+        ymax: Top of the y axis. None takes 1.08 times the largest final
+            count or expected count.
+        law: Optional density of the samples, a callable `law(x)`, drawn as
+            expected counts: the number of samples times the bin width times
+            the density. Needs equal bins.
+        law_label: Text written just above and right of the law's curve at
+            `law_label_x`, on a backing box. None writes nothing.
+        law_label_x: Where along x the label sits. None uses 0.35 of the
+            way across the bins.
+        rug: How many of the first samples the rug can show; 0 draws none.
+        color: Color of the bars. None uses a neutral tone, so a law or a
+            highlight drawn over them carries the color.
+        rug_color: Color of the rug's dots. None uses `_style.color(0)`.
+        bar_kw: Extra kwargs for `ax.bar`, applied last.
+        line_kw: Extra kwargs for the law's `ax.plot` call, applied last.
+        scatter_kw: Extra kwargs for the rug's `ax.scatter`, applied last.
+        text_kw: Extra kwargs for the law label's `Text`, applied last.
+
+    Returns:
+        A `PlotResult` with artists `"hist"` (the `BarContainer`, one bar per
+        bin), `"line"` (the law's expected counts, with `law`), `"text"`
+        (the law's label, with `law_label`), and `"scatter"` (the rug's
+        `PathCollection`, with `rug`), and an
+        `update(k=None, *, rug_alpha=None, show_law=None)` that counts the
+        first `k` samples into the same bars and shows the first
+        `min(k, rug)` of them on the rug, adding no artist. `rug_alpha` sets
+        the rug's opacity and `show_law` shows or hides the law and its
+        label; None keeps either as it was. A `k` of None keeps the current
+        count, which starts at every sample. The limits never change.
+
+    Raises:
+        ValueError: If `values` is empty, `bins` is neither a count nor
+            increasing edges, or `law` is given with unequal bins.
+
+    Example::
+
+        looks = np.random.default_rng(0).exponential(1.0, 400)
+        res = ep.hist_fill(looks, np.arange(0.0, 6.01, 0.25),
+                           law=lambda x: np.exp(-x), law_label="exponential",
+                           rug=12)
+        for k in range(1, 401):
+            res.update(k, rug_alpha=max(0.0, 1.0 - k / 40))
+    """
+    values = np.asarray(values, dtype=float).ravel()
+    n = values.size
+    if n == 0:
+        raise ValueError("hist_fill needs at least one value")
+    edges = _bin_edges(values, bins)
+    widths = np.diff(edges)
+    n_bins = widths.size
+    if law is not None and not np.allclose(widths, widths[0], rtol=1e-6, atol=0.0):
+        raise ValueError("hist_fill law= draws expected counts and needs equal bins")
+    index = np.digitize(values, edges) - 1
+    # A sample exactly on the last edge belongs to the last bin, as in hist.
+    index[values == edges[-1]] = n_bins - 1
+
+    def counts(k):
+        sel = index[:k]
+        return np.bincount(sel[(sel >= 0) & (sel < n_bins)], minlength=n_bins)
+
+    final = counts(n)
+    grid = expected = None
+    if law is not None:
+        grid = np.linspace(edges[0], edges[-1], 400)
+        expected = n * widths[0] * np.asarray(law(grid), dtype=float)
+    if ymax is None:
+        top = float(final.max())
+        if expected is not None:
+            top = max(top, float(np.nanmax(expected)))
+        ymax = 1.08 * top if top > 0.0 else 1.0
+
+    if ax is None:
+        _, ax = plt.subplots(layout="constrained")
+    rc = matplotlib.rcParams
+    base_width = float(rc["lines.linewidth"])
+    bkw = {
+        "align": "edge",
+        "color": _style.neutral(0.55) if color is None else color,
+        "edgecolor": rc["axes.facecolor"],
+        "linewidth": 0.4 * base_width,
+        "zorder": 2,
+        **(bar_kw or {}),
+    }
+    bars = ax.bar(edges[:-1], final, width=widths, **bkw)
+    ax.set_xlim(edges[0], edges[-1])
+    ax.set_ylim(0.0, ymax)
+    artists = {"hist": bars}
+
+    rug_dots = None
+    if rug:
+        skw = {
+            "s": (0.55 * float(rc["lines.markersize"])) ** 2,
+            "color": _style.color(0, rug_color),
+            "edgecolors": rc["text.color"],
+            "linewidths": 0.4 * base_width,
+            "transform": ax.get_xaxis_transform(),
+            "clip_on": False,
+            "zorder": 6,
+            **(scatter_kw or {}),
+        }
+        rug_dots = ax.scatter([], [], **skw)
+        artists["scatter"] = rug_dots
+    curve = label = None
+    if law is not None:
+        lkw = {"color": rc["text.color"], "lw": 1.3 * base_width, "zorder": 4}
+        (curve,) = ax.plot(grid, expected, **{**lkw, **(line_kw or {})})
+        artists["line"] = curve
+        if law_label is not None:
+            if law_label_x is None:
+                lx = edges[0] + 0.35 * (edges[-1] - edges[0])
+            else:
+                lx = float(law_label_x)
+            ly = n * widths[0] * float(np.asarray(law(np.array([lx])))[0])
+            tkw = {
+                "color": rc["text.color"],
+                "fontsize": "small",
+                "ha": "left",
+                "va": "bottom",
+                "zorder": 7,
+                "bbox": _style.backing(),
+                **(text_kw or {}),
+            }
+            label = ax.text(lx + 0.12 * widths[0], ly + 0.04 * ymax, law_label, **tkw)
+            artists["text"] = label
+
+    state = {"k": n}
+
+    def update(k=None, *, rug_alpha=None, show_law=None):
+        if k is not None:
+            state["k"] = min(max(int(k), 0), n)
+        shown = state["k"]
+        for bar, count in zip(bars, counts(shown), strict=True):
+            bar.set_height(count)
+        if rug_dots is not None:
+            first = values[: min(shown, int(rug))]
+            rug_dots.set_offsets(
+                np.column_stack([first, np.full(first.size, 0.025)]).reshape(-1, 2)
+            )
+            if rug_alpha is not None:
+                rug_dots.set_alpha(rug_alpha)
+        if show_law is not None:
+            for artist in (curve, label):
+                if artist is not None:
+                    artist.set_visible(bool(show_law))
+
+    update()
     return PlotResult(ax=ax, artists=artists, update=update)

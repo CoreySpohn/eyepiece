@@ -64,6 +64,7 @@ __all__ = [
     "fade",
     "fading_track",
     "file_metadata",
+    "hist_fill",
     "hist_vs_pdf",
     "imshow_diverging",
     "imshow_log",
@@ -87,6 +88,7 @@ __all__ = [
     "save_fig",
     "schematic",
     "show_field",
+    "signed_trace",
     "sky_fan",
     "stamp",
     "trail",
@@ -150,7 +152,9 @@ _LAZY_EXPORTS = {
     "corner": ("eyepiece.stats", "corner"),
     "corner_overlay": ("eyepiece.stats", "corner_overlay"),
     "cov_ellipse": ("eyepiece.stats", "cov_ellipse"),
+    "hist_fill": ("eyepiece.stats", "hist_fill"),
     "hist_vs_pdf": ("eyepiece.stats", "hist_vs_pdf"),
+    "signed_trace": ("eyepiece.stats", "signed_trace"),
 }
 
 
