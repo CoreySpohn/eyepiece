@@ -5,7 +5,8 @@ either each from a shared origin or chained tip to tail, with an optional
 resultant, Re and Im axes, and a ring colored by the phase colormap so an
 arrow's direction and a phase map read against one key. Drawn with `at=`,
 the plane is a small inset (a dial) centered on a point of another panel.
-`phase_ring` draws that ring alone, onto any axes.
+`phase_ring` draws that ring alone, onto any axes. Dashed level circles
+about 0 mark lengths a tip can move along without changing its brightness.
 
 The module is private because a public `eyepiece.phasor` submodule would
 shadow the `phasor` function of the same name once imported.
@@ -18,7 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import LineCollection
 from matplotlib.colors import is_color_like
-from matplotlib.patches import FancyArrowPatch
+from matplotlib.patches import Circle, FancyArrowPatch
 from matplotlib.path import Path
 from matplotlib.transforms import Bbox
 
@@ -348,6 +349,33 @@ def _ring(radius, cmap, width, center=0j, n=180):
     )
 
 
+# How far a level circle's label sits outward from its point, in points.
+_LEVEL_LABEL_OFFSET_PT = 3.0
+
+
+def _outward_alignment(angle):
+    """Text alignment that puts a label on the far side of a point at `angle`.
+
+    A label anchored at a point on a circle and aligned this way grows away
+    from the center: a label at 45 degrees grows up and to the right, one at
+    90 degrees straight up, centered over its point.
+    """
+    c, s = np.cos(angle), np.sin(angle)
+    ha = "left" if c > 0.3 else "right" if c < -0.3 else "center"
+    va = "bottom" if s > 0.3 else "top" if s < -0.3 else "center"
+    return ha, va
+
+
+def _level_radii(levels):
+    if levels is None:
+        return []
+    radii = [float(levels)] if np.ndim(levels) == 0 else [float(r) for r in levels]
+    for radius in radii:
+        if not radius > 0.0:
+            raise ValueError(f"phasor levels must be positive, got {radius}")
+    return radii
+
+
 def phase_ring(ax=None, *, radius=1.0, center=0j, cmap=None, width=None, zorder=None):
     """Draw a circle colored by phase: the key a phasor's direction reads against.
 
@@ -422,10 +450,14 @@ def phasor(
     ring=False,
     ring_radius=1.0,
     ring_cmap=None,
+    levels=None,
+    level_labels=None,
+    level_label_angle=135.0,
     lim=None,
     arrow_kw=None,
     line_kw=None,
     collection_kw=None,
+    level_kw=None,
 ):
     """Draw complex numbers as arrows on the complex plane.
 
@@ -516,28 +548,42 @@ def phasor(
         axis_labels: `(re_label, im_label)` written at the positive ends
             of the axes. None writes "Re" and "Im" on a full plane and
             nothing on a dial; False writes nothing. Ignored without `cross`.
-        text_kw: Extra kwargs for the axis-label `Text` artists (for example
-            `fontsize`, `zorder`, `color`, or a backing `bbox`), applied
-            last.
+        text_kw: Extra kwargs for the axis-label and level-label `Text`
+            artists (for example `fontsize`, `zorder`, `color`, or a backing
+            `bbox`), applied last.
         ring: Draw a circle of `ring_radius` about 0 colored by phase, with
             `phase_ring`.
         ring_radius: Radius of the ring, the unit circle by default.
         ring_cmap: Colormap override for the ring; None uses the semantic
             "phase" cmap, the one a phase map is drawn with.
+        levels: A radius, or a sequence of radii, of dashed neutral circles
+            about 0. Every tip on one has the same length, so the same
+            brightness: a field whose tip moves along the circle changes in
+            phase only. None draws none.
+        level_labels: One label per level (an entry of None leaves that
+            level unlabeled), or one string for a single level, written just
+            outside its circle at `level_label_angle`, aligned away from 0.
+        level_label_angle: Where the level labels sit, in degrees
+            counterclockwise from +Re.
         lim: A half-width for symmetric limits about 0, or `(xmin, xmax,
             ymin, ymax)`. None fits a square around every drawn point,
-            including 0 when `cross` is set and the ring when drawn.
+            including 0 when `cross` is set and the ring and level circles
+            when drawn.
         arrow_kw: Extra kwargs for every `FancyArrowPatch` (for example
             `zorder` or `gid`), applied last.
         line_kw: Extra kwargs for the axis lines, applied last.
         collection_kw: Extra kwargs for the ring's `LineCollection`,
             applied last.
+        level_kw: Extra kwargs for every level `Circle` (for example `ls`,
+            `lw`, `edgecolor`, or `zorder`), applied last.
 
     Returns:
         A `PlotResult` with artists `"arrow"` (the list of `FancyArrowPatch`
         in input order, the resultant last), `"lines"` (the Re and Im axis
-        lines, if drawn), `"collection"` (the ring, if drawn), and `"text"`
-        (the axis labels, if drawn), and an
+        lines, if drawn), `"collection"` (the ring, if drawn), `"ellipse"`
+        (the level `Circle` patches, in level order, if any), and `"text"`
+        (the axis labels, if drawn, followed by the level labels, in level
+        order), and an
         `.update(vectors, origin=None, starts=None)` that moves the same
         arrows to new values, keeping every style (the resultant's head and
         width among them). It re-chains, recomputes the resultant, and
@@ -550,8 +596,10 @@ def phasor(
         ValueError: If `at` is given without `ax`, if a per-arrow sequence
             or `starts` does not match the number of vectors, if `starts`
             is given with `chain`, if `size_units` is not `"data"` or
-            `"axes"`, if `lim` has the wrong length, or if `update` receives
-            a different number of vectors or starts, or starts on a chain.
+            `"axes"`, if `lim` has the wrong length, a level is not
+            positive, `level_labels` does not match `levels`, or if `update`
+            receives a different number of vectors or starts, or starts on a
+            chain.
 
     Example::
 
@@ -573,6 +621,16 @@ def phasor(
     values = np.asarray(vectors, dtype=complex).ravel()
     n = len(values)
     starts = _resolve_starts(starts, n, chain, "phasor")
+    radii = _level_radii(levels)
+    if level_labels is None or isinstance(level_labels, str):
+        level_texts = [level_labels] * len(radii)
+    else:
+        level_texts = list(level_labels)
+    if len(level_texts) != len(radii):
+        raise ValueError(
+            f"phasor level_labels has {len(level_texts)} entries for "
+            f"{len(radii)} levels"
+        )
     if ax is None:
         _, ax = plt.subplots(layout="constrained")
     if at is not None:
@@ -608,6 +666,8 @@ def phasor(
     if ring:
         radius = float(ring_radius)
         points = np.append(points, [radius + radius * 1j, -radius - radius * 1j])
+    for r in radii:
+        points = np.append(points, [r + r * 1j, -r - r * 1j])
     xmin, xmax, ymin, ymax = _resolve_limits(lim, points)
     half = 0.5 * max(xmax - xmin, ymax - ymin)
     offset, tol = float(separate) * half, 1e-9 * half
@@ -684,6 +744,41 @@ def phasor(
         ).artists["collection"]
         collection.set(**(collection_kw or {}))
         artists["collection"] = collection
+    if radii:
+        circles = []
+        angle = np.deg2rad(float(level_label_angle))
+        ha, va = _outward_alignment(angle)
+        offset = (
+            _LEVEL_LABEL_OFFSET_PT * np.cos(angle),
+            _LEVEL_LABEL_OFFSET_PT * np.sin(angle),
+        )
+        for r, label in zip(radii, level_texts, strict=True):
+            ckw = {
+                "fill": False,
+                "edgecolor": _style.neutral(0.5),
+                "ls": "--",
+                "lw": 0.8 * base_width,
+                "zorder": 2,
+                **(level_kw or {}),
+            }
+            circles.append(ax.add_patch(Circle((0.0, 0.0), r, **ckw)))
+            if label is None:
+                continue
+            tkw = {
+                "color": _style.neutral(0.65),
+                "fontsize": "small",
+                "ha": ha,
+                "va": va,
+                "zorder": 2,
+                **(text_kw or {}),
+            }
+            point = (r * np.cos(angle), r * np.sin(angle))
+            artists.setdefault("text", []).append(
+                ax.annotate(
+                    label, point, xytext=offset, textcoords="offset points", **tkw
+                )
+            )
+        artists["ellipse"] = circles
     ax.set_xlim(xmin, xmax)
     ax.set_ylim(ymin, ymax)
 

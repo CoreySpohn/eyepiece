@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.collections import LineCollection
-from matplotlib.colors import to_rgba
+from matplotlib.colors import to_rgb, to_rgba
 from matplotlib.patches import FancyArrowPatch
 
 import eyepiece as ep
@@ -689,4 +689,64 @@ def test_widths_and_head_scales_take_numpy_scalars_and_sequences():
     per = ep.phasor([1, 1j], widths=np.array([1.0, 3.0]), head_scale=[0.5, 1.0])
     widths = [p.get_linewidth() for p in per.artists["arrow"]]
     assert widths == pytest.approx([1.0, 3.0])
+    plt.close("all")
+
+
+def test_levels_draw_dashed_neutral_circles_about_zero_with_labels():
+    res = ep.phasor(
+        [1.0, 0.3j],
+        levels=[1.0, 0.5],
+        level_labels=["same brightness", None],
+        level_label_angle=135.0,
+    )
+    circles = res.artists["ellipse"]
+    assert [c.radius for c in circles] == [1.0, 0.5]
+    assert all(c.center == (0.0, 0.0) for c in circles)
+    assert all(c.get_linestyle() == "--" for c in circles)
+    assert not circles[0].get_fill()
+    assert to_rgb(circles[0].get_edgecolor()) == pytest.approx(_style.neutral(0.5))
+    _, _, label = res.artists["text"]
+    assert label.get_text() == "same brightness"
+    angle = np.deg2rad(135.0)
+    assert label.xy == pytest.approx((np.cos(angle), np.sin(angle)))
+    assert (label.get_ha(), label.get_va()) == ("right", "bottom")
+    # The automatic limits hold every level circle.
+    assert res.ax.get_xlim()[0] <= -1.0 and res.ax.get_ylim()[1] >= 1.0
+    res.fig.canvas.draw()
+    plt.close(res.fig)
+
+
+def test_levels_accept_a_scalar_and_level_kw_and_leave_update_alone():
+    res = ep.phasor(
+        [0.5],
+        levels=0.8,
+        level_labels="ring",
+        cross=False,
+        level_kw={"ls": ":", "lw": 0.5, "zorder": 1},
+    )
+    (circle,) = res.artists["ellipse"]
+    assert (circle.radius, circle.get_linestyle(), circle.get_linewidth()) == (
+        0.8,
+        ":",
+        0.5,
+    )
+    (label,) = res.artists["text"]
+    assert label.get_text() == "ring"
+    n_children = len(res.ax.get_children())
+    res.update([0.7j])
+    assert len(res.ax.get_children()) == n_children
+    assert circle.radius == 0.8
+    plt.close(res.fig)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"levels": [1.0, -0.5]}, "positive"),
+        ({"levels": [1.0, 0.5], "level_labels": ["a"]}, "1 entries for 2"),
+    ],
+)
+def test_bad_levels_raise(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        ep.phasor([1.0], **kwargs)
     plt.close("all")

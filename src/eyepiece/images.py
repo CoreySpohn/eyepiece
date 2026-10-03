@@ -26,7 +26,13 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Circle
 
 from eyepiece import _style
-from eyepiece._phasor import HEAD_LENGTH, HEAD_PER_MARKER, HEAD_WIDTH, _Arrow
+from eyepiece._phasor import (
+    HEAD_LENGTH,
+    HEAD_PER_MARKER,
+    HEAD_WIDTH,
+    _Arrow,
+    _outward_alignment,
+)
 from eyepiece._result import MosaicResult, PlotResult
 
 
@@ -1210,19 +1216,6 @@ def overlay_circle(
             ax, center, radius, label_angle, label, dash.get_zorder() + 1, text_kw
         )
     return PlotResult(ax=ax, artists=artists)
-
-
-def _outward_alignment(angle):
-    """Text alignment that puts a label on the far side of a point at `angle`.
-
-    A label anchored at a point on a circle and aligned this way grows away
-    from the center: a label at 45 degrees grows up and to the right, one at
-    90 degrees straight up, centered over its point.
-    """
-    c, s = np.cos(angle), np.sin(angle)
-    ha = "left" if c > 0.3 else "right" if c < -0.3 else "center"
-    va = "bottom" if s > 0.3 else "top" if s < -0.3 else "center"
-    return ha, va
 
 
 def _circle_label(ax, center, radius, angle_deg, text, zorder, text_kw):
