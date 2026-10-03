@@ -44,9 +44,12 @@ GLYPHS = {
     "mask": True,
     "apodizer": True,
     "dm": True,
+    "flat_mirror": True,
+    "beam_splitter": True,
     "fpm": False,
     "phase_mask": False,
     "lyot": True,
+    "field_stop": False,
     "detector": False,
 }
 
@@ -90,6 +93,9 @@ _DATA_X_PER_Y = 2.0
 # How far the beam runs before the first plane and past the last one in
 # data coordinates, in units of the collimated half-width.
 _DATA_MARGIN = 1.5
+
+# Opacity of an optional element's glyph: present in the train, but faint.
+_OPTIONAL_ALPHA = 0.18
 
 # Text properties that carry a plane's highlight, so `label_kw` may not set
 # them: `update` restyles them and would undo the caller's choice.
@@ -268,6 +274,46 @@ def _draw_glyph(ax, glyph, x, frame, color, lw_scale=1.0):
             lw=0.8 * lw_scale,
             zorder=5,
         )
+    elif glyph == "flat_mirror":
+        # The deformable mirror's plate without its ripple: a flat mirror,
+        # such as a steering mirror or a fold, drawn unfolded.
+        plate = Rectangle(
+            (x - 0.005 * ux, y0 - 0.24 * uy),
+            0.010 * ux,
+            0.48 * uy,
+            facecolor=color,
+            edgecolor="none",
+            zorder=5,
+        )
+        drawn.append(ax.add_patch(plate))
+    elif glyph == "beam_splitter":
+        # A translucent plate leaning across the beam: it passes part of the
+        # light and turns the rest out of the drawn train.
+        plate = Polygon(
+            [
+                (x - 0.022 * ux, y0 - 0.24 * uy),
+                (x - 0.012 * ux, y0 - 0.24 * uy),
+                (x + 0.022 * ux, y0 + 0.24 * uy),
+                (x + 0.012 * ux, y0 + 0.24 * uy),
+            ],
+            facecolor=color,
+            alpha=0.7,
+            edgecolor="none",
+            zorder=5,
+        )
+        drawn.append(ax.add_patch(plate))
+    elif glyph == "field_stop":
+        # Two bars close about a focus, leaving a small opening on the axis.
+        for low in (y0 - 0.15 * uy, y0 + 0.04 * uy):
+            bar = Rectangle(
+                (x - 0.006 * ux, low),
+                0.012 * ux,
+                0.11 * uy,
+                facecolor=color,
+                edgecolor="none",
+                zorder=5,
+            )
+            drawn.append(ax.add_patch(bar))
     elif glyph == "phase_mask":
         # A clear plate spanning the focus: it shifts phase, it blocks nothing.
         plate = Rectangle(
@@ -348,13 +394,19 @@ def rail(
     span=None,
     linewidth_scale=1.0,
     label_kw=None,
+    beam=True,
+    bare=None,
+    optional=None,
+    marker_colors=None,
+    label_y=None,
 ):
     """Draw a miniature optical-train rail with chosen planes highlighted.
 
     Each plane contributes a marker, a label, and a glyph drawn on a beam
     envelope that opens at the pupil-like glyphs (`"pupil"`, `"lyot"`,
-    `"mask"`, `"apodizer"`, `"dm"`) and pinches at the image-like ones
-    (`"source"`, `"focal"`, `"fpm"`, `"phase_mask"`, `"detector"`). A lens
+    `"mask"`, `"apodizer"`, `"dm"`, `"flat_mirror"`, `"beam_splitter"`) and
+    pinches at the image-like ones (`"source"`, `"focal"`, `"fpm"`,
+    `"phase_mask"`, `"field_stop"`, `"detector"`). A lens
     is drawn just
     after every plane but the last: a pupil-plane lens forms the next
     focal plane, a lens after a focal-plane mask re-collimates to the next
@@ -380,10 +432,16 @@ def rail(
         apodizer   one translucent bar spanning the whole beam
         dm         an opaque plate with a rippled face (a deformable mirror,
                    drawn unfolded)
+        flat_mirror the same plate with a flat face (a steering or fold
+                   mirror, drawn unfolded)
+        beam_splitter a translucent plate leaning across the beam (a
+                   dichroic or a pickoff that sends part of the light out
+                   of the drawn train)
         fpm        a diamond on the optical axis
         phase_mask a clear plate spanning the focus (a focal-plane phase
                    mask, such as a vortex)
         focal      a bowtie, the beam waist pinching to a point
+        field_stop two bars closing about a focus, a small opening between
         detector   a hatched, unfilled box
 
     Every artist the rail draws carries a gid that is unique on the axes,
@@ -404,12 +462,13 @@ def rail(
     several appends an index, as in `rail/Pupil/glyph/0` and `/1` for a
     pupil's two bars, `rail/DM/glyph/0` and `/1` for a deformable mirror's
     plate and ripple, and `rail/Pupil/lens/0` and `/1` for a relay's lens
-    pair. Labels may repeat; a label shared by several planes takes its
-    occurrence in optical order, `<label>#0`, `<label>#1`, ..., in place of
-    `<label>`. So a part is found by its gid or, whatever its count, by
-    prefix: the artists whose gid equals `rail/<label>/<part>` or starts
-    with `rail/<label>/<part>/`. Glyphs are not returned under an artist
-    key because one glyph mixes lines and patches.
+    pair. A plane named in `bare` has no glyph part. Labels may repeat; a
+    label shared by several planes takes its occurrence in optical order,
+    `<label>#0`, `<label>#1`, ..., in place of `<label>`. So a part is
+    found by its gid or, whatever its count, by prefix: the artists whose
+    gid equals `rail/<label>/<part>` or starts with `rail/<label>/<part>/`.
+    Glyphs are not returned under an artist key because one glyph mixes
+    lines and patches.
 
     Args:
         planes: Sequence of `(label, glyph)` pairs in optical order.
@@ -493,20 +552,44 @@ def rail(
         label_kw: Extra kwargs for every plane label's `Text` (for example
             `fontsize` or a backing `bbox`), applied last. The color and
             weight carry the highlight and cannot be set here.
+        beam: Draw the beam envelope, its fill and its two edges. False
+            leaves the dotted optical axis, the lenses, and the planes, for
+            a train whose beam the caller traces itself; the result then has
+            no `"fill"` artist.
+        bare: A plane's label, or a sequence of labels, matched as
+            `highlight` is, whose glyph is not drawn. The plane keeps its
+            marker, its label, and its effect on the beam's width, so a
+            plane that holds no element (an intermediate focus, a pupil
+            image) can still be marked.
+        optional: A plane's label, or a sequence of labels, matched as
+            `highlight` is, for elements a train may or may not carry: the
+            glyph is drawn faint and the label in italics (unless
+            `label_kw` sets the font style).
+        marker_colors: Mapping from a plane's label, matched
+            case-insensitively, to the color of its marker and label while
+            it is not lit, so the kind of each plane (a pupil, a focus) can
+            show on the rail. A lit plane takes the accent as usual. Planes
+            not named keep the neutral tone.
+        label_y: Height of every plane label, in the rail's coordinates
+            (an axes fraction, or a data y with `coords="data"`), putting
+            all the labels on one row. None sets each just above its own
+            marker, so a label over a focus sits lower than one over a
+            pupil.
 
     Returns:
         A `PlotResult` with artists `"fill"` (the beam-envelope
-        `PolyCollection`), `"lines"` (the list of per-plane marker `Line2D`
-        artists, drawn together on one axes), `"text"` (the list of
-        per-plane label `Text` artists), the last two in plane order, and,
+        `PolyCollection`, unless `beam` is False), `"lines"` (the list of
+        per-plane marker `Line2D` artists, drawn together on one axes),
+        `"text"` (the list of per-plane label `Text` artists), the last two
+        in plane order, and,
         when any lens is drawn, `"ellipse"` (the list of lens `Ellipse`
         patches, in optical order). Its `update(highlight=None)` relights
         the rail in place, as if it had been drawn with that `highlight`:
         it restyles the existing markers, labels, and uncolored glyphs and
         adds no artist, so an animation can move the highlight per frame
         without clearing the axes. It validates `highlight` as `rail` does
-        and keeps the tones, accent, stroke widths, and label properties of
-        the first draw.
+        and keeps the tones, accent, marker colors, stroke widths, and label
+        properties of the first draw.
 
     Raises:
         ValueError: If `planes` is empty, a glyph is not in `GLYPHS`,
@@ -518,8 +601,9 @@ def rail(
             outside (0, 1], `coords` is not `"axes"` or `"data"`, `axis_y`
             or `beam_half` is given in axes coordinates, `beam_half` is not
             positive, `span` does not bracket `positions`,
-            `linewidth_scale` is not positive, or `label_kw` sets the color
-            or weight.
+            `linewidth_scale` is not positive, `label_kw` sets the color
+            or weight, or `bare`, `optional`, or `marker_colors` names a
+            label that is not one of the planes'.
 
     Note:
         Every tone but the accent and the caller's colors is neutral
@@ -550,6 +634,8 @@ def rail(
     labels = [label for label, _ in planes]
     keys = [label.lower() for label in labels]
     lit = _plane_keys(highlight, keys, labels, "highlight")
+    no_glyph = _plane_keys(bare, keys, labels, "bare plane")
+    faint_planes = _plane_keys(optional, keys, labels, "optional plane")
 
     if coords not in _COORDS:
         raise ValueError(f"unknown coords: {coords!r}; known: {list(_COORDS)}")
@@ -617,6 +703,14 @@ def rail(
         if key not in keys:
             raise ValueError(f"unknown color plane {label!r}; known planes: {labels}")
         role[key] = color
+    marker_role = {}
+    for label, color in (marker_colors or {}).items():
+        key = label.lower() if isinstance(label, str) else None
+        if key not in keys:
+            raise ValueError(
+                f"unknown marker color plane {label!r}; known planes: {labels}"
+            )
+        marker_role[key] = color
 
     lw_scale = float(linewidth_scale)
     if not lw_scale > 0.0:
@@ -700,17 +794,19 @@ def rail(
         owners += [name] * (len(lenses) - len(owners))
     xs.append(right)
     hs.append(hs[-1])
-    beam = _style.neutral(0.45) if beam_color is None else beam_color
+    beam_tone = _style.neutral(0.45) if beam_color is None else beam_color
     faint = _style.neutral(0.25)
     xf = np.linspace(left, right, 400)
     if steps:
         xf = np.union1d(xf, steps)
     hf = np.interp(xf, xs, hs)
-    fill = ax.fill_between(xf, y0 - hf, y0 + hf, color=beam, alpha=0.20, lw=0)
-    fill.set_gid("rail/beam/fill")
-    (upper,) = ax.plot(xf, y0 + hf, color=beam, lw=0.7 * lw_scale)
-    (lower,) = ax.plot(xf, y0 - hf, color=beam, lw=0.7 * lw_scale)
-    _tag([upper, lower], "rail/beam/edge")
+    fill = None
+    if beam:
+        fill = ax.fill_between(xf, y0 - hf, y0 + hf, color=beam_tone, alpha=0.20, lw=0)
+        fill.set_gid("rail/beam/fill")
+        (upper,) = ax.plot(xf, y0 + hf, color=beam_tone, lw=0.7 * lw_scale)
+        (lower,) = ax.plot(xf, y0 - hf, color=beam_tone, lw=0.7 * lw_scale)
+        _tag([upper, lower], "rail/beam/edge")
     (axis_line,) = ax.plot(
         [left, right], [y0, y0], color=faint, lw=0.6 * lw_scale, ls=":"
     )
@@ -756,7 +852,7 @@ def rail(
     rows = zip(planes, keys, positions, names, strict=True)
     for (label, glyph), key, xp, name in rows:
         on = key in lit
-        color = accent_color if on else plain
+        color = accent_color if on else marker_role.get(key, plain)
         hp = max(wide if GLYPHS[glyph] else tight, 0.13 * uy)
         (line,) = ax.plot(
             [xp, xp],
@@ -768,17 +864,24 @@ def rail(
         )
         line.set_gid(f"rail/{name}/marker")
         ink = role.get(key, accent_color if on else glyph_tone)
-        parts = _draw_glyph(ax, glyph, xp, frame, ink, lw_scale)
-        _tag(parts, f"rail/{name}/glyph")
+        parts = []
+        if key not in no_glyph:
+            parts = _draw_glyph(ax, glyph, xp, frame, ink, lw_scale)
+            _tag(parts, f"rail/{name}/glyph")
+        text_kw = {}
+        if key in faint_planes:
+            for part in parts:
+                part.set_alpha(_OPTIONAL_ALPHA)
+            text_kw["fontstyle"] = "italic"
         text = ax.text(
             xp,
-            y0 + hp + 0.10 * uy,
+            y0 + hp + 0.10 * uy if label_y is None else float(label_y),
             label,
             ha="center",
             va="bottom",
             color=color,
             fontweight="bold" if on else "normal",
-            **label_kw,
+            **{**text_kw, **label_kw},
         )
         text.set_gid(f"rail/{name}/label")
         lines.append(line)
@@ -790,7 +893,7 @@ def rail(
         styled = zip(keys, lines, texts, glyph_parts, strict=True)
         for key, line, text, parts in styled:
             on = key in now_lit
-            color = accent_color if on else plain
+            color = accent_color if on else marker_role.get(key, plain)
             line.set_color(color)
             line.set_linewidth(marker_lw[on])
             line.set_linestyle("-" if on else "--")
@@ -800,7 +903,9 @@ def rail(
                 for part in parts:
                     _paint(part, accent_color if on else glyph_tone)
 
-    artists = {"fill": fill, "lines": lines, "text": texts}
+    artists = {"lines": lines, "text": texts}
+    if fill is not None:
+        artists = {"fill": fill, **artists}
     if ellipses:
         artists["ellipse"] = ellipses
     return PlotResult(ax=ax, artists=artists, update=update)

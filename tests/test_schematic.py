@@ -32,6 +32,9 @@ GLYPH_SIGNATURES = {
     "mask": (0, 2, 0),
     "apodizer": (0, 1, 0),
     "dm": (1, 1, 0),
+    "flat_mirror": (0, 1, 0),
+    "beam_splitter": (0, 0, 1),
+    "field_stop": (0, 2, 0),
     "fpm": (0, 0, 1),
     "phase_mask": (0, 1, 0),
     "focal": (0, 0, 2),
@@ -867,3 +870,118 @@ def test_label_kw_reaches_every_label_and_survives_update():
 def test_label_kw_cannot_set_the_highlight_properties(key):
     with pytest.raises(ValueError, match="label_kw"):
         rail(_SCALED, label_kw={key: "red"})
+
+
+def _glyph_artists(ax, label):
+    prefix = f"rail/{label}/glyph"
+    return [
+        a
+        for a in [*ax.lines, *ax.patches]
+        if (a.get_gid() or "") == prefix or (a.get_gid() or "").startswith(prefix + "/")
+    ]
+
+
+def test_flat_mirror_is_the_deformable_mirror_plate_without_its_ripple():
+    dm = rail([("M", "dm")], cap=False)
+    flat = rail([("M", "flat_mirror")], cap=False)
+    plate_dm = next(a for a in _glyph_artists(dm.ax, "M") if isinstance(a, Rectangle))
+    (plate_flat,) = _glyph_artists(flat.ax, "M")
+    assert plate_flat.get_bbox().bounds == pytest.approx(plate_dm.get_bbox().bounds)
+    assert eyepiece.GLYPHS["flat_mirror"] and eyepiece.GLYPHS["beam_splitter"]
+    assert not eyepiece.GLYPHS["field_stop"]
+    plt.close(dm.fig)
+    plt.close(flat.fig)
+
+
+def test_beam_false_drops_the_envelope_but_keeps_axis_lenses_and_planes():
+    planes = [("Pupil", "pupil"), ("Focus", "focal"), ("Image", "pupil")]
+    res = rail(planes, beam=False)
+    assert "fill" not in res.artists
+    gids = [a.get_gid() for a in [*res.ax.lines, *res.ax.collections]]
+    assert "rail/beam/axis" in gids
+    assert not any(
+        (g or "").startswith(("rail/beam/fill", "rail/beam/edge")) for g in gids
+    )
+    assert len(res.artists["ellipse"]) == 2
+    assert len(res.artists["lines"]) == 3
+    plt.close(res.fig)
+
+
+def test_bare_planes_keep_marker_label_and_beam_width_but_no_glyph():
+    planes = [("Pupil", "pupil"), ("focus", "focal"), ("Image", "dm")]
+    drawn = rail(planes)
+    res = rail(planes, bare=["FOCUS", "image"])
+    assert _glyph_artists(res.ax, "focus") == []
+    assert _glyph_artists(res.ax, "Image") == []
+    assert len(_glyph_artists(res.ax, "Pupil")) == 2
+    assert len(res.artists["lines"]) == len(res.artists["text"]) == 3
+    # The envelope is the same: a bare plane still sets the beam's width.
+    np.testing.assert_allclose(
+        res.artists["fill"].get_paths()[0].vertices,
+        drawn.artists["fill"].get_paths()[0].vertices,
+    )
+    res.update(highlight="focus")
+    plt.close(res.fig)
+    plt.close(drawn.fig)
+
+
+def test_optional_planes_draw_a_faint_glyph_and_an_italic_label():
+    res = rail([("Pupil", "pupil"), ("(apodizer)", "apodizer")], optional="(APODIZER)")
+    (plate,) = _glyph_artists(res.ax, "(apodizer)")
+    assert plate.get_alpha() == pytest.approx(0.18)
+    assert res.artists["text"][1].get_fontstyle() == "italic"
+    assert res.artists["text"][0].get_fontstyle() == "normal"
+    res.update(highlight="(apodizer)")
+    assert plate.get_alpha() == pytest.approx(0.18)
+    res = rail([("A", "apodizer")], optional="A", label_kw={"fontstyle": "oblique"})
+    assert res.artists["text"][0].get_fontstyle() == "oblique"
+    plt.close("all")
+
+
+def test_marker_colors_color_unlit_markers_and_labels_and_survive_update():
+    planes = [("Pupil", "pupil"), ("Focus", "focal")]
+    res = rail(
+        planes, marker_colors={"pupil": "purple", "Focus": "green"}, accent="red"
+    )
+    line0, line1 = res.artists["lines"]
+    text0, text1 = res.artists["text"]
+    assert to_rgba(line0.get_color()) == to_rgba("purple")
+    assert to_rgba(text1.get_color()) == to_rgba("green")
+    res.update(highlight="Pupil")
+    assert to_rgba(line0.get_color()) == to_rgba("red")
+    assert to_rgba(line1.get_color()) == to_rgba("green")
+    res.update()
+    assert to_rgba(text0.get_color()) == to_rgba("purple")
+    plt.close(res.fig)
+
+
+def test_label_y_puts_every_label_on_one_row():
+    planes = [("Pupil", "pupil"), ("Focus", "focal")]
+    default = rail(planes)
+    ys = [t.get_position()[1] for t in default.artists["text"]]
+    assert ys[0] != ys[1]
+    res = rail(planes, label_y=0.9)
+    assert [t.get_position()[1] for t in res.artists["text"]] == [0.9, 0.9]
+    data = rail(
+        planes,
+        coords="data",
+        positions=(1.0, 4.0),
+        beam_half=1.0,
+        label_y=1.62,
+    )
+    assert [t.get_position()[1] for t in data.artists["text"]] == [1.62, 1.62]
+    plt.close("all")
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"bare": "nope"}, "unknown bare plane"),
+        ({"optional": ["Pupil", "nope"]}, "unknown optional plane"),
+        ({"marker_colors": {"nope": "red"}}, "unknown marker color plane"),
+    ],
+)
+def test_new_plane_options_reject_unknown_labels(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        rail([("Pupil", "pupil"), ("Focus", "focal")], **kwargs)
+    plt.close("all")
