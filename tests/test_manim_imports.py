@@ -49,4 +49,17 @@ def test_manim_namespace_never_imports_manim_slides():
         "import eyepiece.manim as em\n"
         "print(sorted(em.__all__))\n"
     )
-    assert _run(code) == "['ManimClip', 'ManimResult', 'animate', 'render']"
+    assert _run(code) == (
+        "['ManimClip', 'ManimResult', 'Units', 'animate', 'ensure_font', 'render']"
+    )
+
+
+def test_font_and_unit_helpers_import_from_the_public_namespace():
+    pytest.importorskip("manim")
+    from eyepiece.manim import Units, ensure_font
+    from eyepiece.manim._render import _ensure_font
+
+    assert callable(ensure_font)
+    # Callers of the earlier private name keep working.
+    assert _ensure_font is ensure_font
+    assert Units().font_size(24.0) == 24.0

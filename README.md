@@ -104,7 +104,8 @@ Prepared views live in namespaces of their own:
   read-only `RenderProfile`.
 - **`eyepiece.mpl`.** `render` and `animate` for Matplotlib stills and movies.
 - **`eyepiece.manim`.** `render` and `animate` for native Manim Community
-  objects, usable in a Manim scene or a Manim Slides deck.
+  objects, usable in a Manim scene or a Manim Slides deck, with `Units` for
+  point sizes and `ensure_font` for Pango fonts.
 
 ## Usage
 
