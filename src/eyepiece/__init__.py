@@ -6,7 +6,7 @@ detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
 ``_schematic``, ``_phasor``, ``insets``, ``profiles``, ``emphasis``,
-``_motion``) are
+``_motion``, ``camera``) are
 internal organization and are not part of the public API. The vocabularies a
 caller reads against are exported alongside the functions: ``ARTIST_KEYS``,
 the key set a result's ``artists`` dict draws from; ``PRESETS``, the
@@ -44,6 +44,7 @@ __all__ = [
     "Beat",
     "Frame",
     "MosaicResult",
+    "PageCamera",
     "Plan",
     "PlotResult",
     "RawSink",
@@ -81,6 +82,7 @@ __all__ = [
     "label_lod",
     "overlay_circle",
     "overlay_line",
+    "overview_box",
     "phase_ring",
     "phasor",
     "pixel_quads",
@@ -98,6 +100,7 @@ __all__ = [
     "show_field",
     "signed_trace",
     "sky_fan",
+    "spotlight",
     "stagger",
     "stamp",
     "step_list",
@@ -178,6 +181,9 @@ _LAZY_EXPORTS = {
     "view_limits": ("eyepiece._motion", "view_limits"),
     "zoom_path": ("eyepiece._motion", "zoom_path"),
     "RawSink": ("eyepiece.anim", "RawSink"),
+    "PageCamera": ("eyepiece.camera", "PageCamera"),
+    "overview_box": ("eyepiece.camera", "overview_box"),
+    "spotlight": ("eyepiece.camera", "spotlight"),
 }
 
 
