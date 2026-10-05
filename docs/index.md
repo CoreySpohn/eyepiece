@@ -151,12 +151,23 @@ the API reference, and the groups are:
   `(label, glyph)` list over the `GLYPHS` vocabulary, in its own axes or in
   the caller's data coordinates, `schematic`, a preset wrapper over it, and
   `rail_panels` for a strip of axes hung under the planes of a drawn rail.
+- **Motion.** `Timeline`, which declares an animation's beats in seconds and
+  resolves them for any frame rate into a `Plan` of per-frame knob values,
+  with `ease`, `stagger`, and `frame_count`.
+- **Cameras and morphs.** `zoom_path`, the optimal pan-and-zoom path between
+  two views, `view_limits` for a data camera and `overview_box` to mark its
+  view on an overview panel; `PageCamera`, which renders any view of a
+  finished figure at a fixed size and stays sharp when it magnifies, and
+  `spotlight`, which dims a figure outside chosen rectangles; `quad_image`,
+  an image drawn as one movable shape per pixel from `pixel_quads`, and
+  `brush`, which lights the same objects in several panels at once.
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus
   `Frame` and `SourceStyles` for keeping several panels of one scene
   consistent.
 - **Output.** `save_fig`, the `record` context manager, `animate` and the
-  `Animation` it returns, and `PRESETS` of measured fps and dpi pairs.
+  `Animation` it returns, `RawSink` for frames from anywhere into a
+  reproducible mp4, and `PRESETS` of measured fps and dpi pairs.
 - **Vocabularies.** `ARTIST_KEYS`, the key set a result's `artists` dict
   draws from, alongside `PlotResult` and `MosaicResult` themselves.
 
@@ -206,6 +217,7 @@ gallery/profiles
 gallery/scene
 gallery/phasor
 gallery/animation
+gallery/motion
 gallery/one-scene-n-views
 gallery/prepared
 ```

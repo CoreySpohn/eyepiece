@@ -423,6 +423,19 @@ rate choose an output schedule, `ceil(run_time * fps)` times spanning the
 first sample through the last, that both renderers use; neither renderer
 interpolates between samples or reevaluates a simulation.
 
+### Presentation time is a separate clock
+
+A `Timeline` interpolates how a figure is shown, never what was simulated. Its
+knobs are presentation quantities: a title, an angle a construction has turned
+through, the width of a camera's view, the progress of a morph. A ramp may
+move them smoothly between holds, and the frames it produces drive a draw
+function or a camera. It never interpolates between the samples of a
+`Sequence` or stands in for a physical time, so the two clocks stay apart: the
+`Sequence` says what was measured when, and the timeline says when the viewer
+sees it. A camera's moving limits are declared to `record` with
+`free_limits=`, which exempts only those limits from the drift check and
+still checks that axes' color scale.
+
 ### Direct model binding stays in the consumer
 
 A consumer that animates native Manim geometry straight from a scientific

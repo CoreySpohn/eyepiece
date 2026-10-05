@@ -73,14 +73,25 @@ implement them are internal organization.
   `(label, glyph)` element list, over the `GLYPHS` vocabulary), and
   `schematic`, a preset wrapper over `rail` for the imager and coronagraph
   trains that come up constantly.
+- **Motion.** `Timeline` (an animation's holds and ramps declared in
+  seconds and resolved for any frame rate into a `Plan` of per-frame knob
+  values), with `ease`, `stagger`, and `frame_count`.
+- **Cameras and morphs.** `zoom_path` (the optimal pan-and-zoom path between
+  two views), `view_limits` and `overview_box` for a camera that zooms an
+  axes, `PageCamera` (any view of a finished figure, re-rendered sharp at a
+  fixed output size, with an optional overview margin), `spotlight` (a veil
+  that dims a figure outside chosen rectangles), `quad_image` (an image drawn
+  as one movable shape per pixel, from `pixel_quads`), and `brush` (the same
+  objects lit in several panels at once).
 - **Layout.** Pixel-edge extent helpers (`extent_lod`, `extent_arcsec`,
   `extent_au`, ...) with matching axis labelers, plus `Frame` and
   `SourceStyles` for keeping several panels of one scene consistent.
 - **Output.** `save_fig` for a styled write to disk, `record` (a context
   manager that opens every sink at once and takes frames from a loop the
   caller drives) and `animate` (which binds a figure, a draw function, and a
-  frame source into the public `Animation` type it returns), and `PRESETS`
-  of measured fps/dpi pairs.
+  frame source into the public `Animation` type it returns), `RawSink` (raw
+  frames from anywhere, such as a `PageCamera`, into a reproducible mp4), and
+  `PRESETS` of measured fps/dpi pairs.
 
 Prepared views live in namespaces of their own:
 
