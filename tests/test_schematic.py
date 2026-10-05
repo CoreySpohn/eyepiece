@@ -97,11 +97,7 @@ def test_glyph_vocabulary_is_exported_at_top_level():
 
 
 def _hatch_color(patch):
-    for name in ("get_hatchcolor", "get_hatch_color"):
-        getter = getattr(patch, name, None)
-        if getter is not None:
-            return to_rgba(getter())
-    return to_rgba(patch._hatch_color)
+    return to_rgba(patch.get_hatchcolor())
 
 
 def test_detector_hatch_follows_the_glyph_ink_not_the_rcparam():

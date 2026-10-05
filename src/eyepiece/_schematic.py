@@ -27,7 +27,6 @@ from typing import NamedTuple
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import to_rgba
 from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse, Polygon, Rectangle
 from matplotlib.transforms import Bbox
@@ -186,23 +185,13 @@ def _tag(artists, gid):
             artist.set_gid(f"{gid}/{i}")
 
 
-def _set_hatch_color(patch, color):
-    """Set a patch's hatch color; matplotlib before 3.10 has no setter."""
-    setter = getattr(patch, "set_hatchcolor", None)
-    if setter is not None:
-        setter(color)
-    else:
-        patch._hatch_color = to_rgba(color)
-        patch.stale = True
-
-
 def _paint(artist, color):
     """Recolor one glyph artist's ink, keeping its alpha and hatch."""
     if isinstance(artist, Line2D):
         artist.set_color(color)
     elif artist.get_hatch():
         artist.set_edgecolor(color)
-        _set_hatch_color(artist, color)
+        artist.set_hatchcolor(color)
     else:
         artist.set_facecolor(color)
 
@@ -353,23 +342,21 @@ def _draw_glyph(ax, glyph, x, frame, color, lw_scale=1.0):
             )
             drawn.append(ax.add_patch(wedge))
     elif glyph == "detector":
-        # A Patch captures rcParams["hatch.color"] at construction, and that
-        # rcParam only defaults to the edge color from matplotlib 3.11. On an
-        # older supported version, or under a style that pins it, the hatch
-        # would come out black on a dark ground, so it is set explicitly for
-        # the length of the construction.
-        with matplotlib.rc_context({"hatch.color": color}):
-            box = Rectangle(
-                (x - 0.016 * ux, y0 - 0.10 * uy),
-                0.032 * ux,
-                0.20 * uy,
-                facecolor="none",
-                edgecolor=color,
-                lw=1.4 * lw_scale,
-                hatch="///",
-                zorder=5,
-            )
-            drawn.append(ax.add_patch(box))
+        # The hatch takes the glyph ink explicitly: a style that pins
+        # rcParams["hatch.color"] would otherwise draw it black on a dark
+        # ground.
+        box = Rectangle(
+            (x - 0.016 * ux, y0 - 0.10 * uy),
+            0.032 * ux,
+            0.20 * uy,
+            facecolor="none",
+            edgecolor=color,
+            hatchcolor=color,
+            lw=1.4 * lw_scale,
+            hatch="///",
+            zorder=5,
+        )
+        drawn.append(ax.add_patch(box))
     else:
         raise ValueError(f"glyph {glyph!r} is in GLYPHS but has no drawing")
     return drawn

@@ -188,9 +188,7 @@ def _fade_patch(patch, level, bg, handle):
     if _opaque(edge):
         handle._record(patch, patch.set_edgecolor, edge)
         patch.set_edgecolor(_blend(edge, level, bg))
-    # Hatch colors are settable from matplotlib 3.10; before that a hatch
-    # keeps the color it was built with.
-    if patch.get_hatch() and hasattr(patch, "set_hatchcolor"):
+    if patch.get_hatch():
         hatch = patch.get_hatchcolor()
         handle._record(patch, patch.set_hatchcolor, hatch)
         patch.set_hatchcolor(_blend(hatch, level, bg))

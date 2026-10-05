@@ -81,10 +81,7 @@ def _apply_axis_spec(ax, spec):
 
 def root_figure(ax):
     """The top-level Figure that owns `ax`, even inside a SubFigure."""
-    try:
-        return ax.get_figure(root=True)
-    except TypeError:  # matplotlib < 3.10 has no `root`; `.figure` is the root
-        return ax.figure
+    return ax.get_figure(root=True)
 
 
 def owned_axes(view):

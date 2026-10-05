@@ -156,8 +156,6 @@ def test_hatch_color_fades():
     patch = ax.add_patch(
         Rectangle((0, 0), 1, 1, facecolor="none", edgecolor="k", hatch="//")
     )
-    if not hasattr(patch, "set_hatchcolor"):
-        pytest.skip("hatch colors are settable from matplotlib 3.10")
     patch.set_hatchcolor("black")
     ep.fade(patch, 0.5)
     np.testing.assert_allclose(
