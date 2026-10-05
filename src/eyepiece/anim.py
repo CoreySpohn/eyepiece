@@ -63,7 +63,9 @@ The mechanics this module does own, each closing a specific trap:
 `record(fig, "talk.mp4", **PRESETS["talk"])`.
 """
 
+import os
 import shutil
+import subprocess
 import tempfile
 import warnings
 from contextlib import ExitStack, contextmanager
@@ -71,7 +73,9 @@ from pathlib import Path
 
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.animation import FFMpegWriter, HTMLWriter, PillowWriter
+from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 PRESETS = {
@@ -281,14 +285,20 @@ def _span_ratio(before, after):
     return ratio if abs(ratio - 1.0) > 0.01 else None
 
 
-def _drift_warnings(first, current):
-    """Human-readable descriptions of every scale that moved."""
+def _drift_warnings(first, current, free=frozenset()):
+    """Human-readable descriptions of every scale that moved.
+
+    Axes whose index is in `free` may move their limits (a camera); their
+    color norms are still compared.
+    """
     messages = []
     for index, before in first.items():
         after = current.get(index)
         if after is None:
             continue
         for key in ("x", "y", "z"):
+            if index in free:
+                continue
             if key not in before or key not in after:
                 continue
             ratio = _span_ratio(before[key], after[key])
@@ -332,13 +342,16 @@ def _max_shift(before, after):
 class _Recorder:
     """Frame grabber yielded by `record`; fans one figure out to every sink."""
 
-    def __init__(self, fig, writers, counter, layout_dpi, allow_rescale=False):
+    def __init__(
+        self, fig, writers, counter, layout_dpi, allow_rescale=False, free=frozenset()
+    ):
         self.fig = fig
         self.writers = writers
         self._counter = counter
         self._layout_dpi = layout_dpi
         self._layout_frozen = False
         self._allow_rescale = allow_rescale
+        self._free = free
         self._first_scales = None
         self._warned = False
 
@@ -405,7 +418,7 @@ class _Recorder:
         if self._first_scales is None:
             self._first_scales = current
             return
-        messages = _drift_warnings(self._first_scales, current)
+        messages = _drift_warnings(self._first_scales, current, self._free)
         if not messages:
             return
         self._warned = True
@@ -433,7 +446,15 @@ class _Recorder:
 
 
 @contextmanager
-def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=False):
+def record(
+    fig,
+    *paths,
+    fps=10,
+    dpi=None,
+    extra_ffmpeg_args=None,
+    allow_rescale=False,
+    free_limits=(),
+):
     """Open every output file at once and record `fig` frame by frame.
 
     Use this when the frames come from a loop the caller already owns (a
@@ -488,15 +509,28 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=
             data redraws every frame at full height and hides the very
             change the animation exists to show. Pass True when the
             rescaling is deliberate.
+        free_limits: An axes, or axes, whose limits are allowed to change,
+            such as a camera zooming through `view_limits`. Only their limits are
+            exempt: their color norms, and every other axes, are still
+            checked, which `allow_rescale=True` would not do.
 
     Yields:
         A recorder with `.frame()` and `.hold(n)`.
 
     Raises:
-        ValueError: If a path has an unsupported suffix.
+        ValueError: If a path has an unsupported suffix, or an axes in
+            `free_limits` is not on `fig`.
         RuntimeError: If an mp4 sink is requested and no ffmpeg is found,
             or if the block exits without ever grabbing a frame.
     """
+    free = set()
+    if isinstance(free_limits, Axes):
+        free_limits = [free_limits]
+    for ax in free_limits:
+        if ax not in fig.axes:
+            raise ValueError("free_limits holds an axes that is not on this figure")
+        free.add(fig.axes.index(ax))
+    free = frozenset(free)
     saved_engine = fig.get_layout_engine()
 
     def restore_engine():
@@ -537,6 +571,7 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=
             counter,
             _sink_dpi(paths[0], dpi) if paths else fig.dpi,
             allow_rescale=allow_rescale,
+            free=free,
         )
         if not counter["frames"]:
             # Raised here rather than per sink so the message can name them
@@ -548,6 +583,151 @@ def record(fig, *paths, fps=10, dpi=None, extra_ffmpeg_args=None, allow_rescale=
                 f"missing ({joined}); call rec.frame() at least once "
                 "inside the record block"
             )
+
+
+_BITEXACT = ("-fflags", "+bitexact", "-flags:v", "+bitexact", "-map_metadata", "-1")
+
+
+class RawSink:
+    """Write raw frames of one size to an H.264 mp4 through ffmpeg.
+
+    `record` grabs frames from a figure; a `RawSink` takes frames from
+    anywhere, such as `PageCamera.render`, which crops a figure in ways a
+    movie writer cannot. Frames go to ffmpeg as raw RGBA and encode as H.264
+    in yuv420p at constant quality, with no metadata and bit-exact encoder
+    flags, so the same frames always give the same file. The movie is
+    written beside `path` and moved into place only when it finishes, so a
+    failed run never replaces a good file with a broken one.
+
+    Example::
+
+        with RawSink("tour.mp4", (1920, 1080), fps=30) as sink:
+            for view in views:
+                sink.write(camera.render(view))
+
+    Args:
+        path: Output path; it must end in ``.mp4``. Parent directories are
+            created as needed.
+        size_px: ``(width, height)`` in pixels, both even (H.264 in yuv420p
+            needs even dimensions).
+        fps: Frames per second.
+        extra_ffmpeg_args: Extra ffmpeg output arguments, appended last, so
+            they override the defaults (``-crf 18`` among them).
+
+    Raises:
+        ValueError: If the path is not an mp4 or a dimension is not a
+            positive even integer.
+        RuntimeError: If no ffmpeg can be found.
+    """
+
+    def __init__(self, path, size_px, fps, *, extra_ffmpeg_args=None):
+        """Validate the size and start ffmpeg on a file beside `path`."""
+        path = Path(path)
+        if path.suffix.lower() != ".mp4":
+            raise ValueError(f"RawSink writes .mp4 files, got {path.name!r}")
+        width, height = (int(v) for v in size_px)
+        if width <= 0 or height <= 0 or width % 2 or height % 2:
+            raise ValueError(
+                f"size_px must be positive and even for H.264, got {width}x{height}"
+            )
+        self.path = path
+        self.size_px = (width, height)
+        self.frames = 0
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._partial = path.with_name(f".{path.stem}.partial.mp4")
+        cmd = [
+            _resolve_ffmpeg(), "-y", "-loglevel", "error",
+            "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{width}x{height}",
+            "-r", str(fps), "-i", "-", "-an",
+            "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
+            *_BITEXACT, *(extra_ffmpeg_args or ()), str(self._partial),
+        ]  # fmt: skip
+        # stderr goes to a file, not a pipe: a pipe nobody reads fills after
+        # about 64 kB and then blocks ffmpeg, and with it every write.
+        self._log = tempfile.TemporaryFile()
+        self._proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=self._log)
+
+    def write(self, frame):
+        """Append one frame.
+
+        Args:
+            frame: ``(height, width, 4)`` or ``(height, width, 3)`` uint8
+                pixels, top row first, exactly `size_px`.
+
+        Raises:
+            ValueError: If the frame's size, channel count, or dtype is wrong.
+            RuntimeError: If ffmpeg has stopped accepting frames.
+        """
+        frame = np.asarray(frame)
+        width, height = self.size_px
+        if frame.ndim != 3 or frame.shape[:2] != (height, width):
+            raise ValueError(
+                f"frame is {frame.shape}, expected {width}x{height} pixels "
+                f"as ({height}, {width}, 4)"
+            )
+        if frame.dtype != np.uint8 or frame.shape[2] not in (3, 4):
+            raise ValueError("frames must be uint8 RGB or RGBA")
+        if frame.shape[2] == 3:
+            alpha = np.full((height, width, 1), 255, np.uint8)
+            frame = np.concatenate([frame, alpha], axis=2)
+        try:
+            self._proc.stdin.write(np.ascontiguousarray(frame).tobytes())
+        except BrokenPipeError:
+            raise RuntimeError(
+                f"ffmpeg stopped accepting frames: {self._stderr()}"
+            ) from None
+        self.frames += 1
+
+    def _stderr(self):
+        try:
+            self._log.seek(0)
+            return self._log.read().decode(errors="replace").strip()[-2000:]
+        except (OSError, ValueError):
+            return ""
+
+    def _cleanup(self):
+        self._log.close()
+        self._partial.unlink(missing_ok=True)
+
+    def close(self):
+        """Finish the file and move it into place.
+
+        Raises:
+            RuntimeError: If no frame was written or ffmpeg failed; the
+                output path is then left as it was.
+        """
+        if self._proc.stdin and not self._proc.stdin.closed:
+            self._proc.stdin.close()
+        code = self._proc.wait()
+        if not self.frames:
+            self._cleanup()
+            raise RuntimeError(f"no frames were written to {self.path}")
+        if code != 0:
+            message = self._stderr()
+            self._cleanup()
+            raise RuntimeError(f"ffmpeg failed writing {self.path}: {message}")
+        os.replace(self._partial, self.path)
+        self._log.close()
+
+    def __enter__(self):
+        """Return the sink."""
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        """Finish the file, or stop ffmpeg and discard it if the body raised."""
+        if exc_type is None:
+            self.close()
+            return
+        # The body's error wins; stop ffmpeg without masking it, and leave
+        # whatever file was at the path untouched.
+        if self._proc.stdin and not self._proc.stdin.closed:
+            try:
+                self._proc.stdin.close()
+            except OSError:
+                pass
+        self._proc.kill()
+        self._proc.wait()
+        self._cleanup()
 
 
 def _is_one_shot(frames):

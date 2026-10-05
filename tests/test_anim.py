@@ -675,3 +675,178 @@ def test_record_leaves_an_engineless_figure_with_no_engine(tmp_path, rc):
             rec.hold(2)
         assert fig.get_layout_engine() is None
     plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# free_limits: a camera's axes may move their limits; their norms still count
+
+
+def _zooming_image():
+    fig, ax = plt.subplots()
+    im = ax.imshow(np.arange(16.0).reshape(4, 4), extent=(0, 4, 0, 4))
+    return fig, ax, im
+
+
+def test_free_limits_exempts_a_camera_axes_from_the_limit_check(tmp_path):
+    fig, ax, _ = _zooming_image()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with record(fig, tmp_path / "zoom.gif", fps=5, free_limits=[ax]) as rec:
+            for w in (4.0, 2.0, 1.0):
+                ax.set_xlim(0, w)
+                ax.set_ylim(0, w)
+                rec.frame()
+    plt.close(fig)
+
+
+def test_free_limits_still_checks_that_axes_color_norm(tmp_path):
+    fig, ax, im = _zooming_image()
+    with pytest.warns(RuntimeWarning, match="color norm"):
+        with record(fig, tmp_path / "zoom.gif", fps=5, free_limits=[ax]) as rec:
+            rec.frame()
+            ax.set_xlim(0, 2)
+            im.set_clim(0, 120.0)
+            rec.frame()
+    plt.close(fig)
+
+
+def test_free_limits_leaves_other_axes_checked(tmp_path):
+    fig, (cam, data) = plt.subplots(1, 2)
+    (line,) = data.plot([0, 1], [0, 5.3])
+    with pytest.warns(RuntimeWarning, match=r"axes\[1\]"):
+        with record(fig, tmp_path / "two.gif", fps=5, free_limits=[cam]) as rec:
+            for peak in (5.3, 0.6):
+                cam.set_xlim(0, peak)
+                line.set_ydata([0, peak])
+                data.relim()
+                data.autoscale_view()
+                rec.frame()
+    plt.close(fig)
+
+
+def test_free_limits_rejects_axes_from_another_figure(tmp_path):
+    fig, _ = plt.subplots()
+    other, oax = plt.subplots()
+    with pytest.raises(ValueError, match="free_limits"):
+        with record(fig, tmp_path / "x.gif", fps=5, free_limits=[oax]) as rec:
+            rec.frame()
+    plt.close(fig)
+    plt.close(other)
+
+
+# ---------------------------------------------------------------------------
+# RawSink: raw frames from anywhere into a byte-exact mp4
+
+
+def _decode(path, size):
+    """Decoded RGB frames of an mp4, through the library's own ffmpeg."""
+    import subprocess
+
+    from eyepiece.anim import _resolve_ffmpeg
+
+    out = subprocess.run(
+        [_resolve_ffmpeg(), "-v", "error", "-i", str(path), "-f", "rawvideo",
+         "-pix_fmt", "rgb24", "-"],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    w, h = size
+    return np.frombuffer(out.stdout, np.uint8).reshape(-1, h, w, 3)
+
+
+def _ramp_frames(n, size):
+    w, h = size
+    frames = []
+    for k in range(n):
+        frame = np.zeros((h, w, 4), np.uint8)
+        frame[..., 0] = int(255 * k / max(n - 1, 1))
+        frame[..., 3] = 255
+        frames.append(frame)
+    return frames
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_raw_sink_writes_every_frame_at_its_size(tmp_path):
+    size = (64, 48)
+    path = tmp_path / "sub" / "raw.mp4"
+    with eyepiece.RawSink(path, size, fps=10) as sink:
+        for frame in _ramp_frames(7, size):
+            sink.write(frame)
+    decoded = _decode(path, size)
+    assert decoded.shape == (7, 48, 64, 3)
+    assert decoded[0, ..., 0].mean() < decoded[-1, ..., 0].mean()
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_raw_sink_accepts_rgb_and_is_byte_exact(tmp_path):
+    size = (32, 32)
+    paths = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+    for path in paths:
+        with eyepiece.RawSink(path, size, fps=5) as sink:
+            for frame in _ramp_frames(4, size):
+                sink.write(frame[..., :3])
+    assert paths[0].read_bytes() == paths[1].read_bytes()
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_raw_sink_rejects_a_frame_of_the_wrong_size(tmp_path):
+    with pytest.raises(ValueError, match="32x32"):
+        with eyepiece.RawSink(tmp_path / "x.mp4", (32, 32), fps=5) as sink:
+            sink.write(np.zeros((16, 32, 4), np.uint8))
+
+
+def test_raw_sink_rejects_odd_or_bad_sizes(tmp_path):
+    with pytest.raises(ValueError, match="even"):
+        eyepiece.RawSink(tmp_path / "x.mp4", (33, 32), fps=5)
+    with pytest.raises(ValueError, match="mp4"):
+        eyepiece.RawSink(tmp_path / "x.gif", (32, 32), fps=5)
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_raw_sink_with_no_frames_raises(tmp_path):
+    with pytest.raises(RuntimeError, match="no frames"):
+        with eyepiece.RawSink(tmp_path / "x.mp4", (32, 32), fps=5):
+            pass
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_raw_sink_survives_a_chatty_ffmpeg(tmp_path):
+    size = (16, 16)
+    frame = np.zeros((16, 16, 4), np.uint8)
+    frame[..., 3] = 255
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        with eyepiece.RawSink(
+            tmp_path / "chatty.mp4",
+            size,
+            fps=25,
+            extra_ffmpeg_args=["-loglevel", "debug"],
+        ) as sink:
+            for _ in range(450):
+                sink.write(frame)
+    assert _decode(tmp_path / "chatty.mp4", size).shape[0] == 450
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
+def test_raw_sink_keeps_an_existing_file_when_the_body_raises(tmp_path):
+    path = tmp_path / "keep.mp4"
+    with eyepiece.RawSink(path, (32, 32), fps=5) as sink:
+        for frame in _ramp_frames(3, (32, 32)):
+            sink.write(frame)
+    good = path.read_bytes()
+    with pytest.raises(ValueError, match="boom"):
+        with eyepiece.RawSink(path, (32, 32), fps=5) as sink:
+            sink.write(_ramp_frames(1, (32, 32))[0])
+            raise ValueError("boom")
+    assert path.read_bytes() == good
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["keep.mp4"]
+
+
+def test_free_limits_accepts_a_single_axes(tmp_path):
+    fig, ax, _ = _zooming_image()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        with record(fig, tmp_path / "one.gif", fps=5, free_limits=ax) as rec:
+            for w in (4.0, 2.0):
+                ax.set_xlim(0, w)
+                rec.frame()
+    plt.close(fig)

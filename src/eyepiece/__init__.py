@@ -46,6 +46,7 @@ __all__ = [
     "MosaicResult",
     "Plan",
     "PlotResult",
+    "RawSink",
     "SourceStyles",
     "Timeline",
     "__version__",
@@ -176,6 +177,7 @@ _LAZY_EXPORTS = {
     "stagger": ("eyepiece._motion", "stagger"),
     "view_limits": ("eyepiece._motion", "view_limits"),
     "zoom_path": ("eyepiece._motion", "zoom_path"),
+    "RawSink": ("eyepiece.anim", "RawSink"),
 }
 
 

@@ -125,6 +125,7 @@ _EXPECTED_ALL = [
     "MosaicResult",
     "Plan",
     "PlotResult",
+    "RawSink",
     "SourceStyles",
     "Timeline",
     "__version__",
