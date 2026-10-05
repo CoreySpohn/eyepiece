@@ -263,14 +263,19 @@ def _nice_ticks(low, high):
     return values, texts
 
 
-def _ensure_font(family):
+def ensure_font(family):
     """Make Pango lay out `family` from the same file Matplotlib draws it with.
 
     A profile's font family is one Matplotlib resolves. When Pango does not
     list that family (Matplotlib's bundled DejaVu Sans, for one, is not a
     system font), the file Matplotlib resolved is registered with Pango, so
     a label measured in one renderer is drawn from the same glyphs in the
-    other.
+    other. `render` calls it for its profile's family; call it before
+    building your own `manim.Text` in that family. Calling it again for a
+    family Pango already lists does nothing.
+
+    Args:
+        family: A font family name, such as a `RenderProfile.font_family`.
 
     Raises:
         ValueError: If neither resolver has `family`, or Pango refuses the
@@ -290,6 +295,10 @@ def _ensure_font(family):
             f"font {family!r}: Pango could not register {path}, the file "
             "Matplotlib resolves for it; install the font system-wide"
         )
+
+
+# The private name earlier releases defined, kept for callers that import it.
+_ensure_font = ensure_font
 
 
 def _text(text, profile, font_size):
@@ -843,7 +852,7 @@ def render(view, *, cast=None, profile=None):
     styles = resolve_styles(
         view, cast, profile, renderer="Manim", leaf_parts=_LEAF_PARTS
     )
-    _ensure_font(profile.font_family)
+    ensure_font(profile.font_family)
     leaves = leaf_views(view)
     for leaf in leaves:
         _panel_size(leaf)

@@ -183,8 +183,8 @@ Prepared views live in their own namespaces rather than at the top level:
   `snapshot_profile`.
 - **`eyepiece.mpl`.** `render`, returning an `MplResult`, and `animate`,
   returning an `Animation`.
-- **`eyepiece.manim`.** `render`, returning a `ManimResult`, and `animate`,
-  returning a `ManimClip`.
+- **`eyepiece.manim`.** `render`, returning a `ManimResult`, `animate`,
+  returning a `ManimClip`, `Units` for point sizes, and `ensure_font`.
 
 ## Where to go next
 

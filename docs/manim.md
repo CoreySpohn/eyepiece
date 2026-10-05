@@ -106,6 +106,25 @@ Pango once per render, so both renderers draw the same glyphs. A family that
 neither resolver has raises a `ValueError` naming it; pass another
 `font_family=` to `snapshot_profile` in that case.
 
+A scene that builds its own `manim.Text` beside a rendered panel calls
+`em.ensure_font(TALK.font_family)` first, so Pango draws the same family.
+
+### Point sizes
+
+`Units` converts lengths in points at the delivered size to Manim's scene
+units, `font_size`, and `stroke_width`, and back. `Units()` is Manim's own
+font-size points (72 per scene unit, so `font_size(pt) == pt`);
+`Units.for_frame(pixel_height, dpi)` derives the scale from the delivered
+frame, for a scene whose sizes must match a still shown at that resolution:
+
+```python
+units = em.Units.for_frame(pixel_height=1080, dpi=135.0)
+TALK = snapshot_profile(
+    text_size_pt=units.font_size(12.0),
+    stroke_width_pt=units.stroke_width(1.0),
+)
+```
+
 ### Updates and ownership
 
 `result.update(view)` accepts a new state of the same tree under the same
