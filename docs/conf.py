@@ -25,7 +25,7 @@ intersphinx_mapping = {
     "matplotlib": ("https://matplotlib.org/stable/", None),
 }
 
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+exclude_patterns = ["_build", ".build", "Thumbs.db", ".DS_Store"]
 
 language = "en"
 
