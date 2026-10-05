@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/CoreySpohn/eyepiece/compare/v0.7.0...v0.8.0) (2026-10-05)
+
+
+### Features
+
+* **anim:** add RawSink and record(free_limits=) for axes whose limits move ([3bf88c4](https://github.com/CoreySpohn/eyepiece/commit/3bf88c46cd37927cd02fa0be0e4625581129f08d))
+* **camera:** add PageCamera, overview_box and spotlight ([5ed474f](https://github.com/CoreySpohn/eyepiece/commit/5ed474f897cb328a6e22aec03ec513a76e92d861))
+* **deps:** require matplotlib 3.11 and drop the version gates ([a441d03](https://github.com/CoreySpohn/eyepiece/commit/a441d033e1fcc9877b297d15398071c2810b48b3))
+* **manim:** make ensure_font and Units public ([8e84791](https://github.com/CoreySpohn/eyepiece/commit/8e84791cc0c2b35ed18e6be1237faaaf82a717c9))
+* **morph:** add quad_image and brush ([9f825bb](https://github.com/CoreySpohn/eyepiece/commit/9f825bb22876712f5cb3d624e0fc12feb7e8fe4f))
+* **motion:** add Timeline, Plan, ease, stagger, frame_count, zoom_path, view_limits and pixel_quads ([02693eb](https://github.com/CoreySpohn/eyepiece/commit/02693eb790e2dd7561e5832d67a391f3d5f5a9b4))
+
 ## [0.7.0](https://github.com/CoreySpohn/eyepiece/compare/v0.6.0...v0.7.0) (2026-10-03)
 
 
