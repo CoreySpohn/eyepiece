@@ -5,7 +5,8 @@ and animating simulated images (point spread functions, coronagraph
 detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
-``_schematic``, ``_phasor``, ``insets``, ``profiles``, ``emphasis``) are
+``_schematic``, ``_phasor``, ``insets``, ``profiles``, ``emphasis``,
+``_motion``) are
 internal organization and are not part of the public API. The vocabularies a
 caller reads against are exported alongside the functions: ``ARTIST_KEYS``,
 the key set a result's ``artists`` dict draws from; ``PRESETS``, the
@@ -40,10 +41,13 @@ __all__ = [
     "GLYPHS",
     "PRESETS",
     "Animation",
+    "Beat",
     "Frame",
     "MosaicResult",
+    "Plan",
     "PlotResult",
     "SourceStyles",
+    "Timeline",
     "__version__",
     "animate",
     "blend",
@@ -57,6 +61,7 @@ __all__ = [
     "cov_ellipse",
     "curve_insets",
     "display_limits",
+    "ease",
     "extent_arcsec",
     "extent_au",
     "extent_lod",
@@ -64,6 +69,7 @@ __all__ = [
     "fade",
     "fading_track",
     "file_metadata",
+    "frame_count",
     "hist_fill",
     "hist_vs_pdf",
     "imshow_diverging",
@@ -76,6 +82,7 @@ __all__ = [
     "overlay_line",
     "phase_ring",
     "phasor",
+    "pixel_quads",
     "plot_contrast_curve",
     "plot_radial",
     "provenance_fields",
@@ -90,10 +97,13 @@ __all__ = [
     "show_field",
     "signed_trace",
     "sky_fan",
+    "stagger",
     "stamp",
     "step_list",
     "trail",
     "triptych",
+    "view_limits",
+    "zoom_path",
 ]
 
 # name -> (submodule, attribute). __version__ is bound eagerly above (cheap,
@@ -157,6 +167,15 @@ _LAZY_EXPORTS = {
     "hist_fill": ("eyepiece.stats", "hist_fill"),
     "hist_vs_pdf": ("eyepiece.stats", "hist_vs_pdf"),
     "signed_trace": ("eyepiece.stats", "signed_trace"),
+    "Beat": ("eyepiece._motion", "Beat"),
+    "Plan": ("eyepiece._motion", "Plan"),
+    "Timeline": ("eyepiece._motion", "Timeline"),
+    "ease": ("eyepiece._motion", "ease"),
+    "frame_count": ("eyepiece._motion", "frame_count"),
+    "pixel_quads": ("eyepiece._motion", "pixel_quads"),
+    "stagger": ("eyepiece._motion", "stagger"),
+    "view_limits": ("eyepiece._motion", "view_limits"),
+    "zoom_path": ("eyepiece._motion", "zoom_path"),
 }
 
 
