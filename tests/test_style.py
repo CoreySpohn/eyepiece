@@ -4,6 +4,9 @@ import subprocess
 import sys
 
 import hwostyle
+import pytest
+from hwostyle.palettes import ROLE_FIXED_COLORS
+from matplotlib.colors import to_hex
 
 from eyepiece import _style
 
@@ -189,4 +192,10 @@ def test_role_falls_back_to_palette_slot_when_missing(monkeypatch):
     assert _style.role("alert") == _style.color(_style._ROLE_FALLBACKS["alert"])
     assert _style.role("model") == _style.color(1)
     assert _style.role("prior") == _style.color(5)
-    assert _style.role("positive") == "#1565C0"
+    assert _style.role("positive") == "#1565c0"
+
+
+@pytest.mark.parametrize("name", ["positive", "negative", "posterior", "truth"])
+def test_fixed_role_fallbacks_match_hwostyle_light(name):
+    expected = to_hex(ROLE_FIXED_COLORS[name]["light"])
+    assert to_hex(_style._ROLE_FALLBACKS[name]) == expected

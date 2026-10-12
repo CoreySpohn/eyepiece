@@ -120,8 +120,10 @@ def role(name, override=None):
     The role resolves under the active hwostyle mode, or the light mode when
     none is active, through the same call-time lookup as `cmap`. When the
     installed hwostyle does not carry the role, a known role name falls back
-    to its palette slot in the canonical cyan, pink, yellow, green, red,
-    purple order, so the color stays stable.
+    to a stable stand-in: its palette slot in the canonical cyan, pink,
+    yellow, green, red, purple order, or, for the roles hwostyle colors
+    outside the palette (positive, negative, posterior, truth), hwostyle's
+    light-mode hex.
 
     Args:
         name: Role name, such as "alert", "model", "planet" or "reference".
@@ -152,7 +154,7 @@ def role(name, override=None):
         return to_hex(source[name])
     except (KeyError, TypeError):
         fallback = _ROLE_FALLBACKS[name]
-        return fallback if isinstance(fallback, str) else color(fallback)
+        return to_hex(fallback) if isinstance(fallback, str) else color(fallback)
 
 
 def _factory_default_cycle():
