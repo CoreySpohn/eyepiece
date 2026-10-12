@@ -16,7 +16,23 @@ from matplotlib.colors import to_hex, to_rgb, to_rgba
 
 _LIGHT_CMAPS = None
 _LIGHT_PALETTE = None
+_LIGHT_ROLES = None
 _CMAP_FALLBACKS = {"statistic": "PuOr"}
+# Palette slot standing in for a role when the installed hwostyle lacks it;
+# slots follow the canonical cyan, pink, yellow, green, red, purple order.
+_ROLE_FALLBACKS = {
+    "star": 2,
+    "planet": 0,
+    "disk": 5,
+    "measured": 0,
+    "data": 0,
+    "model": 1,
+    "predicted": 1,
+    "reference": 3,
+    "envelope": 5,
+    "alert": 4,
+    "highlight": 1,
+}
 
 
 def mode():
@@ -40,6 +56,15 @@ def _light_palette():
 
         _LIGHT_PALETTE = Palette("light")
     return _LIGHT_PALETTE
+
+
+def _light_roles():
+    global _LIGHT_ROLES
+    if _LIGHT_ROLES is None:
+        from hwostyle.palettes import Roles
+
+        _LIGHT_ROLES = Roles("light")
+    return _LIGHT_ROLES
 
 
 def _as_colormap(value):
@@ -80,6 +105,46 @@ def cmap(name, override=None):
         else:
             raise
     return _as_colormap(value)
+
+
+def role(name, override=None):
+    """Semantic brand color by role ("alert", "model", "reference", ...).
+
+    The role resolves under the active hwostyle mode, or the light mode when
+    none is active, through the same call-time lookup as `cmap`. When the
+    installed hwostyle does not carry the role, a known role name falls back
+    to its palette slot in the canonical cyan, pink, yellow, green, red,
+    purple order, so the color stays stable.
+
+    Args:
+        name: Role name, such as "alert", "model", "planet" or "reference".
+        override: A color; wins when not None.
+
+    Returns:
+        A hex color string.
+
+    Raises:
+        KeyError: If the name is not a known role.
+
+    Example::
+
+        import eyepiece as ep
+        ax.axvline(0.5, color=ep.role("alert"))
+    """
+    if override is not None:
+        return override
+    if name not in _ROLE_FALLBACKS:
+        raise KeyError(f"No role {name!r}. Available: {sorted(_ROLE_FALLBACKS)}")
+    source = getattr(hwostyle, "roles", None) if hwostyle.current_mode() else None
+    if source is None:
+        try:
+            source = _light_roles()
+        except ImportError:
+            source = None
+    try:
+        return to_hex(source[name])
+    except (KeyError, TypeError):
+        return color(_ROLE_FALLBACKS[name])
 
 
 def _factory_default_cycle():

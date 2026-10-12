@@ -332,6 +332,18 @@ for level in (0.2, 0.5, 0.8):
 plt.show()
 ```
 
+## Brand roles: `role`
+
+`role` resolves a semantic hwostyle color, such as `"alert"` or `"model"`,
+under the active style, so a mark keeps its meaning across modes.
+
+```{code-cell} python
+fig, ax = plt.subplots(layout="constrained")
+ax.axvline(0.3, color=ep.role("alert"))
+ax.axvline(0.7, color=ep.role("model"))
+plt.show()
+```
+
 ## Label backgrounds: `backing`
 
 A background-colored box keeps a label readable over plotted marks.

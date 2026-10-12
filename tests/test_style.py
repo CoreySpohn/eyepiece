@@ -153,3 +153,38 @@ def test_public_backing_tracks_background_and_opacity():
         assert box["facecolor"] == to_rgba(matplotlib.rcParams["axes.facecolor"], 0.4)
         assert box["edgecolor"] == "none"
         assert box is not ep.backing(alpha=0.4)
+
+
+def test_role_equals_hwostyle_roles_under_each_mode():
+    for mode in ("dark", "light"):
+        hwostyle.use(mode)
+        for name in hwostyle.roles.names:
+            assert _style.role(name).lower() == hwostyle.roles[name].lower()
+
+
+def test_role_without_mode_uses_light_roles():
+    code = (
+        "from hwostyle.palettes import Roles\n"
+        "from eyepiece import _style\n"
+        "assert _style.role('alert').lower() == Roles('light').alert.lower()\n"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_role_override_wins_and_unknown_raises():
+    import pytest
+
+    assert _style.role("alert", override="#123456") == "#123456"
+    with pytest.raises(KeyError, match="No role"):
+        _style.role("nonsense")
+
+
+def test_role_falls_back_to_palette_slot_when_missing(monkeypatch):
+    class Missing:
+        def __getitem__(self, name):
+            raise KeyError(name)
+
+    hwostyle.use("dark")
+    monkeypatch.setattr(hwostyle, "roles", Missing(), raising=False)
+    assert _style.role("alert") == _style.color(_style._ROLE_FALLBACKS["alert"])
+    assert _style.role("model") == _style.color(1)

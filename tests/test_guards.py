@@ -181,6 +181,7 @@ _EXPECTED_ALL = [
     "rail_panels",
     "record",
     "ref_line",
+    "role",
     "ruler",
     "save_fig",
     "scatter_values",
