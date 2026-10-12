@@ -32,6 +32,13 @@ _ROLE_FALLBACKS = {
     "envelope": 5,
     "alert": 4,
     "highlight": 1,
+    "prior": 5,
+    # hwostyle gives these roles fixed colors rather than palette slots, so the
+    # stand-in is its light-mode hex.
+    "positive": "#1565C0",
+    "negative": "#E65100",
+    "posterior": "#8E5923",
+    "truth": "#757575",
 }
 
 
@@ -144,7 +151,8 @@ def role(name, override=None):
     try:
         return to_hex(source[name])
     except (KeyError, TypeError):
-        return color(_ROLE_FALLBACKS[name])
+        fallback = _ROLE_FALLBACKS[name]
+        return fallback if isinstance(fallback, str) else color(fallback)
 
 
 def _factory_default_cycle():

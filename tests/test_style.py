@@ -188,3 +188,5 @@ def test_role_falls_back_to_palette_slot_when_missing(monkeypatch):
     monkeypatch.setattr(hwostyle, "roles", Missing(), raising=False)
     assert _style.role("alert") == _style.color(_style._ROLE_FALLBACKS["alert"])
     assert _style.role("model") == _style.color(1)
+    assert _style.role("prior") == _style.color(5)
+    assert _style.role("positive") == "#1565C0"
