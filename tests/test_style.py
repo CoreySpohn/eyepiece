@@ -127,3 +127,29 @@ def test_zero_style_with_empty_color_list_falls_back_to_light():
     parts = out.stdout.split()
     assert parts[0] == "light"
     assert parts[1] == _style._light_palette()[0]
+
+
+def test_public_neutral_endpoints():
+    import matplotlib
+    from matplotlib.colors import to_rgb
+
+    import eyepiece as ep
+
+    for mode in ("light", "dark"):
+        hwostyle.use(mode)
+        assert ep.neutral(0.0) == to_rgb(matplotlib.rcParams["axes.facecolor"])
+        assert ep.neutral(1.0) == to_rgb(matplotlib.rcParams["text.color"])
+
+
+def test_public_backing_tracks_background_and_opacity():
+    import matplotlib
+    from matplotlib.colors import to_rgba
+
+    import eyepiece as ep
+
+    for mode in ("light", "dark"):
+        hwostyle.use(mode)
+        box = ep.backing(alpha=0.4)
+        assert box["facecolor"] == to_rgba(matplotlib.rcParams["axes.facecolor"], 0.4)
+        assert box["edgecolor"] == "none"
+        assert box is not ep.backing(alpha=0.4)

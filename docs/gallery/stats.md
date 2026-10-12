@@ -320,3 +320,25 @@ print(sorted(hist.artists), axes[0].get_ylim())
 
 `bins` may also be a count of equal bins spanning the samples. A law needs
 equal bins, since expected counts per bin are a density times one width.
+
+## Neutral scenery: `neutral`
+
+A neutral tone follows the active background and text colors.
+
+```{code-cell} python
+fig, ax = plt.subplots(layout="constrained")
+for level in (0.2, 0.5, 0.8):
+    ax.axhline(level, color=ep.neutral(level))
+plt.show()
+```
+
+## Label backgrounds: `backing`
+
+A background-colored box keeps a label readable over plotted marks.
+
+```{code-cell} python
+fig, ax = plt.subplots(layout="constrained")
+ax.plot([0, 1], [0, 1])
+ax.text(0.5, 0.5, "reference", bbox=ep.backing())
+plt.show()
+```

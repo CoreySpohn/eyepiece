@@ -156,6 +156,11 @@ def neutral(level):
 
     Returns:
         An `(r, g, b)` tuple of floats.
+
+    Example::
+
+        import eyepiece as ep
+        ax.axhline(0, color=ep.neutral(0.5))
     """
     back = to_rgb(matplotlib.rcParams["axes.facecolor"])
     front = to_rgb(matplotlib.rcParams["text.color"])
@@ -176,6 +181,11 @@ def backing(alpha=0.85):
 
     Returns:
         A dict for the `bbox` argument of `ax.text` or `Text.set_bbox`.
+
+    Example::
+
+        import eyepiece as ep
+        ax.text(0.5, 0.5, "reference", bbox=ep.backing())
     """
     face = to_rgba(matplotlib.rcParams["axes.facecolor"], alpha)
     return {
