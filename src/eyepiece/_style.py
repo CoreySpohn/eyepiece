@@ -16,6 +16,7 @@ from matplotlib.colors import to_hex, to_rgb, to_rgba
 
 _LIGHT_CMAPS = None
 _LIGHT_PALETTE = None
+_CMAP_FALLBACKS = {"statistic": "PuOr"}
 
 
 def mode():
@@ -58,16 +59,27 @@ def cmap(name, override=None):
 
     Args:
         name: Semantic name defined by hwostyle.
-        override: A matplotlib Colormap or registered cmap name; wins when
-            not None.
+        override: A matplotlib Colormap, registered cmap name, or semantic
+            role; wins when not None. Missing "statistic" uses PuOr until
+            hwostyle provides that role.
 
     Returns:
         A matplotlib Colormap instance.
     """
-    if override is not None:
-        return _as_colormap(override)
+    if override is not None and not isinstance(override, str):
+        return override
     source = hwostyle.cmaps if hwostyle.current_mode() else _light_cmaps()
-    return _as_colormap(getattr(source, name))
+    role = name if override is None else override
+    try:
+        value = getattr(source, role)
+    except AttributeError:
+        if role in _CMAP_FALLBACKS:
+            value = _CMAP_FALLBACKS[role]
+        elif override is not None:
+            value = override
+        else:
+            raise
+    return _as_colormap(value)
 
 
 def _factory_default_cycle():
@@ -156,6 +168,11 @@ def neutral(level):
 
     Returns:
         An `(r, g, b)` tuple of floats.
+
+    Example::
+
+        import eyepiece as ep
+        ax.axhline(0, color=ep.neutral(0.5))
     """
     back = to_rgb(matplotlib.rcParams["axes.facecolor"])
     front = to_rgb(matplotlib.rcParams["text.color"])
@@ -176,6 +193,11 @@ def backing(alpha=0.85):
 
     Returns:
         A dict for the `bbox` argument of `ax.text` or `Text.set_bbox`.
+
+    Example::
+
+        import eyepiece as ep
+        ax.text(0.5, 0.5, "reference", bbox=ep.backing())
     """
     face = to_rgba(matplotlib.rcParams["axes.facecolor"], alpha)
     return {

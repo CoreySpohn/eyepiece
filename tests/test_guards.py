@@ -131,9 +131,11 @@ _EXPECTED_ALL = [
     "Timeline",
     "__version__",
     "animate",
+    "backing",
     "blend",
     "bracket",
     "brush",
+    "calibration",
     "capture",
     "compare_grid",
     "compare_row",
@@ -156,10 +158,13 @@ _EXPECTED_ALL = [
     "hist_vs_pdf",
     "imshow_diverging",
     "imshow_log",
+    "interval_points",
     "kymograph",
     "label_arcsec",
     "label_au",
     "label_lod",
+    "log_zero_floor",
+    "neutral",
     "overlay_circle",
     "overlay_line",
     "overview_box",
@@ -175,16 +180,20 @@ _EXPECTED_ALL = [
     "rail",
     "rail_panels",
     "record",
+    "ref_line",
     "ruler",
     "save_fig",
+    "scatter_values",
     "schematic",
     "show_field",
     "signed_trace",
     "sky_fan",
+    "spans",
     "spotlight",
     "stagger",
     "stamp",
     "step_list",
+    "strip",
     "trail",
     "triptych",
     "view_limits",
@@ -292,3 +301,19 @@ def test_exports_survive_every_submodule_import():
         check=True,
     )
     assert result.stdout.strip() == ""
+
+
+def test_public_files_have_no_internal_references():
+    root = SRC.parent.parent
+    files = subprocess.check_output(
+        ["git", "ls-files", "-z", "src", "tests", "docs", "README.md"],
+        cwd=root,
+        text=True,
+    ).split("\0")
+    result = subprocess.run(
+        [sys.executable, str(root / "tools/check_internal_refs.py")]
+        + [str(root / name) for name in files if name],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout
