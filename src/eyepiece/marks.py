@@ -30,7 +30,8 @@ def spans(
         x: Increasing one-dimensional sample positions. Unused in interval mode.
         mask: boolean, True marks samples to shade; shaped like x.
         intervals: Explicit (N, 2) lower/upper pairs, instead of a mask.
-            Infinite ends clip to the current axis limits at call time.
+            Infinite ends clip to the axis limits at call time, so set the
+            limits first.
         ax: Single Axes, or None to create a figure.
         edges: "midpoint" only. End bins extend by half the adjacent spacing;
             a lone sample gets half a unit (half a decade with log=True).
@@ -200,7 +201,8 @@ def log_zero_floor(ax, floor, *, axis="y", label="0", break_mark=True, mark_kw=N
 
     This decorates the axis only; callers map zero-valued data to floor.
     The floor becomes the lower numerical limit, with ordinary log ticks
-    above it. The locator retains the zero label after later limit changes.
+    above it; the other limit stays free to follow data added later. The
+    locator retains the zero label after later limit changes.
 
     Args:
         ax: Single Axes, or None to create a figure.
@@ -230,7 +232,14 @@ def log_zero_floor(ax, floor, *, axis="y", label="0", break_mark=True, mark_kw=N
     set_scale("log")
     limits = target.get_view_interval()
     upper = max(max(limits), floor * 10)
-    set_limits((floor, upper) if limits[0] < limits[1] else (upper, floor))
+    # Pin only the lower bound; an invisible sticky line keeps it there when
+    # autoscaling later reruns, and leaves the other end free to follow data.
+    if limits[0] < limits[1]:
+        set_limits(floor, upper, auto=None)
+    else:
+        set_limits(upper, floor, auto=None)
+    anchor = (ax.axvline if axis == "x" else ax.axhline)(floor, visible=False)
+    (anchor.sticky_edges.x if axis == "x" else anchor.sticky_edges.y).append(floor)
     locator = target.get_major_locator()
     formatter = target.get_major_formatter()
     target.set_major_locator(_FloorLocator(locator, floor))

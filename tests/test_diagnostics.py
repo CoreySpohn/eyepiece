@@ -179,3 +179,39 @@ def test_strip_empty_groups_and_invalid_positions():
     plt.close(result.fig)
     with pytest.raises(ValueError, match=r"expected.*received"):
         ep.strip([[1], [2]], positions=[0])
+
+
+def test_second_calibration_call_keeps_all_data_visible():
+    fig, ax = plt.subplots()
+    ep.calibration([0.1, 0.5], [0.1, 0.5], scale="linear", ax=ax)
+    ep.calibration([0.1, 0.9], [0.1, 0.9], scale="linear", ax=ax)
+    for limits in (ax.get_xlim(), ax.get_ylim()):
+        assert limits[0] <= 0.1 and limits[1] >= 0.9
+    plt.close(fig)
+
+
+def test_calibration_lim_pins_shared_limits():
+    result = ep.calibration([0.2, 0.4], [0.3, 0.5], scale="linear", lim=(0, 1))
+    assert result.ax.get_xlim() == (0, 1)
+    assert result.ax.get_ylim() == (0, 1)
+    plt.close(result.fig)
+    with pytest.raises(ValueError, match="lim"):
+        ep.calibration([1.0], [1.0], lim=(0, 1))
+
+
+def test_log_tolerance_band_is_x_plus_minus_t():
+    t = 0.05
+    result = ep.calibration(
+        [0.1, 1.0], [0.1, 1.0], tolerance=t, lim=(0.01, 10), scale="log"
+    )
+    verts = result.artists["fill"].get_paths()[0].vertices
+    n = len(verts)
+    upper = {round(v[0], 12): v[1] for v in verts if v[1] > v[0]}
+    lower = {round(v[0], 12): v[1] for v in verts if v[1] < v[0]}
+    # every interior band vertex lies exactly on x +/- t
+    for vx, vy in upper.items():
+        assert abs(vy - np.clip(vx + t, 0.01, 10)) < 1e-12
+    for vx, vy in lower.items():
+        assert abs(vy - np.clip(vx - t, 0.01, 10)) < 1e-12
+    assert n > 200
+    plt.close(result.fig)

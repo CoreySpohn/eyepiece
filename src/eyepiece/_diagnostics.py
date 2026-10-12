@@ -25,6 +25,7 @@ def calibration(
     scale="log",
     identity=True,
     tolerance=None,
+    lim=None,
     point_kw=None,
     interval_kw=None,
     ref_kw=None,
@@ -45,7 +46,11 @@ def calibration(
         identity: Draw a neutral identity line spanning the shared limits.
         tolerance: Nonnegative absolute half-width of a band around identity.
             The band is clipped to the shared display limits.
-        point_kw: Overrides passed to ax.scatter through interval_points.
+        lim: Optional (lo, hi) shared limits, e.g. (0, 1). None uses the
+            current limits, widened to show this call's data.
+        point_kw: Overrides passed to ax.scatter through interval_points. A
+            color array such as {"color": rgba_array} colors points one by
+            one and works together with hollow.
         interval_kw: Overrides passed to interval_points' interval lines.
         ref_kw: Overrides passed to ax.plot for the identity line.
 
@@ -107,6 +112,30 @@ def calibration(
         _hollow_points(result.artists["scatter"], mask)
     artists = result.artists.copy()
     limits = (min(*ax.get_xlim(), *ax.get_ylim()), max(*ax.get_xlim(), *ax.get_ylim()))
+    # Limits frozen by an earlier call or the caller must still show new data.
+    ends = np.concatenate([a.ravel() for a in (x, y, lower, upper) if a is not None])
+    ends = ends[np.isfinite(ends)]
+    if ends.size and lim is None:
+        low, high = ends.min(), ends.max()
+        if scale == "log":
+            pad = (high / low) ** 0.05 if high > low else 1.0
+            low, high = low / pad, high * pad
+        else:
+            pad = 0.05 * (high - low)
+            low, high = low - pad, high + pad
+        limits = (
+            low if ends.min() < limits[0] else limits[0],
+            high if ends.max() > limits[1] else limits[1],
+        )
+    if lim is not None:
+        limits = tuple(float(v) for v in lim)
+        if (
+            len(limits) != 2
+            or not np.all(np.isfinite(limits))
+            or limits[0] >= limits[1]
+            or (scale == "log" and limits[0] <= 0)
+        ):
+            raise ValueError("lim must be finite, increasing, and positive on log")
     if floor is not None:
         limits = (floor, max(limits[1], floor * 10))
     ax.set_xlim(limits)
@@ -115,11 +144,15 @@ def calibration(
         for axis in ("x", "y"):
             marks = log_zero_floor(ax, floor, axis=axis)
             artists["lines"].extend(marks.artists["lines"])
+    # Drawing guides must not feed back into later autoscaling.
+    data_limits = ax.dataLim.frozen()
     if tolerance is not None:
         # Include every kink of the clipped band, so straight edges are exact.
         grid = np.unique(
             np.clip([*limits, limits[0] + tolerance, limits[1] - tolerance], *limits)
         )
+        if scale == "log":
+            grid = np.unique(np.r_[grid, np.geomspace(*limits, 200)])
         artists["fill"] = ax.fill_between(
             grid,
             np.clip(grid - tolerance, *limits),
@@ -131,6 +164,7 @@ def calibration(
         options = {"color": _style.neutral(0.6), "linestyle": "--", "zorder": 1}
         options.update(normalize_kwargs(ref_kw, Line2D))
         artists["line"] = ax.plot(limits, limits, **options)[0]
+    ax.dataLim.set(data_limits)
     return PlotResult(ax, artists)
 
 

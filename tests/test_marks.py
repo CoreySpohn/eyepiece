@@ -190,3 +190,15 @@ def test_passthrough_aliases_override_defaults():
     mark = ep.log_zero_floor(result.ax, 0.01, mark_kw={"linewidth": 5})
     assert all(stroke.get_linewidth() == 5 for stroke in mark.artists["lines"])
     plt.close(result.fig)
+
+
+@pytest.mark.parametrize("axis", ["x", "y"])
+def test_log_zero_floor_before_data_leaves_far_end_free(axis):
+    fig, ax = plt.subplots()
+    ep.log_zero_floor(ax, 1e-4, axis=axis)
+    data = ([1e-4, 1e4], [1.0, 2.0]) if axis == "x" else ([1.0, 2.0], [1e-4, 1e4])
+    ax.plot(*data)
+    limits = ax.get_xlim() if axis == "x" else ax.get_ylim()
+    assert limits[0] == pytest.approx(1e-4)
+    assert limits[1] >= 1e4
+    plt.close(fig)
