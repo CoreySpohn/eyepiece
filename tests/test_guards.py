@@ -182,6 +182,7 @@ _EXPECTED_ALL = [
     "ref_line",
     "ruler",
     "save_fig",
+    "scatter_values",
     "schematic",
     "show_field",
     "signed_trace",

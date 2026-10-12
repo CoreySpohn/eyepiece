@@ -215,6 +215,7 @@ gallery/images
 gallery/stats
 gallery/intervals
 gallery/marks
+gallery/values
 gallery/profiles
 gallery/scene
 gallery/phasor
