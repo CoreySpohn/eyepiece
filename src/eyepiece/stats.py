@@ -19,11 +19,99 @@ library.
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.cbook import normalize_kwargs
+from matplotlib.lines import Line2D
 from matplotlib.patches import Ellipse, Rectangle
 
 from eyepiece import _style
 from eyepiece._phasor import _is_linestyle, _is_number
 from eyepiece._result import MosaicResult, PlotResult
+
+
+def _hollow_points(scatter, mask):
+    """Remove selected marker faces while retaining their edge colors."""
+    scatter.update_scalarmappable()
+    faces = scatter.get_facecolors()
+    if not len(faces):
+        return
+    faces = np.broadcast_to(faces, (len(mask), 4)).copy()
+    edges = scatter.get_edgecolors().copy()
+    faces[np.asarray(mask, dtype=bool), 3] = 0
+    # Freeze mapped colors too, so a draw cannot restore the removed faces.
+    scatter.set_array(None)
+    # Keep opacity in the RGBA arrays: a collection alpha would refill holes.
+    scatter.set_alpha(None)
+    scatter.set_facecolors(faces)
+    scatter.set_edgecolors(edges)
+
+
+def interval_points(
+    x,
+    y,
+    lo=None,
+    hi=None,
+    *,
+    ax=None,
+    orient="v",
+    hollow_zero=True,
+    color=None,
+    marker="o",
+    label=None,
+    point_kw=None,
+    interval_kw=None,
+):
+    """Draw points with absolute interval endpoints, including one-sided bounds.
+
+    Args:
+        x: One-dimensional point positions.
+        y: One-dimensional values, the same shape as x.
+        lo: Lower endpoints, scalar or shaped like y. None starts at y.
+        hi: Upper endpoints, scalar or shaped like y. None ends at y.
+        ax: Single Axes, or None to create a figure.
+        orient: "v" draws (x, y); "h" draws (y, x) and horizontal bounds.
+        hollow_zero: Remove marker faces exactly where y is zero.
+        color: Color override; defaults to the active palette's first slot.
+        marker: Scatter marker, default "o".
+        label: Label for the points.
+        point_kw: Overrides passed to ax.scatter.
+        interval_kw: Overrides passed to ax.plot for each interval.
+
+    Returns:
+        PlotResult with one "scatter" collection and a "lines" list of
+        Line2D intervals in input order (empty when both bounds are None).
+
+    Example::
+
+        import eyepiece as ep
+        result = ep.interval_points([0, 1], [0, 2], hi=[0.4, 2.5])
+    """
+    x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    if x.ndim != 1 or y.shape != x.shape:
+        raise ValueError(f"expected x and y shape (N,); received {x.shape}, {y.shape}")
+    if orient not in ("v", "h"):
+        raise ValueError('orient must be "v" or "h"')
+    lower = y if lo is None else np.broadcast_to(np.asarray(lo, float), y.shape)
+    upper = y if hi is None else np.broadcast_to(np.asarray(hi, float), y.shape)
+    if ax is None:
+        _, ax = plt.subplots(layout="constrained")
+    shade = _style.color(0, color)
+    point_options = {"color": shade, "marker": marker, "label": label, "zorder": 3}
+    point_options.update(point_kw or {})
+    if "c" in point_options:
+        point_options.pop("color", None)
+    scatter = ax.scatter(*((x, y) if orient == "v" else (y, x)), **point_options)
+    if hollow_zero:
+        _hollow_points(scatter, y == 0)
+    line_options = {"color": shade, "zorder": 2}
+    line_options.update(normalize_kwargs(interval_kw, Line2D))
+    lines = []
+    if lo is not None or hi is not None:
+        for pos, low, high in zip(x, lower, upper, strict=True):
+            coords = ([pos, pos], [low, high])
+            if orient == "h":
+                coords = coords[::-1]
+            lines.extend(ax.plot(*coords, **line_options))
+    return PlotResult(ax, {"scatter": scatter, "lines": lines})
 
 
 def _corner_axes(n, axes):

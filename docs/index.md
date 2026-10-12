@@ -213,6 +213,7 @@ viz-convention
 
 gallery/images
 gallery/stats
+gallery/intervals
 gallery/profiles
 gallery/scene
 gallery/phasor

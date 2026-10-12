@@ -157,6 +157,7 @@ _EXPECTED_ALL = [
     "hist_vs_pdf",
     "imshow_diverging",
     "imshow_log",
+    "interval_points",
     "kymograph",
     "label_arcsec",
     "label_au",
