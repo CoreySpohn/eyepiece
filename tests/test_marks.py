@@ -16,7 +16,7 @@ import eyepiece as ep
     ],
 )
 def test_excluded_run_midpoints(orient, log, x, expected):
-    result = ep.spans(x, [True, False, False, True], orient=orient, log=log)
+    result = ep.spans(x, ~np.array([True, False, False, True]), orient=orient, log=log)
     assert isinstance(result, ep.PlotResult)
     assert set(result.artists) == {"fill"}
     assert len(result.artists["fill"]) == 1
@@ -27,6 +27,15 @@ def test_excluded_run_midpoints(orient, log, x, expected):
         else [patch.get_y(), patch.get_y() + patch.get_height()]
     )
     np.testing.assert_allclose(ends, expected)
+    plt.close(result.fig)
+
+
+def test_true_mask_shades_end_runs():
+    x = [0, 1, 2, 3]
+    result = ep.spans(x, [True, False, False, True])
+    patches = result.artists["fill"]
+    np.testing.assert_allclose([p.get_x() for p in patches], [-0.5, 2.5])
+    np.testing.assert_allclose([p.get_width() for p in patches], [1, 1])
     plt.close(result.fig)
 
 
@@ -54,15 +63,15 @@ def test_infinite_intervals_clip_to_handed_limits(orient):
 
 
 def test_run_endpoints_empty_and_singleton():
-    result = ep.spans([0, 2, 4], [False, True, False])
+    result = ep.spans([0, 2, 4], [True, False, True])
     np.testing.assert_allclose([p.get_x() for p in result.artists["fill"]], [-1, 3])
     np.testing.assert_allclose([p.get_width() for p in result.artists["fill"]], [2, 2])
     plt.close(result.fig)
-    for x, mask in [([], []), ([1], [True])]:
+    for x, mask in [([], []), ([1], [False])]:
         result = ep.spans(x, mask)
         assert not result.artists["fill"]
         plt.close(result.fig)
-    result = ep.spans([1], [False], log=True)
+    result = ep.spans([1], [True], log=True)
     patch = result.artists["fill"][0]
     np.testing.assert_allclose(
         [patch.get_x(), patch.get_width()], [10**-0.5, 10**0.5 - 10**-0.5]

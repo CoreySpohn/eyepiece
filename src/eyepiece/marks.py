@@ -24,11 +24,11 @@ def spans(
     color=None,
     fill_kw=None,
 ):
-    """Shade excluded runs or explicit intervals across a single Axes.
+    """Shade masked runs or explicit intervals across a single Axes.
 
     Args:
         x: Increasing one-dimensional sample positions. Unused in interval mode.
-        mask: Boolean inclusion mask shaped like x: True keeps, False shades.
+        mask: boolean, True marks samples to shade; shaped like x.
         intervals: Explicit (N, 2) lower/upper pairs, instead of a mask.
             Infinite ends clip to the current axis limits at call time.
         ax: Single Axes, or None to create a figure.
@@ -45,7 +45,7 @@ def spans(
     Example::
 
         import eyepiece as ep
-        result = ep.spans([0, 1, 2, 3], [True, False, False, True])
+        result = ep.spans([0, 1, 2, 3], [False, True, True, False])
     """
     if orient not in ("v", "h"):
         raise ValueError('orient must be "v" or "h"')
@@ -85,7 +85,7 @@ def spans(
                 ]
             if log:
                 bounds = 10.0**bounds
-            transitions = np.diff(np.r_[False, ~mask, False].astype(int))
+            transitions = np.diff(np.r_[False, mask, False].astype(int))
             pairs = np.column_stack(
                 (
                     bounds[np.flatnonzero(transitions == 1)],

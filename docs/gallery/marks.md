@@ -24,7 +24,7 @@ plt.rcParams["savefig.dpi"] = 100
 
 ## Excluded regions: `spans`
 
-`spans` shades False runs in an inclusion mask, placing the boundaries halfway
+`spans` shades the runs where a boolean mask is True, placing the boundaries halfway
 between samples. Set `log=True` for geometric midpoints, or supply explicit
 `intervals` whose infinite ends clip to the current limits.
 
@@ -32,7 +32,8 @@ between samples. Set `log=True` for geometric midpoints, or supply explicit
 fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 x = np.arange(4)
 ax.plot(x, [0.2, 0.6, 0.8, 0.9])
-ep.spans(x, [True, False, False, True], ax=ax)
+in_range = np.array([True, False, False, True])
+ep.spans(x, ~in_range, ax=ax)
 ax.set(xlabel="position", ylabel="response")
 ```
 
