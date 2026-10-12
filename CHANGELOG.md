@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.9.0](https://github.com/CoreySpohn/eyepiece/compare/v0.8.0...v0.9.0) (2026-10-12)
+
+
+### Features
+
+* **marks:** add spans, ref_line and log_zero_floor ([5f92efc](https://github.com/CoreySpohn/eyepiece/commit/5f92efcd5406ab68c373656072395b9b6cb5fa72))
+* **stats:** add calibration and strip diagnostics ([02cbc41](https://github.com/CoreySpohn/eyepiece/commit/02cbc41b6c4814bf2452841b668199dd0db165d5))
+* **stats:** add interval_points ([05b1255](https://github.com/CoreySpohn/eyepiece/commit/05b1255ed477b15ad80e164dd9a0c51379b6a4f8))
+* **stats:** add scatter_values with inset colorbar and cmap role fallback ([1792ff4](https://github.com/CoreySpohn/eyepiece/commit/1792ff41a7386f3bafdb8b7411c1d6ded25f4189))
+* **style:** export neutral and backing ([2a6d569](https://github.com/CoreySpohn/eyepiece/commit/2a6d56955efaeb65e06f7aa4a9782fe2f50c9b8c))
+
+
+### Bug Fixes
+
+* **marks:** spans shades where mask is True ([4836cd3](https://github.com/CoreySpohn/eyepiece/commit/4836cd3816e1c1412234c611be23533facd6d8dc))
+* **stats:** calibration keeps later data visible and log band exact; log_zero_floor pins only the floor ([de8fe2f](https://github.com/CoreySpohn/eyepiece/commit/de8fe2f4a368398865c6a1595f24c556e2d5dde4))
+
 ## [0.8.0](https://github.com/CoreySpohn/eyepiece/compare/v0.7.0...v0.8.0) (2026-10-05)
 
 
