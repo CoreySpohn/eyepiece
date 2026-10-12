@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/CoreySpohn/eyepiece/compare/v0.9.0...v0.10.0) (2026-10-12)
+
+
+### Features
+
+* **style:** resolve semantic color roles ([507094f](https://github.com/CoreySpohn/eyepiece/commit/507094f4a06bb1d3b2e441c46a428b04196d40c8))
+
 ## [0.9.0](https://github.com/CoreySpohn/eyepiece/compare/v0.8.0...v0.9.0) (2026-10-12)
 
 
