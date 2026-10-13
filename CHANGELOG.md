@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/CoreySpohn/eyepiece/compare/v0.10.0...v0.11.0) (2026-10-12)
+
+
+### Features
+
+* **role:** resolve prior, positive, negative, posterior and truth roles ([a182899](https://github.com/CoreySpohn/eyepiece/commit/a182899790213d5ff9614953fd1f526a7e640b99))
+
+
+### Bug Fixes
+
+* **role:** lowercase hex for fixed-color fallbacks, docstring names them, test pins them to hwostyle ([13caf7b](https://github.com/CoreySpohn/eyepiece/commit/13caf7b93f2564f1a3221fca26ff8032eb78d9b1))
+
 ## [0.10.0](https://github.com/CoreySpohn/eyepiece/compare/v0.9.0...v0.10.0) (2026-10-12)
 
 
