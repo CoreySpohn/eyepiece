@@ -172,7 +172,12 @@ class Anchor:
     def figure(self):
         """The root figure the point is drawn in."""
         owner = self._ax if self._ax is not None else self._artist
-        return _root_figure(owner)
+        figure = owner.get_figure(root=True)
+        if figure is None:
+            raise ValueError(
+                f"anchored {type(owner).__name__} is not in a figure yet; add it first"
+            )
+        return figure
 
     def box(self, renderer=None):
         """The anchored artist's box in display pixels.
@@ -422,6 +427,11 @@ def flight(
         def ghost_fade(level):
             ghost.set_alpha(alpha * level)
 
+    if crossfade is not None and crossfade.get_alpha() == 0.0:
+        raise ValueError(
+            "flight crossfade text has alpha 0, which is its landed opacity; "
+            "leave its alpha as drawn and let the flight hide it"
+        )
     landing = None if crossfade is None else _TextFade(crossfade)
 
     def update(u):
@@ -539,6 +549,21 @@ def _crosses(artist, p, q, renderer):
     return False
 
 
+def _ends_on(artist, end, renderer):
+    """Whether `end` is one of the marks a markers-only line draws.
+
+    A leader anchored on a data point that the caller plots as a marker
+    ends on that marker, which is the mark it names, not data it crosses.
+    """
+    if not isinstance(artist, Line2D):
+        return False
+    if artist.get_linestyle() not in ("None", "none", "", " "):
+        return False
+    xy = artist.get_transform().transform(artist.get_xydata())
+    radius = 0.5 * _pixels(renderer, _root_figure(artist), artist.get_markersize())
+    return _near_points(xy, end, end, radius + _END_CLEAR_PX)
+
+
 def _data_colors(artist):
     if isinstance(artist, Line2D):
         return [to_rgba(artist.get_color())]
@@ -552,11 +577,23 @@ def _data_colors(artist):
     return []
 
 
+def _is_reference(artist, ax):
+    """Whether an artist is drawn against the axes frame, like `axvline`.
+
+    Reference lines and spans (`axhline`, `axvline`, `axvspan`) are scenery,
+    not data: at least one of their coordinates is in axes units, so their
+    transform does not run through the data transform.
+    """
+    return not artist.get_transform().contains_branch(ax.transData)
+
+
 def _default_avoid(ax, exclude):
     """The data a leader in `ax` may not cross: lines, patches, collections."""
     out = []
     for child in ax.get_children():
         if child is ax.patch or isinstance(child, Spine) or child in exclude:
+            continue
+        if _is_reference(child, ax):
             continue
         if isinstance(child, (Line2D, Patch, LineCollection, PathCollection)) or (
             isinstance(child, Collection) and child.get_array() is None
@@ -626,8 +663,11 @@ class _Leader(Line2D):
         The rules are those of a connector in the evidence guide: the leader
         ends on the mark it names and does not run through it, it is shorter
         than a quarter of its panel (the panel's longer side), it crosses no
-        data, and it is not drawn in a color the data in its panel use.
-        Images are not audited, since any line over an image crosses pixels.
+        data and no other text, and it is not drawn in a color the data in
+        its panel use. Reference lines and spans drawn against the axes
+        frame (`axvline`, `axhline`, `axvspan`) are scenery, not data, and a
+        marker the leader ends on is the mark it names. Images are not
+        audited, since any line over an image crosses pixels.
 
         Args:
             renderer: The renderer drawing the figure, or None outside a
@@ -671,6 +711,8 @@ class _Leader(Line2D):
                     out.append("leader runs through the mark it names")
         own = np.array(to_rgb(self.get_color()))
         for artist in self._avoided():
+            if _ends_on(artist, end, renderer):
+                continue
             if _crosses(artist, start, short, renderer):
                 name = artist.get_label() or type(artist).__name__
                 out.append(f"leader crosses data: {name}")
@@ -679,7 +721,26 @@ class _Leader(Line2D):
                     name = artist.get_label() or type(artist).__name__
                     out.append(f"leader takes a data color of its panel: {name}")
                     break
+        for other in self._texts():
+            box = other.get_window_extent(renderer)
+            edges = np.array(
+                [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]
+            )
+            if _polyline_crosses(np.vstack([edges, edges[:1]]), start, short):
+                out.append(f"leader crosses text: {other.get_text()!r}")
         return out
+
+    def _texts(self):
+        """Other visible texts of the panel and of the figure the leader runs by."""
+        figure = _root_figure(self)
+        pool = list(figure.texts) + [a for a in figure.artists if isinstance(a, Text)]
+        if self._panel is not None:
+            pool += list(self._panel.texts)
+        return [
+            t
+            for t in dict.fromkeys(pool)
+            if t is not self._text and t.get_visible() and t.get_text()
+        ]
 
     def draw(self, renderer):
         """Grow from the text toward the mark, after auditing the full leader."""
@@ -886,7 +947,15 @@ def callout(
     first half of `u`, then the leader grows from the caption to the
     subject over the second half (over all of it, without a leader). The
     rest state, when the callout is made, is ``u = 1``, fully drawn; at
-    ``u = 0`` it draws nothing.
+    ``u = 0`` it draws nothing. ``update(u, level)`` also dims the whole
+    callout to `level` of its opacity, for a caption that has been read and
+    must stop competing with the next event; ``level = 0`` hides it.
+
+    `side="auto"` is judged once, when the callout is made, from the
+    geometry then: draw the figure first under a layout engine. The caption
+    is a figure artist outside every layout, so a ``bbox_inches="tight"``
+    save does not grow to hold it, and it is not animated, so a blitting
+    loop does not repaint it.
 
     Args:
         target: The subject: an `Anchor`, or an artist.
@@ -918,7 +987,7 @@ def callout(
         A `PlotResult` on the subject's axes (None for a subject drawn on
         the figure), with ``artists["text"]``, the caption, and, when
         `leader`, ``artists["line"]``, the leader (see `leader` for its
-        ``faults()``), and ``update(u)`` as above.
+        ``faults()``), and ``update(u, level=1.0)`` as above.
 
     Raises:
         TypeError: If `target` or `at` is neither an `Anchor` nor an artist.
@@ -988,17 +1057,20 @@ def callout(
         )
     fade = _TextFade(caption)
 
-    def update(u):
+    def update(u, level=1.0):
         u = _check_u(u)
+        level = _check_u(level)
         if line is None:
             shown, grow = u, 0.0
         else:
             shown, grow = min(1.0, 2.0 * u), max(0.0, 2.0 * u - 1.0)
-        caption.set_visible(u > 0.0)
-        fade.set(_ease(shown) if shown < 1.0 else 1.0)
+        caption.set_visible(u > 0.0 and level > 0.0)
+        opacity = _ease(shown) if shown < 1.0 else 1.0
+        fade.set(opacity * level if level < 1.0 else opacity)
         if line is not None:
-            line.set_visible(grow > 0.0)
+            line.set_visible(grow > 0.0 and level > 0.0)
             line._grow = _ease(grow) if grow < 1.0 else 1.0
+            line.set_alpha(None if level >= 1.0 else level)
 
     update(1.0)
     artists = {"text": caption}

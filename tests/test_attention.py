@@ -374,3 +374,57 @@ def test_callout_caps_its_words():
         ep.callout(dot, "one two three four five six seven eight nine")
     with pytest.raises(ValueError, match="side"):
         ep.callout(dot, "short", side="north")
+
+
+def test_leader_to_a_plotted_data_point_ignores_its_marker_and_the_scenery():
+    _fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    ax.plot([0.5], [0.5], "o", ms=10)
+    ax.axvline(0.55)
+    ax.axvspan(0.52, 0.58, alpha=0.2)
+    note = ax.text(0.62, 0.62, "the dot")
+    res = ep.leader(note, ep.Anchor.from_data(ax, (0.5, 0.5)))
+    assert res.artists["line"].faults() == []
+
+
+def test_leader_across_another_text_is_a_fault():
+    _fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    (dot,) = ax.plot([0.5], [0.5], "o")
+    ax.text(0.56, 0.56, "other", ha="center", va="center")
+    res = ep.leader(ax.text(0.62, 0.62, "the dot"), dot, strict=False)
+    assert any("crosses text: 'other'" in f for f in res.artists["line"].faults())
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_callout_dims_and_restores(mode):
+    hwostyle.use(mode)
+    fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    (dot,) = ax.plot([0.3], [0.5], "o")
+    without = _pixels(fig)
+    res = ep.callout(dot, "the dot", at=ep.Anchor.from_data(ax, (0.45, 0.62)))
+    rest = _pixels(fig)
+    res.update(1.0, level=0.35)
+    dimmed = _pixels(fig)
+    assert not np.array_equal(dimmed, rest)
+    assert not np.array_equal(dimmed, without)
+    res.update(1.0, level=0.0)
+    np.testing.assert_array_equal(_pixels(fig), without)
+    res.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), rest)
+
+
+def test_flight_refuses_a_crossfade_label_drawn_invisible():
+    fig, ax = plt.subplots()
+    (dot,) = ax.plot([0.2], [0.2], "o")
+    label = ax.text(0.8, 0.8, "2.41", alpha=0.0)
+    with pytest.raises(ValueError, match="alpha 0"):
+        ep.flight(dot, label, fig=fig, crossfade=label)
+
+
+def test_anchor_on_an_artist_outside_a_figure_says_so():
+    from matplotlib.lines import Line2D
+
+    with pytest.raises(ValueError, match="not in a figure"):
+        _ = ep.Anchor.from_artist(Line2D([0.0], [0.0])).figure

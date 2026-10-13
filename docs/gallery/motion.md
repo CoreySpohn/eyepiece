@@ -280,8 +280,11 @@ viewer sees a value read in one place become a point somewhere else.
 `callout` writes a caption of a few words beside the thing it names.
 `leader` joins a caption to its mark when the two cannot touch, and refuses
 to draw one that breaks the connector rules of the
-{doc}`evidence guide <../evidence>`: too long, through data, or in a data
-color.
+{doc}`evidence guide <../evidence>`: it must end on the mark it names, run
+shorter than a quarter of its panel, cross no data and no other text, and
+take a neutral rather than a data color. By default a broken leader raises
+when the figure is drawn, so a recording fails rather than ships the frame;
+`faults()` on the leader lists what it breaks without drawing.
 
 Every position is an `Anchor`, a data point (`Anchor.from_data`) or a part
 of a drawn artist (`Anchor.from_artist`), resolved in display space when the
@@ -301,6 +304,8 @@ top.axvline(0.35, lw=0.8, color=ep.neutral(0.5))
 (landed,) = bottom.plot([0.25], [height], "o", ms=6, color=read.get_color())
 top.set(xlim=(-0.2, 0.8), ylim=(0.0, 4.6), ylabel="density")
 bottom.set(xlim=(-0.2, 0.8), ylim=(0.0, 4.6), xlabel="mean", ylabel="likelihood")
+# Lay the panels out once, then freeze them: the moves are figure artists
+# outside the layout, and an animation's panels must not shift between frames.
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
@@ -324,7 +329,17 @@ for cell, frame, title in zip(cells, frames, ("read", "carried", "landed"), stri
 plt.show()
 ```
 
-In an animation the frame's state sets the progress of each move: the
-caption's `update` runs from 0 to 1 over the half second before its event,
-and the flight's over the event itself. A recording's scale-drift check
-never sees the moves, since none of them is inside an axes.
+In an animation each frame's state sets the progress of each move. A
+caption of a few words should start to appear just before the event it
+names, so its `update` runs from 0 to 1 over a few frames ending then; the
+flight's runs over the event itself; and `update(1.0, level=0.35)` dims a
+caption that has been read, so the next event has the eye to itself. A
+recording's scale-drift check never sees the moves, since none of them is
+inside an axes.
+
+Three limits follow from the moves living on the figure. A callout's
+`side="auto"` is judged once, when it is made, so lay the figure out
+first. A ``bbox_inches="tight"`` save does not grow to hold a caption
+outside the axes, and a blitting loop does not repaint the moves. A
+`crossfade` label must keep the opacity it lands at: the flight hides it
+until the end of the move and restores it there.
