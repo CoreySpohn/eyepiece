@@ -271,3 +271,60 @@ with ep.PageCamera(fig, (1920, 1080), overview=True) as cam:
         for t in np.linspace(0.0, 1.0, 60):
             sink.write(cam.render(path(ep.ease(t))))
 ```
+
+## Attention: a flight, a callout, a leader
+
+A beat has to say where to look. Three moves do it without touching the
+data. `flight` carries a copy of a mark from one panel onto another, so the
+viewer sees a value read in one place become a point somewhere else.
+`callout` writes a caption of a few words beside the thing it names.
+`leader` joins a caption to its mark when the two cannot touch, and refuses
+to draw one that breaks the connector rules of the
+{doc}`evidence guide <../evidence>`: too long, through data, or in a data
+color.
+
+Every position is an `Anchor`, a data point (`Anchor.from_data`) or a part
+of a drawn artist (`Anchor.from_artist`), resolved in display space when the
+figure is drawn. The moves' artists belong to the figure, not to an axes,
+so they never change data limits. Each result's `update(u)` sets progress
+absolutely, and each has a rest state: a flight is absent, a callout is
+fully drawn.
+
+```{code-cell} python
+grid = np.linspace(-0.2, 0.8, 200)
+height = np.exp(-0.5 * ((0.35 - 0.25) / 0.1) ** 2) / (0.1 * np.sqrt(2.0 * np.pi))
+
+fig, (top, bottom) = plt.subplots(2, 1, figsize=(6.0, 3.6), layout="constrained")
+top.plot(grid, np.exp(-0.5 * ((grid - 0.25) / 0.1) ** 2) / (0.1 * np.sqrt(2.0 * np.pi)))
+top.axvline(0.35, lw=0.8, color=ep.neutral(0.5))
+(read,) = top.plot([0.35], [height], "o", ms=6)
+(landed,) = bottom.plot([0.25], [height], "o", ms=6, color=read.get_color())
+top.set(xlim=(-0.2, 0.8), ylim=(0.0, 4.6), ylabel="density")
+bottom.set(xlim=(-0.2, 0.8), ylim=(0.0, 4.6), xlabel="mean", ylabel="likelihood")
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+carry = ep.flight(read, ep.Anchor.from_artist(landed), fig=fig, arc=0.15)
+note = ep.callout(read, "its height is the likelihood")
+
+
+def grab(flight_u, landed_shown):
+    carry.update(flight_u)
+    landed.set_visible(landed_shown)
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba()).copy()
+
+
+frames = [grab(0.0, False), grab(0.5, False), grab(1.0, True)]
+shown, cells = plt.subplots(1, 3, figsize=(9.0, 2.2), layout="constrained")
+for cell, frame, title in zip(cells, frames, ("read", "carried", "landed"), strict=True):
+    cell.imshow(frame, interpolation="nearest")
+    cell.set_title(title)
+    cell.set_axis_off()
+plt.show()
+```
+
+In an animation the frame's state sets the progress of each move: the
+caption's `update` runs from 0 to 1 over the half second before its event,
+and the flight's over the event itself. A recording's scale-drift check
+never sees the moves, since none of them is inside an axes.

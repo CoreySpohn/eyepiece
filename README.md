@@ -83,6 +83,10 @@ implement them are internal organization.
   that dims a figure outside chosen rectangles), `quad_image` (an image drawn
   as one movable shape per pixel, from `pixel_quads`), and `brush` (the same
   objects lit in several panels at once).
+- **Attention.** `Anchor` (a data point or a part of a drawn artist,
+  resolved at draw time), `flight` (a copy of a mark carried from one panel
+  onto another), `callout` (a short caption beside its subject), and
+  `leader` (a connector audited against the leader rules).
 - **Layout.** Pixel-edge extent helpers (`extent_lod`, `extent_arcsec`,
   `extent_au`, ...) with matching axis labelers, plus `Frame` and
   `SourceStyles` for keeping several panels of one scene consistent.

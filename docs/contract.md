@@ -436,6 +436,17 @@ sees it. A camera's moving limits are declared to `record` with
 `free_limits=`, which exempts only those limits from the drift check and
 still checks that axes' color scale.
 
+### Attention moves sit on the figure
+
+`flight`, `callout`, and `leader` say where to look; none of them is data.
+Their positions are `Anchor`s resolved in display space at draw time, and
+their artists are children of the figure rather than of an axes, so they
+never join autoscaling and a recording's drift check never sees them. Each
+returns a result whose `update(u)` sets progress absolutely and whose rest
+state, the state it is made in, is the one a still shows: a flight is
+absent, a callout and a leader are fully drawn. A leader that breaks the
+connector rules of the evidence guide raises when it is drawn.
+
 ### Direct model binding stays in the consumer
 
 A consumer that animates native Manim geometry straight from a scientific
