@@ -29,7 +29,7 @@ import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
 from matplotlib.collections import Collection, LineCollection, PathCollection
-from matplotlib.colors import to_rgb, to_rgba
+from matplotlib.colors import to_rgb, to_rgba, to_rgba_array
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from matplotlib.spines import Spine
@@ -39,6 +39,7 @@ from matplotlib.transforms import Bbox, IdentityTransform
 from eyepiece import _style
 from eyepiece._motion import ease as _ease
 from eyepiece._result import MosaicResult, PlotResult
+from eyepiece.emphasis import _own_background, _resolve_background
 
 # Where on an artist's box `Anchor.from_artist` resolves, as box fractions.
 _LOCS = {
@@ -1200,3 +1201,258 @@ def callout(
     if line is not None:
         artists["line"] = line
     return PlotResult(ax=target.axes, artists=artists, update=update)
+
+
+# Stage
+
+
+class _Look:
+    """One drawn artist's colors and opacity as made, set to absolute levels.
+
+    `presence` is how far the artist has arrived (its opacity, 0 to 1) and
+    `contrast` how far its colors stand from the background it sits on (1
+    as drawn, 0 the background itself). Every write starts from the values
+    read when the look was made, so levels never compound.
+    """
+
+    def __init__(self, artist, background):
+        self.artist = artist
+        self.background = background
+        self.alpha = artist.get_alpha()
+        if isinstance(artist, Line2D):
+            self.colors = [
+                (artist.get_color(), artist.set_color),
+                (artist.get_markerfacecolor(), artist.set_markerfacecolor),
+                (artist.get_markeredgecolor(), artist.set_markeredgecolor),
+                (artist.get_markerfacecoloralt(), artist.set_markerfacecoloralt),
+            ]
+        elif isinstance(artist, Text):
+            self.colors = [(artist.get_color(), artist.set_color)]
+        elif isinstance(artist, Patch):
+            self.colors = [
+                (artist.get_facecolor(), artist.set_facecolor),
+                (artist.get_edgecolor(), artist.set_edgecolor),
+            ]
+        elif isinstance(artist, Collection) and artist.get_array() is None:
+            self.colors = [
+                (artist.get_facecolor().copy(), artist.set_facecolor),
+                (artist.get_edgecolor().copy(), artist.set_edgecolor),
+            ]
+        else:
+            # A colormapped collection or an image: opacity carries both
+            # knobs, which equals the color blend over a uniform background.
+            self.colors = None
+
+    def set(self, presence, contrast):
+        """Draw the artist at `presence` of its opacity and `contrast` of its color."""
+        artist = self.artist
+        if presence >= 1.0 and contrast >= 1.0:
+            artist.set_alpha(self.alpha)
+            for value, setter in self.colors or ():
+                setter(value)
+            return
+        base = 1.0 if self.alpha is None else self.alpha
+        if self.colors is None:
+            artist.set_alpha(base * presence * contrast)
+            return
+        own = self.alpha is not None
+        if own:
+            artist.set_alpha(base * presence)
+        for value, setter in self.colors:
+            setter(self._shade(value, presence, contrast, own))
+
+    def _shade(self, value, presence, contrast, own):
+        if isinstance(value, str) and value.lower() == "none":
+            return value
+        scale = 1.0 if own else presence
+        rgba = np.asarray(to_rgba_array(value), dtype=float)
+        bg = np.asarray(to_rgba(self.background), dtype=float)[:3]
+        out = rgba.copy()
+        out[:, :3] = bg + contrast * (rgba[:, :3] - bg)
+        out[:, 3] = rgba[:, 3] * scale
+        if isinstance(value, np.ndarray) and value.ndim == 2:
+            return out
+        return tuple(out[0])
+
+
+def _looks(target, background, seen, out):
+    """Every leaf artist under `target`, each with the background it sits on."""
+    if id(target) in seen:
+        return
+    seen.add(id(target))
+    if isinstance(target, Axes):
+        face = _own_background(target) if background is None else background
+        for child in target.get_children():
+            if child is not target.patch:
+                _looks(child, face, seen, out)
+        return
+    leaf = isinstance(target, (Text, Line2D, Patch, Collection)) or hasattr(
+        target, "get_array"
+    )
+    if not leaf:
+        for child in target.get_children():
+            _looks(child, background, seen, out)
+        return
+    bg = background if background is not None else _resolve_background(target)
+    out.append(_Look(target, bg))
+    if isinstance(target, Text):
+        for part in (
+            target.get_bbox_patch(),
+            getattr(target, "arrow_patch", None),
+            *target.get_children(),
+        ):
+            if part is not None:
+                _looks(part, background, seen, out)
+
+
+class Stage:
+    """Groups of drawn artists set to absolute levels: shown, dimmed, or absent.
+
+    A staged explanation brings in one idea per beat and quiets what the
+    viewer has already read. A `Stage` holds named groups of artists (an
+    artist, an Axes, which stages everything it holds except its
+    background, or an iterable of these) and sets every group, every frame,
+    to two absolute knobs: its presence, how far it has arrived (its
+    opacity), and its contrast, how far its colors stand from the
+    background (a dimmed group blends toward the background it sits on, so
+    it recedes the same way on a light figure and a dark one, and prints).
+
+    Every level is computed from the colors and opacities the artists had
+    when the stage was made, so setting a state twice draws the same picture
+    as setting it once, and any frame can be drawn in any order. The rest
+    state, which is the state the stage is made in, is every group as
+    drawn; a still that never calls `set` shows it, and `rest` returns to
+    it exactly.
+
+    A stage owns the colors and opacity of the artists it holds: make it
+    after they take their final colors, and do not also fade them with
+    `fade` or by hand. Data may change freely between frames.
+
+    Args:
+        groups: Mapping of group name to an artist, an Axes, or an iterable
+            of these.
+        dim: Contrast a dimmed group keeps, in [0, 1].
+        background: Color every group blends toward. None resolves it per
+            artist, as `fade` does: the face of the axes it is drawn in,
+            else the nearest opaque figure face.
+
+    Raises:
+        ValueError: If `dim` is outside [0, 1] or a group is empty.
+
+    Example::
+
+        stage = ep.Stage({"scenery": [ax_left], "row": [row_line]})
+        stage.set(shown=["row"], dimmed=["scenery"])
+        stage.rest()  # the still
+    """
+
+    def __init__(self, groups, *, dim=0.35, background=None):
+        """Read every group's artists as drawn now; that is the rest state."""
+        dim = float(dim)
+        if not 0.0 <= dim <= 1.0:
+            raise ValueError(f"dim must be in [0, 1], got {dim}")
+        self.dim = dim
+        self._looks = {}
+        seen = set()
+        for name, members in dict(groups).items():
+            items = [members] if isinstance(members, Artist) else list(members)
+            looks = []
+            for item in items:
+                _looks(item, background, seen, looks)
+            if not looks:
+                raise ValueError(f"stage group {name!r} holds no drawn artist")
+            self._looks[name] = looks
+
+    @property
+    def names(self):
+        """The group names, in the order given."""
+        return list(self._looks)
+
+    def state(self, shown=None, dimmed=()):
+        """The levels of a state, as ``{name: (presence, contrast)}``.
+
+        Args:
+            shown: Groups at full strength. None means every group not in
+                `dimmed`.
+            dimmed: Groups present but blended down to the stage's `dim`.
+
+        Returns:
+            A dict over every group: shown groups at ``(1, 1)``, dimmed ones
+            at ``(1, dim)``, and the rest absent at ``(0, 1)``.
+
+        Raises:
+            KeyError: If a name is not a group of the stage.
+        """
+        dimmed = list(dimmed)
+        shown = [n for n in self._looks if n not in dimmed] if shown is None else shown
+        for name in (*shown, *dimmed):
+            if name not in self._looks:
+                raise KeyError(f"no stage group {name!r}; groups are {self.names}")
+        out = {}
+        for name in self._looks:
+            if name in dimmed:
+                out[name] = (1.0, self.dim)
+            elif name in shown:
+                out[name] = (1.0, 1.0)
+            else:
+                out[name] = (0.0, 1.0)
+        return out
+
+    def weigh(self, levels):
+        """Set the named groups to absolute levels; leave the others alone.
+
+        A group not named keeps whatever its artists show, so a group can be
+        handed back to another move (an axis build, say) while the stage
+        sets the rest; `rest` returns every group to how it was made.
+
+        Args:
+            levels: Mapping of group name to a presence in [0, 1], or to a
+                ``(presence, contrast)`` pair.
+
+        Raises:
+            KeyError: If a name is not a group of the stage.
+        """
+        for name, level in levels.items():
+            if name not in self._looks:
+                raise KeyError(f"no stage group {name!r}; groups are {self.names}")
+            if not isinstance(level, (tuple, list)):
+                level = (level, 1.0)
+            presence, contrast = (_check_u(v) for v in level)
+            for look in self._looks[name]:
+                look.set(presence, contrast)
+
+    def set(self, shown=None, dimmed=(), *, start=None, u=1.0, ease="smoothstep"):
+        """Go to a state, or part of the way there from another.
+
+        Args:
+            shown: As in `state`.
+            dimmed: As in `state`.
+            start: The state the move starts from, a dict as `state`
+                returns; None starts from the rest state.
+            u: Progress from `start` to the state, from 0 to 1; values
+                outside are clipped. At 1 (the default) the stage is exactly
+                in the state.
+            ease: An easing kind for `eyepiece.ease`, applied to `u`.
+
+        Returns:
+            The levels drawn, ``{name: (presence, contrast)}``.
+        """
+        end = self.state(shown, dimmed)
+        u = _check_u(u)
+        if u >= 1.0:
+            levels = end
+        else:
+            begin = start or {name: (1.0, 1.0) for name in self._looks}
+            e = _ease(u, ease)
+            levels = {
+                name: tuple(
+                    a + e * (b - a) for a, b in zip(begin[name], end[name], strict=True)
+                )
+                for name in self._looks
+            }
+        self.weigh(levels)
+        return levels
+
+    def rest(self):
+        """Draw every group exactly as it was when the stage was made."""
+        self.weigh(dict.fromkeys(self._looks, (1.0, 1.0)))

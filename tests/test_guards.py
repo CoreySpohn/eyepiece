@@ -129,6 +129,7 @@ _EXPECTED_ALL = [
     "PlotResult",
     "RawSink",
     "SourceStyles",
+    "Stage",
     "Timeline",
     "__version__",
     "animate",

@@ -447,6 +447,14 @@ state, the state it is made in, is the one a still shows: a flight is
 absent, a callout and a leader are fully drawn. A leader that breaks the
 connector rules of the evidence guide raises when it is drawn.
 
+`Stage` follows the same rule. A stage sets each named group to an absolute
+presence and contrast computed from the colors and opacities the artists had
+when the stage was made, so levels never compound and setting a state twice
+draws what setting it once does; a dimmed group blends toward the background
+it sits on, which reads the same on a light figure and a dark one. Its rest
+state, the one a still shows, is the figure as drawn: every group at full
+weight.
+
 ### Direct model binding stays in the consumer
 
 A consumer that animates native Manim geometry straight from a scientific

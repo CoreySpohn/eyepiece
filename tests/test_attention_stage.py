@@ -52,6 +52,92 @@ def _ink(image, background):
     return int(np.any(np.abs(image[..., :3].astype(float) - bg) > 2, axis=-1).sum())
 
 
+# Stage
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_stage_rest_is_the_figure_as_drawn_and_never_compounds(mode):
+    hwostyle.use(mode)
+    fig, _ax, groups = _scene()
+    plain = _pixels(fig)
+    stage = ep.Stage(groups)
+    np.testing.assert_array_equal(_pixels(fig), plain)  # made at rest
+    for _ in range(3):
+        stage.set(shown=["line"], dimmed=["marks", "mesh"])
+    once = _pixels(fig)
+    stage.set(shown=["line"], dimmed=["marks", "mesh"])
+    np.testing.assert_array_equal(_pixels(fig), once)  # idempotent
+    stage.set(shown=["line"], dimmed=["marks"], start=stage.state(), u=0.4)
+    stage.rest()
+    np.testing.assert_array_equal(_pixels(fig), plain)
+    stage.set()  # every group shown: the rest state again
+    np.testing.assert_array_equal(_pixels(fig), plain)
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("level", [0.35, 0.6])
+def test_a_dimmed_group_keeps_its_level_of_contrast(mode, level):
+    hwostyle.use(mode)
+    fig, ax, groups = _scene()
+    stage = ep.Stage(groups, dim=level)
+    bg = np.asarray(to_rgba(ax.get_facecolor()))[:3]
+    probe = ax.transData.transform((0.5, 0.5)).astype(int)
+    row, col = fig.bbox.height - probe[1], probe[0]
+
+    def contrast():
+        pixel = _pixels(fig)[int(row), int(col), :3] / 255.0
+        return np.abs(pixel - bg).max()
+
+    full = contrast()
+    assert full > 0.2
+    stage.set(shown=["marks", "mesh"], dimmed=["line"])
+    assert contrast() == pytest.approx(level * full, abs=2.0 / 255.0)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_an_absent_group_draws_nothing(mode):
+    hwostyle.use(mode)
+    fig, _ax, groups = _scene()
+    stage = ep.Stage(groups)
+    stage.set(shown=["line"])
+    staged = _pixels(fig)
+    stage.rest()
+    for artist in (*groups["marks"], *groups["mesh"]):
+        artist.set_visible(False)
+    np.testing.assert_array_equal(staged, _pixels(fig))
+
+
+def test_stage_moves_between_states_and_checks_names():
+    _fig, _ax, groups = _scene()
+    stage = ep.Stage(groups)
+    start = stage.state(shown=["line"])
+    half = stage.set(shown=["line", "marks"], start=start, u=0.5)
+    assert half["line"] == (1.0, 1.0)
+    assert 0.0 < half["marks"][0] < 1.0
+    assert half["mesh"] == (0.0, 1.0)
+    with pytest.raises(KeyError):
+        stage.state(shown=["nothing"])
+    with pytest.raises(ValueError, match="dim"):
+        ep.Stage(groups, dim=1.5)
+
+
+def test_weigh_sets_only_the_groups_it_names():
+    fig, _ax, groups = _scene()
+    plain = _pixels(fig)
+    stage = ep.Stage(groups)
+    stage.weigh({"line": (1.0, 0.35)})
+    line_only = _pixels(fig)
+    stage.weigh({"marks": 0.0})
+    # The line stays dimmed: weighing the marks did not return it to rest.
+    assert not np.array_equal(_pixels(fig), line_only)
+    stage.weigh({"marks": 1.0})
+    np.testing.assert_array_equal(_pixels(fig), line_only)
+    stage.rest()
+    np.testing.assert_array_equal(_pixels(fig), plain)
+    with pytest.raises(KeyError):
+        stage.weigh({"nothing": 1.0})
+
+
 # Callout pieces and rise
 
 

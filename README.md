@@ -86,8 +86,9 @@ implement them are internal organization.
 - **Attention.** `Anchor` (a data point or a part of a drawn artist, resolved
   at draw time), `flight` (a copy of a mark carried from one panel onto
   another), `callout` (a short caption beside its subject, its key term in the
-  color of the mark it names), and `leader` (a connector audited against the
-  leader rules).
+  color of the mark it names), `leader` (a connector audited against the
+  leader rules), and `Stage` (groups shown, dimmed toward the background, or
+  absent, at absolute levels).
 - **Layout.** Pixel-edge extent helpers (`extent_lod`, `extent_arcsec`,
   `extent_au`, ...) with matching axis labelers, plus `Frame` and
   `SourceStyles` for keeping several panels of one scene consistent.

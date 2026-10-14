@@ -164,8 +164,9 @@ the API reference, and the groups are:
 - **Attention.** `Anchor`, a data point or a part of a drawn artist resolved
   in display space at draw time; `flight`, which carries a copy of a mark from
   one panel onto another; `callout`, a caption of a few words beside the thing
-  it names, its key term in its mark's color; and `leader`, a connector that
-  refuses to break the evidence guide's rules.
+  it names, its key term in its mark's color; `leader`, a connector that
+  refuses to break the evidence guide's rules; and `Stage`, which shows, dims,
+  or hides named groups at absolute levels.
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus
   `Frame` and `SourceStyles` for keeping several panels of one scene
