@@ -855,9 +855,14 @@ def leader(text, target, *, color=None, lw=None, avoid=None, strict=True, line_k
 
 
 class _AnchoredText(Text):
-    """A caption placed beside an anchor, or at its own anchor, at every draw."""
+    """A caption placed beside an anchor, or at its own anchor, at every draw.
 
-    def __init__(self, text, *, target, side, at, offset_pt, **kw):
+    A caption given as pieces draws each piece in its own color, left to
+    right on one baseline; the caption's own string is the pieces joined,
+    so its box, extent, and leader are those of the whole line.
+    """
+
+    def __init__(self, text, *, target, side, at, offset_pt, pieces=None, **kw):
         ha, va = _ALIGN[side]
         super().__init__(
             0.0, 0.0, text, transform=IdentityTransform(), ha=ha, va=va, **kw
@@ -866,6 +871,39 @@ class _AnchoredText(Text):
         self._side = side
         self._at = at
         self._offset_pt = float(offset_pt)
+        self._lift_pt = 0.0
+        self._pieces = []
+        for piece, color, weight in pieces or ():
+            font = self.get_fontproperties().copy()
+            if weight is not None:
+                font.set_weight(weight)
+            part = Text(
+                0.0,
+                0.0,
+                piece,
+                transform=IdentityTransform(),
+                fontproperties=font,
+                color=self.get_color() if color is None else color,
+                ha="left",
+                va="baseline",
+            )
+            self._pieces.append(part)
+
+    def get_children(self):
+        """The caption's colored pieces, when it has them."""
+        return [*super().get_children(), *self._pieces]
+
+    def set_figure(self, fig):
+        """Put the caption, and each of its pieces, in a figure."""
+        super().set_figure(fig)
+        for part in getattr(self, "_pieces", ()):
+            part.set_figure(fig)
+
+    def set_visible(self, b):
+        """Show or hide the caption with its pieces."""
+        super().set_visible(b)
+        for part in getattr(self, "_pieces", ()):
+            part.set_visible(b)
 
     def place(self, renderer=None):
         """Move the caption to its place as the figure is now."""
@@ -881,6 +919,7 @@ class _AnchoredText(Text):
                 "above": (xc, box.y1 + gap),
                 "below": (xc, box.y0 - gap),
             }[self._side]
+        y -= _pixels(renderer, _root_figure(self), self._lift_pt)
         self.set_position((float(x), float(y)))
 
     def set_side(self, side):
@@ -890,11 +929,52 @@ class _AnchoredText(Text):
         self.set_horizontalalignment(ha)
         self.set_verticalalignment(va)
 
+    def _draw_pieces(self, renderer):
+        """The box, then each piece in its color along the line's baseline."""
+        box = self.get_window_extent(renderer)
+        figure = self.get_figure(root=False)
+        # A heavier piece makes the line wider than the plain text it was
+        # laid out as; the line and its box grow away from the subject:
+        # rightward when left-aligned, leftward when right-aligned (a
+        # caption on the subject's left), both ways when centered.
+        for part in self._pieces:
+            part.set_figure(figure)
+        wide = sum(p.get_window_extent(renderer).width for p in self._pieces)
+        extra = max(0.0, wide - box.width)
+        shift = extra * _GROW_BACK[self.get_horizontalalignment()]
+        patch = self.get_bbox_patch()
+        if patch is not None:
+            self.update_bbox_position_size(renderer)
+            patch.set_x(patch.get_x() - shift)
+            patch.set_width(patch.get_width() + extra)
+            patch.draw(renderer)
+        # The whole line set on a baseline at 0 measures how far its box
+        # reaches below the baseline.
+        probe = Text(
+            0.0,
+            0.0,
+            self.get_text(),
+            transform=IdentityTransform(),
+            fontproperties=self.get_fontproperties(),
+            va="baseline",
+        )
+        probe.set_figure(figure)
+        x, y = box.x0 - shift, box.y0 - probe.get_window_extent(renderer).y0
+        for part in self._pieces:
+            part.set_alpha(self.get_alpha())
+            part.set_position((x, y))
+            part.draw(renderer)
+            x += part.get_window_extent(renderer).width
+
     def draw(self, renderer):
         """Place the caption, then draw it."""
         if not self.get_visible():
             return
         self.place(renderer)
+        if self._pieces:
+            self._draw_pieces(renderer)
+            self.stale = False
+            return
         super().draw(renderer)
 
 
@@ -914,6 +994,30 @@ def _word_count(text):
     return len(str(text).split())
 
 
+# How much of a heavier line's extra width goes back past its anchor, by
+# horizontal alignment.
+_GROW_BACK = {"left": 0.0, "center": 0.5, "right": 1.0}
+
+
+def _caption_pieces(text):
+    """The caption's string and its colored pieces, or None for plain text."""
+    if isinstance(text, str):
+        return text, None
+    pieces = []
+    for piece in text:
+        if isinstance(piece, str):
+            pieces.append((piece, None, None))
+        elif len(piece) == 2:
+            words, color = piece
+            pieces.append((str(words), color, None))
+        else:
+            words, color, weight = piece
+            pieces.append((str(words), color, weight))
+    if not pieces:
+        raise ValueError("callout caption has no pieces")
+    return "".join(words for words, _, _ in pieces), pieces
+
+
 def callout(
     target,
     text,
@@ -926,6 +1030,7 @@ def callout(
     max_words=8,
     color=None,
     fontsize=None,
+    rise_pt=0.0,
     leader_color=None,
     avoid=None,
     strict=True,
@@ -947,9 +1052,19 @@ def callout(
     first half of `u`, then the leader grows from the caption to the
     subject over the second half (over all of it, without a leader). The
     rest state, when the callout is made, is ``u = 1``, fully drawn; at
-    ``u = 0`` it draws nothing. ``update(u, level)`` also dims the whole
-    callout to `level` of its opacity, for a caption that has been read and
-    must stop competing with the next event; ``level = 0`` hides it.
+    ``u = 0`` it draws nothing. With `rise_pt` the caption also rises that
+    far into its place as it fades in, so its arrival reads as motion.
+    ``update(u, level)`` also dims the whole callout to `level` of its
+    opacity, for a caption that has been read and must stop competing with
+    the next event; ``level = 0`` hides it.
+
+    A caption can name its key term in the color of the mark the term
+    names, so the words and the graphic are visibly one thing: give `text`
+    as pieces, each a string or a ``(string, color)`` pair, drawn in order
+    on one baseline; a plain string piece takes `color`. A piece given as
+    ``(string, color, weight)`` is also set in that font weight, for a key
+    term whose mark is drawn in the text color itself (a gray map), where
+    only weight can set it apart.
 
     `side="auto"` is judged once, when the callout is made, from the
     geometry then: draw the figure first under a layout engine. The caption
@@ -959,7 +1074,9 @@ def callout(
 
     Args:
         target: The subject: an `Anchor`, or an artist.
-        text: The caption, at most `max_words` words.
+        text: The caption, at most `max_words` words: a string, or a
+            sequence of pieces, each a string, a ``(string, color)`` pair,
+            or a ``(string, color, weight)`` triple, joined in order.
         side: ``"right"``, ``"left"``, ``"above"``, ``"below"``, or
             ``"auto"``, the first of those in which the caption fits inside
             the subject's panel without covering the subject, judged once,
@@ -975,6 +1092,8 @@ def callout(
         max_words: Longest caption accepted, in whitespace-separated words.
         color: Text color. None uses ``rcParams["text.color"]``.
         fontsize: Font size in points. None uses ``rcParams["font.size"]``.
+        rise_pt: How far below its place, in points, the caption starts as
+            it fades in; 0 fades it in place.
         leader_color: Leader color, as in `leader`.
         avoid: Artists the leader must not cross, as in `leader`.
         strict: Raise on drawing a leader that breaks a rule.
@@ -1002,6 +1121,7 @@ def callout(
     """
     target = _as_anchor(target, "target")
     at = None if at is None else _as_anchor(at, "at")
+    text, pieces = _caption_pieces(text)
     if side not in (*_SIDES, "auto"):
         raise ValueError(f"unknown callout side: {side!r}; known: {[*_SIDES, 'auto']}")
     words = _word_count(text)
@@ -1011,6 +1131,7 @@ def callout(
         )
     rc = matplotlib.rcParams
     fontsize = float(rc["font.size"]) if fontsize is None else float(fontsize)
+    rise_pt = float(rise_pt)
     offset_pt = 0.4 * fontsize if offset_pt is None else float(offset_pt)
     fig = target.figure
     first = "right" if side == "auto" else side
@@ -1020,6 +1141,7 @@ def callout(
         side=first,
         at=at,
         offset_pt=offset_pt,
+        pieces=pieces,
         color=rc["text.color"] if color is None else color,
         fontsize=fontsize,
         zorder=zorder,
@@ -1066,6 +1188,7 @@ def callout(
             shown, grow = min(1.0, 2.0 * u), max(0.0, 2.0 * u - 1.0)
         caption.set_visible(u > 0.0 and level > 0.0)
         opacity = _ease(shown) if shown < 1.0 else 1.0
+        caption._lift_pt = rise_pt * (1.0 - opacity)
         fade.set(opacity * level if level < 1.0 else opacity)
         if line is not None:
             line.set_visible(grow > 0.0 and level > 0.0)

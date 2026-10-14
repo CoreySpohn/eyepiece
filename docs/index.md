@@ -161,11 +161,11 @@ the API reference, and the groups are:
   `spotlight`, which dims a figure outside chosen rectangles; `quad_image`,
   an image drawn as one movable shape per pixel from `pixel_quads`, and
   `brush`, which lights the same objects in several panels at once.
-- **Attention.** `Anchor`, a data point or a part of a drawn artist
-  resolved in display space at draw time; `flight`, which carries a copy of
-  a mark from one panel onto another; `callout`, a caption of a few words
-  beside the thing it names; and `leader`, a connector that refuses to break
-  the evidence guide's rules.
+- **Attention.** `Anchor`, a data point or a part of a drawn artist resolved
+  in display space at draw time; `flight`, which carries a copy of a mark from
+  one panel onto another; `callout`, a caption of a few words beside the thing
+  it names, its key term in its mark's color; and `leader`, a connector that
+  refuses to break the evidence guide's rules.
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus
   `Frame` and `SourceStyles` for keeping several panels of one scene
