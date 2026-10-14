@@ -87,8 +87,9 @@ implement them are internal organization.
   at draw time), `flight` (a copy of a mark carried from one panel onto
   another), `callout` (a short caption beside its subject, its key term in the
   color of the mark it names), `leader` (a connector audited against the
-  leader rules), and `Stage` (groups shown, dimmed toward the background, or
-  absent, at absolute levels).
+  leader rules), `Stage` (groups shown, dimmed toward the background, or
+  absent, at absolute levels), and `build_axes` (an axis drawn on in front of
+  the viewer).
 - **Layout.** Pixel-edge extent helpers (`extent_lod`, `extent_arcsec`,
   `extent_au`, ...) with matching axis labelers, plus `Frame` and
   `SourceStyles` for keeping several panels of one scene consistent.

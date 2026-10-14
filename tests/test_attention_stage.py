@@ -138,6 +138,75 @@ def test_weigh_sets_only_the_groups_it_names():
         stage.weigh({"nothing": 1.0})
 
 
+# Axis build
+
+
+def _axes(log=False):
+    fig, ax = plt.subplots(figsize=(4.0, 3.0), dpi=100, layout="constrained")
+    ax.set(xlim=(0.0, 1.0), ylim=(0.5, 2.0), xlabel="albedo", ylabel="radius")
+    if log:
+        ax.set_yscale("log")
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    return fig, ax
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("log", [False, True])
+def test_axis_build_ends_on_the_finished_axes_and_only_adds_ink(mode, log):
+    hwostyle.use(mode)
+    fig, ax = _axes(log)
+    plain = _pixels(fig)
+    limits = (ax.get_xlim(), ax.get_ylim())
+    build = ep.build_axes(ax)
+    np.testing.assert_array_equal(_pixels(fig), plain)  # made at rest
+    face = fig.get_facecolor()
+    inks = []
+    for u in np.linspace(0.0, 1.0, 21):
+        build.update(u)
+        inks.append(_ink(_pixels(fig), face))
+        assert (ax.get_xlim(), ax.get_ylim()) == limits
+    assert inks[0] < 0.2 * inks[-1]
+    assert all(b >= a - 3 for a, b in pairwise(inks)), inks
+    np.testing.assert_array_equal(_pixels(fig), plain)
+    build.update(0.3)
+    build.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), plain)
+
+
+def test_axis_build_draws_one_axis_at_a_time():
+    fig, ax = _axes()
+    build = ep.build_axes(ax, axis="x")
+    build.update(1.0)
+    plain = _pixels(fig)
+    build.update(0.0)
+    ax.yaxis.set_visible(True)
+    hidden = _pixels(fig)
+    # The x axis is gone and the y axis still drawn: something remains.
+    face = fig.get_facecolor()
+    assert 0 < _ink(hidden, face) < _ink(plain, face)
+    assert not ax.xaxis.get_major_ticks()[1].label1.get_alpha()
+    with pytest.raises(ValueError, match="axis"):
+        ep.build_axes(ax, axis="z")
+
+
+def test_axis_label_writes_on_after_the_spine():
+    fig, ax = _axes()
+    build = ep.build_axes(ax, axis="x", spine_end=0.6)
+    face = fig.get_facecolor()
+    label = ax.xaxis.label
+    box = label.get_window_extent()
+    rows = slice(int(fig.bbox.height - box.y1), int(fig.bbox.height - box.y0) + 1)
+    cols = slice(int(box.x0), int(box.x1) + 1)
+
+    def label_ink(u):
+        build.update(u)
+        return _ink(_pixels(fig)[rows, cols], face)
+
+    assert label_ink(0.6) == 0
+    assert 0 < label_ink(0.8) < label_ink(1.0)
+
+
 # Callout pieces and rise
 
 

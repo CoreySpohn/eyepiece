@@ -165,8 +165,9 @@ the API reference, and the groups are:
   in display space at draw time; `flight`, which carries a copy of a mark from
   one panel onto another; `callout`, a caption of a few words beside the thing
   it names, its key term in its mark's color; `leader`, a connector that
-  refuses to break the evidence guide's rules; and `Stage`, which shows, dims,
-  or hides named groups at absolute levels.
+  refuses to break the evidence guide's rules; `Stage`, which shows, dims, or
+  hides named groups at absolute levels; and `build_axes`, which draws an axis
+  on (spine, ticks, numbers, then its name).
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus
   `Frame` and `SourceStyles` for keeping several panels of one scene

@@ -31,7 +31,7 @@ from matplotlib.axes import Axes
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_rgb, to_rgba, to_rgba_array
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.patches import Patch, Rectangle
 from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox, IdentityTransform
@@ -1456,3 +1456,209 @@ class Stage:
     def rest(self):
         """Draw every group exactly as it was when the stage was made."""
         self.weigh(dict.fromkeys(self._looks, (1.0, 1.0)))
+
+
+# Axes build
+
+
+class _BuildPart:
+    """One artist's opacity and clipping as made, so a build can return to it."""
+
+    def __init__(self, artist):
+        self.artist = artist
+        self.alpha = artist.get_alpha()
+        self.clip_on = artist.get_clip_on()
+        self.clip_path = artist.get_clip_path()
+        self.clip_box = artist.clipbox
+
+    def fade(self, level):
+        if level >= 1.0:
+            self.artist.set_alpha(self.alpha)
+        else:
+            base = 1.0 if self.alpha is None else self.alpha
+            self.artist.set_alpha(base * level)
+
+    def clip(self, patch):
+        self.artist.set_clip_on(True)
+        self.artist.set_clip_path(patch)
+
+    def restore(self):
+        artist = self.artist
+        artist.set_alpha(self.alpha)
+        artist.set_clip_path(self.clip_path)
+        artist.set_clip_box(self.clip_box)
+        artist.set_clip_on(self.clip_on)
+
+
+def _renderer(figure):
+    canvas = figure.canvas
+    get = getattr(canvas, "get_renderer", None)
+    return get() if get is not None else figure._get_renderer()
+
+
+_SPINES = {"x": ("bottom", "top"), "y": ("left", "right")}
+
+
+class _AxisBuild:
+    """The build of one axis of an axes: spine, ticks, tick labels, label."""
+
+    def __init__(self, ax, which, *, label, spine_end, tick_fade, label_lag):
+        self.ax = ax
+        self.which = which
+        self.axis = ax.xaxis if which == "x" else ax.yaxis
+        self.spine_end = spine_end
+        self.tick_fade = tick_fade
+        self.label_lag = label_lag
+        self.write_label = label
+        self.spines = [_BuildPart(ax.spines[s]) for s in _SPINES[which]]
+        self.ticks = []
+        for major in (True, False):
+            locs = (
+                self.axis.get_majorticklocs()
+                if major
+                else self.axis.get_minorticklocs()
+            )
+            ticks = (
+                self.axis.get_major_ticks(len(locs))
+                if major
+                else self.axis.get_minor_ticks(len(locs))
+            )
+            for tick, loc in zip(ticks, locs, strict=False):
+                marks = [_BuildPart(tick.tick1line), _BuildPart(tick.tick2line)]
+                texts = [_BuildPart(tick.label1), _BuildPart(tick.label2)]
+                grid = _BuildPart(tick.gridline)
+                self.ticks.append((float(loc), marks, texts, grid))
+        self.label = _BuildPart(self.axis.label)
+        figure = ax.get_figure(root=True)
+        self._figure = figure
+        self._spine_clip = Rectangle(
+            (0.0, 0.0), 1.0, 1.0, transform=ax.transAxes, visible=False
+        )
+        self._label_clip = Rectangle(
+            (0.0, 0.0), 0.0, 0.0, transform=figure.transFigure, visible=False
+        )
+
+    def _fraction(self, loc):
+        """Where a tick location sits along the axis, as an axes fraction."""
+        to_axes = self.ax.transScale + self.ax.transLimits
+        point = (loc, 0.0) if self.which == "x" else (0.0, loc)
+        with np.errstate(all="ignore"):
+            frac = to_axes.transform(np.array([point], dtype=float))[0]
+        return float(frac[0] if self.which == "x" else frac[1])
+
+    def update(self, u):
+        if u >= 1.0:
+            for part in [*self.spines, self.label]:
+                part.restore()
+            for _loc, marks, texts, grid in self.ticks:
+                for part in (*marks, *texts, grid):
+                    part.restore()
+            return
+        # The front runs from the origin to past the far end, so the last
+        # tick label has finished fading in when the spine is drawn.
+        reach = 1.0 + self.tick_fade + self.label_lag
+        front = reach * _ease(min(1.0, u / self.spine_end))
+        drawn = min(1.0, front)
+        big = 1e3
+        if self.which == "x":
+            self._spine_clip.set_bounds(-big, -big, big + drawn, 3.0 * big)
+        else:
+            self._spine_clip.set_bounds(-big, -big, 3.0 * big, big + drawn)
+        for part in self.spines:
+            part.clip(self._spine_clip)
+            # A spine clipped to nothing would still show its line cap.
+            part.fade(1.0 if drawn > 0.0 else 0.0)
+        for loc, marks, texts, grid in self.ticks:
+            f = self._fraction(loc)
+            mark = 1.0 if drawn >= 1.0 or f < drawn else 0.0
+            for part in (*marks, grid):
+                part.fade(mark)
+            words = min(1.0, max(0.0, (front - f - self.label_lag) / self.tick_fade))
+            for part in texts:
+                part.fade(words)
+        if not self.write_label:
+            self.label.restore()
+            return
+        write = max(0.0, (u - self.spine_end) / (1.0 - self.spine_end))
+        text = self.axis.label
+        box = text.get_window_extent(_renderer(self._figure))
+        inverse = self._figure.transFigure.inverted()
+        (x0, y0), (x1, y1) = inverse.transform(box.get_points())
+        pad = 0.02
+        x0, y0, x1, y1 = x0 - pad, y0 - pad, x1 + pad, y1 + pad
+        e = _ease(write)
+        if self.which == "x":
+            self._label_clip.set_bounds(x0, y0, e * (x1 - x0), y1 - y0)
+        else:
+            self._label_clip.set_bounds(x0, y0, x1 - x0, e * (y1 - y0))
+        self.label.clip(self._label_clip)
+
+
+def build_axes(ax, *, axis="both", label=True, spine_end=0.7):
+    """Build an axes the way a teacher draws one: line, ticks, numbers, name.
+
+    An explanation that introduces a quantity draws its axis in front of
+    the viewer rather than showing it finished: the spine draws on from the
+    origin, each tick appears as the spine reaches it, its number fades in
+    just after, and the axis label writes on last, from its first letter.
+    One axis at a time keeps one new quantity at a time; ``axis="both"``
+    builds the horizontal axis and then the vertical one.
+
+    Nothing about the axes' limits, ticks, or layout changes: the build only
+    clips and fades what the axes already draws, so it moves no data limit
+    and a recording sees no drifting scale. Make the axes final first
+    (limits, ticks, labels, and a layout that will not move), then build it.
+
+    Args:
+        ax: The axes to build.
+        axis: ``"x"``, ``"y"``, or ``"both"`` (x over the first half of the
+            progress, then y).
+        label: Write the axis label on after the spine; False shows it
+            throughout.
+        spine_end: Fraction of each axis's progress the spine, ticks, and
+            numbers take; the label writes on over the rest.
+
+    Returns:
+        A `PlotResult` on `ax` with ``update(u)``, `u` from 0 (nothing of
+        the axis drawn) to 1 (the rest state: the axes exactly as made).
+        The result is made in its rest state.
+
+    Raises:
+        ValueError: If `axis` is unknown or `spine_end` is outside (0, 1).
+
+    Example::
+
+        build = ep.build_axes(ax, axis="x")
+        for u in np.linspace(0.0, 1.0, 24):
+            build.update(u)
+            rec.frame()
+    """
+    if axis not in ("x", "y", "both"):
+        raise ValueError(f"unknown axis: {axis!r}; known: ['x', 'y', 'both']")
+    spine_end = float(spine_end)
+    if not 0.0 < spine_end < 1.0:
+        raise ValueError(f"spine_end must be in (0, 1), got {spine_end}")
+    which = ("x", "y") if axis == "both" else (axis,)
+    parts = [
+        _AxisBuild(
+            ax,
+            w,
+            label=label,
+            spine_end=spine_end,
+            tick_fade=0.25,
+            label_lag=0.05,
+        )
+        for w in which
+    ]
+
+    def update(u):
+        u = _check_u(u)
+        n = len(parts)
+        for i, part in enumerate(parts):
+            part.update(min(1.0, max(0.0, n * u - i)))
+
+    return PlotResult(
+        ax=ax,
+        artists={"line": [p.artist for b in parts for p in b.spines]},
+        update=update,
+    )

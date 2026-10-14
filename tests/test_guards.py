@@ -137,6 +137,7 @@ _EXPECTED_ALL = [
     "blend",
     "bracket",
     "brush",
+    "build_axes",
     "calibration",
     "callout",
     "capture",
