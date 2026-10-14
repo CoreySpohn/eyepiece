@@ -207,6 +207,85 @@ def test_axis_label_writes_on_after_the_spine():
     assert 0 < label_ink(0.8) < label_ink(1.0)
 
 
+# Collapse
+
+
+def _two_panels():
+    fig, (left, right) = plt.subplots(
+        1, 2, figsize=(6.0, 3.0), dpi=100, sharey=True, layout="constrained"
+    )
+    for ax in (left, right):
+        ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    return fig, left, right
+
+
+def _cells(n=10, y=0.5):
+    edges = np.linspace(0.1, 0.7, n + 1)
+    return np.stack([np.c_[edges[:-1], [y] * n], np.c_[edges[1:], [y] * n]], axis=1)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_collapse_is_absent_at_rest_and_lands_on_its_bar(mode):
+    hwostyle.use(mode)
+    fig, left, right = _two_panels()
+    plain = _pixels(fig)
+    weights = np.array([0, 0, 1, 3, 4, 2, 0, 0, 0, 0], dtype=float)
+    start = ep.Anchor.from_data(left, (0.1, 0.5))
+    end = ep.Anchor.from_data(left, (0.4, 0.5))
+    land = (
+        ep.Anchor.from_data(right, (0.0, 0.5)),
+        ep.Anchor.from_data(right, (0.3, 0.5)),
+    )
+    move = ep.collapse(
+        left,
+        _cells(),
+        weights,
+        start,
+        end,
+        fig=fig,
+        colors="tab:gray",
+        color="tab:pink",
+        to=land,
+    )
+    np.testing.assert_array_equal(_pixels(fig), plain)  # made at rest
+    ghost = move.artists["line"]
+    move.update(0.0)
+    np.testing.assert_array_equal(_pixels(fig), plain)
+    move.update(1.0)
+    fig.canvas.draw()
+    segs = np.asarray(ghost.get_segments())
+    p0, p1 = start.display(), end.display()
+    # Shares in proportion to the weights, end to end along the bar.
+    assert np.hypot(*(segs[0][0] - p0)) < 0.5
+    assert np.hypot(*(segs[-1][1] - p1)) < 0.5
+    lengths = np.hypot(*(segs[:, 1] - segs[:, 0]).T)
+    np.testing.assert_allclose(
+        lengths / lengths.sum(), weights / weights.sum(), atol=1e-6
+    )
+    np.testing.assert_allclose(ghost.get_colors()[3], to_rgba("tab:pink"))
+    move.update(1.0, carry=1.0 - 1e-9)
+    fig.canvas.draw()
+    segs = np.asarray(ghost.get_segments())
+    assert np.hypot(*(segs[0][0] - land[0].display())) < 0.5
+    assert np.hypot(*(segs[-1][1] - land[1].display())) < 0.5
+    move.update(1.0, carry=1.0)
+    np.testing.assert_array_equal(_pixels(fig), plain)
+    assert (left.get_xlim(), right.get_xlim()) == ((0.0, 1.0), (0.0, 1.0))
+
+
+def test_collapse_rejects_bad_weights():
+    fig, left, _right = _two_panels()
+    a = ep.Anchor.from_data(left, (0.1, 0.5))
+    with pytest.raises(ValueError, match="sum to zero"):
+        ep.collapse(left, _cells(), np.zeros(10), a, a, fig=fig, colors="k")
+    with pytest.raises(ValueError, match="negative"):
+        ep.collapse(left, _cells(), -np.ones(10), a, a, fig=fig, colors="k")
+    with pytest.raises(ValueError, match="shape"):
+        ep.collapse(left, _cells(), np.ones(3), a, a, fig=fig, colors="k")
+
+
 # Callout pieces and rise
 
 

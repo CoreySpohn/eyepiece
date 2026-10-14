@@ -1662,3 +1662,161 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7):
         artists={"line": [p.artist for b in parts for p in b.spines]},
         update=update,
     )
+
+
+# Collapse
+
+
+class _CollapseGhost(LineCollection):
+    """Cells of a row drawn as segments moving into a bar, and the bar moving on."""
+
+    def __init__(self, route, colors, **kw):
+        super().__init__([], transform=IdentityTransform(), **kw)
+        self._route = route
+        self._colors = colors
+
+    def draw(self, renderer):
+        """Place every segment where the progress says, then draw them."""
+        if not self.get_visible():
+            return
+        segments, colors = self._route(renderer)
+        self.set_segments(segments)
+        self.set_color(colors)
+        super().draw(renderer)
+
+
+def collapse(
+    ax,
+    segments,
+    weights,
+    start,
+    end,
+    *,
+    fig,
+    colors,
+    color=None,
+    to=None,
+    width_pt=None,
+    ease="smoothstep",
+    zorder=20,
+):
+    """Gather the cells of a row into one bar whose length is their sum.
+
+    The move shows that a set adds up to one value: each cell, drawn as a
+    segment where it sits, slides into a bar between `start` and `end` and
+    takes a share of the bar's length in proportion to its weight, so the
+    bar's whole length is the sum and a heavier cell takes more of it. With
+    `to`, the formed bar is then carried to another place, for example
+    onto the axis of a panel that shows the sums, the way `flight` carries a
+    mark.
+
+    The copy is a figure-level artist, so it never joins an axes'
+    autoscaling. ``update(u, carry=0.0)`` sets the progress absolutely: `u`
+    gathers the cells (0 drawn nothing, the cells are the caller's) and
+    `carry` moves the formed bar to `to`. Without `to` the copy is hidden at
+    ``u = 1``, where the caller draws its own bar; with `to`, it is visible
+    from ``u > 0`` until ``carry = 1``, where the caller draws the landed
+    bar. The rest state, when it is made, is the move finished: nothing
+    drawn.
+
+    Args:
+        ax: The axes the cells are drawn in.
+        segments: The cells along the row, an array of shape ``(N, 2, 2)``:
+            each cell's two ends in `ax` data coordinates.
+        weights: The cells' values, ``N`` of them, not negative.
+        start: Where the bar starts: an `Anchor` (or an artist).
+        end: Where the bar ends: an `Anchor` (or an artist).
+        fig: The figure that owns the copy, normally the root figure.
+        colors: The cells' colors, one color or ``N`` of them.
+        color: Optional color the cells take on as they gather, so the bar
+            arrives in the color of the mark it becomes; None keeps theirs.
+        to: Optional ``(start, end)`` pair of anchors the bar is carried to.
+        width_pt: Line width of the segments in points. None uses twice
+            ``rcParams["lines.linewidth"]``.
+        ease: An easing kind for `eyepiece.ease`.
+        zorder: Drawing order of the copy among the figure's children.
+
+    Returns:
+        A `MosaicResult` over the axes involved, with ``artists["line"]``
+        (the copy) and ``update(u, carry=0.0)``.
+
+    Raises:
+        ValueError: If the shapes disagree, a weight is negative, or every
+            weight is zero.
+
+    Example::
+
+        cells = np.stack([np.c_[edges[:-1], [r] * n], np.c_[edges[1:], [r] * n]], 1)
+        sums = ep.collapse(left, cells, row, ep.Anchor.from_data(left, (0.1, r)),
+                           ep.Anchor.from_data(left, (0.1 + total, r)), fig=fig,
+                           colors=cmap(norm(row)), color=pink,
+                           to=(ep.Anchor.from_data(right, (0, r)), tip))
+        sums.update(0.5)            # halfway gathered
+        sums.update(1.0, carry=0.5)  # the bar halfway to the other panel
+    """
+    segments = np.asarray(segments, dtype=float)
+    if segments.ndim != 3 or segments.shape[1:] != (2, 2):
+        raise ValueError(f"segments must have shape (N, 2, 2), got {segments.shape}")
+    weights = np.asarray(weights, dtype=float)
+    if weights.shape != (len(segments),):
+        raise ValueError(
+            f"weights must have shape ({len(segments)},), got {weights.shape}"
+        )
+    if np.any(weights < 0.0) or not np.all(np.isfinite(weights)):
+        raise ValueError("collapse weights must be finite and not negative")
+    total = float(weights.sum())
+    if total <= 0.0:
+        raise ValueError("collapse weights sum to zero: there is no bar to gather")
+    cells = np.asarray(to_rgba_array(colors), dtype=float)
+    if len(cells) == 1:
+        cells = np.repeat(cells, len(segments), axis=0)
+    if len(cells) != len(segments):
+        raise ValueError(f"colors must be one color or {len(segments)} of them")
+    target = None if color is None else np.asarray(to_rgba(color), dtype=float)
+    start = _as_anchor(start, "start")
+    end = _as_anchor(end, "end")
+    landing = None if to is None else tuple(_as_anchor(a, "to") for a in to)
+    edges = np.concatenate([[0.0], np.cumsum(weights) / total])
+    share = np.stack([edges[:-1], edges[1:]], axis=1)  # (N, 2)
+    state = {"u": 1.0, "carry": 1.0}
+
+    def bar(a, b, renderer):
+        p0, p1 = a.display(renderer), b.display(renderer)
+        return p0 + share[..., None] * (p1 - p0)  # (N, 2, 2)
+
+    def route(renderer):
+        source = ax.transData.transform(segments.reshape(-1, 2)).reshape(-1, 2, 2)
+        e = _ease(state["u"], ease)
+        place = source + e * (bar(start, end, renderer) - source)
+        if landing is not None and state["carry"] > 0.0:
+            c = _ease(state["carry"], ease)
+            place = place + c * (bar(*landing, renderer) - place)
+        shade = cells if target is None else cells + e * (target - cells)
+        return place, shade
+
+    rc = matplotlib.rcParams
+    width = 2.0 * float(rc["lines.linewidth"]) if width_pt is None else float(width_pt)
+    # Without antialiasing the cells meet without a seam between them.
+    ghost = _CollapseGhost(
+        route, cells, linewidths=width, capstyle="butt", antialiaseds=False
+    )
+    ghost.set_zorder(zorder)
+    ghost.set_clip_on(False)
+    ghost.set_in_layout(False)
+    fig.add_artist(ghost)
+
+    def update(u, carry=0.0):
+        u = _check_u(u)
+        carry = _check_u(carry)
+        state["u"], state["carry"] = u, carry
+        if landing is None:
+            ghost.set_visible(0.0 < u < 1.0)
+        else:
+            ghost.set_visible(u > 0.0 and carry < 1.0)
+
+    update(1.0, carry=1.0)
+    axes = [a for a in (ax, start.axes, *(x.axes for x in landing or ())) if a]
+    axes = list(dict.fromkeys(axes))
+    return MosaicResult(
+        axes=np.array(axes, dtype=object), artists={"line": ghost}, update=update
+    )

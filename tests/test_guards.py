@@ -141,6 +141,7 @@ _EXPECTED_ALL = [
     "calibration",
     "callout",
     "capture",
+    "collapse",
     "compare_grid",
     "compare_row",
     "convergence",

@@ -447,13 +447,14 @@ state, the state it is made in, is the one a still shows: a flight is
 absent, a callout and a leader are fully drawn. A leader that breaks the
 connector rules of the evidence guide raises when it is drawn.
 
-`Stage` and `build_axes` follow the same rule. A stage sets each named group
-to an absolute presence and contrast computed from the colors and opacities
-the artists had when the stage was made, so levels never compound and
-setting a state twice draws what setting it once does; a dimmed group blends
-toward the background it sits on, which reads the same on a light figure and
-a dark one. An axis build only clips and fades what the axes already draws,
-so it moves no limit. The rest state of each, the one a still shows, is the
+`Stage`, `build_axes`, and `collapse` follow the same rule. A stage sets
+each named group to an absolute presence and contrast computed from the
+colors and opacities the artists had when the stage was made, so levels
+never compound and setting a state twice draws what setting it once does; a
+dimmed group blends toward the background it sits on, which reads the same
+on a light figure and a dark one. An axis build only clips and fades what
+the axes already draws, so it moves no limit. A collapse is a figure-level
+copy, absent at rest. The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
 ### Direct model binding stays in the consumer

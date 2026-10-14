@@ -166,8 +166,10 @@ the API reference, and the groups are:
   one panel onto another; `callout`, a caption of a few words beside the thing
   it names, its key term in its mark's color; `leader`, a connector that
   refuses to break the evidence guide's rules; `Stage`, which shows, dims, or
-  hides named groups at absolute levels; and `build_axes`, which draws an axis
-  on (spine, ticks, numbers, then its name).
+  hides named groups at absolute levels; `build_axes`, which draws an axis on
+  (spine, ticks, numbers, then its name); and `collapse`, which gathers a row
+  of cells into a bar whose length is their sum and can carry the bar to
+  another panel.
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus
   `Frame` and `SourceStyles` for keeping several panels of one scene
