@@ -169,16 +169,16 @@ def test_log_space_ramp_interpolates_geometrically():
     assert widths == pytest.approx([32.0, 16.0, 8.0, 4.0])
 
 
-def test_read_holds_for_reading_time_with_a_floor():
+def test_read_holds_for_the_tempo_reading_time():
     tl = ep.Timeline(knobs={"text": ""})
     tl.hold(1.0)
     tl.read("one two three", name="short", set={"text": "a"})
-    tl.read(" ".join(["w"] * 20), name="long")
-    plan = tl.at_fps(10)
+    tl.read(" ".join(["w"] * 20), name="long", tempo=ep.Tempo(factor=2.0))
+    plan = tl.at_fps(100)
     short = next(b for b in plan.beats if b.name == "short")
     long_ = next(b for b in plan.beats if b.name == "long")
-    assert short.seconds == pytest.approx(2.5)
-    assert long_.seconds == pytest.approx(6.0)
+    assert short.seconds == pytest.approx(ep.Tempo().read_s("one two three"))
+    assert long_.seconds == pytest.approx(2.0 * (0.75 + 0.3 * 20))
 
 
 def test_beat_lookups():

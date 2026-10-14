@@ -58,10 +58,11 @@ A `Timeline` declares its beats in seconds and the presentation knobs they
 set or move. A hold may change knobs when it starts, a new title for
 instance; a ramp moves numeric knobs (linearly, or in log space for widths
 and other scales) and changes nothing else, so text never arrives during
-motion. `read` sizes a hold from the words on screen. Resolving the timeline
-for a frame rate gives a `Plan`, whose frames are plain dicts, one per
-frame, and whose `progress` reads any beat's clock. Here the zoom beat moves
-no knob: its clock drives a camera path in the next section.
+motion. `read` sizes a hold from the words on screen by the reading rule
+of `Tempo`. Resolving the timeline for a frame rate gives a `Plan`, whose
+frames are plain dicts, one per frame, and whose `progress` reads any
+beat's clock. Here the zoom beat moves no knob: its clock drives a camera
+path in the next section.
 
 ```{code-cell} python
 FULL = (0.0, 0.0, 28.0)
@@ -69,7 +70,7 @@ CLOSE = (*PLANET_XY, 4.0)
 path, length = ep.zoom_path(FULL, CLOSE)
 
 tl = ep.Timeline(knobs={"title": ""})
-tl.read("The whole field, star at the center", name="intro", min_s=1.5,
+tl.read("The whole field, star at the center", name="intro",
         set={"title": "The whole field"})
 tl.hold(1.0, name="cue", set={"title": "Down to the companion"})
 tl.ramp(4.0, name="zoom")

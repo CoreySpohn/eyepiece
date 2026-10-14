@@ -15,13 +15,16 @@ touches a prepared `Sequence`, whose time is sampled and never interpolated.
 The other pieces are the geometry a moving figure needs: easing curves,
 per-item stagger, the van Wijk and Nuij optimal pan-and-zoom path between two
 views, the axis limits of a view, and the quadrilaterals of a pixel grid, so
-an image can be drawn as one movable shape per pixel.
+an image can be drawn as one movable shape per pixel. `Tempo` sets the pace
+of a staged clip in one place: one factor for every move, a settle after
+each new subject, and a reading hold that grows with a caption's words.
 
 This module imports only the standard library and NumPy, so the timing
 helpers never load matplotlib.
 """
 
 import math
+import re
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -124,6 +127,119 @@ def stagger(u, rank, *, span=0.35):
     rank = np.asarray(rank, dtype=float)
     start = rank * (1.0 - span)
     return np.clip((np.asarray(u, dtype=float) - start) / span, 0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Tempo
+
+_MATH_SPAN = re.compile(r"\$[^$]*\$")
+_TEX_COMMAND = re.compile(r"\\([A-Za-z]+)")
+_SYMBOL = re.compile(r"[A-Za-z]+|[0-9]+(?:\.[0-9]+)?")
+# TeX commands that are operators, relations, spacing or formatting: read
+# as part of the symbols around them, not as symbols of their own.
+_TEX_NOT_SYMBOLS = frozenset(
+    "mid pm mp cdot cdots ldots dots times div le leq ge geq ne neq approx sim"
+    " simeq propto equiv to rightarrow leftarrow gets frac dfrac tfrac sqrt"
+    " left right big Big rm mathrm mathit mathbf mathcal bf it text operatorname"
+    " hat bar tilde vec dot prime quad qquad".split()
+)
+
+
+def reading_words(text):
+    r"""Words a viewer reads in `text`, a symbol in math counting as two.
+
+    Plain words are split on whitespace. Inside ``$...$`` each symbol counts
+    as two words: a letter, a number, a function name, or a TeX command that
+    names a symbol (``\lambda``, ``\Phi``). Operators, relations, spacing
+    and formatting commands (``\mid``, ``\pm``, ``\frac``, ``\rm``) count
+    as nothing.
+
+    Args:
+        text: The caption, with math in ``$...$``: a string, or the pieces
+            a `callout` takes, each a string or a tuple whose first item is
+            the string.
+
+    Returns:
+        The word count, an int.
+    """
+    if not isinstance(text, str):
+        text = "".join(p if isinstance(p, str) else str(p[0]) for p in text)
+    words = 0
+    for span in _MATH_SPAN.findall(text):
+        commands = _TEX_COMMAND.findall(span)
+        words += 2 * sum(name not in _TEX_NOT_SYMBOLS for name in commands)
+        words += 2 * len(_SYMBOL.findall(_TEX_COMMAND.sub(" ", span)))
+    return words + len(_MATH_SPAN.sub(" ", text).split())
+
+
+@dataclass(frozen=True)
+class Tempo:
+    """The pace of a staged clip, set in one place.
+
+    A clip written against a tempo states its moves and holds in nominal
+    seconds and lets the tempo turn them into seconds on screen, so one
+    factor slows or quickens the whole clip at once. Three rules set the
+    pace:
+
+    - a move or hold of nominal ``s`` seconds lasts ``factor * s``
+      (`seconds`);
+    - a caption holds, after it has finished arriving, for
+      ``factor * (base_s + word_s * words)``, with a symbol in math counting
+      as two words (`read_s`, `reading_words`);
+    - after an axis is built or a new subject arrives, the frame rests for
+      ``factor * settle_s`` before anything else moves (`rest_s`).
+
+    It is the one reading rule of the package: `Timeline.read` holds for
+    `read_s` too.
+
+    At the defaults a caption holds about 1 s plus 0.4 s per word and a
+    settle lasts about 0.8 s; ``factor=1`` is a brisker pace, 0.75 s plus
+    0.3 s per word.
+
+    Attributes:
+        factor: Global tempo; every duration is multiplied by it, so 2 plays
+            the clip at half speed.
+        base_s: Nominal reading hold of an empty caption, in seconds.
+        word_s: Nominal reading time per word, in seconds.
+        settle_s: Nominal rest after an axis build or a new subject.
+    """
+
+    factor: float = 1.35
+    base_s: float = 0.75
+    word_s: float = 0.3
+    settle_s: float = 0.6
+
+    def __post_init__(self):
+        """Check that every duration is finite, the factor positive."""
+        if not math.isfinite(self.factor) or self.factor <= 0.0:
+            raise ValueError(f"factor must be finite and positive, got {self.factor}")
+        for name in ("base_s", "word_s", "settle_s"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"{name} must be finite and not negative, got {value}")
+
+    def seconds(self, nominal):
+        """On-screen seconds of a move or hold of `nominal` seconds."""
+        nominal = float(nominal)
+        if not math.isfinite(nominal) or nominal < 0.0:
+            raise ValueError(f"seconds must be finite and not negative, got {nominal}")
+        return self.factor * nominal
+
+    def read_s(self, text):
+        """Seconds to hold `text` on screen after it has finished arriving.
+
+        Args:
+            text: A string, or caption pieces (see `reading_words`).
+
+        Returns:
+            The hold in seconds.
+        """
+        return self.factor * (self.base_s + self.word_s * reading_words(text))
+
+    @property
+    def rest_s(self):
+        """Seconds the frame rests after an axis build or a new subject."""
+        return self.factor * self.settle_s
 
 
 # ---------------------------------------------------------------------------
@@ -295,21 +411,23 @@ class Timeline:
         self._state.update(targets)
         return self
 
-    def read(self, text, *, name=None, s_per_word=0.3, min_s=2.5, set=None):
+    def read(self, text, *, name=None, tempo=None, set=None):
         """Append a hold long enough to read `text`.
 
+        The hold is `Tempo.read_s`: about 1 s plus 0.4 s per word at the
+        default tempo, a symbol in math counting as two words.
+
         Args:
-            text: The words on screen.
+            text: The words on screen, a string or caption pieces.
             name: The beat's name; None generates one.
-            s_per_word: Reading time per word, in seconds.
-            min_s: Shortest hold, in seconds.
+            tempo: The `Tempo` that sets the hold; None uses the default.
             set: Knob values that change when the hold starts.
 
         Returns:
             This timeline, for chaining.
         """
-        seconds = max(float(min_s), float(s_per_word) * len(str(text).split()))
-        return self.hold(seconds, name=name, set=set)
+        tempo = Tempo() if tempo is None else tempo
+        return self.hold(tempo.read_s(text), name=name, set=set)
 
     @property
     def seconds(self):

@@ -83,14 +83,16 @@ implement them are internal organization.
   that dims a figure outside chosen rectangles), `quad_image` (an image drawn
   as one movable shape per pixel, from `pixel_quads`), and `brush` (the same
   objects lit in several panels at once).
-- **Attention.** `Anchor` (a data point or a part of a drawn artist, resolved
-  at draw time), `flight` (a copy of a mark carried from one panel onto
-  another), `callout` (a short caption beside its subject, its key term in the
-  color of the mark it names), `leader` (a connector audited against the
-  leader rules), `Stage` (groups shown, dimmed toward the background, or
-  absent, at absolute levels), `build_axes` (an axis drawn on in front of the
-  viewer), and `collapse` (a row of cells gathered into a bar whose length is
-  their sum).
+- **Attention.** `Anchor` (a data point or a part of a drawn artist,
+  resolved at draw time), `flight` (a copy of a mark carried from one panel
+  onto another), `callout` (a short caption beside its subject, its key
+  term in the color of the mark it names), `leader` (a connector audited
+  against the leader rules), `Stage` (groups shown, dimmed toward the
+  background, or absent, at absolute levels), `build_axes` (an axis drawn
+  on in front of the viewer), `collapse` (a row of cells gathered into
+  a bar whose length is their sum), and `Tempo` (one factor for a clip's
+  pace: its moves, its settles, and a reading hold that grows with each
+  caption's words).
 - **Layout.** Pixel-edge extent helpers (`extent_lod`, `extent_arcsec`,
   `extent_au`, ...) with matching axis labelers, plus `Frame` and
   `SourceStyles` for keeping several panels of one scene consistent.

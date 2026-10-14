@@ -457,6 +457,14 @@ the axes already draws, so it moves no limit. A collapse is a figure-level
 copy, absent at rest. The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
+A `Tempo` holds the pace of such a clip in one place. Moves and holds are
+written in nominal seconds and multiplied by its `factor`; a caption holds,
+after it has finished arriving, for `factor * (base_s + word_s * words)`,
+a symbol in math counting as two words (`read_s`); and after an axis build
+or a new subject the frame rests for `factor * settle_s` (`rest_s`). At the
+defaults a caption holds about 1 s plus 0.4 s per word, so slowing a clip
+is one change. `Timeline.read` holds by the same rule.
+
 ### Direct model binding stays in the consumer
 
 A consumer that animates native Manim geometry straight from a scientific
