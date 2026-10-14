@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/CoreySpohn/eyepiece/compare/v0.11.0...v0.12.0) (2026-10-14)
+
+
+### Features
+
+* **attention:** Anchor, flight, leader and callout for explainer animations ([4c8969d](https://github.com/CoreySpohn/eyepiece/commit/4c8969d6ed9cf9d574f784ddccdfe0014408b885))
+
 ## [0.11.0](https://github.com/CoreySpohn/eyepiece/compare/v0.10.0...v0.11.0) (2026-10-12)
 
 
