@@ -631,7 +631,10 @@ def transform(
     hidden, and in between the pieces of both are drawn. The rest state, the
     state the move is made in, is ``u = 1``: the figure as drawn shows `eq_b`.
     A still that wants `eq_a` calls ``update(0)``. Do not call the equations'
-    own ``update`` while the transform runs. `level` is an opacity over
+    own ``update`` while the transform runs. While `u` is inside (0, 1) the
+    move sets the facecolor and alpha of the glyphs it moves, so do not dim a
+    term with a `Stage` then; the stage would be overwritten or would fight
+    the move. Use `level`. `level` is an opacity over
     everything the move draws and never geometry, so a `Stage` can dim it.
     Pass the uneased beat progress, as for `stagger`; the easing lives in
     the move.

@@ -1506,6 +1506,7 @@ def _looks(target, background, seen, out):
         return
     bg = background if background is not None else _resolve_background(target)
     out.append(_Look(target, bg))
+    # `_pieces` is the hook for `_equation._Term`, whose glyphs it dims.
     for part in getattr(target, "_pieces", ()):
         _looks(part, background, seen, out)
     if isinstance(target, Text):
