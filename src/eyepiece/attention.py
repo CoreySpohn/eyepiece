@@ -52,6 +52,7 @@ from matplotlib.transforms import Affine2D, Bbox, IdentityTransform
 
 from eyepiece import _style
 from eyepiece._motion import _apply_ease as _ease
+from eyepiece._motion import _unsnapped
 from eyepiece._result import MosaicResult, PlotResult
 from eyepiece.emphasis import _own_background, _resolve_background
 
@@ -569,6 +570,7 @@ def flight(
         raise TypeError(
             f"flight copies a Line2D, a Patch or a Text, got {type(mark).__name__}"
         )
+    _unsnapped(ghost)
     ghost.set_zorder(zorder)
     ghost.set_clip_on(False)
     ghost.set_in_layout(False)
@@ -2029,6 +2031,7 @@ def collapse(
     ghost = _CollapseGhost(
         route, cells, linewidths=width, capstyle="butt", antialiaseds=False
     )
+    _unsnapped(ghost)
     ghost.set_zorder(zorder)
     ghost.set_clip_on(False)
     ghost.set_in_layout(False)
@@ -2771,7 +2774,7 @@ def morph(
         raise ValueError("morph needs ax= when both paths are arrays")
     axes = ax if ax is not None else owner.axes
     ends = [_morph_source(item, ax, closed, kw) for item, kw in ((a, a_kw), (b, b_kw))]
-    ghost = _GhostMorph(ends, n=n, align=bool(align), ease=ease)
+    ghost = _unsnapped(_GhostMorph(ends, n=n, align=bool(align), ease=ease))
     ghost.set_zorder(zorder)
     ghost.set_clip_on(False)
     ghost.set_in_layout(False)

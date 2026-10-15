@@ -235,6 +235,20 @@ matplotlib is upgraded. A different figure gives a different file. An explicit
 a `PlotResult`; its date defaults to the commit date of the script's
 repository, else today.
 
+## Moving geometry is not pixel-snapped
+
+Agg snaps axis-aligned lines and patch edges to whole pixels, which makes a
+still crisp and turns a slow move into one-pixel jumps. A move that changes
+geometry therefore sets `snap=False` on the artists it moves for the frames
+strictly between its ends, and restores each artist's own setting at `u = 0`
+and `u = 1`, so the rest state is pixel-exact against the snapped still.
+This holds for `warp`, `arrow`, `angle_arc` and `compass`; the ghosts of
+`flight`, `collapse` and `morph` are drawn only mid-move and are never
+snapped. `Stage` changes opacity and color only, so it has nothing to
+unsnap. The rule lives in each move rather than in `record` because a
+recording cannot tell a moving artist from a resting one, and unsnapping
+every artist would blur the axes and spines of every held frame.
+
 ## Style resolves at call time
 
 Color, colormap, and savefig policy come from hwostyle, and every lookup

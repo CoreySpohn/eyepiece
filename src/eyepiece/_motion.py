@@ -364,6 +364,34 @@ def _apply_ease(r, how="smoothstep"):
     return ease(r, how)
 
 
+class _Unsnap:
+    """Pixel snapping off while artists move, back to as drawn at rest.
+
+    Agg snaps axis-aligned lines and patch edges to whole pixels, which crisps
+    a still and turns a slow move into one-pixel jumps. A move calls
+    `moving(True)` on the frames between its ends and `moving(False)` at the
+    ends, so the rest state is the snapped figure exactly. Each artist's own
+    snap setting is read once, here, and put back as it was.
+
+    Args:
+        artists: The artists the move reshapes or displaces.
+    """
+
+    def __init__(self, artists):
+        self._saved = [(a, a.get_snap()) for a in artists]
+
+    def moving(self, flag):
+        """Unsnap every artist when `flag` is true, else restore its setting."""
+        for artist, snap in self._saved:
+            artist.set_snap(False if flag else snap)
+
+
+def _unsnapped(artist):
+    """Switch snapping off for good on a ghost, which is drawn only mid-move."""
+    artist.set_snap(False)
+    return artist
+
+
 def _interp(a, b, e, space):
     if space == "log":
         return a * (b / a) ** e

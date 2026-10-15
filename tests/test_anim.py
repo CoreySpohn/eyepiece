@@ -157,10 +157,12 @@ def test_jshtml_returns_html_and_closes_nothing_extra():
 
 def test_presets_are_the_measured_values():
     assert PRESETS == {
-        "talk": {"fps": 10, "dpi": 120},
+        "talk": {"fps": 30, "dpi": 120},
+        "talk_60": {"fps": 60, "dpi": 120},
         "gif": {"fps": 8, "dpi": 85},
         "jshtml": {"fps": 14, "dpi": 100},
-        "docs": {"fps": 10, "dpi": 100},
+        "docs": {"fps": 30, "dpi": 100},
+        "doc_hd": {"fps": 30, "dpi": 200},
     }
 
 
@@ -219,8 +221,9 @@ def test_default_dpi_reaches_the_written_frames(tmp_path):
 def test_mp4_writer_leads_with_the_even_dimension_crop(tmp_path):
     writer = _make_writer(tmp_path / "a.mp4", 10, ["-preset", "slow"])
     # h264 rejects an odd width or height, which a figsize times a dpi hits
-    assert writer.extra_args[:2] == ["-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2"]
-    assert writer.extra_args[2:] == ["-preset", "slow"]
+    assert writer.extra_args[0] == "-vf"
+    assert writer.extra_args[1].startswith("crop=trunc(iw/2)*2:trunc(ih/2)*2")
+    assert writer.extra_args[-2:] == ["-preset", "slow"]
 
 
 def test_unsupported_suffix_raises_naming_it(tmp_path):
