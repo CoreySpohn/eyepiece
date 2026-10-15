@@ -744,7 +744,7 @@ def test_the_track_is_48_khz_with_a_finite_room_tone_below_the_floor(tmp_path):
     _ffmpeg_or_skip()
     tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
     _fill_audio(tl, tmp_path)
-    path = nr.audio_track(tl, tmp_path, tmp_path / "track.wav")
+    path = nr.audio_track(tl, tmp_path, tmp_path / "track.wav", room_tone_db=-60.0)
     rate, data = _read_track(path)
     assert rate == 48000
     assert len(data) == round(tl.total_s * rate)
@@ -755,7 +755,7 @@ def test_the_track_is_48_khz_with_a_finite_room_tone_below_the_floor(tmp_path):
     assert level > -65.0
 
 
-def test_room_tone_can_be_turned_off(tmp_path):
+def test_the_track_has_no_bed_unless_asked(tmp_path):
     tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
     _fill_audio(tl, tmp_path)
     path = nr.audio_track(
@@ -783,9 +783,10 @@ def test_the_track_is_reproducible_and_the_seed_changes_it(tmp_path):
     _ffmpeg_or_skip()
     tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
     _fill_audio(tl, tmp_path)
-    one = nr.audio_track(tl, tmp_path, tmp_path / "one.wav")
-    two = nr.audio_track(tl, tmp_path, tmp_path / "two.wav")
-    other = nr.audio_track(tl, tmp_path, tmp_path / "three.wav", seed=1)
+    kw = {"room_tone_db": -60.0}
+    one = nr.audio_track(tl, tmp_path, tmp_path / "one.wav", **kw)
+    two = nr.audio_track(tl, tmp_path, tmp_path / "two.wav", **kw)
+    other = nr.audio_track(tl, tmp_path, tmp_path / "three.wav", seed=1, **kw)
     assert one.read_bytes() == two.read_bytes()
     assert one.read_bytes() != other.read_bytes()
 
@@ -995,3 +996,53 @@ def test_display_text_may_not_be_empty_or_carry_marks():
         nr.Line("a", "Hello.", display="  ")
     with pytest.raises(ValueError, match="cue marks"):
         nr.Line("a", "Hello.", display="{indicate:x}Hello.")
+
+
+def _gap_clip(tmp_path, level):
+    """A muxed clip: tone, a 2 s gap of digital silence, tone."""
+    ffmpeg = _ffmpeg_or_skip()
+    rate = 24000
+    t = np.arange(2 * rate) / rate
+    tone = np.round(level * np.sin(2 * np.pi * 440.0 * t))
+    data = np.concatenate([tone, np.zeros(2 * rate), tone]).astype("<i2")
+    with wave.open(str(tmp_path / "a.wav"), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(data.tobytes())
+    _silent_video(ffmpeg, tmp_path / "v.mp4", 6)
+    return ffmpeg
+
+
+def _gap_rms_db(ffmpeg, path):
+    done = subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostats", "-ss", "2.3", "-t", "1.4", "-i", str(path),
+         "-af", "astats", "-f", "null", "-"],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    overall = done.stderr.split("Overall")[1]
+    return float(overall.split("RMS level dB:")[1].split()[0])
+
+
+@pytest.mark.parametrize("level", [300, 9000])
+def test_the_muxed_gap_floor_is_the_requested_level_whatever_the_gain(tmp_path, level):
+    ffmpeg = _gap_clip(tmp_path, level)
+    out = nr.mux(tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4")
+    assert abs(_gap_rms_db(ffmpeg, out) - (-60.0)) < 2.0
+    assert abs(_integrated_lufs(ffmpeg, out) - (-16.0)) < 1.0
+
+
+def test_the_muxed_bed_level_and_seed_are_parameters(tmp_path):
+    ffmpeg = _gap_clip(tmp_path, 3000)
+    a = nr.mux(
+        tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "a.mp4", room_tone_db=-50.0
+    )
+    b = nr.mux(
+        tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "b.mp4", room_tone_db=-50.0
+    )
+    c = nr.mux(
+        tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "c.mp4", room_tone_db=None
+    )
+    assert abs(_gap_rms_db(ffmpeg, a) - (-50.0)) < 2.0
+    assert a.read_bytes() == b.read_bytes()
+    assert _gap_rms_db(ffmpeg, c) < -90.0

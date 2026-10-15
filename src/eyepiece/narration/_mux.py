@@ -12,6 +12,7 @@ the format an HTML ``<track>`` reads.
 import json
 import re
 import subprocess
+import tempfile
 import wave
 from pathlib import Path
 
@@ -72,6 +73,23 @@ def _audio_file(directory, key, spoken):
     return None
 
 
+def _bed(size, level_db, seed):
+    """Seeded white noise of ``size`` samples at ``level_db`` dBFS RMS."""
+    sigma = _FULL_SCALE * 10.0 ** (level_db / 20.0)
+    return np.random.default_rng(seed).normal(0.0, sigma, size)
+
+
+def _write_wav(path, data, rate):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(data.astype("<i2").tobytes())
+    return path
+
+
 def _fade(data, n):
     """The line with a raised-cosine fade of ``n`` samples at each end."""
     n = min(n, len(data) // 2)
@@ -91,16 +109,18 @@ def audio_track(
     tail_s=0.0,
     tol_s=0.03,
     rate=48000,
-    room_tone_db=-60.0,
+    room_tone_db=None,
     fade_s=0.008,
     seed=0,
 ):
     """Write the whole clip's speech as one 16-bit mono WAV.
 
     Each line gets a short fade at both ends, so no line starts or stops on
-    a click, and a low white-noise bed runs under the whole track, so the
-    gaps are not digital silence. The bed comes from a seeded generator, so
-    the same inputs give the same file.
+    a click. `mux` adds the room-tone bed after it normalizes the loudness,
+    so the bed keeps its level whatever gain the speech needs. For a track
+    that `mux` will not normalize (``loudness=None``), pass ``room_tone_db``
+    here instead, or to `mux`. The bed comes from a seeded generator, so the
+    same inputs give the same file.
 
     Args:
         narration: The `Narration`.
@@ -113,8 +133,9 @@ def audio_track(
             the audio the cue times were measured on.
         rate: Output sample rate in Hz; lines are resampled to it with
             ffmpeg. None keeps the rate of the files, which must agree.
-        room_tone_db: RMS level of the noise bed in dB relative to full
-            scale. None writes exact silence between the lines.
+        room_tone_db: RMS level of a white-noise bed under the whole track,
+            in dB relative to full scale. None, the default, writes exact
+            silence between the lines.
         fade_s: Length of the fade on each end of a line, in seconds.
         seed: Seed of the noise bed.
 
@@ -154,8 +175,7 @@ def audio_track(
     size = round((narration.total_s + tail_s) * out_rate)
     mix = np.zeros(size)
     if room_tone_db is not None:
-        sigma = _FULL_SCALE * 10.0 ** (room_tone_db / 20.0)
-        mix += np.random.default_rng(seed).normal(0.0, sigma, size)
+        mix += _bed(size, room_tone_db, seed)
     for key, start, data in clips:
         i = round(start * out_rate)
         if i + len(data) > size + 2:
@@ -163,14 +183,7 @@ def audio_track(
         data = data[: size - i]
         mix[i : i + len(data)] += _fade(data, round(fade_s * out_rate))
     out = np.clip(np.round(mix), -32768, 32767).astype("<i2")
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as handle:
-        handle.setnchannels(1)
-        handle.setsampwidth(2)
-        handle.setframerate(out_rate)
-        handle.writeframes(out.tobytes())
-    return path
+    return _write_wav(path, out, out_rate)
 
 
 def _measure(ffmpeg, audio, filt):
@@ -189,6 +202,31 @@ def _measure(ffmpeg, audio, filt):
     return stats
 
 
+def _finish_audio(ffmpeg, audio, tmp, loudness, true_peak, lra, rate):
+    """The audio after the two-pass loudnorm, as a WAV in ``tmp``; or as given."""
+    if loudness is None:
+        return audio
+    target = f"loudnorm=I={loudness}:TP={true_peak}:LRA={lra}"
+    stats = _measure(ffmpeg, audio, target)
+    if stats is None:
+        return audio
+    target += (
+        f":measured_I={stats['input_i']}:measured_LRA={stats['input_lra']}"
+        f":measured_TP={stats['input_tp']}"
+        f":measured_thresh={stats['input_thresh']}"
+        f":offset={stats['target_offset']}:linear=true"
+    )
+    out = tmp / "norm.wav"
+    cmd = [
+        ffmpeg, "-y", "-loglevel", "error", "-i", str(audio),
+        "-af", target, "-ar", str(rate), "-ac", "1", "-c:a", "pcm_s16le", str(out),
+    ]  # fmt: skip
+    done = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if done.returncode:
+        raise RuntimeError(f"ffmpeg could not normalize {audio}: {done.stderr}")
+    return out
+
+
 def mux(
     video,
     audio,
@@ -199,6 +237,8 @@ def mux(
     true_peak=-1.0,
     lra=11.0,
     rate=48000,
+    room_tone_db=-60.0,
+    seed=0,
 ):
     """Join a silent video and an audio track into one MP4.
 
@@ -208,6 +248,11 @@ def mux(
     linear gain from that measurement, so the speech keeps its dynamics. The
     default, -16 LUFS with a -1 dBTP ceiling, is the usual target for spoken
     web audio; broadcast uses -23 LUFS. A silent track is left as it is.
+
+    A seeded white-noise bed is added after the normalization, so
+    ``room_tone_db`` is its level in the muxed file whatever gain the speech
+    needed. Normalizing first also keeps the bed out of the loudness
+    measurement.
 
     Args:
         video: Silent MP4 from the render.
@@ -219,6 +264,11 @@ def mux(
         true_peak: True-peak ceiling in dBTP.
         lra: Loudness range target in LU.
         rate: Sample rate of the encoded audio in Hz.
+        room_tone_db: RMS level in dBFS of the noise bed added under the
+            whole track after normalization. None adds none. It applies with
+            ``loudness=None`` too, so a track that already has a bed from
+            `audio_track` should pass None here.
+        seed: Seed of the noise bed.
 
     Returns:
         The path written.
@@ -230,29 +280,27 @@ def mux(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = resolve_ffmpeg()
-    audio_args = []
-    if loudness is not None:
-        target = f"loudnorm=I={loudness}:TP={true_peak}:LRA={lra}"
-        stats = _measure(ffmpeg, audio, target)
-        audio_args = ["-ar", str(rate)]
-        if stats is not None:
-            target += (
-                f":measured_I={stats['input_i']}:measured_LRA={stats['input_lra']}"
-                f":measured_TP={stats['input_tp']}"
-                f":measured_thresh={stats['input_thresh']}"
-                f":offset={stats['target_offset']}:linear=true"
+    with tempfile.TemporaryDirectory() as tmp:
+        source = _finish_audio(ffmpeg, audio, Path(tmp), loudness, true_peak, lra, rate)
+        if room_tone_db is not None:
+            _, data = _decode(Path(source), rate, rate)
+            noisy = np.round(data + _bed(len(data), room_tone_db, seed))
+            source = _write_wav(
+                Path(tmp) / "bed.wav", np.clip(noisy, -32768, 32767), rate
             )
-            audio_args += ["-af", target]
-    cmd = [
-        ffmpeg, "-y", "-loglevel", "error",
-        "-i", str(video), "-i", str(audio),
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", bitrate, *audio_args,
-        "-movflags", "+faststart", "-shortest", str(path),
-    ]  # fmt: skip
-    done = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if done.returncode:
-        raise RuntimeError(f"ffmpeg failed to join {video} and {audio}: {done.stderr}")
+        audio_args = [] if loudness is None else ["-ar", str(rate)]
+        cmd = [
+            ffmpeg, "-y", "-loglevel", "error",
+            "-i", str(video), "-i", str(source),
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", bitrate, *audio_args,
+            "-movflags", "+faststart", "-shortest", str(path),
+        ]  # fmt: skip
+        done = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if done.returncode:
+            raise RuntimeError(
+                f"ffmpeg failed to join {video} and {audio}: {done.stderr}"
+            )
     return path
 
 

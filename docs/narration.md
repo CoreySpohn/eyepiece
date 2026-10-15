@@ -104,18 +104,21 @@ vtt, srt = nr.write_captions(narration, "narrated")
 `audio_track` places each line's audio at its speech start and refuses a file
 whose length differs from the duration its JSON records, which means the
 audio and the cue times come from different syntheses. The lines are resampled
-to 48 kHz (`rate`), each line gets an 8 ms raised-cosine fade at both ends
-(`fade_s`), and a white-noise bed at -60 dBFS (`room_tone_db`) runs under the
-whole track, so the voice does not cut to digital silence between lines. The
-bed comes from a seeded generator (`seed`), so the same inputs give the same
-file; `room_tone_db=None` writes exact silence.
+to 48 kHz (`rate`) and each line gets an 8 ms raised-cosine fade at both ends
+(`fade_s`).
 
 `mux` copies the picture and encodes the audio as AAC after a two-pass
 `loudnorm`: the first pass measures the track, the second applies a linear
 gain, so the speech keeps its dynamics. The target is `loudness=-16.0` LUFS
 integrated with `true_peak=-1.0` dBTP, the usual level for spoken web audio
 (Kokoro alone comes out near -25 LUFS). Pass another `loudness`, such as
--23.0 for broadcast, or None to skip the step.
+-23.0 for broadcast, or None to skip the step. After the normalization `mux`
+adds a seeded white-noise bed at `room_tone_db=-60.0` dBFS under the whole
+track, so the voice does not cut to digital silence between lines and the
+bed is at that level in the muxed file whatever gain the speech needed. The
+same seed gives the same file; `room_tone_db=None` adds no bed. `audio_track`
+carries no bed by default; with ``loudness=None`` give the bed to either
+`audio_track` or `mux`, not both.
 
 `captions` is the list of cues behind `write_srt` and `write_vtt`. A sentence
 is one cue unless it does not fit. A cue holds at most 42 characters on a line
