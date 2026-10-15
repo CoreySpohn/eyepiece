@@ -280,7 +280,8 @@ class _Glyph(PathPatch):
         pose = self.pose
         em = self.eq.fontsize * self.eq.scale(renderer)
         travel = abs(float(partner[:, 0].mean() - own[:, 0].mean())) / em
-        return pose.lift_em * em * min(1.0, travel) * math.sin(math.pi * pose.e)
+        side = 1.0 if partner[:, 0].mean() >= own[:, 0].mean() else -1.0
+        return side * pose.lift_em * em * min(1.0, travel) * math.sin(math.pi * pose.e)
 
     def vertices(self, renderer):
         """The piece in display pixels, in its place or part way to its partner."""
@@ -670,7 +671,7 @@ def _match(eq_a, eq_b, key_map):
     return pairs, labels, gone, new, replaced
 
 
-def _align_pair(eq_a, eq_b, pairs, key_map, align):
+def _align_pair(eq_a, eq_b, pairs, labels, key_map, align):
     """The pair ``(i, j)`` whose glyph keeps its place, or None for no alignment."""
     if align is None or not pairs:
         return None
@@ -688,12 +689,25 @@ def _align_pair(eq_a, eq_b, pairs, key_map, align):
             if eq_a.glyphs[i].piece.tag == align:
                 return i, j
         raise ValueError(f"align term {align!r} holds no matched glyph")
-    for tag in eq_a.tags:
-        if tag in eq_b.tags and tag != "all":
-            for i, j in by_x:
-                if eq_a.glyphs[i].piece.tag == tag:
-                    return i, j
-    return by_x[0]
+    # Auto: the sideways shift shared by the most groups; ties go leftmost.
+    bin_size = 0.25 * eq_a.fontsize
+    votes = {}
+    for ks in _groups(eq_a, pairs, labels):
+        members = sorted(
+            (pairs[k] for k in ks), key=lambda p: tuple(eq_a.glyphs[p[0]].piece.center)
+        )
+        dx = np.mean(
+            [
+                eq_b.glyphs[j].piece.center[0] - eq_a.glyphs[i].piece.center[0]
+                for i, j in members
+            ]
+        )
+        left = eq_a.glyphs[members[0][0]].piece.center[0]
+        key = round(float(dx) / bin_size)
+        count, first, ref = votes.get(key, (0, np.inf, None))
+        votes[key] = (count + 1, min(first, left), ref if first <= left else members[0])
+    best = min(votes.values(), key=lambda v: (-v[0], v[1]))
+    return best[2]
 
 
 def _groups(eq_a, pairs, labels):
@@ -751,9 +765,11 @@ def transform(
     one tag, or one run of neighbouring glyphs in no tag, share one eased
     progress and move rigidly. The groups start left to right by their place in
     `eq_a`, spread over `stagger` of the motion. A fraction bar changes length
-    by the same arc-length sampling as `morph`. A group rises on the way by
-    `arc`, scaled by how far it travels across (``min(1, travel / fontsize)``),
-    so a group that does not move sideways does not rise.
+    by the same arc-length sampling as `morph`. A group arcs on the way by
+    `arc`, scaled by how far it travels across (``min(1, travel / fontsize)``):
+    a group moving right rises and a group moving left dips, so two groups
+    that swap places pass each other, and a group that does not move sideways
+    does not arc.
 
     A tag the two equations share whose glyphs do not all match (``num`` that
     becomes another ``num``) is a replacement, as in a fade-transform: what
@@ -791,9 +807,10 @@ def transform(
         eq_b: The `equation` result to end on.
         stagger: Fraction of the motion each group takes, in (0, 1];
             1 moves every group together.
-        arc: How far a group rises on the way when it travels a font size or
-            more, in font sizes (a sine bump, up on the screen); 0 moves along
-            a straight line.
+        arc: How far a group arcs on the way when it travels a font size or
+            more, in font sizes (a sine bump, up on the screen for a group
+            moving right and down for one moving left); 0 moves along a
+            straight line.
         ease: An easing kind for `eyepiece.ease`, or a callable from progress
             to eased progress, applied to each group's progress.
         key_map: Mapping of a tag name of `eq_a` to a tag name of `eq_b` whose
@@ -801,9 +818,10 @@ def transform(
         fade: Fraction of the beat spent fading out unpaired glyphs (first)
             and fading in unpaired glyphs (last), in (0, 1].
         align: Which glyph keeps its place: a tag name of `eq_a` (its first
-            matched glyph, from the left), ``"auto"`` for the first tag both
-            equations have and otherwise the first matched glyph, or None to
-            leave both equations on their own anchors.
+            matched glyph, from the left), ``"auto"`` for the
+            sideways shift that the most groups share (binned at a quarter of
+            a font size, the leftmost group on a tie), or None to leave both
+            equations on their own anchors.
 
     Returns:
         A `PlotResult` on `eq_a`'s axes with ``artists["glyphs"]`` (the glyphs
@@ -855,7 +873,7 @@ def transform(
             )
 
     pairs, labels, gone, new, replaced = _match(ea, eb, key_map)
-    ref = _align_pair(ea, eb, pairs, key_map, align)
+    ref = _align_pair(ea, eb, pairs, labels, key_map, align)
     eb.follow = None
     if ref is not None:
         eb.follow = (ea, ea.glyphs[ref[0]].piece.center, eb.glyphs[ref[1]].piece.center)

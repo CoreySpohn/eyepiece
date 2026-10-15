@@ -534,12 +534,12 @@ each pixel-identical to that equation as placed. Matching is by glyph identity (
 glyph, never the character code): inside a tag both equations share (or a `key_map` pair), in
 left-to-right order, then across glyphs in no tag, and a tagged glyph never pairs outside its tag;
 equations that share no tag pair every glyph by order. `align` (default ``"auto"``) places the
-second equation so that one matched glyph keeps its place in the first, which moves the second
+second equation so that the sideways shift most groups share is removed and those glyphs keep their place in the first, which moves the second
 equation's layout at every `u`, the rest state included. Matched glyphs move by group, never
 one by one: all the matched glyphs of one tag, or one run of neighbouring glyphs in no tag, share
 one eased progress, staggered left to right by the group's place in the first equation, so a word
-moves rigidly. A group rises on an optional arc scaled by its sideways travel
-(``min(1, travel / fontsize)``), so a group that does not travel sideways does not rise. A tag both
+moves rigidly. A group arcs on an optional arc, up when it moves right and down when it moves left, scaled by its sideways travel
+(``min(1, travel / fontsize)``), so two groups that swap places pass each other and a group that does not travel sideways does not arc. A tag both
 equations have whose glyphs do not all match is a replacement: what is left of it in the first is
 carried as one box that moves and scales onto the box of what is left in the second, fading out
 while the second, drawn inside the moving box, fades in. Glyphs with no counterpart at all

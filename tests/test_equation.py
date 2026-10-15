@@ -576,3 +576,67 @@ def test_unpaired_text_arrives_only_after_the_motion_settles():
     move.update(0.9)
     for (i, _), v in zip(move.pairs, settled, strict=True):
         assert np.allclose(ga[i].vertices(renderer), v, atol=1e-6)
+
+
+def _group_box(glyphs, renderer):
+    v = np.vstack([g.vertices(renderer) for g in glyphs])
+    return v.min(0), v.max(0)
+
+
+def test_arc_direction_follows_travel_direction():
+    fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{q:y}}+{{p:x}}$")
+    move = ep.transform(a, b, stagger=1.0, arc=0.5, align=None)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    right, left = {}, {}
+    for i, j in move.pairs:
+        dx = _center(gb[j], renderer)[0] - _center(ga[i], renderer)[0]
+        if abs(dx) > 5.0:
+            (right if dx > 0 else left)[i] = _center(ga[i], renderer)[1]
+    assert right and left
+    move.update(0.3, level=1.0)
+    for i, y in right.items():
+        assert _center(ga[i], renderer)[1] > y + 1.0
+    for i, y in left.items():
+        assert _center(ga[i], renderer)[1] < y - 1.0
+
+
+def test_swapping_glyphs_never_overlap():
+    fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
+    move = ep.transform(a, b, stagger=0.7, arc=0.7)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    movers = [
+        (i, j)
+        for i, j in move.pairs
+        if abs(_center(gb[j], renderer)[0] - _center(ga[i], renderer)[0]) > 5.0
+    ]
+    bsq = [i for i, _ in movers if _term_of(a, ga[i], renderer) == "b"]
+    csq = [i for i, _ in movers if _term_of(a, ga[i], renderer) != "b"]
+    assert bsq and csq
+    for u in np.linspace(0.0, 1.0, 21)[1:-1]:
+        move.update(float(u))
+        for i in bsq:
+            for j in csq:
+                b0, b1 = _group_box([ga[i]], renderer)
+                c0, c1 = _group_box([ga[j]], renderer)
+                assert ((b1 < c0) | (c1 < b0)).any(), (u, i, j)
+
+
+def test_auto_align_keeps_the_shared_shift_still_without_a_tag():
+    fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
+    move = ep.transform(a, b)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    first = min(range(len(ga)), key=lambda i: _center(ga[i], renderer)[0])
+    j = dict(move.pairs)[first]
+    assert np.allclose(
+        _center(ga[first], renderer), _center(gb[j], renderer), atol=1e-6
+    )
+    start = ga[first].vertices(renderer).copy()
+    for u in (0.2, 0.5, 0.8):
+        move.update(u)
+        assert np.allclose(ga[first].vertices(renderer), start, atol=1e-6)
