@@ -64,6 +64,7 @@ __all__ = [
     "ReadabilityError",
     "ReadabilityFault",
     "assert_readable",
+    "caption_line",
     "readability_faults",
 ]
 
@@ -532,3 +533,73 @@ def assert_readable(fig, **kwargs):
     found = readability_faults(fig, **kwargs)
     if found:
         raise ReadabilityError(found)
+
+
+def caption_line(
+    fig,
+    *,
+    at=None,
+    times=None,
+    height=0.14,
+    width=0.8,
+    margin=0.01,
+    step=0.01,
+):
+    """The WebVTT ``line:`` percentage that puts captions clear of the figure's text.
+
+    The caption band is a strip of the picture, `width` wide and centered,
+    `height` tall. The band starts at the bottom, where players put captions,
+    and moves up in steps until no visible text of the figure touches it, at
+    any of the sampled times. The result is the top edge of the band as a
+    percentage of the picture height, the value `eyepiece.narration.write_vtt`
+    takes as ``line``.
+
+    Args:
+        fig: The figure of the clip.
+        at: Callable ``at(t)`` that poses the figure at time `t`, as for
+            `readability_faults`. None uses the figure as drawn.
+        times: Sample times passed to `at`; give them with `at`. Use the
+            times the captions are on screen.
+        height: Height of the caption band as a fraction of the figure.
+            Two caption lines at a typical player size are about 0.14.
+        width: Width of the band as a fraction of the figure, centered.
+        margin: Clear space kept between the band and any text, as a
+            fraction of the figure height.
+        step: How far the band moves up per try, as a fraction of the
+            figure height.
+
+    Returns:
+        The ``line:`` value, in percent from the top of the picture.
+
+    Raises:
+        ValueError: If `at` and `times` are not given together, or no
+            position is clear. Then reserve a caption band in the layout
+            instead and pass its percentage to ``write_vtt``.
+    """
+    if (at is None) != (times is None):
+        raise ValueError("give `at` and `times` together, or neither")
+    samples = [None] if at is None else list(times)
+    spans = []
+    for t in samples:
+        if at is not None:
+            at(t)
+        fig.canvas.draw()
+        renderer = _renderer(fig)
+        for text in _visible_texts(fig):
+            if _finite(text.get_window_extent(renderer)):
+                box = _bbox(text, renderer)
+                left, right = box.x0 / fig.bbox.width, box.x1 / fig.bbox.width
+                if right > (1.0 - width) / 2.0 and left < (1.0 + width) / 2.0:
+                    spans.append(
+                        (1.0 - box.y1 / fig.bbox.height, 1.0 - box.y0 / fig.bbox.height)
+                    )
+    top = 1.0 - height - margin
+    while top >= 0.0:
+        if all(
+            high + margin <= top or low - margin >= top + height for low, high in spans
+        ):
+            return round(100.0 * top, 2)
+        top -= step
+    raise ValueError(
+        "no clear position for the captions; reserve a caption band in the layout"
+    )

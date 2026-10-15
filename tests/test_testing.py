@@ -194,3 +194,64 @@ def test_deterministic():
         (f.kind, f.time, f.box, f.detail) for f in two
     ]
     assert len(one) > 4
+
+
+def _band(fig, line, height=0.14):
+    """Figure-fraction (low, high) of the caption band, measured from the top."""
+    return line / 100.0, line / 100.0 + height
+
+
+def _text_spans(fig):
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    spans = []
+    for text in fig.texts:
+        box = text.get_window_extent(renderer)
+        spans.append((1 - box.y1 / fig.bbox.height, 1 - box.y0 / fig.bbox.height))
+    return spans
+
+
+def test_caption_line_is_the_bottom_when_the_bottom_is_empty():
+    fig = _figure()
+    fig.text(0.1, 0.8, "a heading", fontsize=14)
+    assert ept.caption_line(fig) == pytest.approx(100 * (1 - 0.14 - 0.01))
+
+
+def test_caption_line_clears_text_at_the_bottom():
+    fig = _figure()
+    fig.text(0.5, 0.04, "what is left: area 0.24 and 0.07", fontsize=14, ha="center")
+    fig.text(0.1, 0.9, "heading", fontsize=14)
+    line = ept.caption_line(fig)
+    low, high = _band(fig, line)
+    assert line < 100 * (1 - 0.14 - 0.01)
+    for top, bottom in _text_spans(fig):
+        assert bottom <= low or top >= high
+
+
+def test_caption_line_considers_every_sampled_time():
+    fig = _figure()
+    late = fig.text(0.5, 0.04, "late label", fontsize=14, ha="center")
+    late.set_visible(False)
+
+    def pose(t):
+        late.set_visible(t > 1.0)
+
+    early = ept.caption_line(fig, at=pose, times=[0.0])
+    both = ept.caption_line(fig, at=pose, times=[0.0, 2.0])
+    assert early > both
+
+
+def test_caption_line_ignores_text_outside_the_band_width():
+    fig = _figure()
+    fig.text(0.0, 0.04, "x", fontsize=14)
+    assert ept.caption_line(fig) == pytest.approx(100 * (1 - 0.14 - 0.01))
+
+
+def test_caption_line_refuses_a_full_figure_and_unpaired_arguments():
+    fig = _figure()
+    for y in range(0, 100, 5):
+        fig.text(0.5, y / 100, "row of text", fontsize=14, ha="center")
+    with pytest.raises(ValueError, match="caption band"):
+        ept.caption_line(fig)
+    with pytest.raises(ValueError, match="together"):
+        ept.caption_line(fig, times=[0.0])

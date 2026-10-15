@@ -553,6 +553,11 @@ a label with an opaque backing box is not reported over marks. The result is
 deterministic and the figure keeps its dpi. `assert_readable` raises
 `ReadabilityError` with the report.
 
+`caption_line(fig, at=pose, times=...)` uses the same extents to place
+captions: it returns the WebVTT `line:` percentage of the lowest strip, two
+caption lines tall, that no visible text of the figure touches at any sampled
+time, and raises when there is none.
+
 A `Tempo` holds the pace of such a clip in one place. Moves and holds are
 written in nominal seconds and multiplied by its `factor`; a caption holds,
 after it has finished arriving, for `factor * (base_s + word_s * words)`,

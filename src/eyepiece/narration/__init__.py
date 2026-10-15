@@ -9,13 +9,21 @@ clip: a beat lasts as long as its speech plus padding, and each cue mark in
 the text (``{indicate:speckle}speckle``) fires its move when the word is
 said. A clip asks the `Narration` when a move starts, takes its holds from
 `Narration.timeline` and its cue frames from `Narration.cue_frame`;
-`audio_track`, `mux`, `write_srt` and `write_vtt` then put the voice and the
-captions with the silent render.
+`audio_track`, `mux`, `captions`, `write_srt` and `write_vtt` then put the
+voice and the captions with the silent render.
 
 Importing this package loads neither matplotlib nor Kokoro.
 """
 
-from ._mux import audio_track, mux, sentences, write_srt, write_vtt
+from ._mux import (
+    audio_track,
+    captions,
+    mux,
+    sentences,
+    write_captions,
+    write_srt,
+    write_vtt,
+)
 from ._script import (
     KOKORO_MODEL,
     KOKORO_VERSION,
@@ -50,11 +58,13 @@ __all__ = [
     "Spoken",
     "Word",
     "audio_track",
+    "captions",
     "estimate",
     "line_hash",
     "mux",
     "parse_cues",
     "sentences",
+    "write_captions",
     "write_srt",
     "write_vtt",
 ]
