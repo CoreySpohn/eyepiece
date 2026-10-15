@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.14.0](https://github.com/CoreySpohn/eyepiece/compare/v0.13.0...v0.14.0) (2026-10-15)
+
+
+### Features
+
+* **attention:** add circumscribe, an outline that draws on around a target and fades ([9b591ba](https://github.com/CoreySpohn/eyepiece/commit/9b591ba64d1af9badb453713dfa3b8fde9efc440))
+* **attention:** add indicate, a transient pulse that returns to the stage level ([2d79150](https://github.com/CoreySpohn/eyepiece/commit/2d79150ca7786a9d1a6aa24419165b49ff8aa1d6))
+* **attention:** add link, a line that grows between marks in different panels ([b45d1e0](https://github.com/CoreySpohn/eyepiece/commit/b45d1e0a76e0a4fc2a83a902eff1923b0b4c1934))
+* **attention:** add term_row, an equation or readout with one text per term ([d7d1929](https://github.com/CoreySpohn/eyepiece/commit/d7d19297d878fca6d7297e4a5e1112f67b472793))
+* **attention:** audit leaders through an explicit check instead of raising in draw ([5e95207](https://github.com/CoreySpohn/eyepiece/commit/5e95207f8a207fa5581d9bcad319f121766d8d37))
+* **attention:** fade a link by level and audit it against titles and axis labels ([223e051](https://github.com/CoreySpohn/eyepiece/commit/223e051bc9435d199a4a02f8d6e8b7948db3c12b))
+* **attention:** let flight carry and turn a line segment or a bar patch ([43150e3](https://github.com/CoreySpohn/eyepiece/commit/43150e3ab01cbc7a065c10bcb947af77991b8359))
+
+
+### Bug Fixes
+
+* **attention:** fade a caption's box faster than its words ([3429a37](https://github.com/CoreySpohn/eyepiece/commit/3429a3791a0eee1c5e2dd0c895161c0b766d6b7b))
+
 ## [0.13.0](https://github.com/CoreySpohn/eyepiece/compare/v0.12.0...v0.13.0) (2026-10-15)
 
 
