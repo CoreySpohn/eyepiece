@@ -5,6 +5,7 @@ import pytest
 
 import eyepiece as ep
 import eyepiece.testing as ept
+from eyepiece import narration as nr
 
 DPI = 100
 PITCH = 0.06  # figure fraction between two stacked rows
@@ -255,3 +256,62 @@ def test_caption_line_refuses_a_full_figure_and_unpaired_arguments():
         ept.caption_line(fig)
     with pytest.raises(ValueError, match="together"):
         ept.caption_line(fig, times=[0.0])
+
+
+# Speech rate
+
+
+def _narration(rates, n_words=20, pad_s=1.5):
+    """A narration with one line per rate (words/min), words evenly spaced."""
+    lines, spoken = [], {}
+    for i, wpm in enumerate(rates):
+        key = f"l{i}"
+        lines.append(
+            nr.Line(key, " ".join(f"w{j}" for j in range(n_words)), pad_before_s=pad_s)
+        )
+        step = 60.0 / wpm
+        words = tuple(
+            nr.Word(f"w{j}", j * step, (j + 1) * step) for j in range(n_words)
+        )
+        spoken[key] = nr.Spoken(key, n_words * step, words)
+    return nr.Narration(nr.Script(tuple(lines)), spoken)
+
+
+def test_speech_rate_recovers_a_known_rate_ignoring_pauses():
+    # 1.5 s of padding before each line and 0.5 s after must not matter.
+    result = ept.speech_rate(_narration([120.0, 90.0]))
+    assert [k for k, _ in result.rates] == ["l0", "l1"]
+    assert [w for _, w in result.rates] == pytest.approx([120.0, 90.0])
+    assert result.fast == ()
+    rates, fast, _ = result  # unpacks
+    assert rates == result.rates and fast == ()
+
+
+def test_speech_rate_reports_just_above_the_ceiling_not_just_below():
+    result = ept.speech_rate(_narration([159.0, 161.0]), ceiling=160)
+    assert [k for k, _ in result.fast] == ["l1"]
+    assert result.ceiling == 160.0
+
+
+def test_speech_rate_finds_the_fast_line_of_a_d51_like_spread():
+    spread = [124.0, 138.0, 151.0, 187.0, 143.0]
+    result = ept.speech_rate(_narration(spread))
+    assert [(k, round(w)) for k, w in result.fast] == [("l3", 187)]
+    with pytest.raises(ept.SpeechRateError, match="l3: 187 words/min") as err:
+        ept.assert_speech_rate(_narration(spread))
+    assert err.value.result.fast == result.fast
+    assert ept.assert_speech_rate(_narration(spread), ceiling=190).fast == ()
+
+
+def test_speech_rate_counts_a_pause_inside_a_line_and_skips_bare_dashes():
+    line = nr.Line("a", "one two - three four")
+    words = (
+        nr.Word("one", 0.0, 0.5),
+        nr.Word("two", 0.5, 1.0),
+        nr.Word("-", 1.0, 1.0),
+        nr.Word("three", 2.0, 2.5),
+        nr.Word("four", 2.5, 3.0),
+    )
+    narration = nr.Narration(nr.Script((line,)), {"a": nr.Spoken("a", 3.0, words)})
+    ((key, wpm),) = ept.speech_rate(narration).rates
+    assert key == "a" and wpm == pytest.approx(60.0 * 4 / 3.0)

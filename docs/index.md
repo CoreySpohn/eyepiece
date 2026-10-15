@@ -187,7 +187,8 @@ the API reference, and the groups are:
   each caption holds for its number of words.
   The submodule `eyepiece.testing` checks a figure, or a clip sampled at
   chosen times, for overlapping text, text clipped by the frame, text too
-  small for its venue, and text on marks of its own color.
+  small for its venue, and text on marks of its own color; `speech_rate`
+  reports the words per minute of each narrated line.
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus
   `Frame` and `SourceStyles` for keeping several panels of one scene
