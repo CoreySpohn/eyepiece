@@ -177,6 +177,7 @@ _EXPECTED_ALL = [
     "leader",
     "link",
     "log_zero_floor",
+    "morph",
     "neutral",
     "overlay_circle",
     "overlay_line",

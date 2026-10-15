@@ -1289,3 +1289,299 @@ def test_link_update_is_idempotent_and_rejects_bad_inputs():
     np.testing.assert_array_equal(_pixels(fig), first)
     with pytest.raises(TypeError):
         ep.link("here", ep.Anchor.from_data(phasor, (0.0, 0.0)))
+
+
+# Morph
+
+MORPH_TOL = 1e-9
+
+
+def _segments_cross(p, q, r, s):
+    """Whether open segments pq and rs cross at a point interior to both."""
+
+    def side(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    d1, d2 = side(p, q, r), side(p, q, s)
+    d3, d4 = side(r, s, p), side(r, s, q)
+    return d1 * d2 < 0.0 and d3 * d4 < 0.0
+
+
+def _is_simple(ring):
+    """Whether a closed polygon (rows, not repeated) has no self-crossing."""
+    n = len(ring)
+    for i in range(n):
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue
+            if _segments_cross(ring[i], ring[(i + 1) % n], ring[j], ring[(j + 1) % n]):
+                return False
+    return True
+
+
+def _same_ring(p, q, tol=MORPH_TOL):
+    """Whether two rings are the same points up to a cyclic shift."""
+    return any(np.allclose(p, np.roll(q, k, axis=0), atol=tol) for k in range(len(q)))
+
+
+def _morph_axes():
+    fig, ax = plt.subplots(figsize=(4.0, 4.0))
+    ax.set(xlim=(-2.0, 2.0), ylim=(-2.0, 2.0))
+    ax.set_aspect("equal")
+    fig.canvas.draw()
+    return fig, ax
+
+
+def _circle(r=1.0, k=64, clockwise=False):
+    t = np.linspace(0.0, 2.0 * np.pi, k, endpoint=False)
+    if clockwise:
+        t = -t
+    return np.c_[r * np.cos(t), r * np.sin(t)]
+
+
+def _square(h=1.0):
+    return np.array([[h, h], [-h, h], [-h, -h], [h, -h]])
+
+
+def _data(ax, vertices):
+    return ax.transData.inverted().transform(vertices)
+
+
+def test_morph_is_exported_and_not_shadowed_by_a_module():
+    assert callable(ep.morph)
+    import eyepiece.attention
+
+    assert ep.morph is eyepiece.attention.morph
+
+
+def test_morph_endpoints_are_the_resampled_paths():
+    from eyepiece.attention import _resample
+
+    _fig, ax = _morph_axes()
+    a, b = _circle(1.0), _square(1.2)
+    move = ep.morph(a, b, ax=ax, closed=True, n=120)
+    ghost = move.artists["fill"]
+    px = lambda v: ax.transData.transform(v)  # noqa: E731
+    ((start, closed0),) = ghost.shape(0.0)
+    ((stop, closed1),) = ghost.shape(1.0)
+    assert closed0 and closed1
+    # Exact to float precision: a is resampled by arc length, b is the same
+    # ring as resampled, rolled and possibly reversed to sit on a.
+    assert np.allclose(start, px(_resample(a, True, 120)), atol=MORPH_TOL)
+    assert _same_ring(stop, px(_resample(b, True, 120)), 1e-6) or _same_ring(
+        stop, px(_resample(b, True, 120))[::-1], 1e-6
+    )
+
+
+def test_morph_ghost_is_visible_only_between_the_ends():
+    fig, ax = _morph_axes()
+    move = ep.morph(_circle(), _square(), ax=ax)
+    ghost = move.artists["fill"]
+    assert not ghost.get_visible()  # rest state
+    for u, shown in ((0.0, False), (0.3, True), (0.999, True), (1.0, False)):
+        move.update(u)
+        assert ghost.get_visible() is shown
+    # Drawn at both ends the frame is the frame without the move.
+    before = _pixels(fig)
+    move.update(0.0)
+    assert np.array_equal(before, _pixels(fig))
+    move.update(1.0)
+    assert np.array_equal(before, _pixels(fig))
+
+
+def test_morph_circle_to_square_stays_simple():
+    _fig, ax = _morph_axes()
+    move = ep.morph(_circle(1.0, 90), _square(0.9), ax=ax, closed=True, n=90)
+    ghost = move.artists["fill"]
+    for u in (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0):
+        ((ring, closed),) = ghost.shape(u)
+        assert closed
+        assert _is_simple(ring), f"self-intersection at u={u}"
+
+
+def test_morph_simple_test_catches_a_crossing():
+    bow = np.array([[0.0, 0.0], [1.0, 1.0], [1.0, 0.0], [0.0, 1.0]])
+    assert not _is_simple(bow)
+
+
+def test_morph_eased_progress_is_monotone():
+    fig, ax = _morph_axes()
+    move = ep.morph(_circle(), _square(), ax=ax, ease="smoothstep")
+    ghost = move.artists["fill"]
+    us = np.linspace(0.0, 1.0, 41)
+    eased = []
+    for u in us:
+        move.update(u)
+        fig.canvas.draw()
+        eased.append(ghost.eased if 0.0 < u < 1.0 else u)
+    assert np.all(np.diff(eased) >= 0.0)
+    assert np.allclose(eased, ep.ease(us, "smoothstep"))
+    # A tracked vertex moves farther from its start as the progress grows.
+    first = [ghost.shape(u)[0][0][0] for u in us]
+    travel = np.hypot(*(np.array(first) - first[0]).T)
+    assert np.all(np.diff(travel) >= -1e-9)
+
+
+def test_morph_interpolates_stroke_fill_and_width():
+    fig, ax = _morph_axes()
+    a, b = _circle(), _square()
+    move = ep.morph(
+        a,
+        b,
+        ax=ax,
+        a_kw={"edgecolor": "#ff0000", "facecolor": "none", "linewidth": 1.0},
+        b_kw={"edgecolor": "#0000ff", "facecolor": "#00ff00", "linewidth": 5.0},
+    )
+    ghost = move.artists["fill"]
+    move.update(0.5)
+    fig.canvas.draw()
+    assert np.allclose(ghost.get_edgecolor(), (0.5, 0.0, 0.5, 1.0))
+    # No fill at the start blends in from clear, in the other end's hue.
+    assert np.allclose(ghost.get_facecolor(), (0.0, 1.0, 0.0, 0.5))
+    assert ghost.get_linewidth() == pytest.approx(3.0)
+    move.update(0.25)
+    fig.canvas.draw()
+    e = ep.ease(0.25)
+    assert np.allclose(ghost.get_edgecolor(), (1.0 - e, 0.0, e, 1.0))
+    move.update(0.5, level=0.5)
+    fig.canvas.draw()
+    assert ghost.get_edgecolor()[3] == pytest.approx(0.5)
+
+
+def test_morph_takes_line_and_pathpatch_artists():
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path
+
+    fig, ax = _morph_axes()
+    (line,) = ax.plot(
+        *np.vstack([_circle(1.0, 50)] * 2)[:51].T, color="#ff0000", alpha=0.5
+    )
+    patch = PathPatch(
+        Path(np.vstack([_square(1.0), _square(1.0)[:1]]), [1, 2, 2, 2, 79]),
+        facecolor="#0000ff",
+        edgecolor="k",
+        alpha=0.8,
+    )
+    ax.add_patch(patch)
+    fig.canvas.draw()
+    move = ep.morph(line, patch)
+    ghost = move.artists["fill"]
+    move.update(0.0)
+    assert move.ax is ax
+    fig.canvas.draw()
+    # The line was closed by repeating its first point: one closed ring.
+    ((ring, closed),) = ghost.shape(0.5)
+    assert closed and len(ring) == 200
+    # Alpha rides along: the line's 0.5 and the patch's 0.8 blend.
+    move.update(0.5)
+    fig.canvas.draw()
+    assert ghost.get_edgecolor()[3] == pytest.approx(0.5 * 0.5 + 0.5 * 0.8)
+    assert ghost.get_facecolor()[3] == pytest.approx(0.5 * 0.8)
+
+
+def test_morph_open_path_keeps_its_order():
+    fig, ax = _morph_axes()
+    x = np.linspace(-1.5, 1.5, 11)
+    a = np.c_[x, np.zeros_like(x)]
+    b = np.c_[x, np.sin(2.0 * x)]
+    move = ep.morph(a, b, ax=ax, n=60)
+    ghost = move.artists["fill"]
+    ((start, closed),) = ghost.shape(0.0)
+    ((stop, _),) = ghost.shape(1.0)
+    assert not closed
+    # Ends of the open paths stay pinned to ends.
+    px = ax.transData.transform
+    assert np.allclose(start[0], px(a[0])) and np.allclose(start[-1], px(a[-1]))
+    assert np.allclose(stop[0], px(b[0])) and np.allclose(stop[-1], px(b[-1]))
+    # Interior points follow the arc-length order: x never runs backward.
+    mid = ghost.shape(0.5)[0][0]
+    assert np.all(np.diff(mid[:, 0]) > 0.0)
+    # Drawing an open ghost has no closing segment or fill.
+    move.update(0.5)
+    fig.canvas.draw()
+    assert _has_no_close(ghost)
+
+
+def _has_no_close(ghost):
+    from matplotlib.path import Path
+
+    return Path.CLOSEPOLY not in list(ghost.get_path().codes)
+
+
+def test_morph_closed_alignment_takes_the_short_way():
+    _fig, ax = _morph_axes()
+    a = _circle(1.0, 80)
+    # The same circle, drawn the other way round and started a quarter turn on.
+    b = np.roll(_circle(1.0, 80, clockwise=True), 20, axis=0)
+    move = ep.morph(a, b, ax=ax, closed=True, n=80)
+    ghost = move.artists["fill"]
+    ((mid, _),) = ghost.shape(0.5)
+    radius = np.hypot(*_data(ax, mid).T)
+    # A wrong direction or start would pull the ring through the middle.
+    assert radius.min() > 0.99
+    # Without alignment the same pair does collapse.
+    raw = ep.morph(a, b, ax=ax, closed=True, n=80, align=False).artists["fill"]
+    ((bad, _),) = raw.shape(0.5)
+    assert np.hypot(*_data(ax, bad).T).min() < 0.5
+
+
+def test_morph_handles_mismatched_point_counts():
+    _fig, ax = _morph_axes()
+    a = _circle(1.0, 7)
+    b = _circle(1.5, 311)
+    move = ep.morph(a, b, ax=ax, closed=True, n=100)
+    ghost = move.artists["fill"]
+    for u in (0.0, 0.5, 1.0):
+        ((ring, _),) = ghost.shape(u)
+        assert ring.shape == (100, 2)
+    radius = np.hypot(*_data(ax, ghost.shape(1.0)[0][0]).T)
+    assert np.allclose(radius, 1.5, atol=1e-3)
+    with pytest.raises(ValueError, match="at least 3"):
+        ep.morph(a, b, ax=ax, n=2)
+
+
+def test_morph_pairs_subpaths_by_size_and_grows_the_missing_one():
+    _fig, ax = _morph_axes()
+    big, small = _circle(1.0, 40), _circle(0.3, 40) + np.array([1.2, 1.2])
+    two = np.vstack([small, [[np.nan, np.nan]], big])
+    one = _square(1.0)
+    move = ep.morph(two, one, ax=ax, n=48, closed=True)
+    ghost = move.artists["fill"]
+    # NaN split makes two closed parts; the larger pairs with the square.
+    parts_start = ghost.shape(0.0)
+    parts_stop = ghost.shape(1.0)
+    assert len(parts_start) == len(parts_stop) == 2
+    # The small circle shrinks to a point at its own center.
+    last = _data(ax, parts_stop[1][0])
+    assert np.allclose(last, [1.2, 1.2], atol=1e-6)
+    # And the other way round it grows from that point.
+    back = ep.morph(one, two, ax=ax, n=48, closed=True)
+    grown = _data(ax, back.artists["fill"].shape(0.0)[1][0])
+    assert np.allclose(grown, grown[0], atol=1e-6)
+    ((ring_one, _),) = ep.morph(one, one, ax=ax).artists["fill"].shape(0.5)[:1]
+    assert len(ring_one) == 200
+
+
+def test_morph_rejects_bad_ends():
+    _fig, ax = _morph_axes()
+    with pytest.raises(ValueError, match="ax="):
+        ep.morph(_circle(), _square())
+    with pytest.raises(TypeError, match="PathPatch"):
+        ep.morph(ax.text(0, 0, "x"), _square(), ax=ax)
+    with pytest.raises(ValueError, match="no finite"):
+        ep.morph(np.full((4, 2), np.nan), _square(), ax=ax)
+    with pytest.raises(TypeError, match="unknown morph style"):
+        ep.morph(_circle(), _square(), ax=ax, a_kw={"color": "r"})
+
+
+def test_morph_is_pixel_neutral_in_both_modes_and_draws_between():
+    for mode in MODES:
+        hwostyle.use(mode)
+        fig, ax = _morph_axes()
+        move = ep.morph(_circle(), _square(), ax=ax)
+        rest = _pixels(fig)
+        move.update(0.5)
+        assert not np.array_equal(rest, _pixels(fig))
+        move.update(1.0)
+        assert np.array_equal(rest, _pixels(fig))
+        plt.close(fig)

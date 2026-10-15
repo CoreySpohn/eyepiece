@@ -24,8 +24,9 @@ drawn. A still that never calls `update` shows rest states only.
 Other moves say "this one" or join panels: `indicate` pulses an artist and
 returns it, `circumscribe` draws an outline on around it and lets it fade
 (both leave the frame as it was at either end), `term_row` lays an equation
-out as one text per term, and `link` grows a line between panels. Drawing
-never raises; `audit` is the explicit check of the leaders and links.
+out as one text per term, `link` grows a line between panels, and `morph`
+carries one path into another. Drawing never raises; `audit` is the explicit
+check of the leaders and links.
 """
 
 import math
@@ -2384,6 +2385,384 @@ def circumscribe(
 
     update(1.0)
     return PlotResult(ax=target.axes, artists={"line": line}, update=update)
+
+
+# Morph
+
+_MORPH_POINTS = 200
+
+
+def _path_parts(path):
+    """A `Path` as ``[(vertices, closed), ...]``, curves flattened, NaNs split."""
+    parts, current, closed = [], [], False
+
+    def finish():
+        if len(current) and not np.isnan(np.asarray(current)).any():
+            parts.append((np.array(current, dtype=float), closed))
+
+    for xy, code in path.iter_segments(curves=False, simplify=False):
+        if code == Path.MOVETO:
+            finish()
+            current, closed = [tuple(xy[-2:])], False
+        elif code == Path.CLOSEPOLY:
+            closed = True
+        else:
+            current.append(tuple(xy[-2:]))
+    finish()
+    return parts
+
+
+def _line_parts(vertices, closed):
+    """The runs of finite points in `vertices`, split at NaN rows."""
+    vertices = np.asarray(vertices, dtype=float).reshape(-1, 2)
+    good = np.all(np.isfinite(vertices), axis=1)
+    parts, start = [], None
+    for i, ok in enumerate([*good, False]):
+        if ok and start is None:
+            start = i
+        elif not ok and start is not None:
+            run = vertices[start:i]
+            ring = closed is None and len(run) > 2 and np.allclose(run[0], run[-1])
+            if ring or (closed and len(run) > 2):
+                run = run[:-1] if np.allclose(run[0], run[-1]) else run
+                parts.append((run, True))
+            else:
+                parts.append((run, False))
+            start = None
+    return parts
+
+
+class _MorphLook:
+    """Stroke and fill of one end of a morph, as RGBA tuples and a width."""
+
+    def __init__(self, edge, face, lw, ls):
+        self.edge, self.face, self.lw, self.ls = edge, face, lw, ls
+
+
+def _rgba(color, alpha):
+    if color is None or _is_none_color(color):
+        return None
+    rgba = list(to_rgba(color))
+    if alpha is not None:
+        rgba[3] *= float(alpha)
+    return tuple(rgba)
+
+
+def _morph_source(item, ax, closed, kw):
+    """One end of a morph: its parts, the transform to display, and its look."""
+    kw = dict(kw or {})
+    if isinstance(item, Line2D):
+        parts = _line_parts(item.get_xydata(), closed)
+        edge = _rgba(item.get_color(), item.get_alpha())
+        face, lw, ls = None, item.get_linewidth(), item.get_linestyle()
+        transform = item.get_transform()
+    elif isinstance(item, PathPatch):
+        parts = _path_parts(item.get_path())
+        # A patch's colors already carry its alpha.
+        edge = _rgba(item.get_edgecolor(), None) if item.get_linewidth() > 0 else None
+        face = _rgba(item.get_facecolor(), None) if item.get_fill() else None
+        lw, ls = item.get_linewidth(), item.get_linestyle()
+        transform = item.get_transform()
+    else:
+        if ax is None:
+            raise ValueError("morph needs ax= (the data axes) for an array path")
+        parts = _line_parts(item, closed)
+        edge = _rgba(_style.neutral(1.0), None)
+        face, lw, ls = None, float(matplotlib.rcParams["lines.linewidth"]), "-"
+        transform = ax.transData
+    if "edgecolor" in kw:
+        edge = _rgba(kw.pop("edgecolor"), None)
+    if "facecolor" in kw:
+        face = _rgba(kw.pop("facecolor"), None)
+    if "linewidth" in kw:
+        lw = float(kw.pop("linewidth"))
+    alpha = kw.pop("alpha", None)
+    if kw:
+        raise TypeError(f"unknown morph style keys: {sorted(kw)}")
+    if alpha is not None:
+        edge = None if edge is None else (*edge[:3], edge[3] * float(alpha))
+        face = None if face is None else (*face[:3], face[3] * float(alpha))
+    if not parts:
+        raise ValueError("morph has no finite points in one of its paths")
+    return parts, transform, _MorphLook(edge, face, float(lw), ls)
+
+
+def _resample(vertices, closed, n):
+    """`n` points spaced evenly in arc length along a path.
+
+    A closed path returns `n` distinct points (the first is not repeated at
+    the end); an open path returns `n` points from its first vertex to its
+    last. A path of zero length returns its one point `n` times.
+    """
+    v = np.asarray(vertices, dtype=float)
+    if closed or len(v) < 2:
+        ring = np.vstack([v, v[:1]]) if len(v) > 1 else v
+    else:
+        ring = v
+    seg = np.hypot(*np.diff(ring, axis=0).T) if len(ring) > 1 else np.zeros(0)
+    total = float(seg.sum())
+    if total <= 0.0:
+        return np.repeat(v[:1], n, axis=0)
+    at = np.concatenate([[0.0], np.cumsum(seg)])
+    s = np.linspace(0.0, total, n, endpoint=not closed)
+    return np.c_[np.interp(s, at, ring[:, 0]), np.interp(s, at, ring[:, 1])]
+
+
+def _align(a, b):
+    """`b` rolled, and reversed if that is shorter, to sit on closed path `a`.
+
+    Both are (n, 2) rings of corresponding points. Every start index of `b`
+    in both directions is tried, and the one with the least summed squared
+    distance to `a` wins; ties go to the unreversed ring and the smaller
+    shift.
+    """
+    n = len(a)
+    shifts = (np.arange(n)[:, None] + np.arange(n)[None, :]) % n
+    best, pick = np.inf, b
+    for ring in (b, b[::-1]):
+        cost = ((a[None, :, :] - ring[shifts]) ** 2).sum(axis=(1, 2))
+        k = int(np.argmin(cost))
+        if cost[k] < best * (1.0 - 1e-12):
+            best, pick = float(cost[k]), ring[shifts[k]]
+    return pick
+
+
+def _size(vertices):
+    return float(np.ptp(vertices[:, 0]) + np.ptp(vertices[:, 1]))
+
+
+def _morph_pairs(parts_a, parts_b, n, align):
+    """Paired point arrays ``(pa, pb, closed)``, one per output subpath.
+
+    Subpaths are ranked by size (the half perimeter of their box, largest
+    first) and the ranks paired. A path with no partner is paired with a
+    point at its own center, so it shrinks to that point or grows from it.
+    """
+    order_a = sorted(parts_a, key=lambda p: -_size(p[0]))
+    order_b = sorted(parts_b, key=lambda p: -_size(p[0]))
+    out = []
+    for i in range(max(len(order_a), len(order_b))):
+        va = order_a[i] if i < len(order_a) else None
+        vb = order_b[i] if i < len(order_b) else None
+        if va is not None and vb is not None:
+            closed = bool(va[1] and vb[1])
+            pa = _resample(va[0], closed, n)
+            pb = _resample(vb[0], closed, n)
+            if closed and align:
+                pb = _align(pa, pb)
+        elif va is not None:
+            closed = va[1]
+            pa = _resample(va[0], closed, n)
+            pb = np.repeat(0.5 * (va[0].min(axis=0) + va[0].max(axis=0))[None], n, 0)
+        else:
+            closed = vb[1]
+            pb = _resample(vb[0], closed, n)
+            pa = np.repeat(0.5 * (vb[0].min(axis=0) + vb[0].max(axis=0))[None], n, 0)
+        out.append((pa, pb, closed))
+    return out
+
+
+def _lerp_color(c0, c1, e):
+    """Straight RGBA blend; a missing end is the other end's color, clear."""
+    if c0 is None and c1 is None:
+        return None
+    if c0 is None:
+        c0 = (*c1[:3], 0.0)
+    if c1 is None:
+        c1 = (*c0[:3], 0.0)
+    return tuple((1.0 - e) * np.asarray(c0) + e * np.asarray(c1))
+
+
+class _GhostMorph(PathPatch):
+    """The ghost of a morph: one patch carrying every subpath."""
+
+    def __init__(self, ends, *, n, align, ease):
+        super().__init__(
+            Path(np.zeros((1, 2)), [Path.MOVETO]), transform=IdentityTransform()
+        )
+        self._ends = ends
+        self._n = n
+        self._align = align
+        self._ease = ease
+        self._u = 1.0
+        self._level = 1.0
+        self.eased = 1.0
+        self._key = None
+        self._pairs = None
+        self.set_linestyle(ends[0][2].ls)
+
+    def _display(self, end):
+        parts, transform, _ = end
+        return [(transform.transform(v), c) for v, c in parts]
+
+    def pairs(self):
+        """The paired, aligned point arrays in display pixels, cached by geometry."""
+        parts_a, parts_b = (self._display(end) for end in self._ends)
+        key = b"".join(v.tobytes() for v, _ in parts_a + parts_b)
+        if key != self._key:
+            self._pairs = _morph_pairs(parts_a, parts_b, self._n, self._align)
+            self._key = key
+        return self._pairs
+
+    def shape(self, u):
+        """The ghost's subpaths ``[(vertices, closed), ...]`` at progress `u`.
+
+        Vertices are in display pixels: the straight blend of the resampled,
+        aligned ends at the eased progress.
+        """
+        e = _ease(_check_u(u), self._ease)
+        return [((1.0 - e) * pa + e * pb, c) for pa, pb, c in self.pairs()]
+
+    def draw(self, renderer):
+        """Blend the two ends at the current progress, then draw."""
+        if not self.get_visible():
+            return
+        e = _ease(self._u, self._ease)
+        self.eased = e
+        vertices, codes = [], []
+        for pa, pb, closed in self.pairs():
+            v = (1.0 - e) * pa + e * pb
+            vertices += [v, v[:1]] if closed else [v]
+            codes += [Path.MOVETO, *[Path.LINETO] * (len(v) - 1)]
+            if closed:
+                codes.append(Path.CLOSEPOLY)
+        self.set_path(Path(np.vstack(vertices), codes))
+        look_a, look_b = self._ends[0][2], self._ends[1][2]
+        edge = _lerp_color(look_a.edge, look_b.edge, e)
+        face = _lerp_color(look_a.face, look_b.face, e)
+        self.set_linewidth((1.0 - e) * look_a.lw + e * look_b.lw)
+        for color, setter in ((edge, self.set_edgecolor), (face, self.set_facecolor)):
+            if color is None:
+                setter("none")
+            else:
+                setter((*color[:3], color[3] * self._level))
+        super().draw(renderer)
+
+
+def morph(
+    a,
+    b,
+    *,
+    ax=None,
+    closed=None,
+    n=_MORPH_POINTS,
+    align=True,
+    ease="smoothstep",
+    a_kw=None,
+    b_kw=None,
+    zorder=20,
+):
+    """Carry one path into another, keeping its identity on the way.
+
+    The move shows that one shape has become another: a circle that becomes a
+    square, a curve that becomes a different curve, an outline that becomes
+    a smaller one. A ghost is drawn in between, and each point of the first
+    path travels to a point of the second, so the viewer can follow the
+    shape rather than see one disappear and another appear. The ends are
+    paths in the sense of matplotlib: open polylines, closed rings, or
+    several subpaths of either.
+
+    Both paths are resampled to `n` points evenly spaced in arc length. For
+    a closed pair the start point and the direction of the second are
+    chosen so that the summed squared distance between corresponding points
+    is least, so a ring does not turn inside out or spin when it could
+    simply grow; an open pair keeps its drawn order. The ghost is the
+    straight blend of the two samplings, and its stroke color, fill color,
+    opacity (all through RGBA) and line width blend the same way; an end
+    with no fill blends toward the other end's fill color from clear. The
+    blend is straight in display space, so two simple closed paths that are
+    star-shaped about a common point stay simple, but a pair with a very
+    different winding can cross itself on the way.
+
+    Subpaths are ranked by size (the half perimeter of the box) and paired
+    in rank. A path with no partner shrinks to a point at its center, or
+    grows from one. A subpath is closed on the way only when both of its
+    ends are closed; otherwise the closed end is traversed as an open path
+    from its first vertex.
+
+    The ghost is a figure-level patch, so it never joins an axes'
+    autoscaling. It is visible only for ``0 < u < 1``: at ``u = 0`` and
+    ``u = 1`` it draws nothing, so those frames are the frames without the
+    move and the caller shows the first and the second path at their ends.
+    The rest state, when the move is made, is ``u = 1``.
+
+    Args:
+        a: The path to start from: a `Line2D` (a run is closed if its first
+            and last points coincide), a `PathPatch`, or an array of
+            vertices (N, 2) in the data coordinates of `ax`. NaN rows split
+            a line or array into subpaths.
+        b: The path to end on, of the same kinds.
+        ax: The axes whose data coordinates an array end is in, and whose
+            figure owns the ghost. Required for an array end; otherwise the
+            figure of the first artist end owns it.
+        closed: True to treat every run of a line or an array end as a closed
+            ring, False as open; None infers it per run, closed when the
+            first and last points coincide. A `PathPatch` always follows its
+            own path codes.
+        n: Points per subpath after resampling, at least 3.
+        align: Whether closed pairs search the start point and direction.
+            False pairs the resampled points as drawn.
+        ease: An easing kind for `eyepiece.ease`, applied to the progress.
+        a_kw: Overrides for the style of the first path: any of
+            ``edgecolor``, ``facecolor``, ``linewidth`` and ``alpha``.
+        b_kw: The same for the second path.
+        zorder: Drawing order of the ghost among the figure's children.
+
+    Returns:
+        A `PlotResult` on `ax`, or the first artist's axes (None if it has none), with
+        ``artists["fill"]`` the ghost patch and ``update(u, level=1.0)``,
+        `u` from 0 to 1 (values outside are clipped) and `level` the
+        opacity of the ghost as a fraction of its blended opacity, so a
+        `Stage` can dim it. ``artists["fill"].shape(u)`` returns the ghost's
+        subpaths at progress `u` as ``[(vertices, closed), ...]``.
+
+    Raises:
+        TypeError: If an end is neither an array nor a `Line2D` or a
+            `PathPatch`, or a style key is unknown.
+        ValueError: If a path has no finite point, `n` is below 3, or an
+            array end is given without `ax`.
+
+    Example::
+
+        ring, = ax.plot(np.cos(t), np.sin(t))
+        box = ax.add_patch(PathPatch(square_path, fc="none"))
+        step = ep.morph(ring, box)
+        for u in np.linspace(0.0, 1.0, 30):
+            step.update(u)
+            rec.frame()
+    """
+    n = int(n)
+    if n < 3:
+        raise ValueError(f"morph needs at least 3 points per path, got {n}")
+    for item in (a, b):
+        if isinstance(item, Artist) and not isinstance(item, (Line2D, PathPatch)):
+            raise TypeError(
+                f"morph carries a Line2D, a PathPatch or an array, got "
+                f"{type(item).__name__}"
+            )
+    owner = (
+        ax
+        if ax is not None
+        else next((i for i in (a, b) if isinstance(i, Artist)), None)
+    )
+    if owner is None:
+        raise ValueError("morph needs ax= when both paths are arrays")
+    axes = ax if ax is not None else owner.axes
+    ends = [_morph_source(item, ax, closed, kw) for item, kw in ((a, a_kw), (b, b_kw))]
+    ghost = _GhostMorph(ends, n=n, align=bool(align), ease=ease)
+    ghost.set_zorder(zorder)
+    ghost.set_clip_on(False)
+    ghost.set_in_layout(False)
+    _root_figure(owner).add_artist(ghost)
+
+    def update(u, level=1.0):
+        u = _check_u(u)
+        ghost._u = u
+        ghost._level = min(1.0, max(0.0, float(level)))
+        ghost.set_visible(0.0 < u < 1.0)
+
+    update(1.0)
+    return PlotResult(ax=axes, artists={"fill": ghost}, update=update)
 
 
 # Term row

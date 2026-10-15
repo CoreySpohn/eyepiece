@@ -478,3 +478,52 @@ The readout is running when its term's text is set in the loop, for example
 ``readout.artists["text"][2].set_text(f"{v:.2f}")``; `Anchor.from_artist` of a
 term follows it. Call `audit(fig)` once the composite is laid out to vet every
 leader and link of the clip.
+
+## Morph: one path becomes another
+
+`morph` carries one path into another so the viewer can follow the shape
+rather than see one vanish and another appear. Both paths, a `Line2D`, a
+`PathPatch`, or an array of vertices, are resampled to the same number of
+points evenly spaced in arc length, and a ghost blends the two samplings
+under the same easing as every other move, along with stroke color, fill
+color, opacity, and line width. For closed paths the start point and the
+direction of the second are chosen so that corresponding points are as near
+as possible, so a ring that is merely drawn the other way round does not
+turn inside out on the way. Several subpaths are paired by size, and a
+subpath with no partner shrinks to a point or grows from one. As with
+`flight`, the ghost shows only between the ends, so the first and second
+path are the frames at either end.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 2.6))
+ax.set(xlim=(-1.6, 1.6), ylim=(-1.2, 1.2), xticks=[], yticks=[])
+ax.set_aspect("equal")
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+phi = np.linspace(0.0, 2.0 * np.pi, 160, endpoint=False)
+ring = np.c_[np.cos(phi), np.sin(phi)]
+box = np.array([[0.9, 0.9], [-0.9, 0.9], [-0.9, -0.9], [0.9, -0.9]])
+turn = ep.morph(
+    ring,
+    box[::-1],
+    ax=ax,
+    closed=True,
+    a_kw={"edgecolor": "C0", "facecolor": "none"},
+    b_kw={"edgecolor": "C1", "facecolor": "C1", "alpha": 0.4},
+)
+
+shown, cells = plt.subplots(1, 5, figsize=(9.0, 1.9), layout="constrained")
+for cell, u in zip(cells, (0.1, 0.3, 0.5, 0.7, 0.9), strict=True):
+    turn.update(u)
+    fig.canvas.draw()
+    cell.imshow(np.asarray(fig.canvas.buffer_rgba()).copy(), interpolation="nearest")
+    cell.set_title(f"u = {u:g}")
+    cell.set_axis_off()
+plt.show()
+```
+
+The ring is drawn counterclockwise and the box clockwise, and the frames show
+the ring growing into the box without a twist. The ghost is hidden at
+``u = 0`` and ``u = 1``, so in a clip the caller shows the ring before the
+move and the box after it.

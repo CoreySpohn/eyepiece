@@ -463,7 +463,10 @@ ends of their progress the frame equals the frame without them, and
 starts, so it composes with a stage that is set first. `term_row` places one
 text per term at draw time, so its terms are anchors and stage members, and
 a changed term re-lays the row. A flight can carry a segment or a bar and
-turn it. The rest state of each, the one a still shows, is the
+turn it. `morph` is a figure-level ghost like a flight, visible only
+between its ends, whose geometry at the ends is the two paths resampled by
+arc length (and, for a closed pair, the second rolled and possibly reversed
+to lie on the first). The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
 A `Tempo` holds the pace of such a clip in one place. Moves and holds are
