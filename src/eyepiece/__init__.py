@@ -88,6 +88,7 @@ __all__ = [
     "hist_vs_pdf",
     "imshow_diverging",
     "imshow_log",
+    "indicate",
     "interval_points",
     "kymograph",
     "label_arcsec",
@@ -228,6 +229,7 @@ _LAZY_EXPORTS = {
     "callout": ("eyepiece.attention", "callout"),
     "collapse": ("eyepiece.attention", "collapse"),
     "flight": ("eyepiece.attention", "flight"),
+    "indicate": ("eyepiece.attention", "indicate"),
     "leader": ("eyepiece.attention", "leader"),
     "quad_image": ("eyepiece.morph", "quad_image"),
 }

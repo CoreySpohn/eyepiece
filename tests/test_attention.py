@@ -448,3 +448,165 @@ def test_anchor_on_an_artist_outside_a_figure_says_so():
 
     with pytest.raises(ValueError, match="not in a figure"):
         _ = ep.Anchor.from_artist(Line2D([0.0], [0.0])).figure
+
+
+# Indicate
+
+
+def _marks(mode):
+    """One of each artist kind a pulse works on, in a figure of `mode`."""
+    hwostyle.use(mode)
+    fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    (line,) = ax.plot([0.1, 0.5, 0.9], [0.2, 0.7, 0.3], "o-", lw=2.0, ms=7, color="C1")
+    note = ax.text(0.15, 0.85, "a note", bbox=ep.backing())
+    bar = ax.add_patch(plt.Rectangle((0.6, 0.1), 0.2, 0.15, fc="C2", ec="C3", lw=1.5))
+    dots = ax.scatter([0.3, 0.5], [0.4, 0.5], s=40, color="C4")
+    fig.canvas.draw()
+    return fig, ax, line, note, bar, dots
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_indicate_leaves_both_ends_pixel_identical(mode):
+    fig, _ax, line, note, bar, dots = _marks(mode)
+    without = _pixels(fig)
+    pulse = ep.indicate([line, note, bar, dots])
+    np.testing.assert_array_equal(_pixels(fig), without)  # the rest state
+    for u in (0.0, 1.0, -3.0, 7.0):
+        pulse.update(u)
+        np.testing.assert_array_equal(_pixels(fig), without)
+    pulse.update(0.5)
+    assert not np.array_equal(_pixels(fig), without)
+    pulse.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), without)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_indicate_peaks_mid_way(mode):
+    fig, _ax, line, note, bar, dots = _marks(mode)
+    without = _pixels(fig).astype(float)
+    pulse = ep.indicate([line, note, bar, dots])
+    change = []
+    for u in (0.1, 0.25, 0.5, 0.75, 0.9):
+        pulse.update(u)
+        change.append(np.abs(_pixels(fig).astype(float) - without).sum())
+    assert 0.0 < change[0] < change[1] < change[2]
+    assert 0.0 < change[4] < change[3] < change[2]
+    assert change[1] == pytest.approx(change[3], rel=0.15)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_indicate_swells_by_the_scale_and_tints_toward_the_text_color(mode):
+    _fig, _ax, line, note, bar, dots = _marks(mode)
+    made = {
+        "lw": line.get_linewidth(),
+        "ms": line.get_markersize(),
+        "font": note.get_fontsize(),
+        "bar_lw": bar.get_linewidth(),
+        "dot_lw": float(dots.get_linewidths()[0]),
+        "dot_s": float(dots.get_sizes()[0]),
+        "color": np.array(to_rgb(line.get_color())),
+        "face": np.array(bar.get_facecolor()[:3]),
+    }
+    pulse = ep.indicate([line, note, bar, dots], scale=1.15, strength=0.5)
+    pulse.update(0.5)
+    assert line.get_linewidth() == pytest.approx(1.15 * made["lw"])
+    assert line.get_markersize() == pytest.approx(1.15 * made["ms"])
+    assert note.get_fontsize() == pytest.approx(1.15 * made["font"])
+    assert bar.get_linewidth() == pytest.approx(1.15 * made["bar_lw"])
+    assert float(dots.get_linewidths()[0]) == pytest.approx(1.15 * made["dot_lw"])
+    assert float(dots.get_sizes()[0]) == pytest.approx(1.15**2 * made["dot_s"])
+    text = np.array(to_rgb(plt.rcParams["text.color"]))
+    for before, after in (
+        (made["color"], np.array(to_rgb(line.get_color()))),
+        (made["face"], np.array(bar.get_facecolor()[:3])),
+    ):
+        # Half way to the text color along the straight line: no new hue.
+        np.testing.assert_allclose(after, before + 0.5 * (text - before), atol=1e-6)
+    assert bar.get_facecolor()[3] == 1.0
+
+
+def test_indicate_swells_a_callout_with_its_box_and_pieces():
+    hwostyle.use("dark")
+    fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    (dot,) = ax.plot([0.5], [0.5], "o", ms=8)
+    call = ep.callout(
+        dot,
+        ["the ", ("dot", "C3", "bold")],
+        side="right",
+        leader=False,
+    )
+    text = call.artists["text"]
+    fig.canvas.draw()
+    without = _pixels(fig)
+    width = text.get_window_extent().width
+    sizes = [p.get_fontsize() for p in text._pieces]
+    pulse = ep.indicate(text)
+    pulse.update(0.5)
+    fig.canvas.draw()
+    assert text.get_window_extent().width > width
+    for piece, size in zip(text._pieces, sizes, strict=True):
+        assert piece.get_fontsize() == pytest.approx(1.15 * size)
+    pulse.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), without)
+
+
+def test_indicate_is_idempotent_and_order_free():
+    fig, _ax, line, note, bar, dots = _marks("light")
+    pulse = ep.indicate([line, note, bar, dots])
+    pulse.update(0.3)
+    first = _pixels(fig)
+    pulse.update(0.8)
+    pulse.update(0.3)
+    pulse.update(0.3)
+    np.testing.assert_array_equal(_pixels(fig), first)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_indicate_returns_to_the_stage_level_not_the_made_colors(mode):
+    fig, _ax, line, note, bar, dots = _marks(mode)
+    stage = ep.Stage({"group": [line, note, bar, dots]}, dim=0.4)
+    made = _pixels(fig)
+    pulse = ep.indicate([line, note, bar, dots])
+    # The caller sets the stage, then the pulse, every frame.
+    stage.set(dimmed=["group"])
+    pulse.update(0.0)
+    dimmed = _pixels(fig)
+    assert not np.array_equal(dimmed, made)
+    for u in (0.0, 0.3, 0.5, 0.8, 1.0):
+        stage.set(dimmed=["group"])
+        pulse.update(u)
+        if u in (0.0, 1.0):
+            np.testing.assert_array_equal(_pixels(fig), dimmed)
+    # At the peak the line is between its dimmed color and the text color,
+    # darker or lighter than the dimmed level, never the made color.
+    stage.set(dimmed=["group"])
+    dim_color = np.array(to_rgb(line.get_color()))
+    pulse.update(0.5)
+    peak = np.array(to_rgb(line.get_color()))
+    text = np.array(to_rgb(plt.rcParams["text.color"]))
+    t = np.dot(peak - dim_color, text - dim_color) / np.dot(
+        text - dim_color, text - dim_color
+    )
+    assert 0.0 < t < 1.0
+    np.testing.assert_allclose(peak, dim_color + t * (text - dim_color), atol=1e-6)
+    # The stage going back to full strength while the pulse is over restores
+    # the made colors exactly.
+    pulse.update(1.0)
+    stage.set(shown=["group"])
+    np.testing.assert_array_equal(_pixels(fig), made)
+
+
+def test_indicate_rejects_what_it_cannot_pulse():
+    fig, ax = plt.subplots()
+    image = ax.imshow(np.zeros((2, 2)))
+    with pytest.raises(TypeError, match="indicate"):
+        ep.indicate(image)
+    with pytest.raises(ValueError, match="scale"):
+        ep.indicate(ax.plot([0], [0])[0], scale=0.9)
+    with pytest.raises(ValueError, match="strength"):
+        ep.indicate(ax.plot([0], [0])[0], strength=1.5)
+    with pytest.raises(ValueError, match="no artist"):
+        ep.indicate([])
+    assert fig

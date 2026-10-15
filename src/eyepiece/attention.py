@@ -1876,3 +1876,204 @@ def collapse(
     return MosaicResult(
         axes=np.array(axes, dtype=object), artists={"line": ghost}, update=update
     )
+
+
+# Indicate
+
+
+def _same(a, b):
+    """Whether two artist property values are equal, arrays and strings alike."""
+    try:
+        return bool(np.array_equal(np.asarray(a), np.asarray(b)))
+    except (TypeError, ValueError):
+        return a == b
+
+
+class _Channel:
+    """One property a pulse moves, with the value it started from.
+
+    The pulse writes the property from `base` every frame. Whatever the
+    property holds at the start of a frame is compared with what the pulse
+    last wrote: if they are equal the pulse's own write is still there and
+    `base` stands, and if not, something else (a `Stage`, a fade, the
+    caller) set the property since, and what it holds now is the new base.
+    """
+
+    def __init__(self, get, set_, shape):
+        self.get = get
+        self.set = set_
+        self.shape = shape
+        self.base = None
+        self.written = None
+
+    def apply(self, k):
+        current = self.get()
+        ours = self.written is not None and _same(current, self.written)
+        base = self.base if ours else current
+        if k <= 0.0:
+            if ours:
+                self.set(base)
+            self.base = self.written = None
+            return
+        self.set(self.shape(base, k))
+        self.base = base
+        self.written = self.get()
+
+
+def _is_none_color(value):
+    return isinstance(value, str) and value.lower() == "none"
+
+
+def _channels(artist, scale, strength):
+    """The size and color properties of one artist that a pulse moves."""
+    grow = scale - 1.0
+
+    def size(power=1.0):
+        return lambda value, k: (
+            np.asarray(value, dtype=float) * (1.0 + grow * k) ** power
+        )
+
+    def scalar(value, k):
+        return float(value) * (1.0 + grow * k)
+
+    def color(value, k):
+        if _is_none_color(value):
+            return value
+        target = np.array(to_rgb(matplotlib.rcParams["text.color"]))
+        rgba = np.asarray(to_rgba_array(value), dtype=float).copy()
+        rgba[:, :3] += strength * k * (target - rgba[:, :3])
+        if isinstance(value, np.ndarray) and value.ndim == 2:
+            return rgba
+        return tuple(rgba[0])
+
+    out = []
+    if isinstance(artist, Line2D):
+        out += [_Channel(artist.get_linewidth, artist.set_linewidth, scalar)]
+        if artist.get_marker() not in (None, "None", "none", "", " "):
+            out += [
+                _Channel(artist.get_markersize, artist.set_markersize, scalar),
+                _Channel(
+                    artist.get_markeredgewidth, artist.set_markeredgewidth, scalar
+                ),
+                _Channel(artist.get_markerfacecolor, artist.set_markerfacecolor, color),
+                _Channel(artist.get_markeredgecolor, artist.set_markeredgecolor, color),
+            ]
+        out += [_Channel(artist.get_color, artist.set_color, color)]
+    elif isinstance(artist, Text):
+        out += [
+            _Channel(artist.get_fontsize, artist.set_fontsize, scalar),
+            _Channel(artist.get_color, artist.set_color, color),
+        ]
+    elif isinstance(artist, Patch):
+        out += [
+            _Channel(artist.get_linewidth, artist.set_linewidth, scalar),
+            _Channel(artist.get_facecolor, artist.set_facecolor, color),
+            _Channel(artist.get_edgecolor, artist.set_edgecolor, color),
+        ]
+    elif isinstance(artist, Collection):
+        if len(artist.get_linewidth()):
+            out += [_Channel(artist.get_linewidth, artist.set_linewidth, size())]
+        if isinstance(artist, PathCollection) and len(artist.get_sizes()):
+            # Sizes are areas, so a 1.15 stretch of the mark is its square.
+            out += [_Channel(artist.get_sizes, artist.set_sizes, size(2.0))]
+        if artist.get_array() is None:
+            out += [
+                _Channel(artist.get_facecolor, artist.set_facecolor, color),
+                _Channel(artist.get_edgecolor, artist.set_edgecolor, color),
+            ]
+    return out
+
+
+def _pulse_parts(artist):
+    """The artists a pulse on `artist` moves: itself and a caption's pieces."""
+    return [artist, *getattr(artist, "_pieces", ())]
+
+
+def indicate(artists, *, scale=1.15, strength=0.6):
+    """Say "this one": swell an artist and tint it toward the text color, then return.
+
+    A pulse is a transient emphasis. For its duration the artist's line
+    width, marker size or font size grows by `scale` and its colors move
+    toward the text color by `strength`, both peaking half way through, and
+    then everything returns. It adds no hue: a tint toward the text color is
+    a darker mark on a light figure and a lighter one on a dark figure, so
+    the pulse reads on either. It works on lines, texts (a callout or a
+    label with a backing box swells with its box), patches, and collections
+    (a colormapped collection swells only, since its colors come from its
+    data).
+
+    ``update(u)`` is absolute. At ``u = 0`` and ``u = 1``, the rest state
+    in which the move is made, the artist is exactly as it was and the frame
+    is pixel-identical to the frame without the move.
+
+    A pulse reads each property as it is at the start of every update, so it
+    pulses from wherever the artist is. When a `Stage` (or any other fade)
+    owns the artist's colors, set the stage first and then update the pulse
+    in the same frame: the pulse swells from the stage's level, a dimmed
+    artist stays dimmed under it, and at its ends the artist is at the
+    stage's level rather than at the colors it was made with. If the stage
+    is set after the pulse in a frame it overwrites the tint, so the pulse is
+    seen only in size. Do not run two pulses on one artist at once.
+
+    Args:
+        artists: An artist, or an iterable of them (`Line2D`, `Text`,
+            `Patch`, `Collection`).
+        scale: Peak growth of line width, marker size, and font size, a
+            factor of at least 1. Manim's `Indicate` uses 1.2; 1.15 reads as
+            emphasis without moving the layout.
+        strength: Peak fraction of the way from the artist's color to the
+            text color, in [0, 1].
+
+    Returns:
+        A `PlotResult` on the first artist's axes (None if it has none) with
+        ``artists`` grouped by kind (``"line"``, ``"text"``, ``"fill"``,
+        ``"collection"``) and ``update(u)``, `u` from 0 to 1; values outside
+        are clipped.
+
+    Raises:
+        TypeError: If an artist is not a line, text, patch, or collection.
+        ValueError: If `scale` is below 1, `strength` is outside [0, 1], or
+            there is nothing to pulse.
+
+    Example::
+
+        pulse = ep.indicate([curve, note])
+        for u in np.linspace(0.0, 1.0, 20):
+            pulse.update(u)
+            rec.frame()
+    """
+    scale, strength = float(scale), float(strength)
+    if scale < 1.0:
+        raise ValueError(f"indicate scale must be at least 1, got {scale}")
+    if not 0.0 <= strength <= 1.0:
+        raise ValueError(f"indicate strength must be in [0, 1], got {strength}")
+    items = [artists] if isinstance(artists, Artist) else list(artists)
+    if not items:
+        raise ValueError("indicate has no artist to pulse")
+    channels, groups = [], {}
+    for item in items:
+        if not isinstance(item, (Line2D, Text, Patch, Collection)):
+            raise TypeError(
+                f"indicate pulses a line, text, patch, or collection, got "
+                f"{type(item).__name__}"
+            )
+        for part in _pulse_parts(item):
+            channels += _channels(part, scale, strength)
+        key = (
+            "line"
+            if isinstance(item, Line2D)
+            else "text"
+            if isinstance(item, Text)
+            else "fill"
+            if isinstance(item, Patch)
+            else "collection"
+        )
+        groups.setdefault(key, []).append(item)
+
+    def update(u):
+        u = _check_u(u)
+        k = 0.0 if u <= 0.0 or u >= 1.0 else math.sin(math.pi * u) ** 2
+        for channel in channels:
+            channel.apply(k)
+
+    return PlotResult(ax=getattr(items[0], "axes", None), artists=groups, update=update)
