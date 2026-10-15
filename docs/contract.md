@@ -530,12 +530,22 @@ outlines, pulses and a `Stage` act on it unchanged. Its ``update(u, level=1.0)``
 terms on, left to right, and at ``u = 1`` the equation is whole; `level` is an opacity and never
 geometry. `transform` carries one equation into another, owns the visibility of both, rests at
 ``u = 1`` (the second equation shown, the first hidden) and draws the first alone at ``u = 0``,
-each pixel-identical to that equation drawn alone. Matching is by glyph identity (font and
+each pixel-identical to that equation as placed. Matching is by glyph identity (font and
 glyph, never the character code): inside a tag both equations share (or a `key_map` pair), in
-left-to-right order, then across glyphs in no tag, and a tagged glyph never pairs outside its tag.
-Matched glyphs run an eased, staggered translation with an optional arc; unmatched glyphs of the
-first fade out and of the second fade in, by opacity only, and those fades overlap the start and end of the move while the matched glyphs carry the eye; a fraction bar changes length through
-the arc-length sampling of `morph`. While a transform's progress is inside (0, 1) it sets the facecolor and alpha of the glyphs it moves, so a `Stage` must not dim a term of either equation then; dim the whole move with `level`. A transform's narration cue is ``{transform:name}``, whose time
+left-to-right order, then across glyphs in no tag, and a tagged glyph never pairs outside its tag;
+equations that share no tag pair every glyph by order. `align` (default ``"auto"``) places the
+second equation so that one matched glyph keeps its place in the first, which moves the second
+equation's layout at every `u`, the rest state included. Matched glyphs move by group, never
+one by one: all the matched glyphs of one tag, or one run of neighbouring glyphs in no tag, share
+one eased progress, staggered left to right by the group's place in the first equation, so a word
+moves rigidly. A group rises on an optional arc scaled by its sideways travel
+(``min(1, travel / fontsize)``), so a group that does not travel sideways does not rise. A tag both
+equations have whose glyphs do not all match is a replacement: what is left of it in the first is
+carried as one box that moves and scales onto the box of what is left in the second, fading out
+while the second, drawn inside the moving box, fades in. Glyphs with no counterpart at all
+fade out in the first `fade` of the beat or fade in in the last, so when anything fades in
+the motion takes the first ``1 - fade``, and new text arrives after the motion has settled. A
+fraction bar changes length through the arc-length sampling of `morph`. A transform's narration cue is ``{transform:name}``, whose time
 starts its ramp. Not supported: ``usetex``, several math spans in one string, escaped braces
 (they raise), and the size animation of ``\left ... \right``.
 `write` is a figure-level ghost of a text, visible only before ``u = 1``: it

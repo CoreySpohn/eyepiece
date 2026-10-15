@@ -195,7 +195,7 @@ def test_equation_level_is_opacity_only():
 
 def test_transform_rest_is_b_and_ends_equal_each_equation_alone():
     fig, a, b = _pair(BAYES_A, BAYES_B)
-    move = ep.transform(a, b)
+    move = ep.transform(a, b, align=None)
     rest = _pixels(fig)
     move.update(0.0)
     assert np.array_equal(_pixels(fig), _alone(BAYES_A))
@@ -317,7 +317,7 @@ def test_a_fraction_bar_changes_length_through_the_morph_sampling():
 
     move.update(0.0)
     start = bar_width(a)
-    move.update(0.5)
+    move.update(0.25)
     mid = bar_width(a)
     move.update(1.0)
     end = bar_width(b)
@@ -433,3 +433,146 @@ def test_savefig_at_200_dpi_matches_a_native_200_dpi_build():
     saved = raw(fig, 200)
     assert saved == raw(build(200), 200)
     assert np.array_equal(_pixels(fig), _pixels(build(100)))  # savefig left dpi alone
+
+
+def _aligned_pair():
+    fig, a, b = _pair(BAYES_A, BAYES_B)
+    return fig, a, b, ep.transform(a, b)
+
+
+def test_aligned_end_states_are_each_equation_as_placed():
+    fig, a, b, move = _aligned_pair()
+    move.update(0.0)
+    assert np.array_equal(_pixels(fig), _alone(BAYES_A))
+    move.update(1.0)
+    rest = _pixels(fig)
+    for g in a.artists["glyphs"]:
+        g.set_visible(False)
+    for g in b.artists["glyphs"]:
+        g.set_visible(True)
+    assert np.array_equal(rest, _pixels(fig))
+    move.update(0.4)
+    assert not np.array_equal(rest, _pixels(fig))
+
+
+def test_the_aligned_glyphs_never_move():
+    fig, a, _b, move = _aligned_pair()
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ga = a.artists["glyphs"]
+    lhs = [i for i, _ in move.pairs if _term_of(a, ga[i], renderer) == "lhs"]
+    assert lhs
+    rest = {i: ga[i].vertices(renderer).copy() for i in lhs}
+    for u in np.linspace(0.0, 0.99, 12):
+        move.update(float(u))
+        for i in lhs:
+            assert np.allclose(ga[i].vertices(renderer), rest[i], atol=1e-6)
+
+
+def test_align_names_a_tag_or_none_and_checks_it():
+    fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{q:y}}+{{p:x}}$")
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    move = ep.transform(a, b, align="q")
+    (i, j) = next(p for p in move.pairs if _term_of(a, ga[p[0]], renderer) == "q")
+    assert np.allclose(_center(ga[i], renderer), _center(gb[j], renderer), atol=1e-6)
+    with pytest.raises(KeyError, match="align"):
+        ep.transform(a, b, align="zz")
+    none = ep.transform(a, b, align=None)
+    assert none.pairs
+
+
+def test_a_word_moves_rigidly():
+    fig, a, _b, move = _aligned_pair()
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ga = a.artists["glyphs"]
+    word = [i for i, _ in move.pairs if _term_of(a, ga[i], renderer) == "lhs"]
+    rest = np.array([_center(ga[i], renderer) for i in word])
+    gaps = np.linalg.norm(rest[:, None] - rest[None], axis=-1)
+    for u in np.linspace(0.0, 0.99, 12):
+        move.update(float(u))
+        here = np.array([_center(ga[i], renderer) for i in word])
+        now = np.linalg.norm(here[:, None] - here[None], axis=-1)
+        assert np.allclose(now, gaps, atol=0.5)
+
+
+def test_a_group_that_does_not_travel_does_not_rise():
+    fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
+    move = ep.transform(a, b, arc=0.5)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ga = a.artists["glyphs"]
+    still = [
+        i
+        for i, j in move.pairs
+        if np.allclose(
+            _center(ga[i], renderer),
+            _center(b.artists["glyphs"][j], renderer),
+            atol=0.5,
+        )
+    ]
+    assert still
+    rest = {i: _center(ga[i], renderer)[1] for i in still}
+    for u in np.linspace(0.0, 0.99, 12):
+        move.update(float(u))
+        for i in still:
+            assert abs(_center(ga[i], renderer)[1] - rest[i]) < 1e-6
+    # The group that crosses the equals sign does rise on the arc.
+    travelling = [i for i, _ in move.pairs if i not in still]
+    base = {i: _center(ga[i], renderer) for i in travelling}
+    move.update(0.0)
+    start = {i: _center(ga[i], renderer)[1] for i in travelling}
+    rises = []
+    for u in np.linspace(0.05, 0.95, 19):
+        move.update(float(u))
+        rises += [_center(ga[i], renderer)[1] - start[i] for i in travelling]
+    assert max(rises) > 1.0 and base
+
+
+def test_replaced_terms_cross_fade_inside_a_moving_box():
+    fig, a, b, move = _aligned_pair()
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    names = [{_term_of(a, ga[i], renderer) for i in ia} for ia, _ in move.replaced]
+    assert {"num"} in names and {"den"} in names
+    ia, ib = next(
+        r for r in move.replaced if _term_of(a, ga[r[0][0]], renderer) == "num"
+    )
+    move.update(1.0)
+    final = [gb[j].vertices(renderer).copy() for j in ib]
+    move.update(0.3)
+    src = [ga[i].get_alpha() for i in ia]
+    dst = [gb[j].get_alpha() for j in ib]
+    assert all(s is not None and 0.0 < s < 1.0 for s in src)
+    assert all(d is not None and 0.0 <= d < 1.0 for d in dst)
+    move.update(0.55)
+    # The target sits inside the box the source is leaving by, never in place.
+    assert not all(
+        np.allclose(gb[j].vertices(renderer), v) for j, v in zip(ib, final, strict=True)
+    )
+    move.update(1.0)
+    for j, v in zip(ib, final, strict=True):
+        assert np.array_equal(gb[j].vertices(renderer), v)
+
+
+def test_unpaired_text_arrives_only_after_the_motion_settles():
+    fig, a, b, move = _aligned_pair()
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    gb = b.artists["glyphs"]
+    res = [j for j in move.new if _term_of(b, gb[j], renderer) == "res"]
+    assert res
+    for u in (0.1, 0.3, 0.5, 0.59):
+        move.update(u)
+        assert all(not gb[j].get_visible() for j in res)
+    move.update(0.8)
+    assert all(gb[j].get_visible() for j in res)
+    ga = a.artists["glyphs"]
+    move.update(0.6)
+    settled = [ga[i].vertices(renderer).copy() for i, _ in move.pairs]
+    move.update(0.9)
+    for (i, _), v in zip(move.pairs, settled, strict=True):
+        assert np.allclose(ga[i].vertices(renderer), v, atol=1e-6)

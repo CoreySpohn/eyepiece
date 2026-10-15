@@ -548,18 +548,25 @@ by difference (the string is parsed again with the group hidden by
 ``\phantom``), so fractions, scripts and rules work, and a layout that the
 hidden group would change raises instead of drawing a wrong group.
 
-`transform` carries one equation into another. A glyph that is the same
-character in both moves from its place in the first to its place in the
-second, left to right on a stagger. Glyphs that match nothing fade out where
-they stand or fade in where they will stand, in the first and last part of the
-beat; those fades overlap the start and end of the move, and the matched
-glyphs carry the eye. A tagged glyph pairs
-only inside its tag, and `key_map` pairs two differently named tags. The bar
-of a fraction changes length by the same arc-length sampling as `morph`. At
-``u = 1`` the figure shows the second equation, as every move rests, and
-``update(0)`` shows the first. The first clip turns Bayes' rule into the
-numbers of a worked example, where the left side flies and the fraction is
-replaced.
+`transform` carries one equation into another. The second equation is placed
+so that the first glyph that matches keeps its place, so unchanged material
+(the left side of Bayes' rule) does not slide; `align` names another tag, or
+None to leave both on their own anchors. A glyph that is the same character in
+both moves from its place in the first to its place in the second, and it moves
+with its group: a tag, or a run of neighbours in no tag, takes one eased
+progress, so a word travels whole, and the groups start left to right. A tag
+that both equations have but whose glyphs do not match, such as ``num`` becoming
+another ``num``, is carried as one box that moves and scales onto the new box,
+with the old glyphs fading out as the new ones fade in inside it. Glyphs with
+no counterpart at all fade out where they stand, in the first part of the beat,
+or fade in where they will stand, in the last part, after everything has
+settled. A tagged glyph pairs only inside its tag, and `key_map` pairs two
+differently named tags. The bar of a fraction changes length by the same
+arc-length sampling as `morph`, and a group rises on `arc` only as far as it
+travels sideways. At ``u = 1`` the figure shows the second equation, as every
+move rests, and ``update(0)`` shows the first. The first clip turns Bayes' rule
+into the numbers of a worked example: the left side stays, the bar stretches,
+the numerator and denominator become their numbers, and the result arrives last.
 
 ```{code-cell} python
 import eyepiece.testing as ept
@@ -573,13 +580,13 @@ BAYES_B = (
 )
 TERM_COLORS = {"lhs": "C0", "num": "C1", "den": "C3", "res": "C2"}
 
-fig = plt.figure(figsize=(6.4, 2.4))
+fig = plt.figure(figsize=(7.6, 2.4))
 board = fig.add_axes([0, 0, 1, 1])
 board.set(xlim=(0, 1), ylim=(0, 1))
 board.axis("off")
-middle = ep.Anchor.from_data(board, (0.5, 0.5))
-bayes_a = ep.equation(middle, BAYES_A, fontsize=34, colors=TERM_COLORS)
-bayes_b = ep.equation(middle, BAYES_B, fontsize=34, colors=TERM_COLORS)
+left = ep.Anchor.from_data(board, (0.06, 0.5))
+bayes_a = ep.equation(left, BAYES_A, fontsize=34, colors=TERM_COLORS, ha="left")
+bayes_b = ep.equation(left, BAYES_B, fontsize=34, colors=TERM_COLORS, ha="left")
 bayes = ep.transform(bayes_a, bayes_b, stagger=0.55)
 
 # A beat of A, the move, a beat of B; the move's progress is uneased.
@@ -598,8 +605,8 @@ HTML(ep.animate(fig, draw_bayes, N_BAYES, fps=20).jshtml(dpi=80))
 
 Most rearrangements keep most glyphs, and then the move is mostly travel.
 Below, ``a^2 + b^2 = c^2`` becomes ``a^2 = c^2 - b^2``: every ``a``, ``c`` and
-square stays a glyph, ``b^2`` crosses the equals sign on a slight arc, and
-only the plus and the minus fade. Without the tag on ``b^2`` the squares would
+square stays a glyph, ``a^2`` stays where it is, ``b^2`` crosses the equals sign
+on a slight arc, and only the plus and the minus fade. Without the tag on ``b^2`` the squares would
 pair by their order and the wrong ``2`` would travel, which is the reason to
 tag a piece that must stay together; a term of either equation is also an
 anchor, so a pulse can name the piece that moves.
@@ -610,8 +617,8 @@ board = fig.add_axes([0, 0, 1, 1])
 board.set(xlim=(0, 1), ylim=(0, 1))
 board.axis("off")
 middle = ep.Anchor.from_data(board, (0.5, 0.5))
-pyth_a = ep.equation(middle, r"$a^2+{{b:b^2}}=c^2$", fontsize=40, colors={"b": "C1"})
-pyth_b = ep.equation(middle, r"$a^2=c^2-{{b:b^2}}$", fontsize=40, colors={"b": "C1"})
+pyth_a = ep.equation(middle, r"${{a:a^2}}+{{b:b^2}}=c^2$", fontsize=40, colors={"b": "C1"})
+pyth_b = ep.equation(middle, r"${{a:a^2}}=c^2-{{b:b^2}}$", fontsize=40, colors={"b": "C1"})
 pyth = ep.transform(pyth_a, pyth_b, stagger=0.7, arc=0.25)
 N_PYTH = 60
 
