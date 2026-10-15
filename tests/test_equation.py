@@ -16,8 +16,8 @@ PYTH_A = r"$a^2+b^2=c^2$"
 PYTH_B = r"$a^2=c^2-b^2$"
 
 
-def _stage(size=(8.0, 3.0)):
-    fig = plt.figure(figsize=size, dpi=100)
+def _stage(size=(8.0, 3.0), dpi=100):
+    fig = plt.figure(figsize=size, dpi=dpi)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set(xlim=(0, 1), ylim=(0, 1))
     ax.axis("off")
@@ -42,6 +42,20 @@ def _alone(tex):
     return _pixels(fig)
 
 
+def _center(glyph, renderer):
+    return glyph.vertices(renderer).mean(0)
+
+
+def _term_of(result, glyph, renderer):
+    """The name of the term whose laid-out box holds the glyph's center."""
+    x, y = _center(glyph, renderer)
+    for name, term in result.artists["terms"].items():
+        box = term.get_window_extent(renderer)
+        if box.x0 <= x <= box.x1 and box.y0 <= y <= box.y1:
+            return name
+    return None
+
+
 def _geometry(result, renderer):
     """Every glyph's drawn vertices in display pixels."""
     return [g.vertices(renderer) for g in result.artists["glyphs"]]
@@ -55,13 +69,16 @@ def test_exports_and_no_shadowing_module():
 
 
 def test_glyph_tuple_format_is_pinned():
-    """A known equation has a known glyph and rule count (matplotlib 3.11 layout)."""
+    """Layout canary: a known equation has a known glyph count under matplotlib.
+
+    This pins how matplotlib's mathtext lays out the string (the fraction bar
+    counts as one glyph), so a matplotlib upgrade that changes the layout
+    fails here first, with a clear cause.
+    """
     _fig, _ax, at = _stage()
     eq = ep.equation(at, r"$\frac{a}{b}=x^2$", fontsize=30)
     glyphs = eq.artists["glyphs"]
-    rules = [g for g in glyphs if g.piece.is_rule]
     assert len(glyphs) == 6  # a, b, =, x, 2 and the bar
-    assert len(rules) == 1
     assert list(eq.artists["terms"]) == ["all"]
 
 
@@ -69,27 +86,22 @@ def test_no_markers_is_one_term_all():
     _fig, _ax, at = _stage()
     eq = ep.equation(at, r"$a+b$", fontsize=30)
     assert list(eq.artists["terms"]) == ["all"]
-    assert len(eq.term("all")._pieces) == 3
+    assert len(eq.artists["glyphs"]) == 3
 
 
-def test_phantom_tagging_isolates_a_group_and_leaves_others_in_place():
-    _fig, _ax, at = _stage()
-    tagged = ep.equation(at, BAYES_A, fontsize=40)
-    plain = ep.equation(
-        at,
-        BAYES_A.replace("{{lhs:", "{{").replace("{{num:", "{{").replace("{{den:", "{{"),
-        fontsize=40,
+def test_tags_change_nothing_about_where_glyphs_sit():
+    plain = (
+        BAYES_A.replace("{{lhs:", "{{").replace("{{num:", "{{").replace("{{den:", "{{")
     )
-    assert [len(t._pieces) for t in tagged.artists["terms"].values()] == [8, 12, 5]
-    # The tags change nothing about where glyphs sit.
-    ours = sorted(
-        tuple(np.round(g.piece.local.mean(0), 3)) for g in tagged.artists["glyphs"]
+    assert np.array_equal(_alone(BAYES_A), _alone(plain))
+    fig, _ax, at = _stage()
+    eq = ep.equation(at, BAYES_A, fontsize=40)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    lhs, num, den = (
+        eq.term(n).get_window_extent(renderer) for n in ("lhs", "num", "den")
     )
-    theirs = sorted(
-        tuple(np.round(g.piece.local.mean(0), 3)) for g in plain.artists["glyphs"]
-    )
-    assert ours == theirs
-    assert sum(g.piece.tag is None for g in tagged.artists["glyphs"]) == 1  # the bar
+    assert lhs.x1 <= num.x0 + 1e-6 and lhs.x1 <= den.x0 + 1e-6  # the left side is left
 
 
 def test_a_layout_shift_raises(monkeypatch):
@@ -201,6 +213,17 @@ def test_every_glyph_is_accounted_for_exactly_once():
     ib = [j for _, j in move.pairs] + list(move.new)
     assert sorted(ia) == list(range(len(a.artists["glyphs"])))
     assert sorted(ib) == list(range(len(b.artists["glyphs"])))
+
+
+def test_bayes_pair_count_canary():
+    """Canary: the Bayes example pairs 9 glyphs, drops 17 and adds 18.
+
+    The numbers depend on matplotlib's mathtext layout and on the matching
+    rules; a change in either shows up here first, so a failure means look at
+    both before adjusting the numbers.
+    """
+    _fig, a, b = _pair(BAYES_A, BAYES_B)
+    move = ep.transform(a, b)
     assert (len(move.pairs), len(move.gone), len(move.new)) == (9, 17, 18)
 
 
@@ -225,30 +248,40 @@ def test_matched_glyphs_move_monotonically_and_unmatched_never_move():
         move.update(u)
         for i in move.gone:
             assert np.array_equal(ga[i].vertices(renderer), rest[i])
+    new = {j: gb[j].vertices(renderer).copy() for j in move.new}
+    for u in (0.2, 0.5, 0.8):
+        move.update(u)
         for j in move.new:
-            assert gb[j].pose is None
+            assert np.array_equal(gb[j].vertices(renderer), new[j])
 
 
 def test_a_tagged_glyph_never_pairs_outside_its_tag():
-    _fig, a, b = _pair(
+    fig, a, b = _pair(
         r"${{x:a}}+a$",
         r"$a+{{x:a}}$",
     )
     move = ep.transform(a, b)
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
     for i, j in move.pairs:
-        assert ga[i].piece.tag == gb[j].piece.tag
+        assert _term_of(a, ga[i], renderer) == _term_of(b, gb[j], renderer)
     assert len(move.pairs) == 3  # tagged a, plus and untagged a
 
 
 def test_key_map_pairs_two_named_tags():
-    _fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{r:y}}+{{s:x}}$")
+    fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{r:y}}+{{s:x}}$")
     none = ep.transform(a, b)
     assert len(none.pairs) == 3  # tags that share nothing pair by order
     _fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{r:y}}+{{s:x}}$")
     mapped = ep.transform(a, b, key_map={"p": "s", "q": "r"})
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
-    named = {(ga[i].piece.tag, gb[j].piece.tag) for i, j in mapped.pairs}
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    named = {
+        (_term_of(a, ga[i], renderer), _term_of(b, gb[j], renderer))
+        for i, j in mapped.pairs
+    }
     assert {("p", "s"), ("q", "r")} <= named
     with pytest.raises(KeyError, match="terms are"):
         ep.transform(a, b, key_map={"zz": "s"})
@@ -275,13 +308,20 @@ def test_transform_level_changes_alpha_only():
 def test_a_fraction_bar_changes_length_through_the_morph_sampling():
     fig, a, b = _pair(r"$\frac{a}{b}$", r"$\frac{a+c}{b+d}$")
     move = ep.transform(a, b)
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    bar = next(g for g in a.artists["glyphs"] if g.piece.is_rule)
+
+    def bar_width(result):
+        fig.canvas.draw()
+        return max(
+            np.ptp(g.get_path().vertices[:, 0]) for g in result.artists["glyphs"]
+        )
+
+    move.update(0.0)
+    start = bar_width(a)
     move.update(0.5)
-    path = bar.rule_path(renderer)
-    width_a = np.ptp(a.artists["glyphs"][0].eq.place(bar.piece.local, renderer)[:, 0])
-    assert np.ptp(path.vertices[:, 0]) > width_a
+    mid = bar_width(a)
+    move.update(1.0)
+    end = bar_width(b)
+    assert start < mid < end
 
 
 def test_transform_checks_its_arguments():
@@ -304,12 +344,15 @@ def test_clip_frames_are_readable():
 
 
 def test_a_tag_keeps_a_group_together_where_order_would_not():
-    _fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
+    fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
     move = ep.transform(a, b)
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
     for i, j in move.pairs:
-        assert ga[i].piece.key == gb[j].piece.key
-        assert ga[i].piece.tag == gb[j].piece.tag
+        assert (_term_of(a, ga[i], renderer) == "b") == (
+            _term_of(b, gb[j], renderer) == "b"
+        )
     assert len(move.pairs) == 7  # a, 2, =, c, 2 and the tagged b, 2
     assert len(move.gone) == 1 and len(move.new) == 1  # the plus and the minus
 
