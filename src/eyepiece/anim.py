@@ -64,7 +64,6 @@ The mechanics this module does own, each closing a specific trap:
 """
 
 import os
-import shutil
 import subprocess
 import tempfile
 import warnings
@@ -77,6 +76,8 @@ import numpy as np
 from matplotlib.animation import FFMpegWriter, HTMLWriter, PillowWriter
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+from eyepiece._ffmpeg import resolve_ffmpeg
 
 PRESETS = {
     "talk": {"fps": 10, "dpi": 120},
@@ -91,15 +92,9 @@ _SUFFIX_PRESET = {".mp4": "talk", ".gif": "gif", ".html": "jshtml"}
 def _resolve_ffmpeg():
     """Locate an ffmpeg binary for matplotlib's FFMpegWriter.
 
-    Resolution order: an explicit `rcParams["animation.ffmpeg_path"]`, then
-    `ffmpeg` on PATH, then the binary shipped with `imageio_ffmpeg` (an
-    optional dependency, imported here and only here so that plain
-    `import eyepiece` never requires it).
-
-    Every candidate is checked with `shutil.which` before it is returned,
-    the configured one included: a stale rcParams path would otherwise be
-    handed straight to `subprocess`, turning an actionable error into a bare
-    FileNotFoundError from a failed launch.
+    Tries an explicit `rcParams["animation.ffmpeg_path"]` first, then the
+    search of `eyepiece._ffmpeg.resolve_ffmpeg`: ``ffmpeg`` on PATH, then the
+    binary shipped with `imageio_ffmpeg`.
 
     Returns:
         The path or bare name to run ffmpeg with.
@@ -107,22 +102,7 @@ def _resolve_ffmpeg():
     Raises:
         RuntimeError: If no ffmpeg can be found, naming both fixes.
     """
-    configured = matplotlib.rcParams.get("animation.ffmpeg_path", "ffmpeg")
-    if shutil.which(configured):
-        return configured
-    if shutil.which("ffmpeg"):
-        return "ffmpeg"
-    try:
-        import imageio_ffmpeg
-    except ImportError:
-        raise RuntimeError(
-            "mp4 export needs ffmpeg, and none was found: install the "
-            "imageio-ffmpeg package (pip install imageio-ffmpeg), which "
-            "ships a binary, or put ffmpeg on PATH -- a documentation "
-            "builder can install one with the build apt_packages option "
-            "(build.apt_packages: [ffmpeg])."
-        ) from None
-    return imageio_ffmpeg.get_ffmpeg_exe()
+    return resolve_ffmpeg(matplotlib.rcParams.get("animation.ffmpeg_path", "ffmpeg"))
 
 
 def _make_writer(path, fps, extra_ffmpeg_args):

@@ -27,6 +27,11 @@ test = ["pytest", "pytest-cov", "imageio-ffmpeg"]
 manim = ["manim>=0.21,<0.22", "pillow<13"]
 # The pyside6 extra supplies the Qt binding that `manim-slides present` needs.
 slides = ["manim>=0.21,<0.22", "manim-slides[pyside6]>=5.7,<6", "pillow<13"]
+# Speech for narrated clips; only eyepiece.narration.synth imports them, and
+# only when a line has to be spoken. Kokoro pulls in torch and supports
+# Python 3.10 to 3.12, so run it in an environment of its own. The pin is
+# eyepiece.narration.KOKORO_VERSION, which enters every cache key.
+narration = ["kokoro==0.9.4", "soundfile"]
 dev = ["pre-commit"]
 
 [project.urls]

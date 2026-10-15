@@ -1,0 +1,716 @@
+"""Narration: the cue parser, the cache key, the layout, the captions, the mux.
+
+Nothing here needs Kokoro: the timing is a fixture written beside the tests,
+and the synthesis runs through a fake speaker.
+"""
+
+import json
+import subprocess
+import sys
+import wave
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+import eyepiece as ep
+from eyepiece import _ffmpeg
+from eyepiece import narration as nr
+from eyepiece.narration import _align, synth
+
+DATA = Path(__file__).parent / "data" / "narration"
+
+SCRIPT = nr.Script(
+    (
+        nr.Line(
+            "open",
+            "The coronagraph blocks the {indicate:star}starlight.",
+            pad_after_s=0.4,
+        ),
+        nr.Line(
+            "leak",
+            "What leaks through is {indicate:speckle}speckle, and the "
+            "{circumscribe:planet}planet must stand out.",
+        ),
+    )
+)
+
+
+# The cue parser
+
+
+def test_marks_are_removed_and_sit_on_the_next_word():
+    spoken, cues = nr.parse_cues(
+        "What leaks is {indicate:speckle}speckle, not {link:planet}light."
+    )
+    assert spoken == "What leaks is speckle, not light."
+    assert [(c.kind, c.target, spoken.split()[c.word]) for c in cues] == [
+        ("indicate", "speckle", "speckle,"),
+        ("link", "planet", "light."),
+    ]
+
+
+def test_a_mark_may_open_the_text_and_two_marks_may_share_a_word():
+    spoken, cues = nr.parse_cues("{caption:a}{indicate:b} Water worlds.")
+    assert spoken == "Water worlds."
+    assert [c.word for c in cues] == [0, 0]
+
+
+def test_text_without_marks_has_no_cues():
+    assert nr.parse_cues("Plain words.") == ("Plain words.", ())
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A stray { brace.",
+        "Unclosed {indicate:x word.",
+        "No word after it {indicate:x}",
+        "Glued to a word up{indicate:x}down.",
+        "Missing target {indicate}word.",
+    ],
+)
+def test_malformed_marks_are_refused(text):
+    with pytest.raises(ValueError):
+        nr.parse_cues(text)
+
+
+def test_a_malformed_line_names_its_key():
+    with pytest.raises(ValueError, match="line 'bad'"):
+        nr.Line("bad", "A stray { brace.")
+
+
+def test_a_line_finds_its_cue_and_refuses_an_unknown_one():
+    line = SCRIPT.line("leak")
+    assert line.words[line.cue("indicate", "speckle").word] == "speckle,"
+    with pytest.raises(KeyError):
+        line.cue("indicate", "planet")
+
+
+def test_duplicate_keys_and_empty_lines_are_refused():
+    with pytest.raises(ValueError, match="unique"):
+        nr.Script((nr.Line("a", "x."), nr.Line("a", "y.")))
+    with pytest.raises(ValueError, match="no words"):
+        nr.Line("a", "   ")
+
+
+# The cache key
+
+
+def test_the_default_voice_is_british_george():
+    assert (SCRIPT.voice, SCRIPT.lang) == ("bm_george", "b")
+
+
+def test_the_cache_key_is_pinned_and_ignores_cue_marks():
+    assert SCRIPT.line_key(SCRIPT.line("open")) == "491f7023363ff02d"
+    moved = nr.Line("open", "The {indicate:star}coronagraph blocks the starlight.")
+    assert SCRIPT.line_key(moved) == SCRIPT.line_key(SCRIPT.line("open"))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("voice", "am_adam"),
+        ("speed", 0.9),
+        ("lang", "a"),
+        ("engine", "piper"),
+        ("engine_version", "0.9.5"),
+        ("model", "Kokoro-82M-v2"),
+    ],
+)
+def test_the_cache_key_changes_with_everything_that_voices_the_line(field, value):
+    other = nr.Script(SCRIPT.lines, **{field: value})
+    line = SCRIPT.line("open")
+    assert other.line_key(line) != SCRIPT.line_key(line)
+
+
+def test_the_cache_key_changes_with_the_words():
+    line = SCRIPT.line("open")
+    assert nr.line_hash("Other words.", "bm_george", 1.0, "b") != SCRIPT.line_key(line)
+
+
+def test_the_script_lists_the_keys_of_its_lines():
+    assert SCRIPT.cache_keys() == ("491f7023363ff02d", "ce02f99ce8f3585a")
+
+
+# The layout
+
+
+def test_beats_run_back_to_back_and_last_speech_plus_padding():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    a, b = tl.beats
+    assert a.start_s == 0.0
+    assert a.speech_end_s == pytest.approx(1.7)
+    assert a.end_s == pytest.approx(1.7 + 0.4)
+    assert b.start_s == a.end_s
+    assert b.end_s == pytest.approx(a.end_s + 3.5 + 0.5)
+    assert tl.total_s == b.end_s
+
+
+def test_the_narration_replaces_a_hold_with_the_speech():
+    short = nr.Narration.load(SCRIPT, DATA)
+    padded = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    assert padded.total_s == pytest.approx(short.total_s + 1.0)
+    assert padded.start("open") == 1.0
+
+
+def test_motion_longer_than_the_speech_stretches_the_beat():
+    tl = nr.Narration.load(SCRIPT, DATA, min_s={"open": 5.0})
+    assert tl.end("open") == pytest.approx(5.0)
+    assert tl.start("leak") == pytest.approx(5.0)
+
+
+def test_a_cue_fires_at_its_word_less_the_lead():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    word = tl.beat("leak").words[4]
+    assert word.text == "speckle,"
+    assert tl.cue("leak", "indicate", "speckle") == pytest.approx(word.start_s)
+    led = nr.Narration.load(SCRIPT, DATA, lead_s=0.15)
+    assert led.cue("leak", "indicate", "speckle") == pytest.approx(word.start_s - 0.15)
+
+
+def test_a_lead_never_puts_a_cue_before_its_beat():
+    tl = nr.Narration.load(SCRIPT, DATA, lead_s=5.0)
+    assert tl.cue("leak", "circumscribe", "planet") == tl.start("leak")
+
+
+def test_cue_times_are_in_reading_order():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    times = [tl.cue("leak", c.kind, c.target) for c in SCRIPT.line("leak").cues]
+    assert times == sorted(times)
+    assert times[0] > tl.start("leak")
+
+
+def test_beat_at_names_the_running_beat():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    assert tl.beat_at(-1.0) == "open"
+    assert tl.beat_at(tl.start("leak")) == "leak"
+    assert tl.beat_at(tl.total_s + 3.0) == "leak"
+
+
+def test_a_missing_line_is_named():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    with pytest.raises(KeyError, match="nope"):
+        tl.beat("nope")
+    with pytest.raises(KeyError, match="leak"):
+        nr.Narration(SCRIPT, {"open": tl.spoken["open"]})
+
+
+def test_a_missing_cache_names_the_command_that_fills_it(tmp_path):
+    with pytest.raises(nr.MissingSynthesisError, match=r"narration\.synth"):
+        nr.Narration.load(SCRIPT, tmp_path)
+
+
+def _copy_cache(tmp_path, edit=None):
+    for line in SCRIPT.lines:
+        key = SCRIPT.line_key(line)
+        record = json.loads((DATA / f"{key}.json").read_text())
+        if edit is not None and line.key == "open":
+            edit(record)
+        (tmp_path / f"{key}.json").write_text(json.dumps(record))
+
+
+def test_timing_that_disagrees_with_the_text_is_refused(tmp_path):
+    _copy_cache(tmp_path, lambda r: r.update(words=r["words"][:-1]))
+    with pytest.raises(ValueError, match="synthesize it again"):
+        nr.Narration.load(SCRIPT, tmp_path)
+
+
+def test_a_file_whose_key_or_text_is_not_the_lines_is_refused(tmp_path):
+    _copy_cache(tmp_path, lambda r: r.update(key="0123456789abcdef"))
+    with pytest.raises(ValueError, match="holds the timing of"):
+        nr.Narration.load(SCRIPT, tmp_path)
+    other = tmp_path / "other"
+    other.mkdir()
+    _copy_cache(other, lambda r: r.update(text="Something else."))
+    with pytest.raises(ValueError, match="Something else"):
+        nr.Narration.load(SCRIPT, other)
+
+
+def test_min_s_names_only_known_lines():
+    with pytest.raises(KeyError):
+        nr.Narration.estimated(SCRIPT, min_s={"nope": 1.0})
+
+
+def test_an_estimated_narration_lays_out_without_a_cache():
+    tl = nr.Narration.estimated(SCRIPT)
+    assert tl.total_s > 3.0
+    assert tl.cue("open", "indicate", "star") > 0.0
+
+
+# The bridge to eyepiece's Timeline and Plan
+
+
+def test_the_beats_become_the_holds_of_a_timeline_and_a_cue_lands_in_its_beat():
+    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0, min_s={"open": 3.0})
+    plan = tl.timeline({"title": "none"}, set={"leak": {"title": "speckle"}}).at_fps(10)
+    assert [b.name for b in plan.beats] == ["head", "open", "leak"]
+    assert plan.seconds == pytest.approx(tl.total_s, abs=0.1)
+    assert plan.frames[plan.start("leak")]["title"] == "speckle"
+    for key, kind, target in [
+        ("open", "indicate", "star"),
+        ("leak", "indicate", "speckle"),
+        ("leak", "circumscribe", "planet"),
+    ]:
+        k = tl.cue_frame(plan, key, kind, target)
+        assert plan.beat_at(k).name == key
+        assert k / plan.fps == pytest.approx(tl.cue(key, kind, target), abs=0.1)
+
+
+def test_a_cue_at_a_boundary_stays_in_its_own_beat():
+    tl = nr.Narration.load(SCRIPT, DATA, lead_s=5.0)
+    plan = tl.timeline().at_fps(7)
+    k = tl.cue_frame(plan, "leak", "circumscribe", "planet")
+    assert k == plan.start("leak")
+    assert plan.beat_at(k).name == "leak"
+
+
+def test_the_bridge_is_a_timeline_of_the_package_not_a_second_one():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    assert isinstance(tl.timeline(), ep.Timeline)
+    assert not hasattr(nr, "Timeline")
+    assert not hasattr(nr, "Beat")
+
+
+def test_set_names_only_known_lines():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    with pytest.raises(KeyError, match="nope"):
+        tl.timeline({"a": 0}, set={"nope": {"a": 1}})
+
+
+# Cue vocabulary
+
+
+def test_cues_lists_every_cue_in_firing_order():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    cues = tl.cues()
+    assert [(c.line, c.kind, c.target) for c in cues] == [
+        ("open", "indicate", "star"),
+        ("leak", "indicate", "speckle"),
+        ("leak", "circumscribe", "planet"),
+    ]
+
+
+def test_check_refuses_a_kind_or_target_the_clip_does_not_handle():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    tl.check(kinds={"indicate", "circumscribe"}, targets={"star", "speckle", "planet"})
+    with pytest.raises(ValueError, match="circumscribe:planet has an unknown kind"):
+        tl.check(kinds={"indicate"})
+    with pytest.raises(ValueError, match="indicate:star has an unknown target"):
+        tl.check(targets={"speckle", "planet"})
+
+
+def test_check_reports_a_cue_the_clip_never_asked_for():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    tl.cue("open", "indicate", "star")
+    tl.cue("leak", "indicate", "speckle")
+    with pytest.raises(ValueError, match="circumscribe:planet is never used"):
+        tl.check(used=True)
+    tl.cue("leak", "circumscribe", "planet")
+    tl.check(used=True)
+
+
+# Aligning the words to a speech model's tokens
+
+
+def test_align_joins_split_tokens_and_skips_punctuation():
+    tokens = [
+        ("The", 0.0, 0.2),
+        ("speck", 0.3, 0.5),
+        ("le", 0.5, 0.7),
+        (",", 0.7, 0.7),
+        ("0.24", 0.8, 1.2),
+    ]
+    assert _align.align(["The", "speckle,", "0.24"], tokens) == [
+        (0.0, 0.2),
+        (0.3, 0.7),
+        (0.8, 1.2),
+    ]
+
+
+def test_align_fills_a_missing_time_from_its_neighbor():
+    tokens = [("one", 0.0, 0.4), ("two", None, None)]
+    assert _align.align(["one", "two"], tokens) == [(0.0, 0.4), (0.4, 0.4)]
+
+
+def test_align_refuses_tokens_that_do_not_spell_the_words():
+    with pytest.raises(ValueError):
+        _align.align(["alpha"], [("beta", 0.0, 1.0)])
+    with pytest.raises(ValueError):
+        _align.align(["alpha", "beta"], [("alpha", 0.0, 1.0)])
+
+
+@pytest.mark.parametrize("dash", ["--", "&", "+", "%"])
+def test_align_gives_a_word_without_letters_zero_width_after_its_neighbor(dash):
+    tokens = [("a", 0.0, 0.2), ("b", 0.4, 0.6)]
+    assert _align.align(["a", dash, "b"], tokens) == [
+        (0.0, 0.2),
+        (0.2, 0.2),
+        (0.4, 0.6),
+    ]
+
+
+def test_align_gives_a_leading_word_without_letters_the_next_start():
+    tokens = [("b", 0.4, 0.6)]
+    assert _align.align(["&", "b"], tokens) == [(0.4, 0.4), (0.4, 0.6)]
+    assert _align.align(["&"], []) == [(0.0, 0.0)]
+
+
+def test_align_keeps_accented_letters():
+    word = "Str\u00f6mgren"
+    assert _align.align([word], [("Str\u00f6m", 0.0, 0.3), ("gren", 0.3, 0.5)]) == [
+        (0.0, 0.5)
+    ]
+    with pytest.raises(ValueError):
+        _align.align([word], [("Str", 0.0, 0.2), ("omgren", 0.2, 0.5)])
+
+
+# Synthesis, through a fake speaker
+
+
+def _fake_speak(calls, rate=8000):
+    def speak(line):
+        calls.append(line.key)
+        n = len(line.words)
+        audio = np.full(rate * n // 4, 0.1, dtype=np.float32)
+        words = tuple(nr.Word(w, i / 4, (i + 1) / 4) for i, w in enumerate(line.words))
+        return audio, rate, words
+
+    return speak
+
+
+def _write_wav(directory, key, audio, rate):
+    name = f"{key}.wav"
+    data = np.round(audio * 32767).astype("<i2")
+    with wave.open(str(Path(directory) / name), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(data.tobytes())
+    return name
+
+
+def _synthesize(tmp_path, calls, **kwargs):
+    return synth.synthesize(
+        SCRIPT, tmp_path, speak=_fake_speak(calls), write_audio=_write_wav, **kwargs
+    )
+
+
+def test_synthesis_speaks_each_line_once_and_records_the_pair(tmp_path):
+    calls = []
+    assert _synthesize(tmp_path, calls) == ["open", "leak"]
+    assert _synthesize(tmp_path, calls) == []
+    assert calls == ["open", "leak"]
+    key = SCRIPT.line_key(SCRIPT.line("open"))
+    record = json.loads((tmp_path / f"{key}.json").read_text())
+    assert record["audio"] == f"{key}.wav"
+    assert record["samples"] == 8000 * 5 // 4
+    assert record["rate"] == 8000
+    assert record["duration_s"] == pytest.approx(1.25)
+    assert (record["engine"], record["engine_version"]) == ("kokoro", "0.9.4")
+    assert record["text"] == "The coronagraph blocks the starlight."
+    assert nr.Narration.load(SCRIPT, tmp_path).total_s > 0.0
+
+
+def test_json_without_its_audio_is_an_error_unless_respeak_is_given(tmp_path):
+    _synthesize(tmp_path, [])
+    key = SCRIPT.line_key(SCRIPT.line("open"))
+    (tmp_path / f"{key}.wav").unlink()
+    calls = []
+    with pytest.raises(nr.MissingAudioError, match="respeak"):
+        _synthesize(tmp_path, calls)
+    assert calls == []
+    assert _synthesize(tmp_path, calls, respeak=True) == ["open"]
+    assert (tmp_path / f"{key}.wav").exists()
+
+
+def test_audio_without_json_is_spoken_again(tmp_path):
+    _synthesize(tmp_path, [])
+    key = SCRIPT.line_key(SCRIPT.line("leak"))
+    (tmp_path / f"{key}.json").unlink()
+    assert _synthesize(tmp_path, []) == ["leak"]
+
+
+def test_force_speaks_every_line_again(tmp_path):
+    _synthesize(tmp_path, [])
+    assert _synthesize(tmp_path, [], force=True) == ["open", "leak"]
+
+
+def test_an_interrupted_line_leaves_no_json(tmp_path):
+    def broken(directory, key, audio, rate):
+        raise OSError("disk full")
+
+    with pytest.raises(OSError, match="disk full"):
+        synth.synthesize(SCRIPT, tmp_path, speak=_fake_speak([]), write_audio=broken)
+    assert not list(tmp_path.glob("*.json"))
+
+
+def test_the_json_is_written_last_and_atomically(tmp_path):
+    order = []
+
+    def write(directory, key, audio, rate):
+        order.append("audio")
+        return _write_wav(directory, key, audio, rate)
+
+    real = synth._write_json
+
+    def write_json(path, record):
+        assert (tmp_path / record["audio"]).exists()
+        order.append("json")
+        real(path, record)
+
+    synth_json, synth._write_json = synth._write_json, write_json
+    try:
+        synth.synthesize(SCRIPT, tmp_path, speak=_fake_speak([]), write_audio=write)
+    finally:
+        synth._write_json = synth_json
+    assert order == ["audio", "json", "audio", "json"]
+    assert not list(tmp_path.glob(".*"))
+
+
+def test_prune_leaves_exactly_the_keys_of_the_script(tmp_path):
+    _synthesize(tmp_path, [])
+    for stale in ("0123456789abcdef.json", "0123456789abcdef.opus"):
+        (tmp_path / stale).write_text("{}")
+    (tmp_path / "notes.txt").write_text("keep")
+    removed = synth.prune_cache(SCRIPT, tmp_path)
+    assert sorted(p.name for p in removed) == [
+        "0123456789abcdef.json",
+        "0123456789abcdef.opus",
+    ]
+    stems = {p.stem for p in tmp_path.iterdir() if p.suffix in (".json", ".wav")}
+    assert stems == set(SCRIPT.cache_keys())
+    assert (tmp_path / "notes.txt").exists()
+
+
+def test_synthesize_can_prune(tmp_path):
+    (tmp_path / "0123456789abcdef.json").write_text("{}")
+    _synthesize(tmp_path, [], prune=True)
+    assert not (tmp_path / "0123456789abcdef.json").exists()
+
+
+def test_list_cache_names_the_line_of_each_entry(tmp_path):
+    _synthesize(tmp_path, [])
+    (tmp_path / "0123456789abcdef.json").write_text('{"text": "Old words."}')
+    rows = synth.list_cache(SCRIPT, tmp_path)
+    by_key = {key: (line, has_audio) for key, line, _, has_audio in rows}
+    assert by_key[SCRIPT.line_key(SCRIPT.line("leak"))] == ("leak", True)
+    assert by_key["0123456789abcdef"] == (None, False)
+
+
+def test_the_engine_is_chosen_from_a_dict_by_name(tmp_path):
+    script = nr.Script(SCRIPT.lines, engine="fake")
+    made = []
+
+    def factory(received):
+        made.append(received)
+        return _fake_speak([])
+
+    synth.ENGINES["fake"] = factory
+    try:
+        synth.synthesize(script, tmp_path, write_audio=_write_wav)
+    finally:
+        del synth.ENGINES["fake"]
+    assert made == [script]
+
+
+def test_all_cached_lines_never_build_the_engine(tmp_path, monkeypatch):
+    _synthesize(tmp_path, [])
+
+    def boom(script):
+        raise AssertionError("the engine was built for a cached script")
+
+    monkeypatch.setitem(synth.ENGINES, "kokoro", boom)
+    assert synth.synthesize(SCRIPT, tmp_path, write_audio=_write_wav) == []
+
+
+def test_a_missing_kokoro_names_the_extra_and_sets_the_download_switch(monkeypatch):
+    monkeypatch.setitem(sys.modules, "kokoro", None)
+    monkeypatch.delenv("HF_HUB_DISABLE_XET", raising=False)
+    with pytest.raises(ImportError, match=r"eyepiece\[narration\]") as err:
+        synth._kokoro(SCRIPT)
+    assert "kokoro==0.9.4" in str(err.value)
+    assert synth.os.environ["HF_HUB_DISABLE_XET"] == "1"
+    monkeypatch.setenv("HF_HUB_DISABLE_XET", "0")
+    with pytest.raises(ImportError):
+        synth._kokoro(SCRIPT)
+    assert synth.os.environ["HF_HUB_DISABLE_XET"] == "0"
+
+
+def test_importing_the_package_loads_neither_matplotlib_nor_kokoro():
+    code = (
+        "import sys, eyepiece.narration, eyepiece.narration.synth; "
+        "heavy = ('matplotlib', 'kokoro', 'soundfile', 'torch'); "
+        "bad = [m for m in heavy if m in sys.modules]; "
+        "assert not bad, bad"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert done.returncode == 0, done.stderr
+
+
+# Captions
+
+
+def test_sentences_split_at_sentence_punctuation_not_commas():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    texts = [t for _, _, t in nr.sentences(tl)]
+    assert texts == [
+        "The coronagraph blocks the starlight.",
+        "What leaks through is speckle, and the planet must stand out.",
+    ]
+
+
+def test_srt_has_numbered_cues_with_increasing_times(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA)
+    path = nr.write_srt(tl, tmp_path / "clip.srt")
+    blocks = path.read_text().strip().split("\n\n")
+    assert len(blocks) == 2
+    first = blocks[0].splitlines()
+    assert first[0] == "1"
+    assert first[1].startswith("00:00:00,100 --> 00:00:01,")
+    assert first[2] == "The coronagraph blocks the starlight."
+
+
+def _stamps(text, sep):
+    out = []
+    for line in text.splitlines():
+        if "-->" in line:
+            a, b = (x.strip().replace(sep, ".") for x in line.split("-->"))
+            out.append((float(a.split(":")[-1]), float(b.split(":")[-1])))
+    return out
+
+
+def test_captions_never_overlap_when_sentences_are_close(tmp_path):
+    close = nr.Script(
+        (nr.Line("a", "One.", pad_after_s=0.05), nr.Line("b", "Two.", pad_after_s=0.0))
+    )
+    spoken = {
+        "a": nr.Spoken("x", 1.0, (nr.Word("One.", 0.0, 1.0),)),
+        "b": nr.Spoken("y", 1.0, (nr.Word("Two.", 0.0, 1.0),)),
+    }
+    tl = nr.Narration(close, spoken)
+    for write, sep in ((nr.write_srt, ","), (nr.write_vtt, ".")):
+        path = write(tl, tmp_path / f"clip{sep}x")
+        (first, second) = _stamps(path.read_text(), sep)
+        assert first[0] < first[1] <= second[0]
+
+
+def test_vtt_is_webvtt_with_dot_timestamps(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA)
+    text = nr.write_vtt(tl, tmp_path / "clip.vtt").read_text()
+    lines = text.splitlines()
+    assert lines[0] == "WEBVTT"
+    assert lines[2] == "00:00:00.100 --> 00:00:01.700"
+    assert lines[3] == "The coronagraph blocks the starlight."
+    assert "," not in lines[2]
+
+
+# The audio track and the mux
+
+
+def _write_clip(path, seconds, rate=24000, level=1000):
+    data = np.full(int(seconds * rate), level, dtype="<i2")
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(data.tobytes())
+
+
+def _fill_audio(tl, directory, scale=1.0):
+    for line in SCRIPT.lines:
+        beat = tl.beat(line.key)
+        _write_clip(
+            Path(directory) / f"{SCRIPT.line_key(line)}.wav",
+            (beat.speech_end_s - beat.speech_start_s) * scale,
+        )
+
+
+def test_the_audio_track_places_each_line_at_its_speech_start(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    _fill_audio(tl, tmp_path)
+    path = nr.audio_track(tl, tmp_path, tmp_path / "track.wav")
+    with wave.open(str(path), "rb") as handle:
+        rate = handle.getframerate()
+        data = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
+    assert len(data) == round(tl.total_s * rate)
+    assert not data[: int(0.99 * rate)].any()
+    assert data[int(1.05 * rate)] == 1000
+    gap = slice(
+        round(tl.beat("open").speech_end_s * rate) + 10,
+        round(tl.start("leak") * rate) - 10,
+    )
+    assert not data[gap].any()
+
+
+def test_the_audio_track_names_a_missing_line(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA)
+    with pytest.raises(nr.MissingAudioError, match="open"):
+        nr.audio_track(tl, tmp_path, tmp_path / "track.wav")
+
+
+def test_audio_of_the_wrong_length_is_refused_with_its_line(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA)
+    _fill_audio(tl, tmp_path, scale=1.2)
+    with pytest.raises(ValueError, match=r"line 'open'.*different syntheses"):
+        nr.audio_track(tl, tmp_path, tmp_path / "track.wav")
+
+
+def test_a_line_past_the_end_of_the_track_raises_instead_of_vanishing(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA)
+    _fill_audio(tl, tmp_path, scale=2.0)
+    with pytest.raises(ValueError, match="past the end"):
+        nr.audio_track(tl, tmp_path, tmp_path / "track.wav", tol_s=100.0)
+
+
+def _ffmpeg_or_skip():
+    try:
+        return _ffmpeg.resolve_ffmpeg()
+    except RuntimeError as err:
+        pytest.skip(str(err))
+
+
+def test_the_audio_track_reads_compressed_audio(tmp_path):
+    ffmpeg = _ffmpeg_or_skip()
+    tl = nr.Narration.load(SCRIPT, DATA)
+    _fill_audio(tl, tmp_path)
+    for wav in list(tmp_path.glob("*.wav")):
+        subprocess.run(
+            [ffmpeg, "-y", "-loglevel", "error", "-i", str(wav),
+             str(wav.with_suffix(".flac"))],
+            check=True,
+        )  # fmt: skip
+        wav.unlink()
+    path = nr.audio_track(tl, tmp_path, tmp_path / "out" / "track.wav")
+    with wave.open(str(path), "rb") as handle:
+        data = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
+    assert data[int(0.5 * 24000)] == 1000
+
+
+def test_mux_adds_an_audio_stream_and_copies_the_picture(tmp_path):
+    ffmpeg = _ffmpeg_or_skip()
+    video = tmp_path / "silent.mp4"
+    subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+         "color=c=white:s=64x64:r=10:d=2", "-pix_fmt", "yuv420p", str(video)],
+        check=True,
+    )  # fmt: skip
+    wav = tmp_path / "a.wav"
+    _write_clip(wav, 2.0)
+    out = nr.mux(video, wav, tmp_path / "out.mp4")
+    probe = subprocess.run(
+        [ffmpeg, "-i", str(out)], capture_output=True, text=True, check=False
+    ).stderr
+    assert "Video: h264" in probe
+    assert "Audio: aac" in probe
+
+
+def test_mux_reports_ffmpegs_own_message(tmp_path):
+    _ffmpeg_or_skip()
+    (tmp_path / "bad.mp4").write_text("not a video")
+    wav = tmp_path / "a.wav"
+    _write_clip(wav, 1.0)
+    with pytest.raises(RuntimeError, match=r"bad\.mp4"):
+        nr.mux(tmp_path / "bad.mp4", wav, tmp_path / "out.mp4")

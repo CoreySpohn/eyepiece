@@ -219,6 +219,7 @@ contract
 evidence
 prepared-views
 manim
+narration
 viz-convention
 ```
 
