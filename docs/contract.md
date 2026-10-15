@@ -224,6 +224,17 @@ figure, so on a figure created without a layout engine the colorbar label can
 fall outside the canvas. A figure created with `layout="constrained"` keeps
 it on the canvas.
 
+## Saves are deterministic
+
+`save_fig` writes no timestamp. SVG omits its `Date`, PDF omits `CreationDate`
+and `Producer`, PNG carries no time chunk, and the SVG hash salt is fixed, so
+two saves of one figure are byte-identical and a PDF does not change when
+matplotlib is upgraded. A different figure gives a different file. An explicit
+`metadata=` still wins key by key, and the provenance keys a stamp writes stay.
+`stamp(fig, reserve=True)` reserves the stamp's band in the layout and returns
+a `PlotResult`; its date defaults to the commit date of the script's
+repository, else today.
+
 ## Style resolves at call time
 
 Color, colormap, and savefig policy come from hwostyle, and every lookup

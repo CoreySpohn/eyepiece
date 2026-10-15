@@ -22,7 +22,10 @@ import json
 import subprocess
 from pathlib import Path
 
+from matplotlib.layout_engine import ConstrainedLayoutEngine, TightLayoutEngine
+
 from eyepiece import _style
+from eyepiece._result import PlotResult
 
 
 def _git_short_sha(anchor):
@@ -47,6 +50,35 @@ def _git_short_sha(anchor):
     except (OSError, subprocess.SubprocessError):
         return None
     return out.stdout.strip() or None
+
+
+def _git_commit_date(anchor):
+    """Commit date (YYYY-MM-DD) of HEAD in the repository holding `anchor`, or None."""
+    if anchor is None:
+        return None
+    try:
+        out = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(Path(anchor).resolve().parent),
+                "log",
+                "-1",
+                "--format=%cs",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() or None
+
+
+def _default_date(script):
+    """The source commit date where `script` has one, else today."""
+    return _git_commit_date(script) or _datetime.date.today().isoformat()
 
 
 # Where `stamp` leaves the structured payload for `save_fig` to embed. The
@@ -87,7 +119,7 @@ def provenance_fields(*, script=None, seed=None, note=None, date=None, sha=None)
             sha = _git_short_sha(script)
     if sha:
         fields["sha"] = sha
-    fields["date"] = date or _datetime.date.today().isoformat()
+    fields["date"] = date or _default_date(script)
     if seed is not None:
         fields["seed"] = seed
     if note:
@@ -127,7 +159,8 @@ def provenance_text(*, script=None, seed=None, note=None, date=None, sha=None):
         note: Free text. This is where the word "simulated" belongs when the
             data came from a generator, because no property of the drawing
             reveals it and a reader will otherwise assume a measurement.
-        date: Date string. None uses today.
+        date: Date string. None uses the commit date of the
+            script's repository, else today.
         sha: Code version. None derives it from the script's repository.
 
     Returns:
@@ -140,7 +173,7 @@ def provenance_text(*, script=None, seed=None, note=None, date=None, sha=None):
             sha = _git_short_sha(script)
     if sha:
         parts.append(sha)
-    parts.append(date or _datetime.date.today().isoformat())
+    parts.append(date or _default_date(script))
     if seed is not None:
         parts.append(f"seed {seed}")
     if note:
@@ -148,7 +181,39 @@ def provenance_text(*, script=None, seed=None, note=None, date=None, sha=None):
     return "  |  ".join(parts)
 
 
-def stamp(fig, *, script=None, seed=None, note=None, date=None, sha=None, size=6.0):
+def _reserve_band(fig, band):
+    """Make room for a bottom band of `band` (figure fraction) in the layout.
+
+    A constrained or tight layout engine gets its `rect` shrunk, so the solver
+    keeps working; a figure with no engine has every axes squeezed into the
+    space above the band, which is exact for manual placement.
+    """
+    engine = fig.get_layout_engine()
+    if isinstance(engine, ConstrainedLayoutEngine):
+        x0, y0, w, h = engine.get()["rect"]
+        engine.set(rect=(x0, band + y0 * (1.0 - band), w, h * (1.0 - band)))
+        return
+    if isinstance(engine, TightLayoutEngine):
+        left, bottom, right, top = engine.get()["rect"]
+        engine.set(rect=(left, band + bottom * (1.0 - band), right, top))
+        return
+    scale = 1.0 - band
+    for ax in fig.axes:
+        pos = ax.get_position()
+        ax.set_position([pos.x0, band + pos.y0 * scale, pos.width, pos.height * scale])
+
+
+def stamp(
+    fig,
+    *,
+    script=None,
+    seed=None,
+    note=None,
+    date=None,
+    sha=None,
+    size=6.0,
+    reserve=False,
+):
     """Write a provenance line along the bottom edge of a figure.
 
     Args:
@@ -156,10 +221,19 @@ def stamp(fig, *, script=None, seed=None, note=None, date=None, sha=None, size=6
         script: Generating script path, typically ``__file__``.
         seed: Random seed, if anything was sampled.
         note: Free text; say "simulated" here when it is.
-        date: Date string. None uses today.
+        date: Date string. None uses the commit date of the script's
+            repository (so rebuilding an unchanged figure gives an unchanged
+            stamp), else today when there is no script or no repository.
         sha: Code version. None derives it from the script's repository.
         size: Font size in points. The default is deliberately small: this
             is furniture and must never compete with the data.
+        reserve: False draws the line over the figure as before and returns
+            the `Text` artist. True reserves the line's band at the bottom of
+            the layout (a constrained or tight engine keeps working inside
+            the smaller rect; a figure with no engine has its axes squeezed
+            above the band), so nothing needs to be shrunk by hand, and
+            returns a `PlotResult`. Call it once per figure, after the axes
+            exist and before any manual placement that should stay put.
 
     Writes both channels the module docstring describes: the visible line
     here, and the structured payload stashed for `save_fig` to embed in the
@@ -167,7 +241,11 @@ def stamp(fig, *, script=None, seed=None, note=None, date=None, sha=None, size=6
 
     Returns:
         The `matplotlib.text.Text` artist, or None when there is nothing to
-        say.
+        say. With `reserve=True`, a `PlotResult` whose ``artists["text"]``
+        is the stamp and whose `ax` is the figure's first axes. Its
+        ``update(u=1.0, level=1.0)`` sets the stamp's opacity to ``u *
+        level``. The band is ``0.008 + size * 1.4 / 72 / height`` of the
+        figure height, with `height` the figure height in inches.
     """
     text = provenance_text(script=script, seed=seed, note=note, date=date, sha=sha)
     if not text:
@@ -190,4 +268,15 @@ def stamp(fig, *, script=None, seed=None, note=None, date=None, sha=None, size=6
         zorder=0.1,
     )
     artist.set_gid(STAMP_GID)
-    return artist
+    if not reserve:
+        return artist
+
+    band = 0.008 + size * 1.4 / 72.0 / fig.get_figheight()
+    _reserve_band(fig, band)
+    ax = fig.axes[0] if fig.axes else fig.add_axes((0, 0, 1, 1), visible=False)
+    base_alpha = artist.get_alpha()
+
+    def update(u=1.0, level=1.0):
+        artist.set_alpha((1.0 if base_alpha is None else base_alpha) * u * level)
+
+    return PlotResult(ax=ax, artists={"text": artist}, update=update)

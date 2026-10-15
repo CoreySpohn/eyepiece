@@ -18,8 +18,20 @@ import os
 from pathlib import Path
 
 import hwostyle
+import matplotlib as mpl
 
 from eyepiece import provenance as _provenance
+
+# Per-format metadata that suppresses what changes between two saves of one
+# figure. None removes a key from the file: the SVG writer drops "Date", the
+# PDF writer drops "CreationDate" and the matplotlib "Producer" version.
+_QUIET_METADATA = {
+    ".svg": {"Date": None},
+    ".pdf": {"CreationDate": None, "Producer": None},
+}
+
+# Fixed so SVG element ids, which are hashed from it, repeat between saves.
+SVG_HASHSALT = "eyepiece"
 
 
 def save_fig(fig, name, *, dir=None, anchor=None, **overrides):
@@ -45,6 +57,12 @@ def save_fig(fig, name, *, dir=None, anchor=None, **overrides):
             parent directory anchors an "output" subdirectory. Used only
             when `dir` is not given.
         **overrides: Extra kwargs passed to `fig.savefig`, applied last.
+
+    The file is deterministic: no timestamp is written (SVG `Date`, PDF
+    `CreationDate` and `Producer` are omitted, PNG has no time chunk) and the
+    SVG hash salt is fixed, so two saves of one figure are byte-identical and
+    a PDF does not change when matplotlib is upgraded. An explicit `metadata=`
+    still wins key by key, so a caller can put a date back.
 
     A figure carrying a provenance stamp (see `eyepiece.stamp`) also gets
     that provenance written into the file's own metadata, in whichever key
@@ -75,10 +93,16 @@ def save_fig(fig, name, *, dir=None, anchor=None, **overrides):
     # is manufactured for an unstamped figure -- a file that claims no
     # provenance is honest, one that claims invented provenance is not.
     payload = getattr(fig, _provenance.PAYLOAD_ATTR, None)
-    metadata = _provenance.file_metadata(payload, path.suffix)
-    if metadata:
-        kwargs["metadata"] = {**metadata, **kwargs.get("metadata", {})}
+    metadata = {
+        **_QUIET_METADATA.get(path.suffix.lower(), {}),
+        **_provenance.file_metadata(payload, path.suffix),
+        **kwargs.get("metadata", {}),
+        **overrides.pop("metadata", {}),
+    }
     kwargs.update(overrides)
+    if metadata:
+        kwargs["metadata"] = metadata
 
-    fig.savefig(path, **kwargs)
+    with mpl.rc_context({"svg.hashsalt": SVG_HASHSALT}):
+        fig.savefig(path, **kwargs)
     return path
