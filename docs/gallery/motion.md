@@ -901,8 +901,12 @@ The magnification is exact on both axes and the box and the window always agree.
 ``update(u)`` fades the inset, the box and the connectors in; ``level`` is their
 opacity and never changes where the window sits. The connectors are audited as
 a `link` is, so ``ep.audit`` names one that crosses data, and they are hidden
-while the box overlaps the inset: put the inset in a corner the target does not
-reach. The panel keeps the whole field in view, so the viewer never loses the place
+while the box overlaps the inset, so give an inset a corner the target does
+not reach, or ``loc="auto"``, which keeps it in the corner farthest from the
+target and moves it only when another corner is farther by a quarter of its
+side, so a target that hovers where two corners tie does not flicker it. The
+box, the inset frame and the connectors carry a halo in the panel's background
+color, so they read over a dark image like this one and a light one alike. The panel keeps the whole field in view, so the viewer never loses the place
 while the inset reads at five times.
 
 ```{code-cell} python
@@ -928,7 +932,7 @@ planet.set_data(*([v] for v in orbit(0.0)))
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-zoom = ep.follow_zoom(ax, planet, zoom=5.0, loc="lower left", size=0.36)
+zoom = ep.follow_zoom(ax, planet, zoom=5.0, loc="auto", size=0.36)
 
 
 def pose(t):

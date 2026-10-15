@@ -13,6 +13,7 @@ import contextlib
 import math
 
 import matplotlib
+import matplotlib.patheffects as pe
 import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
@@ -47,6 +48,11 @@ _LOCS = {
     "lower": (0, -1),
 }
 
+# The corners `loc="auto"` chooses among, and how much farther (in insets' sides)
+# another corner must be before the inset moves to it.
+_CORNERS = ("upper right", "upper left", "lower left", "lower right")
+_AUTO_MARGIN = 0.25
+
 # Gap between the inset and the panel edge, as a fraction of the inset side.
 _MARGIN = 0.08
 
@@ -77,6 +83,7 @@ class _Zoom:
         self.time = float(time)
         self.target = target
         self.alpha = 1.0
+        self._held = None
 
     def center(self):
         """The target in the parent's data coordinates, as it is now."""
@@ -91,12 +98,41 @@ class _Zoom:
             )
         return t
 
+    def corner(self):
+        """The place the inset sits now: `loc`, or the corner `"auto"` holds.
+
+        With ``"auto"`` the inset takes the corner farthest from the target
+        (largest of the horizontal and vertical gaps between the target and
+        the inset's center), and keeps it until another corner is farther by
+        more than `_AUTO_MARGIN` of the inset's side. The held corner is
+        state, so a target hovering where two corners tie never flips it.
+        """
+        if self.loc != "auto":
+            return self.loc
+        frame = self.parent.bbox
+        side = self.size * min(frame.width, frame.height)
+        tx, ty = self.parent.transData.transform(self.center())
+        gaps = {}
+        for name in _CORNERS:
+            box = self._box(name)
+            gaps[name] = max(
+                abs(tx - 0.5 * (box.x0 + box.x1)), abs(ty - 0.5 * (box.y0 + box.y1))
+            )
+        best = max(gaps, key=gaps.get)
+        held = self._held
+        if held is None or gaps[best] > gaps[held] + _AUTO_MARGIN * side:
+            self._held = best
+        return self._held
+
     def inset_box(self):
         """The inset's box in display pixels."""
+        return self._box(self.corner())
+
+    def _box(self, loc):
         frame = self.parent.bbox
         side = self.size * min(frame.width, frame.height)
         gap = _MARGIN * side
-        sx, sy = _LOCS[self.loc]
+        sx, sy = _LOCS[loc]
         x0 = {-1: frame.x0 + gap, 0: frame.x0 + 0.5 * (frame.width - side)}.get(
             sx, frame.x1 - gap - side
         )
@@ -345,7 +381,18 @@ def follow_zoom(
     rather than a data color (the quarter-panel length of a `leader` does
     not apply to a line between panels). They are hidden while the frame
     box overlaps the inset, so place the inset in a corner the target does
-    not visit.
+    not visit, or give `loc` as ``"auto"``. The box, the inset's frame and
+    the connectors each carry a halo in the panel's background color, so
+    they read over a dark image and a light one.
+
+    With ``loc="auto"`` the inset sits in the corner farthest from the
+    target, measured as the larger of the horizontal and vertical gaps from
+    the target to the inset's center, and moves to another corner only when
+    that corner is farther by more than a quarter of the inset's side. The
+    corner held is state kept between draws, so a target hovering where two
+    corners tie does not make the inset flicker; it jumps once per crossing,
+    never animated. For a `size` of 0.4 or less the target is never under
+    the inset.
 
     ``update(u, level=1.0, time=None)`` fades the inset, the box and the
     connectors in with `u` (``u = 0`` draws nothing, as if no zoom were
@@ -364,8 +411,9 @@ def follow_zoom(
             inset over pixels per data unit in the panel, exactly, on both
             axes.
         loc: Where the inset sits: ``"upper right"``, ``"upper left"``,
-            ``"lower right"``, ``"lower left"``, or a side, ``"right"``,
-            ``"left"``, ``"upper"``, ``"lower"``.
+            ``"lower right"``, ``"lower left"``, a side, ``"right"``,
+            ``"left"``, ``"upper"``, ``"lower"``, or ``"auto"``, the corner
+            farthest from the target (see above).
         size: Side of the square inset, as a fraction of the panel's shorter
             side, in (0, 1].
         time: The initial argument of a callable target.
@@ -406,8 +454,8 @@ def follow_zoom(
     size = float(size)
     if not 0.0 < size <= 1.0:
         raise ValueError(f"follow_zoom size must be in (0, 1], got {size}")
-    if loc not in _LOCS:
-        raise ValueError(f"unknown follow_zoom loc: {loc!r}; known: {list(_LOCS)}")
+    if loc != "auto" and loc not in _LOCS:
+        raise ValueError(f"unknown follow_zoom loc: {loc!r}; known: {[*_LOCS, 'auto']}")
     if ax.get_xscale() != "linear" or ax.get_yscale() != "linear":
         raise ValueError("follow_zoom needs linear axes")
 
@@ -423,9 +471,19 @@ def follow_zoom(
     inset.set_xticks([])
     inset.set_yticks([])
     inset.patch.set_facecolor(_resolve_background(ax))
+    # A halo in the panel's own background under every line, so the frame
+    # reads on a dark image and on a light one alike.
+    halo = _resolve_background(ax)
+
+    def haloed(artist, width):
+        artist.set_path_effects(
+            [pe.Stroke(linewidth=width + 2.4, foreground=halo), pe.Normal()]
+        )
+
     for spine in inset.spines.values():
         spine.set_edgecolor(edge)
         spine.set_linewidth(1.0)
+        haloed(spine, 1.0)
     mirror = _Mirror(state, inset, exclude)
     inset.add_artist(mirror)
     mirror.sync()
@@ -434,6 +492,7 @@ def follow_zoom(
         state, fill=False, edgecolor=edge, linewidth=1.0, zorder=15, clip_on=False
     )
     box.set_in_layout(False)
+    haloed(box, 1.0)
     fig.add_artist(box)
 
     lkw = {
@@ -454,6 +513,7 @@ def follow_zoom(
         )
         line.set_clip_on(False)
         line.set_in_layout(False)
+        haloed(line, line.get_linewidth())
         fig.add_artist(line)
         links.append(line)
 
