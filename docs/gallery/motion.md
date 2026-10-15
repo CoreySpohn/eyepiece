@@ -552,7 +552,8 @@ hidden group would change raises instead of drawing a wrong group.
 character in both moves from its place in the first to its place in the
 second, left to right on a stagger. Glyphs that match nothing fade out where
 they stand or fade in where they will stand, in the first and last part of the
-beat, so no text arrives while a glyph is still moving. A tagged glyph pairs
+beat; those fades overlap the start and end of the move, and the matched
+glyphs carry the eye. A tagged glyph pairs
 only inside its tag, and `key_map` pairs two differently named tags. The bar
 of a fraction changes length by the same arc-length sampling as `morph`. At
 ``u = 1`` the figure shows the second equation, as every move rests, and

@@ -623,8 +623,8 @@ def transform(
     bar changes length by the same arc-length sampling as `morph`. Each
     matched glyph runs its own eased progress, staggered from left to right
     by its place in `eq_a`, so the left end moves first. The fades take the
-    first and last `fade` of the beat, so text never arrives while the
-    matched glyphs are still moving.
+    first and last `fade` of the beat and overlap the start and end of the
+    move; the matched glyphs carry the eye.
 
     The move owns the visibility of both equations: at ``u = 0`` `eq_a` is
     drawn and `eq_b` is hidden, at ``u = 1`` `eq_b` is drawn and `eq_a` is

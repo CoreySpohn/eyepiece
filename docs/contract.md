@@ -534,7 +534,7 @@ each pixel-identical to that equation drawn alone. Matching is by glyph identity
 glyph, never the character code): inside a tag both equations share (or a `key_map` pair), in
 left-to-right order, then across glyphs in no tag, and a tagged glyph never pairs outside its tag.
 Matched glyphs run an eased, staggered translation with an optional arc; unmatched glyphs of the
-first fade out and of the second fade in, by opacity only; a fraction bar changes length through
+first fade out and of the second fade in, by opacity only, and those fades overlap the start and end of the move while the matched glyphs carry the eye; a fraction bar changes length through
 the arc-length sampling of `morph`. A transform's narration cue is ``{transform:name}``, whose time
 starts its ramp. Not supported: ``usetex``, several math spans in one string, escaped braces
 (they raise), and the size animation of ``\left ... \right``.
