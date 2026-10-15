@@ -173,9 +173,10 @@ An mp4 sink needs an ffmpeg binary, and a documentation builder usually has
 none. The facade resolves one from `rcParams["animation.ffmpeg_path"]`,
 then from `PATH`, then from the `imageio-ffmpeg` package, checking each
 candidate before handing it to a subprocess, and raises an error naming both
-fixes when every candidate fails. Installing `imageio-ffmpeg` is the fix
-that needs no system package manager, which is why it sits in this library's
-`docs` extra.
+fixes when every candidate fails. Installing the `video` extra
+(`pip install "eyepiece[video]"`, which adds `imageio-ffmpeg`) is the fix
+that needs no system package manager; it also sits in this library's `docs`
+extra.
 
 Two mechanics of mp4 output are worth knowing because they are handled for
 you. The h264 encoder rejects odd pixel dimensions, which a figure size in

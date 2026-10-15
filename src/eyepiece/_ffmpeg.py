@@ -39,9 +39,9 @@ def resolve_ffmpeg(configured="ffmpeg"):
         import imageio_ffmpeg
     except ImportError:
         raise RuntimeError(
-            "mp4 export needs ffmpeg, and none was found: install the "
-            "imageio-ffmpeg package (pip install imageio-ffmpeg), which "
-            "ships a binary, or put ffmpeg on PATH -- a documentation "
+            "mp4 export needs ffmpeg, and none was found: install the video "
+            'extra (pip install "eyepiece[video]"), which ships a binary '
+            "through imageio-ffmpeg, or put ffmpeg on PATH -- a documentation "
             "builder can install one with the build apt_packages option "
             "(build.apt_packages: [ffmpeg])."
         ) from None

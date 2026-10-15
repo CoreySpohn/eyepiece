@@ -201,6 +201,9 @@ pull in [hwoutils](https://github.com/CoreySpohn/hwoutils):
 pip install eyepiece[hwo]
 ```
 
+mp4 export needs ffmpeg; `pip install "eyepiece[video]"` adds the
+`imageio-ffmpeg` package, which ships a binary, if none is on PATH.
+
 The Manim renderer is optional too. `[manim]` adds Manim Community, and
 `[slides]` adds Manim Slides beside it; Manim needs system Cairo, Pango,
 pkg-config, and ffmpeg:
