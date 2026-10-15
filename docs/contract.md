@@ -515,6 +515,14 @@ arc, or a north and an east arrow) added without joining autoscaling, and
 same artists. An arrow grows from its tail, or from its middle when it has
 two heads; an arc sweeps from its start angle; and a compass has no default
 side for east, because a compass drawn with the wrong side is a mirrored sky.
+`follow_zoom` is a figure-level inset: an axes in the panel that draws the
+panel's own artists again through a window centered on its target, a frame box
+on the figure, and two connectors audited as links. Its geometry is recomputed
+at every draw, so following needs no per-frame call; the window is exactly
+`zoom` times closer on both axes and is never clamped to the panel. Its
+`update(u, level)` fades all of it in with `u`, `level` is an opacity only, and
+at ``u = 0`` the figure is pixel for pixel the one without the zoom. The parent's
+artists are borrowed for each draw and handed back as they were.
 The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
