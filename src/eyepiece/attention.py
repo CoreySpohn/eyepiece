@@ -243,7 +243,12 @@ class _TextFade:
         self._edge = None if patch is None else to_rgba(patch.get_edgecolor())
 
     def set(self, level):
-        """Show the text at `level` of its starting opacity, box included."""
+        """Show the text at `level` of its starting opacity, box included.
+
+        The box fades as the square of `level`, so while the text comes or
+        goes its box is always fainter than it: no empty box is left
+        standing as the words fade out.
+        """
         text = self._text
         if level >= 1.0:
             text.set_alpha(self._alpha)
@@ -251,7 +256,7 @@ class _TextFade:
             text.set_alpha(level * (1.0 if self._alpha is None else self._alpha))
         patch = text.get_bbox_patch()
         if patch is not None and self._face is not None:
-            k = min(1.0, level)
+            k = min(1.0, level) ** 2
             patch.set_facecolor((*self._face[:3], self._face[3] * k))
             patch.set_edgecolor((*self._edge[:3], self._edge[3] * k))
 

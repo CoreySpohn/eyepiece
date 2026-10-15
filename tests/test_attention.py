@@ -391,6 +391,24 @@ def test_callout_is_absent_before_its_beat_and_whole_at_rest(mode):
     assert line._ends() is not None and line.faults() == []
 
 
+@pytest.mark.parametrize("mode", MODES)
+def test_a_fading_callout_box_is_always_fainter_than_its_words(mode):
+    hwostyle.use(mode)
+    _fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.imshow(np.linspace(0.0, 1.0, 64).reshape(8, 8), extent=(0, 1, 0, 1))
+    (dot,) = ax.plot([0.3], [0.5], "o")
+    res = ep.callout(dot, "the dot", at=ep.Anchor.from_data(ax, (0.45, 0.62)))
+    caption = res.artists["text"]
+    box = caption.get_bbox_patch()
+    full = to_rgba(box.get_facecolor())[3]
+    for level in (0.1, 0.4, 0.7, 0.95):
+        res.update(1.0, level=level)
+        words = caption.get_alpha()
+        assert to_rgba(box.get_facecolor())[3] / full < words, level
+    res.update(1.0)
+    assert to_rgba(box.get_facecolor())[3] == pytest.approx(full)
+
+
 def test_callout_caps_its_words():
     _fig, ax = plt.subplots()
     (dot,) = ax.plot([0.3], [0.5], "o")
