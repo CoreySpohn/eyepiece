@@ -410,7 +410,7 @@ In a clip the frame's time sets each move's progress, so any frame draws
 itself from its state alone, and the last frame, with every move at rest,
 is the composite still.
 
-## Emphasis: pulse, outline, readout, turn, link
+## Emphasis: pulse, outline, term row, turn, link
 
 Five more moves say "this one" for a thing already on screen, or join two
 panels. `indicate` is a pulse: for a moment the artist's line width, marker
@@ -420,7 +420,7 @@ move. It adds no hue, and it pulses from wherever the artist is, so on an
 artist a `Stage` holds it swells from the stage's level (set the stage, then
 the pulse, in each frame). `circumscribe` draws an outline around an artist
 or an anchor, clockwise from the top, and lets it fade. `term_row` lays an
-equation or a readout out as one text per term, so each term can be the
+equation out as one text per term, so each term can be the
 target of an anchor, a stage group, a flight, or a pulse of its own; a term
 whose text changes pushes its neighbors over at the next draw. `flight` turns
 what it carries, a segment or a bar, by `turn_deg`, so a stub beside the star
@@ -444,7 +444,7 @@ speed.plot(orbit / (2.0 * np.pi), 0.5 * np.sin(orbit), color=ep.neutral(0.4))
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-readout = ep.term_row(
+row = ep.term_row(
     ep.Anchor.from_data(speed, (0.05, -0.8)), [r"$v_r$", "=", "0.30"], ha="left"
 )
 ring = ep.circumscribe(orbiter, shape="ellipse", pad_pt=5.0)
@@ -474,10 +474,12 @@ for cell, frame, title in zip(cells, frames, titles, strict=True):
 plt.show()
 ```
 
-The readout is running when its term's text is set in the loop, for example
-``readout.artists["text"][2].set_text(f"{v:.2f}")``; `Anchor.from_artist` of a
-term follows it. Call `audit(fig)` once the composite is laid out to vet every
-leader and link of the clip.
+A term is rewritten by setting its text in the loop, for example
+``row.artists["text"][2].set_text("0.45")``, and `Anchor.from_artist` of a term
+follows it. Use `term_row` for terms whose text you choose, and `readout` (the
+next section) for a number that counts, because a rewritten term changes width
+and pushes its neighbors. Call `audit(fig)` once the composite is laid out to
+vet every leader and link of the clip.
 
 ## Morph: one path becomes another
 

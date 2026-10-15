@@ -16,7 +16,7 @@ import pytest
 from matplotlib.colors import to_rgb, to_rgba
 
 import eyepiece as ep
-from eyepiece import _style
+from eyepiece import _style, attention
 
 MODES = ["light", "dark"]
 X = np.linspace(-0.2, 0.8, 201)
@@ -1888,3 +1888,93 @@ def test_readout_rejects_bad_inputs():
         res.set(float("inf"))
     with pytest.raises(TypeError, match="Anchor"):
         ep.readout("here", 1.0)
+
+
+def _ink_columns(res, fig, roles):
+    """The columns that show ink when only the parts of `roles` are drawn."""
+    parts = res.artists["text"]
+    for t in parts:
+        t.set_visible(False)
+    empty = _pixels(fig)
+    for t in parts:
+        t.set_visible(t.role in roles)
+    shown = _pixels(fig)
+    for t in parts:
+        t.set_visible(True)
+    cols = np.nonzero(np.any(shown != empty, axis=(0, 2)))[0]
+    return cols
+
+
+def _ink_gap(res, fig):
+    """Pixels from the integer part's last ink column to the fraction's first."""
+    return (
+        _ink_columns(res, fig, {"frac"}).min() - _ink_columns(res, fig, {"int"}).max()
+    )
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_readout_integer_ink_ends_at_the_decimal_point(mode):
+    hwostyle.use(mode)
+    fig, ax = _readout_panel()
+    res = ep.readout(
+        ep.Anchor.from_data(ax, (0.1, 0.5)), 1.5, prefix="x = ", unit="h", digits=3
+    )
+    prefix_cols = None
+    for value in (1.5, 12.5, 123.5, -4.5):
+        res.set(value)
+        res.update(1.0)
+        # The integer part ends within the glyph bearings (4 px) of the point.
+        assert 0 <= _ink_gap(res, fig) <= 4
+        cols = tuple(_ink_columns(res, fig, {"prefix"}))
+        prefix_cols = cols if prefix_cols is None else prefix_cols
+        assert cols == prefix_cols
+    plt.close(fig)
+
+
+def test_readout_ink_test_catches_a_left_justified_integer():
+    fig, ax = _readout_panel()
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 123.5, prefix="x = ")
+    assert 0 <= _ink_gap(res, fig) <= 4
+    # Positive control: justify the integer part left, as a broken layout would.
+    integer = next(t for t in res.artists["text"] if t.role == "int")
+    integer.set_ha("left")
+    assert _ink_gap(res, fig) < 0 or _ink_gap(res, fig) > 4
+
+
+@pytest.mark.parametrize("kind", ["back_out", "running_start"])
+def test_readout_count_never_passes_its_target_under_an_overshoot_ease(
+    kind, monkeypatch
+):
+    real = attention._ease
+
+    def overshoot(u, name="smoothstep"):
+        if name == "wobble":
+            u = float(np.clip(u, 0.0, 1.0))
+            c = 1.70158
+            if kind == "back_out":  # leaves [0, 1] above the target
+                return 1.0 + (c + 1.0) * (u - 1.0) ** 3 + c * (u - 1.0) ** 2
+            return (c + 1.0) * u**3 - c * u**2  # dips below the start first
+        return real(u, name)
+
+    monkeypatch.setattr(attention, "_ease", overshoot)
+    fig, ax = _readout_panel()
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 0.0, ease="wobble")
+    res.set(10.0)
+    shown = []
+    for u in np.linspace(0.0, 1.0, 201):
+        res.update(u)
+        shown.append(_number(res))
+    assert shown == sorted(shown)
+    assert min(shown) == 0.0 and max(shown) == 10.0
+    fig.canvas.draw()
+
+
+def test_readout_signed_false_rejects_a_negative_value():
+    _fig, ax = _readout_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    with pytest.raises(ValueError, match="signed=False"):
+        ep.readout(at, -1.0, signed=False)
+    res = ep.readout(at, 1.0, signed=False)
+    with pytest.raises(ValueError, match="signed=False"):
+        res.set(-2.0)
+    res.set(0.0)  # a value that is not negative is fine

@@ -2857,7 +2857,7 @@ def term_row(
     zorder=10,
     text_kw=None,
 ):
-    r"""Lay an equation or a readout out as one text per term.
+    r"""Lay an equation out as one text per term, each term its own target.
 
     Each term is its own `Text` (a plain string, or math in ``$...$``), set
     left to right from an anchor on one baseline with a gap between
@@ -2865,15 +2865,21 @@ def term_row(
     a member of a `Stage` group, the destination of a `flight`, the subject
     of a `callout`, or pulsed alone with `indicate`. The slots are measured
     and set when the figure is drawn (and when a term's box is asked for), so
-    the row stays laid out when a term's text changes: a running readout is
-    ``result.artists["text"][i].set_text("2.41")``, and the terms after it
-    move over to make room. A slot is as wide as its term at the row's font
+    the row stays laid out when a term's text changes: a term the caller
+    rewrites is ``result.artists["text"][i].set_text("x = 2")``, and the terms
+    after it move over to make room. A slot is as wide as its term at the row's font
     size, so an `indicate` on one term swells it in place and moves none of
     its neighbors.
 
     The terms are figure-level artists in display space, so they never join
     an axes' autoscaling and move no data limit. An empty term has no slot
-    and no gap, which lets a readout start blank.
+    and no gap, which lets a term start blank.
+
+    Which tool lays out text: `term_row` is for terms whose text the caller
+    chooses and whose neighbors may move; `readout` is for one number that
+    counts to a new value and must hold its place (do not run a number
+    through `term_row` terms); `words` colors or reveals words inside one
+    ordinary line of text.
 
     ``update(u)`` writes the row on, one term after another: term ``i`` of
     ``n`` is at full opacity once ``u`` reaches ``(i + 1) / n``. At ``u = 1``,
@@ -2906,7 +2912,7 @@ def term_row(
 
         row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.9)),
                           ["$\chi^2$", "=", "0.0"])
-        row.artists["text"][2].set_text("2.41")  # the readout runs
+        row.artists["text"][2].set_text("2.41")  # a term is rewritten
         ep.Anchor.from_artist(row.artists["text"][0])  # a term is an anchor
     """
     at = _as_anchor(at, "at")
@@ -3010,6 +3016,7 @@ class _Readout:
         self.n_int = max(1, int(digits))
         self.signed = self.flag in ("+", " ") if signed is None else bool(signed)
         self.grow_sign = signed is None
+        self.declined = signed is not None and not signed
         self.minus = "\u2212" if matplotlib.rcParams["axes.unicode_minus"] else "-"
         self.level = 1.0
         self._cache = {}
@@ -3060,6 +3067,11 @@ class _Readout:
         self.n_int = max(self.n_int, sum(c.isdigit() for c in int_s))
         if self.grow_sign and int_s[:1] in (self.minus, "+"):
             self.signed = True
+        if self.declined and int_s[:1] == self.minus:
+            raise ValueError(
+                f"readout value {value} is negative but signed=False reserves "
+                "no room for the sign"
+            )
 
     def width(self, string, renderer):
         """The width in pixels of `string` in the readout's font."""
@@ -3223,7 +3235,7 @@ def readout(
             precision, and one of ``f``, ``F``, ``%`` or ``d``, such as
             ``".2f"``, ``"+.1f"``, ``".0%"`` or ``"d"``.
         prefix: Text before the number, for example ``"t = "`` or ``"$Pr$ = "``.
-        suffix: Text glued to the number, for example ``"%"``.
+        suffix: Text glued to the number, for example ``"x"``.
         unit: Text after the suffix, set off by a space, for example ``"h"``
             or ``r"$\mathrm{km\,s^{-1}}$"``.
         ha: Which end of the readout `at` marks: ``"left"``, ``"center"``,
@@ -3231,8 +3243,11 @@ def readout(
         digits: Integer digits to reserve at least. The slots always hold
             the digits of every value given.
         signed: Whether to reserve room for a sign. None reserves it for a
-            sign flag in `fmt` and once a negative value is given.
-        ease: The easing kind of `eyepiece.ease` for ``update(u)``.
+            sign flag in `fmt` and once a negative value is given; False
+            declines, and a negative value then raises.
+        ease: The easing kind of `eyepiece.ease` for ``update(u)``. An
+            ease that leaves [0, 1] (an overshoot) is clamped here, so a
+            count never passes its target and never goes back.
         color: Text color. None uses ``rcParams["text.color"]``.
         fontsize: Font size in points. None uses ``rcParams["font.size"]``.
         zorder: Drawing order among the figure's children.
@@ -3248,7 +3263,8 @@ def readout(
     Raises:
         TypeError: If `at` is neither an `Anchor` nor an artist.
         ValueError: If `fmt` is not a fixed-point spec, `ha` or `ease` is
-            unknown, or a value is not finite.
+            unknown, a value is not finite, or a value is negative while
+            ``signed=False``.
 
     Example::
 
@@ -3291,7 +3307,10 @@ def readout(
         elif u <= 0.0:
             shown = state.start
         else:
-            shown = state.start + _ease(u, state.ease) * (state.target - state.start)
+            # An overshooting ease is clamped, so a count never passes its
+            # target and never goes back.
+            e = min(1.0, max(0.0, _ease(u, state.ease)))
+            shown = state.start + e * (state.target - state.start)
         state.show(shown)
         # Opacity is written only while dimmed and once on the way back, so a
         # readout held by a Stage keeps the stage's levels.
