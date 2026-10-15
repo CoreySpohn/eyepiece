@@ -626,3 +626,50 @@ for fault in ept.readability_faults(fig):
 
 Pass `at` and `times` to sample a clip at its beat ends. `assert_readable`
 raises `ReadabilityError` with the same report, for a test suite.
+
+## Arrows, angle arcs and a compass
+
+`arrow`, `angle_arc` and `compass` are marks that an explanation builds up
+rather than redraws. Each is one artist, so `update` lengthens an arrow, sweeps
+an arc, or turns a compass without making anything new, and at ``u = 1`` the
+frame is the figure as drawn.
+
+An arrow has three kinds. A vector grows from its tail, a double arrow and a
+dimension grow outward from their middle, and a dimension puts its label on the
+line in a backing box so that it reads as a measure of a gap. An angle arc runs
+between two directions about a vertex, with its head tangent to the arc at every
+point of the sweep, so the reader sees which way the angle is measured. A
+compass draws north and east from one point, and the caller says which side east
+is on: ``east="left"`` is the sky as an observer looking up sees it, and
+``east="right"`` is a chart drawn from outside. There is no default, because the
+wrong side is a mirrored sky.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 2.8), dpi=200)
+ax.set(xlim=(-0.5, 7.5), ylim=(-1.4, 1.6), xticks=[], yticks=[])
+ax.set_aspect("equal")
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+gap = ep.arrow((0.0, -1.0), (2.4, -1.0), ax=ax, kind="dimension", label="d")
+force = ep.arrow((0.0, 0.0), (2.4, 0.6), ax=ax, label="v")
+turn = ep.angle_arc((4.2, -0.6), 0.0, 55.0, 1.1, ax=ax, label=r"$\theta$")
+sky = ep.compass((6.6, 0.4), 0.8, ax=ax, east="left", angle=20.0)
+
+shown, cells = plt.subplots(2, 2, figsize=(9.0, 4.6), layout="constrained")
+for cell, u in zip(cells.flat, (0.25, 0.5, 0.75, 1.0), strict=True):
+    for move in (gap, force, turn, sky):
+        move.update(u)
+    sky.update(u, angle=20.0 + 50.0 * u)
+    fig.canvas.draw()
+    cell.imshow(np.asarray(fig.canvas.buffer_rgba()).copy(), interpolation="nearest")
+    cell.set_title(f"u = {u:g}")
+    cell.set_axis_off()
+plt.show()
+```
+
+The moves take new ends as well as a progress: ``force.update(tail=..., head=...)``
+slides or lengthens the arrow, ``turn.update(end_angle=...)`` opens the angle
+further, and ``sky.update(angle=...)`` turns the compass as a roll would. An arrow
+or an arc shorter than its head shrinks the head to fit, and one too short to
+see draws nothing.

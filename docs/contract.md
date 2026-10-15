@@ -488,7 +488,14 @@ a changed term re-lays the row. A flight can carry a segment or a bar and
 turn it. `morph` is a figure-level ghost like a flight, visible only
 between its ends, whose geometry at the ends is the two paths resampled by
 arc length (and, for a closed pair, the second rolled and possibly reversed
-to lie on the first). The rest state of each, the one a still shows, is the
+to lie on the first). `arrow`, `angle_arc` and `compass` are drawn marks, not
+overlays: each is one patch (an arrow, an arc whose head is tangent to the
+arc, or a north and an east arrow) added without joining autoscaling, and
+`update` sets its growth `u`, its ends or angles, and a `level` opacity on the
+same artists. An arrow grows from its tail, or from its middle when it has
+two heads; an arc sweeps from its start angle; and a compass has no default
+side for east, because a compass drawn with the wrong side is a mirrored sky.
+The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
 `warp` differs from the figure-level moves: it reshapes the artists it is
