@@ -490,7 +490,16 @@ from it, each in a slot as wide as the widest string it holds, so a count
 never moves the label; its shown value is the interpolated value rounded to the
 format's precision (monotone, with no negative zero), its slots grow only when
 `set` is called with a value that needs more room, and at ``u = 1`` it shows
-the exact formatted value last set. A flight can carry a segment or a bar and
+the exact formatted value last set. The eases `back_out` and `running_start`
+leave [0, 1] between their exact ends, and a move may take any ease as a kind
+name or as a callable from progress to eased progress, for example
+`functools.partial(ep.ease, kind="back_out", strength=0.2)`. A move clips only
+the progress it is given. Where an eased factor would become an opacity, a
+level, a fraction of a path, a color blend, or a line width, the move clips the
+factor itself before blending, so a position or a warp may overshoot and
+nothing else can go invalid. A move snaps to its ends on the progress, never
+on the eased value. A `readout` clips its eased value to [0, 1] before it
+interpolates, so a count passes neither its old value nor its new one. A flight can carry a segment or a bar and
 turn it. `morph` is a figure-level ghost like a flight, visible only
 between its ends, whose geometry at the ends is the two paths resampled by
 arc length (and, for a closed pair, the second rolled and possibly reversed

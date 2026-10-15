@@ -16,7 +16,7 @@ import pytest
 from matplotlib.colors import to_rgb, to_rgba
 
 import eyepiece as ep
-from eyepiece import _style, attention
+from eyepiece import _style
 
 MODES = ["light", "dark"]
 X = np.linspace(-0.2, 0.8, 201)
@@ -1942,30 +1942,21 @@ def test_readout_ink_test_catches_a_left_justified_integer():
 
 
 @pytest.mark.parametrize("kind", ["back_out", "running_start"])
-def test_readout_count_never_passes_its_target_under_an_overshoot_ease(
-    kind, monkeypatch
+@pytest.mark.parametrize("old, new", [(0.0, 10.0), (10.0, 0.0), (-3.0, 7.0)])
+def test_readout_count_stays_between_its_values_under_the_real_overshoot_eases(
+    kind, old, new
 ):
-    real = attention._ease
-
-    def overshoot(u, name="smoothstep"):
-        if name == "wobble":
-            u = float(np.clip(u, 0.0, 1.0))
-            c = 1.70158
-            if kind == "back_out":  # leaves [0, 1] above the target
-                return 1.0 + (c + 1.0) * (u - 1.0) ** 3 + c * (u - 1.0) ** 2
-            return (c + 1.0) * u**3 - c * u**2  # dips below the start first
-        return real(u, name)
-
-    monkeypatch.setattr(attention, "_ease", overshoot)
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 0.0, ease="wobble")
-    res.set(10.0)
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), old, ease=kind)
+    res.set(new)
     shown = []
     for u in np.linspace(0.0, 1.0, 201):
         res.update(u)
         shown.append(_number(res))
-    assert shown == sorted(shown)
-    assert min(shown) == 0.0 and max(shown) == 10.0
+    lo, hi = sorted((old, new))
+    assert min(shown) >= lo and max(shown) <= hi
+    assert shown == sorted(shown, reverse=new < old)  # a count never goes back
+    assert shown[0] == old and shown[-1] == new
     fig.canvas.draw()
 
 
@@ -1978,3 +1969,116 @@ def test_readout_signed_false_rejects_a_negative_value():
     with pytest.raises(ValueError, match="signed=False"):
         res.set(-2.0)
     res.set(0.0)  # a value that is not negative is fine
+
+
+# Overshoot eases
+
+
+def test_flight_with_back_out_overshoots_its_destination_and_lands_exactly():
+    fig, ax = plt.subplots()
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    (dot,) = ax.plot([0.2], [0.5], "o")
+    a, b = ep.Anchor.from_data(ax, (0.2, 0.5)), ep.Anchor.from_data(ax, (0.8, 0.5))
+    carry = ep.flight(a, b, fig=fig, mark=dot, ease="back_out")
+    ghost = carry.artists["line"]
+    reach = b.display()[0]
+    xs = []
+    for u in np.linspace(0.0, 1.0, 101)[1:-1]:
+        carry.update(u)
+        fig.canvas.draw()
+        xs.append(ghost.get_xydata()[0][0])
+    travel = reach - a.display()[0]
+    assert max(xs) > reach + 0.05 * travel  # visibly past the destination
+    assert max(xs) == pytest.approx(reach + 0.1 * travel, abs=0.01 * travel)
+    # The last frames come back toward it, and the rest state is the destination.
+    assert xs[-1] < max(xs)
+    carry.update(1.0)
+    assert not ghost.get_visible()
+    carry.update(1.0 - 1e-9)
+    fig.canvas.draw()
+    assert ghost.get_xydata()[0][0] == pytest.approx(reach, abs=1e-3)
+
+
+@pytest.mark.parametrize("kind", ["back_out", "running_start"])
+def test_link_never_draws_past_its_ends_under_an_overshoot_ease(kind):
+    fig, image, phasor = _image_and_phasor()
+    src = ep.Anchor.from_data(image, (12, 4))
+    dst = ep.Anchor.from_data(phasor, (0.0, 0.0))
+    tie = ep.link(src, dst, ease=kind)
+    line = tie.artists["line"]
+    p, q = src.display(), dst.display()
+    along = q - p
+    for u in np.linspace(0.01, 0.99, 25):
+        tie.update(u)
+        fig.canvas.draw()
+        if not line.get_visible() or len(line.get_xydata()) == 0:
+            continue
+        tip = line.get_xydata()[-1]
+        reach = float((tip - p) @ along / (along @ along))
+        assert -1e-3 <= reach <= 1.0 + 1e-3
+
+
+@pytest.mark.parametrize("kind", ["back_out", "running_start"])
+def test_circumscribe_draws_a_part_of_its_outline_under_an_overshoot_ease(kind):
+    fig, _ax, label = _labelled_panel()
+    ring = ep.circumscribe(label, ease=kind)
+    outline = ring.artists["line"]
+    full = outline.outline(fig.canvas.get_renderer())
+    total = np.hypot(*np.diff(full, axis=0).T).sum()
+    for u in np.linspace(0.01, 0.99, 40):
+        ring.update(u)
+        fig.canvas.draw()
+        pts = outline.get_xydata()
+        drawn = np.hypot(*np.diff(pts, axis=0).T).sum()
+        assert drawn <= total + 0.5
+        alpha = outline.get_alpha()
+        assert alpha is None or 0.0 <= alpha <= 1.0
+
+
+def test_a_move_takes_a_callable_ease_to_choose_a_strength():
+    import functools
+
+    fig, ax = plt.subplots()
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    (dot,) = ax.plot([0.2], [0.5], "o")
+    a, b = ep.Anchor.from_data(ax, (0.2, 0.5)), ep.Anchor.from_data(ax, (0.8, 0.5))
+    reach = {}
+    for strength in (0.1, 0.3):
+        how = functools.partial(ep.ease, kind="back_out", strength=strength)
+        carry = ep.flight(a, b, fig=fig, mark=dot, ease=how)
+        ghost = carry.artists["line"]
+        xs = []
+        for u in np.linspace(0.0, 1.0, 201)[1:-1]:
+            carry.update(u)
+            fig.canvas.draw()
+            xs.append(ghost.get_xydata()[0][0])
+        reach[strength] = (max(xs) - b.display()[0]) / (b.display()[0] - a.display()[0])
+    assert reach[0.1] == pytest.approx(0.1, abs=0.01)
+    assert reach[0.3] == pytest.approx(0.3, abs=0.01)
+
+
+@pytest.mark.parametrize("kind", ["back_out", "running_start"])
+def test_morph_keeps_colors_and_widths_valid_under_an_overshoot_ease(kind):
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path
+
+    fig, ax = _morph_axes()
+    a = PathPatch(
+        Path.make_compound_path(Path(_circle(1.0), closed=True)),
+        ec="tab:red",
+        fc="none",
+        lw=1.0,
+    )
+    b = PathPatch(
+        Path(_square(1.2), closed=True), ec="tab:blue", fc="tab:green", lw=4.0
+    )
+    for patch in (a, b):
+        ax.add_patch(patch)
+    move = ep.morph(a, b, ax=ax, closed=True, n=40, ease=kind)
+    ghost = move.artists["fill"]
+    for u in np.linspace(0.0, 1.0, 21):
+        move.update(u)
+        fig.canvas.draw()
+        assert ghost.get_linewidth() >= 0.0
+        for color in (ghost.get_edgecolor(), ghost.get_facecolor()):
+            assert np.all((0.0 <= np.asarray(color)) & (np.asarray(color) <= 1.0))

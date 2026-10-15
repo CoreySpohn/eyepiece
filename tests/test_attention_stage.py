@@ -408,3 +408,45 @@ def test_weigh_refuses_an_unknown_easing():
     stage = ep.Stage(groups, dim=0.35)
     with pytest.raises(ValueError, match="unknown easing"):
         stage.weigh({"line": 0.5}, ease="bouncy")
+
+
+@pytest.mark.parametrize("kind", ["back_out", "running_start"])
+def test_stage_set_levels_never_pass_their_ends_under_an_overshoot_ease(kind):
+    _fig, _ax, groups = _scene()
+    stage = ep.Stage(groups, dim=0.35)
+    for u in np.linspace(0.0, 1.0, 41):
+        levels = stage.set(dimmed=["line"], u=u, ease=kind)
+        for name, (presence, contrast) in levels.items():
+            end = stage.state(dimmed=["line"])[name]
+            lo, hi = sorted((1.0, end[1]))
+            assert min(1.0, end[0]) - 1e-9 <= presence <= max(1.0, end[0]) + 1e-9
+            assert lo - 1e-9 <= contrast <= hi + 1e-9
+    stage.rest()
+
+
+@pytest.mark.parametrize("kind", ["back_out", "running_start"])
+def test_collapse_colors_stay_between_the_cells_and_the_target(kind):
+    fig, left, _right = _two_panels()
+    weights = np.array([0, 0, 1, 3, 4, 2, 0, 0, 0, 0], dtype=float)
+    move = ep.collapse(
+        left,
+        _cells(),
+        weights,
+        ep.Anchor.from_data(left, (0.1, 0.5)),
+        ep.Anchor.from_data(left, (0.4, 0.5)),
+        fig=fig,
+        colors="tab:gray",
+        color="tab:pink",
+        ease=kind,
+    )
+    ghost = move.artists["line"]
+    begin = np.asarray(to_rgba("tab:gray"))[:3]
+    end = np.asarray(to_rgba("tab:pink"))[:3]
+    low, high = np.minimum(begin, end), np.maximum(begin, end)
+    for u in np.linspace(0.0, 1.0, 41):
+        move.update(u)
+        fig.canvas.draw()
+        if not ghost.get_visible():
+            continue
+        colors = np.asarray(ghost.get_colors())[:, :3]
+        assert np.all(colors >= low - 1e-9) and np.all(colors <= high + 1e-9)
