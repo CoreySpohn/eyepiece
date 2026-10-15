@@ -158,3 +158,46 @@ def test_snapshotting_does_not_call_hwostyle_use_or_change_rcparams():
 
     assert hwostyle.current_mode() == mode_before
     assert dict(matplotlib.rcParams) == rc_before
+
+
+def test_snapshot_profile_has_pupil_and_no_high_dynamic_range():
+    hwostyle.use("light")
+    colormaps = snapshot_profile().colormaps
+    assert "pupil" in colormaps
+    assert "high_dynamic_range" not in colormaps
+    assert colormaps["pupil"].shape == (256, 4)
+
+
+def test_snapshot_profile_pupil_with_and_without_hwostyle_role(monkeypatch):
+    import types
+
+    hwostyle.use("light")
+    real = hwostyle.cmaps
+    # an hwostyle that carries the role
+    carrying = types.SimpleNamespace(
+        **{
+            r: getattr(real, r)
+            for r in (
+                "intensity",
+                "readouts",
+                "residual",
+                "opd",
+                "phase",
+                "probability",
+                "mask",
+                "brand_intensity",
+                "brand_diverging",
+            )
+        },
+        pupil="Greys",
+    )
+    monkeypatch.setattr(hwostyle, "cmaps", carrying)
+    with_role = snapshot_profile().colormaps["pupil"]
+    # an older hwostyle that lacks it
+    lacking = types.SimpleNamespace(
+        **{k: v for k, v in vars(carrying).items() if k != "pupil"}
+    )
+    monkeypatch.setattr(hwostyle, "cmaps", lacking)
+    without_role = snapshot_profile().colormaps["pupil"]
+    assert with_role.shape == without_role.shape == (256, 4)
+    assert not np.array_equal(with_role, without_role)

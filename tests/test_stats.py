@@ -101,7 +101,9 @@ def test_corner_axes_none_truths_scenario_structure():
     expected_truth_color = to_rgba(_style.color(1))
     assert to_rgba(res.artists["hist"][0][0].get_edgecolor()) == expected_hist_color
     assert to_rgba(res.artists["line"][0].get_color()) == expected_truth_color
-    assert res.artists["collection"][0].get_cmap().name == _style.cmap("intensity").name
+    assert (
+        res.artists["collection"][0].get_cmap().name == _style.cmap("probability").name
+    )
     plt.close(res.fig)
 
 
@@ -232,4 +234,11 @@ def test_corner_diagonal_is_unit_area():
     counts, _ = np.histogram(samples["a"], bins=30)
     assert drawn == pytest.approx(density.max(), rel=1e-6)
     assert drawn != pytest.approx(counts.max(), rel=0.5)  # not the old scale
+    plt.close(res.fig)
+
+
+def test_corner_density_uses_probability_role():
+    res = corner(_samples(), ["a", "b"])
+    name = res.artists["collection"][0].get_cmap().name
+    assert name == _style.cmap("probability").name
     plt.close(res.fig)
