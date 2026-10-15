@@ -191,13 +191,13 @@ def test_snapshot_profile_pupil_with_and_without_hwostyle_role(monkeypatch):
         },
         pupil="Greys",
     )
-    monkeypatch.setattr(hwostyle, "cmaps", carrying)
+    monkeypatch.setattr(hwostyle.core, "cmaps", carrying)
     with_role = snapshot_profile().colormaps["pupil"]
     # an older hwostyle that lacks it
     lacking = types.SimpleNamespace(
         **{k: v for k, v in vars(carrying).items() if k != "pupil"}
     )
-    monkeypatch.setattr(hwostyle, "cmaps", lacking)
+    monkeypatch.setattr(hwostyle.core, "cmaps", lacking)
     without_role = snapshot_profile().colormaps["pupil"]
     assert with_role.shape == without_role.shape == (256, 4)
     assert not np.array_equal(with_role, without_role)

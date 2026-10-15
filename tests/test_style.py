@@ -12,11 +12,13 @@ from eyepiece import _style
 
 
 def test_cmap_follows_mode_switch():
+    # Probability is oriented by the page (low values at the page end), so its
+    # dark-mode map differs from the light one.
     hwostyle.use("dark")
-    dark_cm = _style.cmap("intensity")
+    dark_cm = _style.cmap("probability")
     with hwostyle.light():
-        light_cm = _style.cmap("intensity")
-    assert dark_cm is not light_cm
+        light_cm = _style.cmap("probability")
+    assert dark_cm(0.0) != light_cm(0.0)
 
 
 def test_cmap_override_wins():
