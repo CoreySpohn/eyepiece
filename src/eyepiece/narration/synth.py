@@ -36,6 +36,7 @@ from pathlib import Path
 import numpy as np
 
 from ._align import align
+from ._script import KOKORO_VERSION
 from ._timeline import MissingAudioError, Spoken, Word
 
 SAMPLE_RATE = 24000
@@ -103,7 +104,7 @@ def _write_compressed(directory, key, audio, rate):
     try:
         import soundfile as sf
     except ImportError:
-        raise ImportError(_INSTALL % "the pinned version") from None
+        raise ImportError(_INSTALL % KOKORO_VERSION) from None
     if "OPUS" in sf.available_subtypes("OGG"):
         name, options = f"{key}.opus", {"format": "OGG", "subtype": "OPUS"}
     else:
