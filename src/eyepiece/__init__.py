@@ -130,6 +130,7 @@ __all__ = [
     "stamp",
     "step_list",
     "strip",
+    "term_row",
     "trail",
     "triptych",
     "view_limits",
