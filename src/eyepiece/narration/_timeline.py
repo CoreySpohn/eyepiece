@@ -4,24 +4,22 @@ The layout is pure Python and reads only the JSON that `synthesize` wrote
 beside the clip, so a render never needs Kokoro. Each line is a beat. The
 beat lasts as long as its speech plus the line's padding, or as long as the
 motion declared for it, whichever is longer, and it replaces the fixed holds
-a silent clip uses. Each cue fires at the start of the word it precedes,
-earlier by an optional lead.
+a silent clip uses. A cue is the start of the word it precedes; the clip
+decides how far ahead of the word each kind of move starts.
 
-The beats of a `Narration` become the holds of an `eyepiece.Timeline`
-(`Narration.timeline`), so a clip keeps its knobs, its frame rate and its
-`Plan`, and a cue lands on a frame of that plan (`Narration.cue_frame`).
-Narration measures the pace of the speech, so it takes the place of a
-`Tempo` for the lines it covers; the speech speed is `Script.speed`.
+A `Narration` is placement only. `Narration.place` lays one line on the clock
+and is pure; `eyepiece.Timeline(narration=...)` places the moves of a clip on
+the words, solves the length of every line in one pass, and hands back a
+`Narration` with those starts and ends for `audio_track`, `mux` and the
+captions. Narration measures the pace of the speech, so it takes the place of
+a `Tempo` for the lines it covers; the speech speed is `Script.speed`.
 
-This module imports only the standard library and `eyepiece._motion`.
+This module imports only the standard library.
 """
 
 import json
-import math
 from dataclasses import dataclass
 from pathlib import Path
-
-from eyepiece._motion import Timeline
 
 _LETTERS_PER_S = 14.0
 _PAUSE_S = 0.25
@@ -124,7 +122,7 @@ class CueTime:
         line: Key of the line the cue belongs to.
         kind: The attention move.
         target: What it acts on.
-        at_s: When it fires, in seconds from the start of the clip.
+        at_s: When its word starts, in seconds from the start of the clip.
         word: The word it is on.
     """
 
@@ -161,36 +159,40 @@ class NarrationBeat:
 class Narration:
     """A script laid out on one clock.
 
+    Lines run one after another: a line starts where the one before it ends,
+    unless `starts` moves it later, and ends when its speech and padding do,
+    unless `ends` holds it longer. A `Timeline` with a narration passes both,
+    from the solved lengths of its lines.
+
     Args:
         script: The `Script`.
         spoken: Mapping from line key to the line's `Spoken`.
-        lead_s: Seconds a cue fires before its word starts. A pulse that
-            takes 0.3 s to peak wants a lead near 0.15 s; zero fires at the
-            word itself. A cue never fires before the start of its beat, so
-            with padding before the speech it can fire in the silence.
-        min_s: Mapping from line key to the least length of its beat, for
-            the motion that must finish inside it.
-        head_s: Silence before the first line.
+        starts: Mapping from line key to an absolute start in seconds, at or
+            after the end of the line before it. The first line starts at 0
+            by default.
+        ends: Mapping from line key to the absolute time its beat must last
+            until: the motion that must finish inside the line.
 
     Raises:
-        KeyError: If ``min_s`` or ``spoken`` names a line the script lacks
-            or omits one it has.
-        ValueError: If a line's timing does not have its words.
+        KeyError: If `starts`, `ends` or `spoken` names a line the script
+            lacks or omits one it has.
+        ValueError: If a line's timing does not have its words, or a line
+            starts before the one before it ends.
     """
 
-    def __init__(self, script, spoken, *, lead_s=0.0, min_s=None, head_s=0.0):
+    def __init__(self, script, spoken, *, starts=None, ends=None):
         """Place every line, in order, one after another."""
-        min_s = dict(min_s or {})
-        unknown = set(min_s) - {line.key for line in script.lines}
-        if unknown:
-            raise KeyError(f"min_s names unknown lines {sorted(unknown)}")
+        starts = dict(starts or {})
+        ends = dict(ends or {})
+        keys = {line.key for line in script.lines}
+        for name, given in (("starts", starts), ("ends", ends)):
+            unknown = set(given) - keys
+            if unknown:
+                raise KeyError(f"{name} names unknown lines {sorted(unknown)}")
         self.script = script
-        self.lead_s = float(lead_s)
-        self.head_s = float(head_s)
         self.spoken = {}
         self.beats = []
         self._asked = set()
-        clock = self.head_s
         for line in script.lines:
             if line.key not in spoken:
                 raise KeyError(f"no timing for line {line.key!r}")
@@ -201,27 +203,49 @@ class Narration:
                     f"line {line.key!r}: {len(line.words)} words but the "
                     f"timing has {len(timing.words)}; synthesize it again"
                 )
-            on = clock + line.pad_before_s
-            words = tuple(
-                Word(w.text, on + w.start_s, on + w.end_s) for w in timing.words
-            )
-            speech_end = on + timing.duration_s
-            end = max(speech_end + line.pad_after_s, clock + min_s.get(line.key, 0.0))
-            cues = tuple(
-                CueTime(
-                    line.key,
-                    c.kind,
-                    c.target,
-                    max(clock, words[c.word].start_s - self.lead_s),
-                    words[c.word],
+        clock = 0.0
+        for line in script.lines:
+            start = starts.get(line.key, clock)
+            if start < clock - 1e-9:
+                raise ValueError(
+                    f"line {line.key!r} starts at {start} s, before the line "
+                    f"before it ends at {clock} s"
                 )
-                for c in line.cues
-            )
-            self.beats.append(
-                NarrationBeat(line.key, clock, on, speech_end, end, words, cues)
-            )
-            clock = end
+            beat = self.place(line.key, start, end_s=ends.get(line.key))
+            self.beats.append(beat)
+            clock = beat.end_s
         self._by_key = {b.key: b for b in self.beats}
+
+    def place(self, key, start_s, *, end_s=None):
+        """Lay one line on the clock, starting at `start_s`.
+
+        Pure: it depends only on the line, its timing and the arguments. The
+        speech starts after the line's ``pad_before_s``; each cue is the start
+        of its word, with no lead.
+
+        Args:
+            key: The line's key.
+            start_s: Absolute start of the beat, in seconds.
+            end_s: Absolute time the beat must last until, or None. The beat
+                ends at the later of this and its speech plus ``pad_after_s``.
+
+        Returns:
+            The `NarrationBeat`.
+        """
+        line = self.script.line(key)
+        timing = self.spoken[key]
+        start_s = float(start_s)
+        on = start_s + line.pad_before_s
+        words = tuple(Word(w.text, on + w.start_s, on + w.end_s) for w in timing.words)
+        speech_end = on + timing.duration_s
+        end = speech_end + line.pad_after_s
+        if end_s is not None:
+            end = max(end, float(end_s))
+        cues = tuple(
+            CueTime(line.key, c.kind, c.target, words[c.word].start_s, words[c.word])
+            for c in line.cues
+        )
+        return NarrationBeat(line.key, start_s, on, speech_end, end, words, cues)
 
     @classmethod
     def load(cls, script, cache_dir, **kwargs):
@@ -340,52 +364,3 @@ class Narration:
             if b.start_s <= t + 1e-9:
                 key = b.key
         return key
-
-    def timeline(self, knobs=None, *, set=None, head_name="head"):
-        """The beats as the holds of an `eyepiece.Timeline`.
-
-        Each line becomes a hold named by its key and as long as its beat,
-        so the frame boundaries of the resulting `Plan` are the beat
-        boundaries of this narration. A head of silence becomes a hold of its
-        own. A clip adds its moves by reading `Plan.progress` of the beat, or
-        splits a beat itself when it needs a ramp inside one.
-
-        Args:
-            knobs: Declared knobs and their initial values, as in
-                `eyepiece.Timeline`.
-            set: Mapping from line key to the knob values that change when
-                its hold starts.
-            head_name: Name of the hold for ``head_s``, when it is not zero.
-
-        Returns:
-            An `eyepiece.Timeline`.
-        """
-        set = dict(set or {})
-        unknown = [key for key in set if key not in self._by_key]
-        if unknown:
-            raise KeyError(f"set names unknown lines {unknown}")
-        tl = Timeline(knobs)
-        if self.head_s > 0.0:
-            tl.hold(self.head_s, name=head_name)
-        for b in self.beats:
-            tl.hold(b.end_s - b.start_s, name=b.key, set=set.get(b.key))
-        return tl
-
-    def cue_frame(self, plan, key, kind, target):
-        """Index of the frame of ``plan`` on which a cue fires.
-
-        The frame is the one showing the cue's time, held inside the cue's
-        own beat so rounding at a boundary cannot move a cue to the line
-        before it.
-
-        Args:
-            plan: The `Plan` from ``timeline(...).at_fps(fps)``.
-            key: The line's key.
-            kind: The cue kind.
-            target: The cue target.
-
-        Returns:
-            The frame index.
-        """
-        frame = math.floor(self.cue(key, kind, target) * plan.fps + 1e-9)
-        return min(max(frame, plan.start(key)), plan.last(key))

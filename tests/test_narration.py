@@ -14,7 +14,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import eyepiece as ep
 from eyepiece import _ffmpeg
 from eyepiece import narration as nr
 from eyepiece.narration import _align, synth
@@ -150,29 +149,42 @@ def test_beats_run_back_to_back_and_last_speech_plus_padding():
 
 def test_the_narration_replaces_a_hold_with_the_speech():
     short = nr.Narration.load(SCRIPT, DATA)
-    padded = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    padded = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
     assert padded.total_s == pytest.approx(short.total_s + 1.0)
     assert padded.start("open") == 1.0
 
 
 def test_motion_longer_than_the_speech_stretches_the_beat():
-    tl = nr.Narration.load(SCRIPT, DATA, min_s={"open": 5.0})
+    tl = nr.Narration.load(SCRIPT, DATA, ends={"open": 5.0})
     assert tl.end("open") == pytest.approx(5.0)
     assert tl.start("leak") == pytest.approx(5.0)
 
 
-def test_a_cue_fires_at_its_word_less_the_lead():
+def test_a_cue_is_the_start_of_its_word_with_no_lead():
     tl = nr.Narration.load(SCRIPT, DATA)
     word = tl.beat("leak").words[4]
     assert word.text == "speckle,"
-    assert tl.cue("leak", "indicate", "speckle") == pytest.approx(word.start_s)
-    led = nr.Narration.load(SCRIPT, DATA, lead_s=0.15)
-    assert led.cue("leak", "indicate", "speckle") == pytest.approx(word.start_s - 0.15)
+    assert tl.cue("leak", "indicate", "speckle") == word.start_s
 
 
-def test_a_lead_never_puts_a_cue_before_its_beat():
-    tl = nr.Narration.load(SCRIPT, DATA, lead_s=5.0)
-    assert tl.cue("leak", "circumscribe", "planet") == tl.start("leak")
+def test_place_is_pure_and_puts_the_line_where_it_is_told():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    one = tl.place("leak", 10.0)
+    assert one == tl.place("leak", 10.0)
+    base = tl.beat("leak")
+    shift = 10.0 - base.start_s
+    assert one.end_s - one.start_s == pytest.approx(base.end_s - base.start_s)
+    assert one.cues[0].at_s == pytest.approx(base.cues[0].at_s + shift)
+    held = tl.place("leak", 10.0, end_s=40.0)
+    assert held.end_s == 40.0
+    assert held.speech_end_s == one.speech_end_s
+    assert tl.place("leak", 10.0, end_s=1.0).end_s == one.end_s  # a floor, not a cut
+
+
+def test_a_line_cannot_start_before_the_line_before_it_ends():
+    tl = nr.Narration.load(SCRIPT, DATA)
+    with pytest.raises(ValueError, match="before the line before"):
+        nr.Narration(SCRIPT, tl.spoken, starts={"leak": 0.5})
 
 
 def test_cue_times_are_in_reading_order():
@@ -228,55 +240,17 @@ def test_a_file_whose_key_or_text_is_not_the_lines_is_refused(tmp_path):
         nr.Narration.load(SCRIPT, other)
 
 
-def test_min_s_names_only_known_lines():
-    with pytest.raises(KeyError):
-        nr.Narration.estimated(SCRIPT, min_s={"nope": 1.0})
+def test_starts_and_ends_name_only_known_lines():
+    with pytest.raises(KeyError, match="nope"):
+        nr.Narration.estimated(SCRIPT, ends={"nope": 1.0})
+    with pytest.raises(KeyError, match="nope"):
+        nr.Narration.estimated(SCRIPT, starts={"nope": 1.0})
 
 
 def test_an_estimated_narration_lays_out_without_a_cache():
     tl = nr.Narration.estimated(SCRIPT)
     assert tl.total_s > 3.0
     assert tl.cue("open", "indicate", "star") > 0.0
-
-
-# The bridge to eyepiece's Timeline and Plan
-
-
-def test_the_beats_become_the_holds_of_a_timeline_and_a_cue_lands_in_its_beat():
-    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0, min_s={"open": 3.0})
-    plan = tl.timeline({"title": "none"}, set={"leak": {"title": "speckle"}}).at_fps(10)
-    assert [b.name for b in plan.beats] == ["head", "open", "leak"]
-    assert plan.seconds == pytest.approx(tl.total_s, abs=0.1)
-    assert plan.frames[plan.start("leak")]["title"] == "speckle"
-    for key, kind, target in [
-        ("open", "indicate", "star"),
-        ("leak", "indicate", "speckle"),
-        ("leak", "circumscribe", "planet"),
-    ]:
-        k = tl.cue_frame(plan, key, kind, target)
-        assert plan.beat_at(k).name == key
-        assert k / plan.fps == pytest.approx(tl.cue(key, kind, target), abs=0.1)
-
-
-def test_a_cue_at_a_boundary_stays_in_its_own_beat():
-    tl = nr.Narration.load(SCRIPT, DATA, lead_s=5.0)
-    plan = tl.timeline().at_fps(7)
-    k = tl.cue_frame(plan, "leak", "circumscribe", "planet")
-    assert k == plan.start("leak")
-    assert plan.beat_at(k).name == "leak"
-
-
-def test_the_bridge_is_a_timeline_of_the_package_not_a_second_one():
-    tl = nr.Narration.load(SCRIPT, DATA)
-    assert isinstance(tl.timeline(), ep.Timeline)
-    assert not hasattr(nr, "Timeline")
-    assert not hasattr(nr, "Beat")
-
-
-def test_set_names_only_known_lines():
-    tl = nr.Narration.load(SCRIPT, DATA)
-    with pytest.raises(KeyError, match="nope"):
-        tl.timeline({"a": 0}, set={"nope": {"a": 1}})
 
 
 # Cue vocabulary
@@ -630,7 +604,7 @@ def _fill_audio(tl, directory, scale=1.0):
 
 
 def test_the_audio_track_places_each_line_at_its_speech_start(tmp_path):
-    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    tl = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
     _fill_audio(tl, tmp_path)
     path = nr.audio_track(
         tl, tmp_path, tmp_path / "track.wav", rate=None, room_tone_db=None, fade_s=0.0
@@ -742,7 +716,7 @@ def _dbfs(x):
 
 def test_the_track_is_48_khz_with_a_finite_room_tone_below_the_floor(tmp_path):
     _ffmpeg_or_skip()
-    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    tl = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
     _fill_audio(tl, tmp_path)
     path = nr.audio_track(tl, tmp_path, tmp_path / "track.wav", room_tone_db=-60.0)
     rate, data = _read_track(path)
@@ -756,7 +730,7 @@ def test_the_track_is_48_khz_with_a_finite_room_tone_below_the_floor(tmp_path):
 
 
 def test_the_track_has_no_bed_unless_asked(tmp_path):
-    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    tl = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
     _fill_audio(tl, tmp_path)
     path = nr.audio_track(
         tl, tmp_path, tmp_path / "t.wav", rate=None, room_tone_db=None
@@ -765,7 +739,7 @@ def test_the_track_has_no_bed_unless_asked(tmp_path):
 
 
 def test_lines_start_and_stop_without_a_click(tmp_path):
-    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    tl = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
     _fill_audio(tl, tmp_path)
     kwargs = {"rate": None, "room_tone_db": None}
     bare = nr.audio_track(tl, tmp_path, tmp_path / "a.wav", fade_s=0.0, **kwargs)
@@ -781,7 +755,7 @@ def test_lines_start_and_stop_without_a_click(tmp_path):
 
 def test_the_track_is_reproducible_and_the_seed_changes_it(tmp_path):
     _ffmpeg_or_skip()
-    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    tl = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
     _fill_audio(tl, tmp_path)
     kw = {"room_tone_db": -60.0}
     one = nr.audio_track(tl, tmp_path, tmp_path / "one.wav", **kw)

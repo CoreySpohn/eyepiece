@@ -7,10 +7,11 @@ a `Script` once and caches word times and compressed audio. Layout (this
 package, pure Python) reads that cache and places each line as a beat of the
 clip: a beat lasts as long as its speech plus padding, and each cue mark in
 the text (``{indicate:speckle}speckle``) fires its move when the word is
-said. A clip asks the `Narration` when a move starts, takes its holds from
-`Narration.timeline` and its cue frames from `Narration.cue_frame`;
-`audio_track`, `mux`, `captions`, `write_srt` and `write_vtt` then put the
-voice and the captions with the silent render.
+said. A clip hands the `Narration` to ``eyepiece.Timeline(narration=...)``,
+which places every move on its word, solves the length of each line in one
+pass, and returns a `Narration` with those starts and ends as
+``Timeline.narration``; `audio_track`, `mux`, `captions`, `write_srt` and
+`write_vtt` then put the voice and the captions with the silent render.
 
 Importing this package loads neither matplotlib nor Kokoro.
 """
