@@ -318,3 +318,29 @@ def test_a_caller_owned_pixel_format_turns_the_color_conversion_off(tmp_path):
         for frame in _flat_frames(3, size):
             sink.write(frame)
     assert "bt709" not in _info(path)
+
+
+@needs_ffmpeg
+def test_mux_keeps_the_picture_tags_and_the_audio_arguments_together(tmp_path):
+    import wave
+
+    from eyepiece.narration import mux
+
+    size = (64, 48)
+    video = tmp_path / "v.mp4"
+    with ep.RawSink(video, size, fps=30, encoder={"colorspace": None}) as sink:
+        for frame in _flat_frames(30, size):
+            sink.write(frame)
+    assert "bt709" not in _info(video)
+    wav = tmp_path / "a.wav"
+    t = np.arange(24000) / 24000
+    tone = (3000 * np.sin(2 * np.pi * 220 * t)).astype("<i2")
+    with wave.open(str(wav), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(24000)
+        handle.writeframes(tone.tobytes())
+    out = mux(video, wav, tmp_path / "m.mp4")
+    done = subprocess.run([FFMPEG, "-i", str(out)], capture_output=True, text=True)
+    assert "bt709" in _info(out)
+    assert "48000 Hz" in done.stderr
