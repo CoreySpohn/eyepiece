@@ -1061,6 +1061,38 @@ def test_words_an_odd_dollar_sign_is_not_math_and_words_stay_separate():
     ]
 
 
+SPACED_LINES = [
+    r"the prior times the likelihood is the $p(\theta \mid d)$",
+    r"$p(\theta \mid d)$ is the prior times the likelihood",
+    r"the prior $p(\theta \mid d)$ times the likelihood",
+    r"the $p(x)$ $q(y)$ and the $\sum_i a_i$ end",
+]
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize(("dpi", "fontsize"), [(100, 12), (110, 15), (200, 20)])
+@pytest.mark.parametrize("string", SPACED_LINES)
+def test_words_gap_before_and_after_math_matches_a_plain_gap(
+    string, dpi, fontsize, mode
+):
+    hwostyle.use(mode)
+    fig, line = _words_line(string, dpi, fontsize)
+    fig.canvas.draw()
+    texts = line.artists["text"]
+    boxes = [t.get_window_extent() for t in texts]
+    gaps = [b.x0 - a.x1 for a, b in itertools.pairwise(boxes)]
+    plain = [
+        gap
+        for gap, (a, b) in zip(gaps, itertools.pairwise(texts), strict=True)
+        if "$" not in a.get_text() and "$" not in b.get_text()
+    ]
+    assert plain
+    reference = float(np.median(plain))
+    for gap, (a, b) in zip(gaps, itertools.pairwise(texts), strict=True):
+        assert gap == pytest.approx(reference, abs=1.0), (a.get_text(), b.get_text())
+    plt.close(fig)
+
+
 def test_words_keep_math_whole_even_with_spaces_in_it():
     _fig, line = _words_line(MATH_LINE, 100, 12)
     assert [w.get_text() for w in line.artists["text"]] == [
