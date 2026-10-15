@@ -744,16 +744,12 @@ class _Leader(Line2D):
         ]
 
     def draw(self, renderer):
-        """Grow from the text toward the mark, after auditing the full leader."""
+        """Grow from the text toward the mark; drawing never raises."""
         if not self.get_visible() or self._grow <= 0.0:
             return
         ends = self._ends(renderer)
         if ends is None:
             return
-        if self._strict:
-            broken = self.faults(renderer)
-            if broken:
-                raise ValueError("leader breaks the leader rules: " + "; ".join(broken))
         start, end = ends
         tip = start + self._grow * (end - start)
         self.set_data([start[0], tip[0]], [start[1], tip[1]])
@@ -797,9 +793,11 @@ def leader(text, target, *, color=None, lw=None, avoid=None, strict=True, line_k
     that means something in the panel. The geometry is recomputed at every
     draw, so it follows the text and the mark.
 
-    With `strict` (the default) drawing a leader that breaks a rule raises,
-    so a recording fails instead of shipping the frame; the leader's
-    `faults()` lists the broken rules without drawing.
+    Drawing never raises, so a still or a PDF save is not aborted half way.
+    The leader's `faults()` lists the rules it breaks as the figure is now,
+    and `audit` checks every leader and link of a figure at once and, for
+    those made with `strict` (the default), raises `AttentionFault`; a
+    recording calls it on the composite, or on any frame it wants to vet.
 
     Args:
         text: The `Text` artist the leader starts from.
@@ -811,7 +809,8 @@ def leader(text, target, *, color=None, lw=None, avoid=None, strict=True, line_k
         avoid: The artists the leader must not cross. None audits every
             line, patch, and collection in the target's axes except the
             target itself, spines, and the axes background.
-        strict: Raise on drawing a leader that breaks a rule.
+        strict: Whether `audit` raises for this leader when it breaks a
+            rule; False leaves the faults for the caller to read.
         line_kw: Extra kwargs for the `Line2D`, applied last.
 
     Returns:
@@ -850,6 +849,63 @@ def leader(text, target, *, color=None, lw=None, avoid=None, strict=True, line_k
         line._grow = _check_u(u)
 
     return PlotResult(ax=target.axes, artists={"line": line}, update=update)
+
+
+class AttentionFault(ValueError):
+    """A leader or link of a figure breaks the connector rules.
+
+    Attributes:
+        faults: ``{line: [message, ...]}`` for every strict line that
+            breaks a rule.
+    """
+
+    def __init__(self, faults):
+        """Report the faults of every strict line that broke a rule."""
+        self.faults = faults
+        lines = [m for msgs in faults.values() for m in msgs]
+        super().__init__(
+            "attention lines break the connector rules: " + "; ".join(lines)
+        )
+
+
+def audit(fig, *, raise_on_fault=True):
+    """Check every leader and link of a figure against the connector rules.
+
+    Drawing a leader or a link never raises, so a still or a PDF save is
+    never aborted half way. This is the explicit check: call it after the
+    figure is laid out, on the composite or on any frame to be vetted.
+    Lines that are hidden (a callout before its beat) are skipped; the
+    others are audited as fully grown.
+
+    Args:
+        fig: The figure the lines were made in.
+        raise_on_fault: Raise `AttentionFault` when a line made with
+            ``strict=True`` breaks a rule.
+
+    Returns:
+        ``{line: [message, ...]}`` for every line, strict or not, that
+        breaks a rule; empty when all keep them.
+
+    Raises:
+        AttentionFault: If `raise_on_fault` and a strict line breaks a rule.
+
+    Example::
+
+        res = ep.leader(note, ep.Anchor.from_data(ax, (1.22, 0.0)))
+        ep.audit(fig)  # raises AttentionFault if the leader crosses data
+    """
+    root = fig.get_figure(root=True) or fig
+    renderer = _renderer(root)
+    found = {}
+    for artist in root.artists:
+        if isinstance(artist, _Leader) and artist.get_visible():
+            broken = artist.faults(renderer)
+            if broken:
+                found[artist] = broken
+    strict = {a: m for a, m in found.items() if a._strict}
+    if raise_on_fault and strict:
+        raise AttentionFault(strict)
+    return found
 
 
 # Callout
@@ -1097,7 +1153,7 @@ def callout(
             it fades in; 0 fades it in place.
         leader_color: Leader color, as in `leader`.
         avoid: Artists the leader must not cross, as in `leader`.
-        strict: Raise on drawing a leader that breaks a rule.
+        strict: Whether `audit` raises for the leader when it breaks a rule.
         zorder: Drawing order of the caption among the figure's children;
             the leader draws just below it.
         text_kw: Extra kwargs for the `Text`, applied last.

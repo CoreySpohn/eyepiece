@@ -276,13 +276,33 @@ def test_leader_too_long_or_across_data_is_a_fault():
     assert ep.leader(near, dot).artists["line"].faults() == []
 
 
-def test_strict_leader_refuses_to_draw_a_broken_leader():
+def test_a_broken_leader_draws_and_the_audit_names_it():
     fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.05], [0.05], "o")
-    ep.leader(ax.text(0.95, 0.95, "far away"), dot)
-    with pytest.raises(ValueError, match="quarter"):
-        fig.canvas.draw()
+    far = ep.leader(ax.text(0.95, 0.95, "far away"), dot)
+    fig.canvas.draw()  # a still or a PDF save is never aborted mid-draw
+    assert len(far.artists["line"].get_xydata()) == 2
+    with pytest.raises(ep.AttentionFault, match="quarter") as info:
+        ep.audit(fig)
+    assert isinstance(info.value, ValueError)
+    assert far.artists["line"] in info.value.faults
+    found = ep.audit(fig, raise_on_fault=False)
+    assert any("quarter" in m for m in found[far.artists["line"]])
+
+
+def test_audit_skips_lenient_and_hidden_lines_and_passes_clean_ones():
+    fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    (dot,) = ax.plot([0.05], [0.05], "o")
+    ep.leader(ax.text(0.95, 0.95, "far away"), dot, strict=False)
+    assert ep.audit(fig)  # reported, not raised
+    ep.leader(ax.text(0.1, 0.3, "near"), dot)
+    near_fig, near_ax = plt.subplots(figsize=(6.0, 4.0))
+    near_ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    (mark,) = near_ax.plot([0.5], [0.5], "o", ms=8)
+    ep.leader(near_ax.text(0.55, 0.22, "the dot"), mark)
+    assert ep.audit(near_fig) == {}
 
 
 def test_leader_does_not_run_through_its_mark():
