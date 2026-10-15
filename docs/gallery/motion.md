@@ -611,6 +611,42 @@ for cell, u in zip(cells, (0.0, 0.33, 0.66, 1.0), strict=True):
 plt.show()
 ```
 
+## Write: a label put down by hand
+
+`write` is for a label or a short equation that should arrive the way a hand
+would put it on a board. A ghost traces the outline of each glyph in reading
+order, each glyph starting before the one before it has finished, and then the
+fill fades in as the stroke fades out. The outlines come from the font the text
+itself uses, so the ghost sits exactly on the text, and mathtext works through
+the mathtext parser: every symbol is a glyph, and a fraction bar counts as one.
+The real text is hidden while the ghost is drawn and shown at ``u = 1``, so the
+last frame is the text as drawn. `draw` sets how much of the progress is spent
+tracing, `overlap` how early the fill starts, and `lag` how much the glyphs
+overlap one another.
+
+```{code-cell} python
+import eyepiece.testing as ept
+
+fig = plt.figure(figsize=(9.0, 1.2), dpi=100)
+note = fig.text(0.04, 0.4, r"Contrast $C = \frac{F_p}{F_s}$", fontsize=26)
+fig.canvas.draw()
+scribe = ep.write(note, lag=0.6)
+
+shown, cells = plt.subplots(1, 5, figsize=(9.0, 1.0), layout="constrained")
+for cell, u in zip(cells, (0.15, 0.3, 0.5, 0.75, 1.0), strict=True):
+    scribe.update(u)
+    ept.assert_readable(fig)
+    fig.canvas.draw()
+    cell.imshow(np.asarray(fig.canvas.buffer_rgba()).copy(), interpolation="nearest")
+    cell.set_title(f"u = {u:g}", fontsize="small")
+    cell.set_axis_off()
+plt.show()
+```
+
+The ghost is hidden at ``u = 0``, where nothing is drawn, so a clip starts on
+the empty figure and ends on the text. A `Stage` that owns the text weighs the
+ghost too, because the ghost reads the text's color and opacity as it draws.
+
 ## Readability check
 
 A clip can draw without error and still be unreadable. `eyepiece.testing`
