@@ -143,6 +143,7 @@ __all__ = [
     "view_limits",
     "warp",
     "warp_grid",
+    "words",
     "zoom_path",
 ]
 
@@ -229,6 +230,7 @@ _LAZY_EXPORTS = {
     "view_limits": ("eyepiece._motion", "view_limits"),
     "warp": ("eyepiece._warp", "warp"),
     "warp_grid": ("eyepiece._warp", "warp_grid"),
+    "words": ("eyepiece.attention", "words"),
     "zoom_path": ("eyepiece._motion", "zoom_path"),
     "RawSink": ("eyepiece.anim", "RawSink"),
     "ScaleDriftError": ("eyepiece.anim", "ScaleDriftError"),

@@ -221,6 +221,7 @@ _EXPECTED_ALL = [
     "view_limits",
     "warp",
     "warp_grid",
+    "words",
     "zoom_path",
 ]
 

@@ -5,6 +5,7 @@ leader keeps the connector rules; a callout sits beside its subject and is
 absent before its beat; all of it in light and dark.
 """
 
+import functools
 import io
 import itertools
 import math
@@ -951,6 +952,398 @@ def test_term_row_rejects_bad_inputs():
         ep.term_row(at, ["x"], gap_em=-1.0)
     with pytest.raises(TypeError):
         ep.term_row("here", ["x"])
+
+
+# Words
+
+LINE = "the prior times the likelihood"
+MATH_LINE = r"the $\sum_i (y_i - m_i)^2$ times $p(y | x)$ gives it"
+MATH_LINES = [
+    MATH_LINE,
+    r"the prior times the likelihood is the $p(\theta \mid d)$",
+    r"cost $\chi^2$ for $a b$ and more",
+]
+
+
+def _line_panel(dpi=100):
+    fig, ax = plt.subplots(figsize=(6.0, 2.0), dpi=dpi)
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    ax.set_axis_off()
+    return fig, ax
+
+
+def _ink_mask(frame, floor=0):
+    """The pixels that differ from the background (the corner) by more than `floor`."""
+    frame = frame.astype(int)
+    return np.abs(frame - frame[0, 0]).max(axis=-1) > floor
+
+
+def _within_a_pixel(a, b):
+    """Whether the ink of each frame lies within one pixel of the other's."""
+    ink_a, ink_b = _ink_mask(a, 60), _ink_mask(b, 60)
+
+    def grown(mask):
+        out = mask.copy()
+        for dy, dx in itertools.product((-1, 0, 1), repeat=2):
+            out |= np.roll(np.roll(mask, dy, axis=0), dx, axis=1)
+        return out
+
+    return not (ink_a & ~grown(ink_b)).any() and not (ink_b & ~grown(ink_a)).any()
+
+
+def _single_text(string, dpi, fontsize, **kw):
+    fig, ax = _line_panel(dpi)
+    ax.text(0.1, 0.5, string, fontsize=fontsize, ha="left", va="baseline", **kw)
+    return _pixels(fig)
+
+
+def _words_line(string, dpi, fontsize, **kw):
+    fig, ax = _line_panel(dpi)
+    line = ep.words(
+        ep.Anchor.from_data(ax, (0.1, 0.5)), string, fontsize=fontsize, **kw
+    )
+    return fig, line
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize(("dpi", "fontsize"), [(100, 10), (110, 14), (200, 20)])
+@pytest.mark.parametrize(
+    "string", [LINE, "AVAWAY Tov Yo-yo, (quoted) fi flow ffl.", "  two  gaps  "]
+)
+def test_words_joined_line_is_pixel_identical_to_one_text(string, dpi, fontsize, mode):
+    hwostyle.use(mode)
+    reference = _single_text(string, dpi, fontsize)
+    fig, line = _words_line(string, dpi, fontsize)
+    np.testing.assert_array_equal(_pixels(fig), reference)
+    assert [w.get_text() for w in line.artists["text"]] == string.split()
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize(("dpi", "fontsize"), [(100, 10), (110, 14), (200, 20)])
+@pytest.mark.parametrize("string", MATH_LINES)
+def test_words_with_math_match_one_text_within_a_pixel(string, dpi, fontsize, mode):
+    hwostyle.use(mode)
+    reference = _single_text(string, dpi, fontsize)
+    fig, line = _words_line(string, dpi, fontsize)
+    joined = _pixels(fig)
+    boxes = [t.get_window_extent() for t in line.artists["text"]]
+    fig_ref, ax_ref = _line_panel(dpi)
+    one = ax_ref.text(0.1, 0.5, string, fontsize=fontsize, ha="left", va="baseline")
+    fig_ref.canvas.draw()
+    whole = one.get_window_extent()
+    assert boxes[0].x0 == pytest.approx(whole.x0, abs=1.0)
+    assert boxes[-1].x1 == pytest.approx(whole.x1, abs=1.0)
+    # The gap before a math word stays a gap: no word box overlaps its neighbor.
+    for left, right in itertools.pairwise(boxes):
+        assert right.x0 - left.x1 > 2.0
+    assert _within_a_pixel(reference, joined)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_words_text_kw_font_size_is_laid_out_and_drawn_alike(mode):
+    hwostyle.use(mode)
+    reference = _single_text(LINE, 100, 20)
+    fig, _line = _words_line(LINE, 100, 10, text_kw={"fontsize": 20})
+    np.testing.assert_array_equal(_pixels(fig), reference)
+    reference = _single_text(MATH_LINE, 100, 20)
+    fig, _line = _words_line(MATH_LINE, 100, 10, text_kw={"fontsize": 20})
+    joined = _pixels(fig)
+    assert _within_a_pixel(reference, joined)
+
+
+def test_words_an_odd_dollar_sign_is_not_math_and_words_stay_separate():
+    _fig, line = _words_line("costs $5 and more", 100, 12)
+    assert [w.get_text() for w in line.artists["text"]] == [
+        "costs",
+        "$5",
+        "and",
+        "more",
+    ]
+
+
+def test_words_keep_math_whole_even_with_spaces_in_it():
+    _fig, line = _words_line(MATH_LINE, 100, 12)
+    assert [w.get_text() for w in line.artists["text"]] == [
+        "the",
+        r"$\sum_i (y_i - m_i)^2$",
+        "times",
+        "$p(y | x)$",
+        "gives",
+        "it",
+    ]
+    _fig, escaped = _words_line(r"costs \$5 and \$6 or $a b$", 100, 12)
+    assert [w.get_text() for w in escaped.artists["text"]] == [
+        r"costs",
+        r"\$5",
+        "and",
+        r"\$6",
+        "or",
+        "$a b$",
+    ]
+
+
+def test_words_words_read_left_to_right_on_one_baseline_inside_the_line():
+    fig, line = _words_line(LINE, 100, 12)
+    fig.canvas.draw()
+    texts = line.artists["text"]
+    boxes = [t.get_window_extent() for t in texts]
+    for left, right in itertools.pairwise(boxes):
+        assert right.x0 > left.x1
+    assert len({round(t.get_position()[1], 3) for t in texts}) == 1
+    whole = _single_text(LINE, 100, 12)
+    cols = np.nonzero((whole.min(axis=-1) < 255).any(axis=0))[0]
+    assert boxes[0].x0 == pytest.approx(cols.min(), abs=1.5)
+    assert boxes[-1].x1 == pytest.approx(cols.max() + 1, abs=1.5)
+
+
+def test_words_color_one_word_and_only_that_word():
+    fig, line = _words_line(LINE, 100, 14, colors={3: "#ff0000"})
+    pixels = _pixels(fig).astype(int)
+    red = (pixels[..., 0] > 200) & (pixels[..., 1] < 80) & (pixels[..., 2] < 80)
+    boxes = [t.get_window_extent() for t in line.artists["text"]]
+    height = pixels.shape[0]
+    inside = []
+    for box in boxes:
+        x0, x1 = int(box.x0) - 1, int(box.x1) + 2
+        y0, y1 = int(height - box.y1) - 1, int(height - box.y0) + 2
+        inside.append(int(red[y0:y1, x0:x1].sum()))
+    assert inside[3] > 50
+    assert [n for k, n in enumerate(inside) if k != 3] == [0, 0, 0, 0]
+
+
+def test_words_colors_accept_a_sequence_and_reject_a_mismatch():
+    _fig, ax = _line_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    line = ep.words(at, "a b c", colors=["C0", None, "C1"])
+    got = [to_rgb(t.get_color()) for t in line.artists["text"]]
+    assert got[0] == to_rgb("C0") and got[2] == to_rgb("C1")
+    assert got[1] == to_rgb(plt.rcParams["text.color"])
+    with pytest.raises(ValueError, match="entries"):
+        ep.words(at, "a b c", colors=["C0"])
+    with pytest.raises(ValueError, match="no word"):
+        ep.words(at, "a b c", colors={5: "C0"})
+    with pytest.raises(ValueError, match="no word"):
+        ep.words(at, "a b c", colors={True: "C0"})
+
+
+def test_words_reveal_by_word_goes_left_to_right_in_place():
+    fig, line = _words_line(LINE, 100, 14)
+    texts = line.artists["text"]
+    whole = _pixels(fig)
+    places = [t.get_position()[0] for t in texts]
+    line.reveal(0.0)
+    assert not any(t.get_visible() for t in texts)
+    assert _pixels(fig).min() == 255
+    arrived = []
+    for u in np.linspace(0.0, 1.0, 41):
+        line.reveal(u)
+        arrived.append([t.get_visible() for t in texts])
+        frame = _pixels(fig)
+        for t, x in zip(texts, places, strict=True):
+            assert t.get_position()[0] == pytest.approx(x)
+        # In place: nothing is inked where the finished line is not.
+        assert not ((frame.min(axis=-1) < 255) & (whole.min(axis=-1) == 255)).any()
+    for before, after in itertools.pairwise(arrived):
+        assert sum(after) >= sum(before)
+        assert after == [True] * sum(after) + [False] * (len(after) - sum(after))
+    line.reveal(0.5)
+    levels = [t.get_alpha() for t in texts]
+    assert levels[0] in (None, 1.0) and levels[1] in (None, 1.0)
+    assert 0.0 < levels[2] < 1.0 and not texts[3].get_visible()
+    line.reveal(1.0)
+    np.testing.assert_array_equal(_pixels(fig), whole)
+
+
+def test_words_reveal_by_letter_spells_each_word_in_place():
+    fig, line = _words_line(LINE, 100, 14)
+    whole = _pixels(fig)
+    texts = line.artists["text"]
+    reach = []
+    for u in np.linspace(0.0, 1.0, 61):
+        line.reveal(u, by="letter")
+        frame = _pixels(fig)
+        ink = frame.min(axis=-1) < 255
+        assert not (ink & (whole.min(axis=-1) == 255)).any()
+        cols = np.nonzero(ink.any(axis=0))[0]
+        reach.append(-1 if cols.size == 0 else cols.max())
+    assert reach[0] == -1
+    assert all(b >= a for a, b in itertools.pairwise(reach))
+    line.reveal(0.5, by="letter")
+    shown = "".join(t.get_text() for t in texts if t.get_visible())
+    total = len(LINE.replace(" ", ""))
+    assert len(shown) == total // 2
+    assert LINE.replace(" ", "").startswith(shown)
+    line.reveal(1.0, by="letter")
+    np.testing.assert_array_equal(_pixels(fig), whole)
+    assert [t.get_text() for t in texts] == LINE.split()
+
+
+def test_words_reveal_by_letter_counts_a_math_word_as_one_letter():
+    fig, line = _words_line(r"ab $x y$ cd", 100, 12)
+    texts = line.artists["text"]
+    line.reveal(0.5, by="letter")  # 5 letters: 2 + 1 + 2, so 2 are shown
+    assert [t.get_visible() for t in texts] == [True, False, False]
+    line.reveal(0.85, by="letter")
+    assert [t.get_visible() for t in texts] == [True, True, True]
+    assert texts[2].get_text() == "c"
+    assert texts[1].get_text() == "$x y$"
+    line.reveal(1.0, by="letter")
+    assert texts[2].get_text() == "cd"
+    del fig
+
+
+@pytest.mark.parametrize("by", ["word", "letter"])
+def test_words_level_dims_by_opacity_alone_and_rests_exactly(by):
+    fig, line = _words_line(LINE, 100, 14)
+    texts = line.artists["text"]
+    whole = _pixels(fig)
+    places = [t.get_position() for t in texts]
+    line.update(1.0, level=0.4)
+    assert all(t.get_alpha() == pytest.approx(0.4) for t in texts)
+    dimmed = _pixels(fig)
+    assert dimmed.min() > whole.min()
+    for t, xy in zip(texts, places, strict=True):
+        assert t.get_position() == pytest.approx(xy)
+    line.update(1.0, level=0.4)  # absolute: never compounds
+    assert texts[0].get_alpha() == pytest.approx(0.4)
+    line.update(0.5, level=0.5)
+    assert 0.0 < texts[2].get_alpha() < 0.5 and not texts[3].get_visible()
+    line.reveal(1.0, by=by)
+    assert all(t.get_alpha() in (None, 1.0) for t in texts)
+    np.testing.assert_array_equal(_pixels(fig), whole)
+
+
+@pytest.mark.parametrize(
+    "how",
+    [
+        functools.partial(ep.ease, kind="back_out", strength=0.3),
+        functools.partial(ep.ease, kind="running_start", strength=0.3),
+        "back_out",
+        lambda r: r * r,
+    ],
+)
+def test_words_take_a_callable_or_overshoot_ease_without_leaving_opacity(how):
+    fig, ax = _line_panel()
+    line = ep.words(ep.Anchor.from_data(ax, (0.1, 0.5)), LINE, ease=how)
+    texts = line.artists["text"]
+    whole = _pixels(fig)
+    seen = []
+    for u in np.linspace(0.0, 1.0, 101):
+        line.update(u)
+        for t in texts:
+            alpha = t.get_alpha()
+            alpha = 1.0 if alpha is None else alpha
+            assert 0.0 <= alpha <= 1.0
+            seen.append(alpha)
+    assert min(seen) < 1.0
+    line.update(0.0)
+    assert not any(t.get_visible() for t in texts)
+    line.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), whole)
+    line.reveal(0.5, ease="smoothstep")
+    assert [t.get_visible() for t in texts] == [True, True, True, False, False]
+
+
+def test_words_update_reveals_by_the_chosen_unit():
+    _fig, ax = _line_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    line = ep.words(at, "ab cd", by="letter")
+    line.update(0.5)
+    assert [t.get_text() for t in line.artists["text"]] == ["ab", "cd"]
+    assert [t.get_visible() for t in line.artists["text"]] == [True, False]
+    line.update(0.25)
+    assert line.artists["text"][0].get_text() == "a"
+    assert line.artists["text"][1].get_text() == "cd"
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_words_stage_one_word_and_rest_exactly(mode):
+    hwostyle.use(mode)
+    fig, line = _words_line(LINE, 100, 14, colors={1: "C0"})
+    texts = line.artists["text"]
+    made = _pixels(fig)
+    boxes = [t.get_window_extent() for t in texts]
+    stage = ep.Stage({"key": texts[1:2], "rest": texts[:1] + texts[2:]})
+    stage.set(shown=["key"])
+    fig.canvas.draw()
+    assert to_rgba(texts[1].get_color())[3] == 1.0
+    assert to_rgba(texts[3].get_color())[3] == 0.0
+    for t, box in zip(texts, boxes, strict=True):
+        assert t.get_window_extent().x0 == pytest.approx(box.x0)
+    stage.rest()
+    np.testing.assert_array_equal(_pixels(fig), made)
+
+
+def test_words_are_anchors_and_pulse_alone_without_moving_the_line():
+    fig, line = _words_line(LINE, 100, 14)
+    texts = line.artists["text"]
+    anchor = ep.Anchor.from_artist(texts[2], loc="bottom")
+    before = anchor.display()  # no draw yet
+    fig.canvas.draw()
+    np.testing.assert_allclose(anchor.display(), before, atol=0.01)
+    boxes = [t.get_window_extent() for t in texts]
+    made = _pixels(fig)
+    pulse = ep.indicate(texts[2])
+    pulse.update(0.5)
+    fig.canvas.draw()
+    assert texts[2].get_window_extent().width > boxes[2].width
+    for k in (0, 1, 3, 4):
+        assert texts[k].get_window_extent().x0 == pytest.approx(boxes[k].x0)
+    pulse.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), made)
+
+
+def test_words_relay_out_when_the_figure_dpi_changes():
+    fig, _line = _words_line(LINE, 100, 12)
+    fig.canvas.draw()
+    fig.set_dpi(200)
+    np.testing.assert_array_equal(_pixels(fig), _single_text(LINE, 200, 12))
+
+
+def test_words_ha_places_the_line_by_its_end():
+    fig, ax = _line_panel()
+    at = ep.Anchor.from_data(ax, (0.5, 0.5))
+    spans = {}
+    for ha in ("left", "center", "right"):
+        line = ep.words(at, LINE, ha=ha)
+        fig.canvas.draw()
+        boxes = [t.get_window_extent() for t in line.artists["text"]]
+        spans[ha] = (boxes[0].x0, boxes[-1].x1)
+        for t in line.artists["text"]:
+            t.remove()
+    x = at.display()[0]
+    assert spans["left"][0] == pytest.approx(x, abs=1.5)
+    assert 0.5 * sum(spans["center"]) == pytest.approx(x, abs=1.5)
+    assert spans["right"][1] == pytest.approx(x, abs=1.5)
+
+
+def test_words_belong_to_the_figure_and_move_no_data_limit():
+    fig, ax = _line_panel()
+    limits = (ax.get_xlim(), ax.get_ylim())
+    line = ep.words(ep.Anchor.from_data(ax, (0.1, 0.5)), LINE)
+    fig.canvas.draw()
+    for t in line.artists["text"]:
+        assert t in fig.artists and t not in ax.get_children()
+    assert (ax.get_xlim(), ax.get_ylim()) == limits
+    assert set(line.artists) <= ep.ARTIST_KEYS
+
+
+def test_words_reject_bad_inputs():
+    _fig, ax = _line_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    with pytest.raises(ValueError, match="no words"):
+        ep.words(at, "   ")
+    with pytest.raises(ValueError, match="one line"):
+        ep.words(at, "a\nb")
+    with pytest.raises(ValueError, match="ha"):
+        ep.words(at, "a", ha="top")
+    with pytest.raises(ValueError, match="by"):
+        ep.words(at, "a", by="syllable")
+    line = ep.words(at, "a b")
+    with pytest.raises(ValueError, match="by"):
+        line.reveal(0.5, by="syllable")
+    with pytest.raises(TypeError):
+        ep.words("here", "a")
 
 
 # Turning flight

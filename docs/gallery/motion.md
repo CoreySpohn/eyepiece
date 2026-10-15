@@ -798,3 +798,53 @@ def draw_flight(fig, k):
 draw_flight(fig, 0)
 HTML(ep.animate(fig, draw_flight, N_FLIGHT, fps=14).jshtml(dpi=80))
 ```
+
+## Words: color and reveal inside one line
+
+`words` sets a line of text as one text per word, so a word of a sentence can
+carry its own color, be the target of an anchor, or come in on its own beat.
+The line is laid out once, as a single string, and each word's place comes
+from the renderer, so the spacing is that of one `ax.text` and, without math,
+the joined line is pixel for pixel the same picture. A word in ``$...$`` is
+kept whole, and a line with math is measured and drawn as mathtext throughout,
+as matplotlib draws it, which matches the single text to within a pixel. For
+the choice between `words`, `term_row` and `readout`, see the `term_row`
+docstring.
+
+The reveal never moves anything. ``reveal(u, by="word")`` fades the words in
+from left to right, each where it will stay; ``by="letter"`` spells each word
+out the same way. At ``u = 1`` the line is the one that was drawn, so a still
+shows the whole sentence.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 0.7))
+ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+ax.set_axis_off()
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+line = ep.words(
+    ep.Anchor.from_data(ax, (0.03, 0.3)),
+    r"the prior times the likelihood is the $p(\theta \mid d)$",
+    fontsize=15,
+    colors={1: "C0", 4: "C1"},
+)
+
+shown, cells = plt.subplots(2, 2, figsize=(9.0, 2.0), layout="constrained")
+for row, by in zip(cells, ("word", "letter"), strict=True):
+    for cell, u in zip(row, (0.55, 1.0), strict=True):
+        line.reveal(u, by=by)
+        fig.canvas.draw()
+        cell.imshow(
+            np.asarray(fig.canvas.buffer_rgba()).copy(), interpolation="nearest"
+        )
+        cell.set_title(f"by {by}, u = {u:g}", fontsize=8)
+        cell.set_axis_off()
+plt.show()
+```
+
+Each word is an artist of the figure, so ``line.artists["text"][1]`` can be
+given to `Anchor.from_artist`, `Stage`, `indicate`, or `callout`, and the
+colors pick out the two factors the sentence names. In a clip the reveal runs
+before the caption's words are spoken, and the words that stay on screen are
+the same texts that the later moves point at.
