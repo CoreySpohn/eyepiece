@@ -120,6 +120,7 @@ __all__ = [
     "rail",
     "rail_panels",
     "reading_words",
+    "readout",
     "record",
     "ref_line",
     "role",
@@ -251,6 +252,7 @@ _LAZY_EXPORTS = {
     "leader": ("eyepiece.attention", "leader"),
     "link": ("eyepiece.attention", "link"),
     "morph": ("eyepiece.attention", "morph"),
+    "readout": ("eyepiece.attention", "readout"),
     "term_row": ("eyepiece.attention", "term_row"),
     "quad_image": ("eyepiece._pixel_morph", "quad_image"),
 }

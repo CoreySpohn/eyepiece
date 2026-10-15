@@ -410,7 +410,7 @@ In a clip the frame's time sets each move's progress, so any frame draws
 itself from its state alone, and the last frame, with every move at rest,
 is the composite still.
 
-## Emphasis: pulse, outline, readout, turn, link
+## Emphasis: pulse, outline, term row, turn, link
 
 Five more moves say "this one" for a thing already on screen, or join two
 panels. `indicate` is a pulse: for a moment the artist's line width, marker
@@ -420,7 +420,7 @@ move. It adds no hue, and it pulses from wherever the artist is, so on an
 artist a `Stage` holds it swells from the stage's level (set the stage, then
 the pulse, in each frame). `circumscribe` draws an outline around an artist
 or an anchor, clockwise from the top, and lets it fade. `term_row` lays an
-equation or a readout out as one text per term, so each term can be the
+equation out as one text per term, so each term can be the
 target of an anchor, a stage group, a flight, or a pulse of its own; a term
 whose text changes pushes its neighbors over at the next draw. `flight` turns
 what it carries, a segment or a bar, by `turn_deg`, so a stub beside the star
@@ -444,7 +444,7 @@ speed.plot(orbit / (2.0 * np.pi), 0.5 * np.sin(orbit), color=ep.neutral(0.4))
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-readout = ep.term_row(
+row = ep.term_row(
     ep.Anchor.from_data(speed, (0.05, -0.8)), [r"$v_r$", "=", "0.30"], ha="left"
 )
 ring = ep.circumscribe(orbiter, shape="ellipse", pad_pt=5.0)
@@ -474,10 +474,12 @@ for cell, frame, title in zip(cells, frames, titles, strict=True):
 plt.show()
 ```
 
-The readout is running when its term's text is set in the loop, for example
-``readout.artists["text"][2].set_text(f"{v:.2f}")``; `Anchor.from_artist` of a
-term follows it. Call `audit(fig)` once the composite is laid out to vet every
-leader and link of the clip.
+A term is rewritten by setting its text in the loop, for example
+``row.artists["text"][2].set_text("0.45")``, and `Anchor.from_artist` of a term
+follows it. Use `term_row` for terms whose text you choose, and `readout` (the
+next section) for a number that counts, because a rewritten term changes width
+and pushes its neighbors. Call `audit(fig)` once the composite is laid out to
+vet every leader and link of the clip.
 
 ## Morph: one path becomes another
 
@@ -673,3 +675,86 @@ slides or lengthens the arrow, ``turn.update(end_angle=...)`` opens the angle
 further, and ``sky.update(angle=...)`` turns the compass as a roll would. An arrow
 or an arc shorter than its head shrinks the head to fit, and one too short to
 see draws nothing.
+
+## Readout: a number that counts
+
+A value that changes on screen, such as the time of a simulation or a
+probability, should change the way the eye can follow: the digits run to the
+new value while everything else holds still. `readout` is that number. Its
+format is fixed (a fixed-point spec, a prefix, a suffix and a unit), and so is
+its layout: the decimal point stays at one place for the life of the readout,
+the integer part is right-aligned to it and the fraction left-aligned from it,
+and each slot is as wide as the widest string it will hold. The label
+therefore never jitters, in a font with tabular digits or one without.
+`update(u)` shows the value `u` of the way from the old value to the new one
+under the same easing as every other move, rounded to the precision of the
+format; rounding is monotone, so a count never goes back, and a value that
+rounds to zero shows no minus sign. `set(value)` starts the next move from the
+value last set, so a readout chains: out, and back.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(7.0, 2.8), layout="constrained")
+ax.set(xlim=(0.0, 12.5), ylim=(-1.2, 1.2), xlabel="time [h]", ylabel="offset")
+ax.plot([0.0, 12.5], [-1.0, 1.0], color=ep.neutral(0.4))
+(dot,) = ax.plot([0.0], [-1.0], "o", ms=8, color="C1")
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+clock = ep.readout(
+    ep.Anchor.from_data(ax, (2.4, 0.78)), 0.0, prefix="t = ", unit="h", ha="point"
+)
+offset = ep.readout(
+    ep.Anchor.from_data(ax, (2.4, 0.52)),
+    -1.0,
+    prefix="offset = ",
+    fmt="+.2f",
+    ha="point",
+)
+
+
+def run(start, stop):
+    """Chain a move of both readouts, and the dot with them, from `start` to `stop`."""
+    clock.set(12.5 * stop)
+    offset.set(2.0 * stop - 1.0)
+
+    def at(u):
+        clock.update(u)
+        offset.update(u)
+        e = ep.ease(u)
+        x = 12.5 * (start + e * (stop - start))
+        dot.set_data([x], [x / 12.5 * 2.0 - 1.0])
+
+    return at
+
+
+out = run(0.0, 1.0)
+frames = []
+for u in (0.0, 0.25, 0.5, 0.75, 1.0):
+    out(u)
+    fig.canvas.draw()
+    frames.append(np.asarray(fig.canvas.buffer_rgba()).copy())
+back = run(1.0, 0.0)
+back(0.5)
+fig.canvas.draw()
+frames.append(np.asarray(fig.canvas.buffer_rgba()).copy())
+
+shown, cells = plt.subplots(2, 3, figsize=(9.0, 4.0), layout="constrained")
+titles = ("u = 0", "u = 0.25", "u = 0.5", "u = 0.75", "u = 1", "and back, u = 0.5")
+for cell, frame, title in zip(cells.flat, frames, titles, strict=True):
+    cell.imshow(frame, interpolation="nearest")
+    cell.set_title(title, fontsize="small")
+    cell.set_axis_off()
+plt.show()
+```
+
+The offset crosses zero in the middle of the move, and the point, the sign and
+the unit all stay where they are. The readout shows the old value until
+`update` is called, and `update(1.0)` shows the new one exactly; a still that
+never calls `update` shows the value the readout was made with. `set` widens
+the slots once, when it is called, if the new value needs more digits or a
+sign, never during a count; pass `digits` and `signed` to reserve room for a
+later value, so that nothing moves at all. The parts are figure-level texts,
+so they are anchors for a `callout` and members of a `Stage` group, and
+``update(u, level)`` dims the whole readout once it has been read. Prefer it
+to a `term_row` term whose text is set in the loop: a term changes width as
+its digits change and pushes its neighbors, where a readout keeps its place.
