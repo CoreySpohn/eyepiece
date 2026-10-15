@@ -38,3 +38,22 @@ for ax in axes:
 The colorbars sit to the right of their panels without changing the caller's
 subplot slots. The result exposes the points under `scatter`, the colorbar
 under `cbar`, and its axes in `insets`.
+
+## A stamp that reserves its band
+
+`stamp(fig, reserve=True)` puts the provenance line along the bottom edge and
+shrinks the layout above it, so the stamp never lands on a tick label and the
+caller does not edit the layout rectangle by hand. The date defaults to the
+commit date of the script's repository, else today, so rebuilding an unchanged
+figure repeats the same stamp. `save_fig` then writes the file with no
+timestamp: two saves of one figure are byte-identical in PNG, SVG and PDF.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(6, 3), layout="constrained")
+ax.plot(x, y, ".")
+ax.set(xlabel="x", ylabel="y")
+result = ep.stamp(fig, note="simulated", seed=0, reserve=True)
+```
+
+The result is a `PlotResult` with the stamp under `text`; its `update(u,
+level)` scales the stamp's opacity.
