@@ -17,7 +17,9 @@ from matplotlib.colors import to_hex, to_rgb, to_rgba
 _LIGHT_CMAPS = None
 _LIGHT_PALETTE = None
 _LIGHT_ROLES = None
-_CMAP_FALLBACKS = {"statistic": "PuOr"}
+# Stand-ins for roles an older hwostyle lacks; "pupil" is pale to dark like
+# the role it replaces on a light page.
+_CMAP_FALLBACKS = {"statistic": "PuOr", "pupil": "Oranges"}
 # Palette slot standing in for a role when the installed hwostyle lacks it;
 # slots follow the canonical cyan, pink, yellow, green, red, purple order.
 _ROLE_FALLBACKS = {

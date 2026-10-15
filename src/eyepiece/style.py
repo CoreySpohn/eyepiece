@@ -27,8 +27,10 @@ import matplotlib
 import numpy as np
 from matplotlib import font_manager
 
+from eyepiece._style import _CMAP_FALLBACKS
+
 # Roles documented on `hwostyle.colormaps.Colormaps`: sequential intensity
-# families (idealized/model images, detector readouts, high-dynamic-range),
+# families (idealized/model images, detector readouts, pupil transmission),
 # diverging families (a signed residual/OPD), a cyclic phase map, a
 # probability map, and the brand/mask maps. Listed explicitly (rather than
 # introspecting hwostyle's private per-mode dict) so a role hwostyle drops
@@ -36,7 +38,7 @@ from matplotlib import font_manager
 _CMAP_ROLES = (
     "intensity",
     "readouts",
-    "high_dynamic_range",
+    "pupil",
     "residual",
     "opd",
     "phase",
@@ -66,7 +68,12 @@ def _lookup_colormap(role):
     list-defined "mask" and brand maps); both are normalized here to a
     `Colormap` instance so the caller has one type to sample.
     """
-    value = getattr(hwostyle.cmaps, role)
+    try:
+        value = getattr(hwostyle.cmaps, role)
+    except AttributeError:
+        if role not in _CMAP_FALLBACKS:
+            raise
+        value = _CMAP_FALLBACKS[role]
     if isinstance(value, str):
         return matplotlib.colormaps[value]
     return value
