@@ -673,3 +673,86 @@ slides or lengthens the arrow, ``turn.update(end_angle=...)`` opens the angle
 further, and ``sky.update(angle=...)`` turns the compass as a roll would. An arrow
 or an arc shorter than its head shrinks the head to fit, and one too short to
 see draws nothing.
+
+## Readout: a number that counts
+
+A value that changes on screen, such as the time of a simulation or a
+probability, should change the way the eye can follow: the digits run to the
+new value while everything else holds still. `readout` is that number. Its
+format is fixed (a fixed-point spec, a prefix, a suffix and a unit), and so is
+its layout: the decimal point stays at one place for the life of the readout,
+the integer part is right-aligned to it and the fraction left-aligned from it,
+and each slot is as wide as the widest string it will hold. The label
+therefore never jitters, in a font with tabular digits or one without.
+`update(u)` shows the value `u` of the way from the old value to the new one
+under the same easing as every other move, rounded to the precision of the
+format; rounding is monotone, so a count never goes back, and a value that
+rounds to zero shows no minus sign. `set(value)` starts the next move from the
+value last set, so a readout chains: out, and back.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(7.0, 2.8), layout="constrained")
+ax.set(xlim=(0.0, 12.5), ylim=(-1.2, 1.2), xlabel="time [h]", ylabel="offset")
+ax.plot([0.0, 12.5], [-1.0, 1.0], color=ep.neutral(0.4))
+(dot,) = ax.plot([0.0], [-1.0], "o", ms=8, color="C1")
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+clock = ep.readout(
+    ep.Anchor.from_data(ax, (2.4, 0.78)), 0.0, prefix="t = ", unit="h", ha="point"
+)
+offset = ep.readout(
+    ep.Anchor.from_data(ax, (2.4, 0.52)),
+    -1.0,
+    prefix="offset = ",
+    fmt="+.2f",
+    ha="point",
+)
+
+
+def run(start, stop):
+    """Chain a move of both readouts, and the dot with them, from `start` to `stop`."""
+    clock.set(12.5 * stop)
+    offset.set(2.0 * stop - 1.0)
+
+    def at(u):
+        clock.update(u)
+        offset.update(u)
+        e = ep.ease(u)
+        x = 12.5 * (start + e * (stop - start))
+        dot.set_data([x], [x / 12.5 * 2.0 - 1.0])
+
+    return at
+
+
+out = run(0.0, 1.0)
+frames = []
+for u in (0.0, 0.25, 0.5, 0.75, 1.0):
+    out(u)
+    fig.canvas.draw()
+    frames.append(np.asarray(fig.canvas.buffer_rgba()).copy())
+back = run(1.0, 0.0)
+back(0.5)
+fig.canvas.draw()
+frames.append(np.asarray(fig.canvas.buffer_rgba()).copy())
+
+shown, cells = plt.subplots(2, 3, figsize=(9.0, 4.0), layout="constrained")
+titles = ("u = 0", "u = 0.25", "u = 0.5", "u = 0.75", "u = 1", "and back, u = 0.5")
+for cell, frame, title in zip(cells.flat, frames, titles, strict=True):
+    cell.imshow(frame, interpolation="nearest")
+    cell.set_title(title, fontsize="small")
+    cell.set_axis_off()
+plt.show()
+```
+
+The offset crosses zero in the middle of the move, and the point, the sign and
+the unit all stay where they are. The readout shows the old value until
+`update` is called, and `update(1.0)` shows the new one exactly; a still that
+never calls `update` shows the value the readout was made with. `set` widens
+the slots once, when it is called, if the new value needs more digits or a
+sign, never during a count; pass `digits` and `signed` to reserve room for a
+later value, so that nothing moves at all. The parts are figure-level texts,
+so they are anchors for a `callout` and members of a `Stage` group, and
+``update(u, level)`` dims the whole readout once it has been read. Prefer it
+to a `term_row` term whose text is set in the loop: a term changes width as
+its digits change and pushes its neighbors, where a readout keeps its place.

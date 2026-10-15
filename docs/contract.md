@@ -484,7 +484,13 @@ ends of their progress the frame equals the frame without them, and
 `indicate` pulses from the artist's colors as they are when each update
 starts, so it composes with a stage that is set first. `term_row` places one
 text per term at draw time, so its terms are anchors and stage members, and
-a changed term re-lays the row. A flight can carry a segment or a bar and
+a changed term re-lays the row. `readout` shows a running number as an
+integer part right-aligned to a fixed decimal point and a fraction left-aligned
+from it, each in a slot as wide as the widest string it holds, so a count
+never moves the label; its shown value is the interpolated value rounded to the
+format's precision (monotone, with no negative zero), its slots grow only when
+`set` is called with a value that needs more room, and at ``u = 1`` it shows
+the exact formatted value last set. A flight can carry a segment or a bar and
 turn it. `morph` is a figure-level ghost like a flight, visible only
 between its ends, whose geometry at the ends is the two paths resampled by
 arc length (and, for a closed pair, the second rolled and possibly reversed

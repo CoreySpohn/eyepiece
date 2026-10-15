@@ -172,6 +172,7 @@ the API reference, and the groups are:
   sum and can carry the bar to another panel; `indicate`, a pulse that
   returns the artist to where it was, `circumscribe`, an outline that draws
   on and fades, `term_row`, an equation or readout with one text per term,
+  `readout`, a number that counts to a new value in a fixed layout,
   `link`, a line that grows between panels, `morph`, a ghost that carries one
   path into another keeping its identity, `warp`, which carries drawn
   artists through a matrix or a pointwise map of the plane (with `warp_grid`

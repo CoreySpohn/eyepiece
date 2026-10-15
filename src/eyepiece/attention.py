@@ -24,12 +24,16 @@ drawn. A still that never calls `update` shows rest states only.
 Other moves say "this one" or join panels: `indicate` pulses an artist and
 returns it, `circumscribe` draws an outline on around it and lets it fade
 (both leave the frame as it was at either end), `term_row` lays an equation
-out as one text per term, `link` grows a line between panels, and `morph`
-carries one path into another. Drawing never raises; `audit` is the explicit
+out as one text per term, `readout` counts a number to a new value in a fixed
+layout, `link` grows a line between panels, and `morph` carries one path into
+another. Drawing never raises; `audit` is the explicit
 check of the leaders and links.
 """
 
 import math
+import re
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import matplotlib
 import numpy as np
@@ -2944,6 +2948,368 @@ def term_row(
             fade.set(_ease(level) if level < 1.0 else 1.0)
 
     return PlotResult(ax=at.axes, artists={"text": made}, update=update)
+
+
+# Readout
+
+# A readout format: a sign flag, a grouping mark, a precision, and a fixed-point
+# type, so that the shown number has the same number of decimals every frame.
+_READOUT_FORMAT = re.compile(r"([+\- ]?)([,_]?)(?:\.(\d+))?([fF%d])")
+
+
+def _readout_spec(fmt):
+    """The flag, grouping mark, decimals and type of a fixed-point `fmt`."""
+    match = _READOUT_FORMAT.fullmatch(str(fmt))
+    if match is None:
+        raise ValueError(
+            f"readout fmt {fmt!r} is not a fixed-point format spec such as "
+            "'.2f', '+.1f', ',.0f', '.1%' or 'd'"
+        )
+    flag, group, decimals, kind = match.groups()
+    if kind == "d" and decimals is not None:
+        raise ValueError(f"readout fmt {fmt!r}: an integer format has no precision")
+    if decimals is None:
+        decimals = "0" if kind == "d" else "6"
+    return flag, group, int(decimals), kind
+
+
+class _Readout:
+    """A number shown in fixed slots: prefix, integer part, fraction, tail.
+
+    The decimal point sits at one place for the whole life of the readout.
+    The integer part is right-aligned to it and the fraction left-aligned,
+    whatever the font, and each slot is as wide as the widest string it can
+    hold, so a count never moves the label.
+    """
+
+    def __init__(
+        self,
+        at,
+        value,
+        *,
+        fmt,
+        prefix,
+        tail,
+        ha,
+        fontsize,
+        digits,
+        signed,
+        ease,
+        text_kw,
+        color,
+        zorder,
+    ):
+        self.at = at
+        self.figure = at.figure
+        self.flag, self.group, self.decimals, self.kind = _readout_spec(fmt)
+        self.fmt = str(fmt)
+        self.prefix = prefix
+        self.tail = tail
+        self.ha = ha
+        self.ease = ease
+        self.n_int = max(1, int(digits))
+        self.signed = self.flag in ("+", " ") if signed is None else bool(signed)
+        self.grow_sign = signed is None
+        self.minus = "\u2212" if matplotlib.rcParams["axes.unicode_minus"] else "-"
+        self.level = 1.0
+        self._cache = {}
+        kw = {"color": color, "fontsize": fontsize, "zorder": zorder, **text_kw}
+        self.probe = Text(0.0, 0.0, "", **kw)
+        self.probe.set_figure(self.figure)
+        self.reserve(value)
+        self.start = self.target = float(value)
+        self.parts = []
+        int_s, frac_s = self.strings(value)
+        spec = [("prefix", prefix, "left"), ("int", int_s, "right")]
+        if self.decimals > 0:
+            spec.append(("frac", frac_s, "left"))
+        spec.append(("tail", tail, "left"))
+        for role, string, align in spec:
+            if role in ("prefix", "tail") and not string:
+                continue
+            part = _ReadoutPart(self, role, string, align, **kw)
+            part.set_clip_on(False)
+            part.set_in_layout(False)
+            self.figure.add_artist(part)
+            self.parts.append(part)
+        self.fades = [_TextFade(p) for p in self.parts]
+
+    def strings(self, value):
+        """The integer part and the fraction part of `value` as shown."""
+        value = float(value)
+        if self.kind == "d":
+            text = format(round(value), self.fmt)
+        else:
+            text = format(value, self.fmt)
+        # A value that rounds to zero shows no minus, so a count through zero
+        # does not flash a negative zero.
+        if text[:1] == "-" and not any(c in "123456789" for c in text):
+            text = "+" + text[1:] if self.flag == "+" else text[1:]
+        text = text.removeprefix(" ")
+        text = text.replace("-", self.minus)
+        if self.decimals == 0:
+            return text, ""
+        point = text.index(".")
+        return text[:point], text[point:]
+
+    def reserve(self, value):
+        """Grow the slots, if need be, to hold `value`."""
+        if not math.isfinite(float(value)):
+            raise ValueError(f"readout value must be finite, got {value}")
+        int_s, _ = self.strings(value)
+        self.n_int = max(self.n_int, sum(c.isdigit() for c in int_s))
+        if self.grow_sign and int_s[:1] in (self.minus, "+"):
+            self.signed = True
+
+    def width(self, string, renderer):
+        """The width in pixels of `string` in the readout's font."""
+        if not string:
+            return 0.0
+        key = (self.figure.dpi, type(renderer).__name__, string)
+        if key not in self._cache:
+            self.probe.set_text(string)
+            self._cache[key] = float(Text.get_window_extent(self.probe, renderer).width)
+        return self._cache[key]
+
+    def layout(self, renderer=None):
+        """Put every part in its slot, as the figure is now."""
+        widest = max("0123456789", key=lambda d: self.width(d, renderer))
+        sign = 0.0
+        if self.signed:
+            sign = max(self.width(self.minus, renderer), self.width("+", renderer))
+        whole = format(10**self.n_int - 1, f"{self.group}d")
+        whole = re.sub(r"\d", widest, whole)
+        if self.decimals == 0 and self.kind == "%":
+            whole += "%"
+        w_int = sign + self.width(whole, renderer)
+        frac = ""
+        if self.decimals > 0:
+            frac = "." + widest * self.decimals + ("%" if self.kind == "%" else "")
+        w_frac = self.width(frac, renderer)
+        w_prefix = self.width(self.prefix, renderer)
+        w_tail = self.width(self.tail, renderer)
+        x0, y = self.at.display(renderer)
+        total = w_prefix + w_int + w_frac + w_tail
+        if self.ha == "point":
+            left = x0 - w_prefix - w_int
+        else:
+            left = x0 - {"left": 0.0, "center": 0.5, "right": 1.0}[self.ha] * total
+        point = left + w_prefix + w_int
+        for part in self.parts:
+            if part.role == "prefix":
+                part.set_position((float(left), float(y)))
+            elif part.role == "int":
+                part.set_position((float(point), float(y)))
+                part.slot = (float(point - w_int), float(point))
+            elif part.role == "frac":
+                part.set_position((float(point), float(y)))
+                part.slot = (float(point), float(point + w_frac))
+            else:
+                part.set_position((float(point + w_frac), float(y)))
+
+    def show(self, value):
+        """Write `value` into the integer and fraction parts."""
+        int_s, frac_s = self.strings(value)
+        for part in self.parts:
+            if part.role == "int":
+                part.set_text(int_s)
+            elif part.role == "frac":
+                part.set_text(frac_s)
+
+
+class _ReadoutPart(Text):
+    """One slot of a readout, laid out beside the others whenever it is measured.
+
+    The integer part and the fraction report their reserved slot as their
+    width, so the box of a readout does not move while its digits change.
+    """
+
+    def __init__(self, readout, role, string, ha, **kw):
+        super().__init__(
+            0.0,
+            0.0,
+            string,
+            transform=IdentityTransform(),
+            ha=ha,
+            va="baseline",
+            **kw,
+        )
+        self._readout = readout
+        self.role = role
+        self.slot = None
+
+    def get_window_extent(self, renderer=None, dpi=None):
+        """The part's box, its whole reserved slot for a number part."""
+        self._readout.layout(renderer)
+        box = super().get_window_extent(renderer, dpi)
+        if self.slot is None:
+            return box
+        return Bbox([[self.slot[0], box.y0], [self.slot[1], box.y1]])
+
+    def draw(self, renderer):
+        """Lay the readout out, then draw the part."""
+        if not self.get_visible():
+            return
+        self._readout.layout(renderer)
+        super().draw(renderer)
+
+
+@dataclass(frozen=True, eq=False)
+class _ReadoutResult(PlotResult):
+    """A `PlotResult` that also holds the readout's `set`."""
+
+    set: Callable | None = None
+
+
+def readout(
+    at,
+    value,
+    *,
+    fmt=".1f",
+    prefix="",
+    suffix="",
+    unit="",
+    ha="left",
+    digits=1,
+    signed=None,
+    ease="smoothstep",
+    color=None,
+    fontsize=None,
+    zorder=10,
+    text_kw=None,
+):
+    r"""A running value on screen that counts to a new value without jitter.
+
+    Use it for a number that changes while the viewer watches, such as
+    ``t = 3.2 h`` or ``Pr = 0.41``. The format is fixed: a fixed-point `fmt`
+    (so the number of decimals never changes), a `prefix`, a `suffix` and a
+    `unit`. The layout is fixed too. The decimal point stays at one place for
+    the life of the readout; the integer part is right-aligned to it and the
+    fraction left-aligned from it, and each slot is as wide as the widest
+    string it will hold. This holds in any font, tabular digits or not, and
+    it is why the label never jitters while the digits run. The prefix and
+    the tail (suffix and unit) are laid beside the slots and never move.
+
+    ``update(u)`` shows the value ``u`` of the way from the old value to the
+    new one under the ease, and ``set(value)`` chains the next move: the old
+    value becomes the value last set, the new one is `value`, and the readout
+    shows the old value until ``update`` is called. The shown number is the
+    interpolated value rounded to the precision of `fmt`. Rounding is
+    monotone, so a count never goes back, and a value that rounds to zero
+    shows no minus sign. At ``u = 1`` the readout shows the exact formatted
+    new value; this is its rest state, so a still shows the last value set (or
+    the first value, if none was set).
+
+    `set` grows the slots if the new value needs more digits or a sign than
+    any value so far. That is a change of layout and moves the label once,
+    when `set` is called, never during a count. To reserve room in advance,
+    pass `digits` and `signed`.
+
+    The parts are `Text` artists of the figure in display space, so they
+    never join an axes' autoscaling. The integer part and the fraction report
+    their whole slot as their box, which makes them steady anchors for a
+    `callout` or a `Stage` group. A `term_row` term set from the loop (see its
+    docstring) changes width as its text changes and pushes its neighbors; a
+    readout keeps one place for the point instead, and is the move for a
+    number that runs.
+
+    Args:
+        at: Where the readout is: an `Anchor`, or an artist. Its point is the
+            baseline's left end, center or right end by `ha`, or the decimal
+            point itself for ``ha="point"``.
+        value: The first value shown (finite).
+        fmt: A fixed-point format spec: an optional sign flag (``"+"`` or
+            ``" "``), an optional grouping mark (``","`` or ``"_"``), a
+            precision, and one of ``f``, ``F``, ``%`` or ``d``, such as
+            ``".2f"``, ``"+.1f"``, ``".0%"`` or ``"d"``.
+        prefix: Text before the number, for example ``"t = "`` or ``"$Pr$ = "``.
+        suffix: Text glued to the number, for example ``"%"``.
+        unit: Text after the suffix, set off by a space, for example ``"h"``
+            or ``r"$\mathrm{km\,s^{-1}}$"``.
+        ha: Which end of the readout `at` marks: ``"left"``, ``"center"``,
+            ``"right"``, or ``"point"``, the decimal point.
+        digits: Integer digits to reserve at least. The slots always hold
+            the digits of every value given.
+        signed: Whether to reserve room for a sign. None reserves it for a
+            sign flag in `fmt` and once a negative value is given.
+        ease: The easing kind of `eyepiece.ease` for ``update(u)``.
+        color: Text color. None uses ``rcParams["text.color"]``.
+        fontsize: Font size in points. None uses ``rcParams["font.size"]``.
+        zorder: Drawing order among the figure's children.
+        text_kw: Extra kwargs for every `Text`, applied last.
+
+    Returns:
+        A `PlotResult` on the anchor's axes (None for an anchor drawn on the
+        figure), with ``artists["text"]``, the parts left to right (prefix,
+        integer part, fraction, tail; the empty ones are left out),
+        ``update(u, level=1.0)`` as above, where ``level`` dims the whole
+        readout, and ``set(value)``, which starts the next move.
+
+    Raises:
+        TypeError: If `at` is neither an `Anchor` nor an artist.
+        ValueError: If `fmt` is not a fixed-point spec, `ha` or `ease` is
+            unknown, or a value is not finite.
+
+    Example::
+
+        rd = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.9)), 0.0,
+                        prefix="t = ", unit="h")
+        rd.set(3.2)
+        rd.update(0.5)  # t = 1.6 h
+    """
+    at = _as_anchor(at, "at")
+    if ha not in ("left", "center", "right", "point"):
+        raise ValueError(
+            f"unknown ha: {ha!r}; known: ['left', 'center', 'right', 'point']"
+        )
+    _ease(0.5, ease)
+    rc = matplotlib.rcParams
+    size = float(rc["font.size"]) if fontsize is None else float(fontsize)
+    tail = str(suffix) + (f" {unit}" if unit else "")
+    state = _Readout(
+        at,
+        value,
+        fmt=fmt,
+        prefix=str(prefix),
+        tail=tail,
+        ha=ha,
+        fontsize=size,
+        digits=digits,
+        signed=signed,
+        ease=ease,
+        text_kw=dict(text_kw or {}),
+        color=rc["text.color"] if color is None else color,
+        zorder=zorder,
+    )
+    parts = state.parts
+
+    def update(u, level=1.0):
+        u = _check_u(u)
+        level = _check_u(level)
+        if u >= 1.0:
+            shown = state.target
+        elif u <= 0.0:
+            shown = state.start
+        else:
+            shown = state.start + _ease(u, state.ease) * (state.target - state.start)
+        state.show(shown)
+        # Opacity is written only while dimmed and once on the way back, so a
+        # readout held by a Stage keeps the stage's levels.
+        if level < 1.0 or state.level < 1.0:
+            for part, fade in zip(parts, state.fades, strict=True):
+                part.set_visible(level > 0.0)
+                fade.set(level)
+        state.level = level
+
+    def set_value(new):
+        state.reserve(new)
+        state.start = state.target
+        state.target = float(new)
+        update(0.0, state.level)
+
+    return _ReadoutResult(
+        ax=at.axes, artists={"text": parts}, update=update, set=set_value
+    )
 
 
 # Link

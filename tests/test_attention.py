@@ -1585,3 +1585,306 @@ def test_morph_is_pixel_neutral_in_both_modes_and_draws_between():
         move.update(1.0)
         assert np.array_equal(rest, _pixels(fig))
         plt.close(fig)
+
+
+# Readout
+
+
+def _readout_panel():
+    fig, ax = plt.subplots(figsize=(6.0, 3.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    return fig, ax
+
+
+def _shown(res):
+    """The number text of a readout: the integer part and the fraction."""
+    return "".join(
+        t.get_text() for t in res.artists["text"] if t.role in ("int", "frac")
+    )
+
+
+def _number(res):
+    return float(_shown(res).replace("\u2212", "-").replace("%", "").replace(",", ""))
+
+
+def _union(res, fig):
+    fig.canvas.draw()
+    boxes = [t.get_window_extent() for t in res.artists["text"]]
+    return (
+        min(b.x0 for b in boxes),
+        min(b.y0 for b in boxes),
+        max(b.x1 for b in boxes),
+        max(b.y1 for b in boxes),
+    )
+
+
+@pytest.mark.parametrize(
+    ("fmt", "first", "last", "first_text", "last_text"),
+    [
+        (".1f", 0.0, 3.2, "0.0", "3.2"),
+        (".2f", 0.41, 12.345, "0.41", "12.35"),
+        (".0f", 4.0, 1250.0, "4", "1250"),
+        (",.0f", 4.0, 1250.0, "4", "1,250"),
+        (".1%", 0.0, 0.4125, "0.0%", "41.2%"),
+        ("+.1f", 1.0, -2.5, "+1.0", "\u22122.5"),
+        ("d", 3, 17, "3", "17"),
+    ],
+)
+def test_readout_end_frames_show_the_exact_formatted_values(
+    fmt, first, last, first_text, last_text
+):
+    fig, ax = _readout_panel()
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), first, fmt=fmt)
+    assert _shown(res) == first_text
+    res.set(last)
+    res.update(0.0)
+    assert _shown(res) == first_text
+    res.update(1.0)
+    assert _shown(res) == last_text
+    fig.canvas.draw()
+
+
+def test_readout_prefix_suffix_and_unit_are_laid_beside_the_number():
+    fig, ax = _readout_panel()
+    res = ep.readout(
+        ep.Anchor.from_data(ax, (0.1, 0.5)), 3.2, prefix="t = ", suffix="~", unit="h"
+    )
+    texts = res.artists["text"]
+    assert [t.role for t in texts] == ["prefix", "int", "frac", "tail"]
+    assert "".join(t.get_text() for t in texts) == "t = 3.2~ h"
+    boxes = _boxes(res, fig)
+    for left, right in itertools.pairwise(boxes):
+        assert right.x0 == pytest.approx(left.x1, abs=1e-6)
+    start = ep.Anchor.from_data(ax, (0.1, 0.5)).display()[0]
+    assert boxes[0].x0 == pytest.approx(start)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_readout_box_does_not_move_more_than_half_a_pixel_through_a_count(mode):
+    hwostyle.use(mode)
+    fig, ax = _readout_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    res = ep.readout(at, -9.96, prefix="t = ", unit="h")
+    res.set(1234.5)  # one digit up to four, and across a sign change
+    boxes = []
+    for u in np.linspace(0.0, 1.0, 81):
+        res.update(u)
+        boxes.append(_union(res, fig))
+    boxes = np.array(boxes)
+    assert np.ptp(boxes, axis=0).max() <= 0.5
+
+
+def test_readout_point_is_pixel_steady_while_the_integer_digits_change():
+    fig, ax = _readout_panel()
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 1.5, prefix="x = ", digits=3)
+    frac = next(t for t in res.artists["text"] if t.role == "frac")
+    fig.canvas.draw()
+    point = frac.get_window_extent().x0
+    frames = {}
+    for value in (1.5, 12.5, 123.5):
+        res.set(value)
+        res.update(1.0)
+        frames[value] = _pixels(fig)
+    col = int(np.ceil(point))
+    # Everything from the decimal point on is the same picture.
+    for value in (12.5, 123.5):
+        np.testing.assert_array_equal(frames[value][:, col:], frames[1.5][:, col:])
+    # And the digits of the integer part end at the point, not past it.
+    assert not np.array_equal(frames[12.5][:, :col], frames[1.5][:, :col])
+
+
+@pytest.mark.parametrize("start", [-3.0, 3.0, 0.0])
+@pytest.mark.parametrize("fmt", [".1f", ".0f", ".2f"])
+def test_readout_count_is_monotone_up_and_down(start, fmt):
+    fig, ax = _readout_panel()
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), start, fmt=fmt)
+    res.set(start + 7.3)
+    us = np.linspace(0.0, 1.0, 301)
+    up = []
+    for u in us:
+        res.update(u)
+        up.append(_number(res))
+    assert up == sorted(up)
+    assert up[0] == pytest.approx(round(start, 2))
+    res.set(start - 5.1)
+    down = []
+    for u in us:
+        res.update(u)
+        down.append(_number(res))
+    assert down == sorted(down, reverse=True)
+    fig.canvas.draw()
+
+
+def test_readout_shows_no_negative_zero_and_keeps_alignment_through_a_sign_change():
+    fig, ax = _readout_panel()
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), -1.0, prefix="v = ")
+    res.set(1.0)
+    point = None
+    right = None
+    seen = set()
+    for u in np.linspace(0.0, 1.0, 101):
+        res.update(u)
+        fig.canvas.draw()
+        text = _shown(res)
+        seen.add(text)
+        assert "\u22120.0" not in text
+        _, frac = res.artists["text"][1:3]
+        box = frac.get_window_extent()
+        int_box = res.artists["text"][1].get_window_extent()
+        point = box.x0 if point is None else point
+        right = int_box.x1 if right is None else right
+        assert box.x0 == pytest.approx(point, abs=0.5)
+        assert int_box.x1 == pytest.approx(right, abs=0.5)
+    assert {"\u22121.0", "0.0", "1.0"} <= seen
+    # With a sign flag the rounded zero keeps the plus.
+    plus = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.3)), -0.04, fmt="+.1f")
+    assert _shown(plus) == "+0.0"
+
+
+def test_readout_with_a_sign_slot_holds_its_box_across_zero():
+    fig, ax = _readout_panel()
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), -25.0, signed=True)
+    box = _union(res, fig)
+    for value in (-3.0, 0.0, 3.0, 25.0):
+        res.set(value)
+        res.update(1.0)
+        assert _union(res, fig) == pytest.approx(box, abs=0.5)
+
+
+def test_readout_set_chains_moves_from_the_last_value_and_rests_on_it():
+    fig, ax = _readout_panel()
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 1.0)
+    fig.canvas.draw()
+    rest = _pixels(fig)
+    res.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), rest)  # no move set: rest
+    res.set(5.0)
+    assert _shown(res) == "1.0"
+    res.update(0.5)
+    assert _shown(res) == "3.0"
+    res.set(2.0)  # chains from 5.0, the value last set
+    assert _shown(res) == "5.0"
+    res.update(0.5)
+    assert _shown(res) == "3.5"
+    res.update(1.0)
+    assert _shown(res) == "2.0"
+    # Progress outside [0, 1] is clipped.
+    res.update(7.0)
+    assert _shown(res) == "2.0"
+    res.update(-1.0)
+    assert _shown(res) == "5.0"
+
+
+def test_readout_ease_kind_shapes_the_count():
+    _fig, ax = _readout_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    linear = ep.readout(at, 0.0, ease="linear")
+    smooth = ep.readout(at, 0.0)
+    for res in (linear, smooth):
+        res.set(10.0)
+        res.update(0.25)
+    assert _shown(linear) == "2.5"
+    assert _shown(smooth) == "1.6"
+    with pytest.raises(ValueError, match="easing"):
+        ep.readout(at, 0.0, ease="bounce")
+
+
+def test_readout_ha_places_it_by_its_end_or_its_point():
+    fig, ax = _readout_panel()
+    at = ep.Anchor.from_data(ax, (0.5, 0.5))
+    x = float(at.display()[0])
+    for ha in ("left", "center", "right", "point"):
+        res = ep.readout(at, 12.5, prefix="p ", unit="h", ha=ha)
+        box = _union(res, fig)
+        fig.canvas.draw()
+        frac = next(t for t in res.artists["text"] if t.role == "frac")
+        if ha == "left":
+            assert box[0] == pytest.approx(x, abs=0.5)
+        elif ha == "right":
+            assert box[2] == pytest.approx(x, abs=0.5)
+        elif ha == "center":
+            assert 0.5 * (box[0] + box[2]) == pytest.approx(x, abs=0.5)
+        else:
+            assert frac.get_window_extent().x0 == pytest.approx(x, abs=0.5)
+
+
+def test_readout_is_a_figure_level_stage_member_and_dims_with_level():
+    fig, ax = _readout_panel()
+    ax.plot([0.0, 1.0], [0.2, 0.8])
+    limits = (ax.get_xlim(), ax.get_ylim())
+    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 1.0, digits=2)
+    parts = res.artists["text"]
+    assert all(t.get_figure() is fig and t not in ax.texts for t in parts)
+    res.set(4.0)
+    res.update(0.5)
+    fig.canvas.draw()
+    assert (ax.get_xlim(), ax.get_ylim()) == limits
+    stage = ep.Stage({"row": parts})
+    stage.set(shown=[])
+    # A running value leaves the stage's levels alone.
+    res.update(0.7)
+    assert all(to_rgba(t.get_color())[3] == 0.0 for t in parts)
+    stage.rest()
+    res.update(1.0, level=0.4)
+    assert all(t.get_alpha() == pytest.approx(0.4) for t in parts)
+    res.update(1.0)
+    assert all(t.get_alpha() is None for t in parts)
+    res.update(1.0, level=0.0)
+    assert not any(t.get_visible() for t in parts)
+    res.update(1.0)
+    assert all(t.get_visible() for t in parts)
+    # The parts are anchors that stay put while the value runs.
+    anchor = ep.Anchor.from_artist(parts[1], "right")
+    first = anchor.display().copy()
+    res.set(99.0)
+    res.update(0.6)
+    np.testing.assert_allclose(anchor.display(), first, atol=0.5)
+
+
+def test_readout_rest_state_is_the_figure_as_drawn_in_both_modes():
+    for mode in MODES:
+        hwostyle.use(mode)
+        fig, ax = _readout_panel()
+        res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 2.41, fmt=".2f")
+        rest = _pixels(fig)
+        res.set(7.0)
+        res.update(0.5)
+        assert not np.array_equal(rest, _pixels(fig))
+        res.set(2.41)
+        res.update(1.0)
+        np.testing.assert_array_equal(rest, _pixels(fig))
+        plt.close(fig)
+
+
+def test_readout_grows_its_slots_only_when_set_and_can_reserve_in_advance():
+    fig, ax = _readout_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    small = ep.readout(at, 1.0)
+    narrow = _union(small, fig)
+    small.set(1000.0)
+    wide = _union(small, fig)
+    assert wide[2] - wide[0] > narrow[2] - narrow[0] + 1.0
+    reserved = ep.readout(at, 1.0, digits=4, signed=True)
+    box = _union(reserved, fig)
+    reserved.set(-1000.0)
+    reserved.update(1.0)
+    assert _union(reserved, fig) == pytest.approx(box, abs=0.5)
+
+
+def test_readout_rejects_bad_inputs():
+    _fig, ax = _readout_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    for bad in (".2g", "e", "5.1f", "x", ".1fz"):
+        with pytest.raises(ValueError, match="fixed-point"):
+            ep.readout(at, 1.0, fmt=bad)
+    with pytest.raises(ValueError, match="ha"):
+        ep.readout(at, 1.0, ha="top")
+    with pytest.raises(ValueError, match="finite"):
+        ep.readout(at, float("nan"))
+    res = ep.readout(at, 1.0)
+    with pytest.raises(ValueError, match="finite"):
+        res.set(float("inf"))
+    with pytest.raises(TypeError, match="Anchor"):
+        ep.readout("here", 1.0)

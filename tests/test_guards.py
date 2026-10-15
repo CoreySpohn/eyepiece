@@ -198,6 +198,7 @@ _EXPECTED_ALL = [
     "rail",
     "rail_panels",
     "reading_words",
+    "readout",
     "record",
     "ref_line",
     "role",
