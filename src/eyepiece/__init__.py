@@ -96,6 +96,7 @@ __all__ = [
     "label_au",
     "label_lod",
     "leader",
+    "link",
     "log_zero_floor",
     "neutral",
     "overlay_circle",
@@ -233,6 +234,7 @@ _LAZY_EXPORTS = {
     "flight": ("eyepiece.attention", "flight"),
     "indicate": ("eyepiece.attention", "indicate"),
     "leader": ("eyepiece.attention", "leader"),
+    "link": ("eyepiece.attention", "link"),
     "term_row": ("eyepiece.attention", "term_row"),
     "quad_image": ("eyepiece.morph", "quad_image"),
 }

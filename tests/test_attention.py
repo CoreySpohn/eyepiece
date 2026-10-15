@@ -5,6 +5,7 @@ leader keeps the connector rules; a callout sits beside its subject and is
 absent before its beat; all of it in light and dark.
 """
 
+import io
 import itertools
 import math
 
@@ -1087,3 +1088,151 @@ def test_flight_turns_a_text_and_refuses_to_turn_a_marker():
     (dot,) = ax.plot([0.5], [0.5], "o")
     with pytest.raises(ValueError, match="marker"):
         ep.flight(dot, ep.Anchor.from_data(ax, (0.8, 0.2)), fig=fig, turn_deg=45.0)
+
+
+# Link
+
+
+def _image_and_phasor():
+    """An image panel on the left, a phasor panel on the right, a gap between."""
+    fig, (image, phasor) = plt.subplots(
+        1, 2, figsize=(8.0, 3.5), gridspec_kw={"wspace": 0.5}
+    )
+    image.imshow(np.random.default_rng(0).random((16, 16)), cmap="gray")
+    phasor.set(xlim=(-1.0, 1.0), ylim=(-1.0, 1.0))
+    phasor.axhline(0.0, lw=0.6)
+    phasor.axvline(0.0, lw=0.6)
+    phasor.plot([-0.6, -0.2], [0.5, 0.9], color="C0")
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    return fig, image, phasor
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_link_is_whole_at_rest_absent_at_zero_and_grows_from_the_source(mode):
+    hwostyle.use(mode)
+    fig, image, phasor = _image_and_phasor()
+    without = _pixels(fig)
+    src = ep.Anchor.from_data(image, (12, 4))
+    dst = ep.Anchor.from_data(phasor, (0.0, 0.0))
+    res = ep.link(src, dst)
+    line = res.artists["line"]
+    whole = _pixels(fig)
+    assert not np.array_equal(whole, without)  # the rest state is drawn
+    fig.canvas.draw()
+    xy = line.get_xydata()
+    np.testing.assert_allclose(xy[0], src.display(), atol=0.5)
+    np.testing.assert_allclose(xy[-1], dst.display(), atol=0.5)
+    res.update(0.0)
+    np.testing.assert_array_equal(_pixels(fig), without)
+    res.update(0.5)  # smoothstep is 0.5 half way
+    fig.canvas.draw()
+    tip = line.get_xydata()[-1]
+    np.testing.assert_allclose(tip, 0.5 * (src.display() + dst.display()), atol=0.5)
+    np.testing.assert_allclose(line.get_xydata()[0], src.display(), atol=0.5)
+    res.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), whole)
+
+
+def test_link_takes_a_neutral_and_keeps_the_cross_panel_length():
+    fig, image, phasor = _image_and_phasor()
+    res = ep.link(
+        ep.Anchor.from_data(image, (12, 4)), ep.Anchor.from_data(phasor, (0.0, 0.0))
+    )
+    line = res.artists["line"]
+    fig.canvas.draw()
+    assert to_rgba(line.get_color())[:3] == pytest.approx(_style.neutral(0.6))
+    assert line.faults() == []  # longer than a quarter panel, and no fault
+    xy = line.get_xydata()
+    assert np.hypot(*(xy[-1] - xy[0])) > 0.25 * max(image.bbox.width, image.bbox.height)
+    assert ep.audit(fig) == {}
+
+
+def test_link_crossing_data_near_either_end_is_a_fault_and_audit_names_it():
+    fig, image, phasor = _image_and_phasor()
+    src = ep.Anchor.from_data(image, (12, 4))
+    # A curve across the phasor panel on the way to its origin.
+    phasor.plot([-0.3, -0.3], [-1.0, 1.0], color="C1", label="arm")
+    res = ep.link(src, ep.Anchor.from_data(phasor, (0.5, 0.5)))
+    fig.canvas.draw()
+    assert any("crosses data: arm" in f for f in res.artists["line"].faults())
+    # A curve in the source panel's overlay, near the starting end.
+    image.autoscale(False)
+    image.plot([13.0, 13.0], [0.0, 8.0], color="C2", label="edge")
+    res2 = ep.link(src, ep.Anchor.from_data(phasor, (0.9, -0.9)), strict=False)
+    assert any("crosses data: edge" in f for f in res2.artists["line"].faults())
+    with pytest.raises(ep.AttentionFault, match="arm"):
+        ep.audit(fig)
+    found = ep.audit(fig, raise_on_fault=False)
+    assert res.artists["line"] in found and res2.artists["line"] in found
+
+
+def test_link_drawing_never_raises_and_scenery_is_not_data():
+    fig, image, phasor = _image_and_phasor()
+    # The reference lines through the origin and the image are not data.
+    clean = ep.link(
+        ep.Anchor.from_data(image, (12, 4)), ep.Anchor.from_data(phasor, (0.0, 0.0))
+    )
+    assert clean.artists["line"].faults() == []
+    phasor.plot([-0.3, -0.3], [-1.0, 1.0], color="C1")
+    assert clean.artists["line"].faults()
+    fig.canvas.draw()  # a broken link still draws
+    fig.savefig(io.BytesIO(), format="pdf")
+
+
+def test_link_ending_on_a_marker_or_in_a_data_color_is_judged_as_a_leader_is():
+    _fig, image, phasor = _image_and_phasor()
+    (dot,) = phasor.plot([0.0], [0.0], "o", color="C4", ms=8)
+    res = ep.link(ep.Anchor.from_data(image, (12, 4)), dot)
+    assert res.artists["line"].faults() == []  # ends on the mark it names
+    other = ep.link(
+        ep.Anchor.from_data(image, (12, 4)),
+        ep.Anchor.from_data(phasor, (0.0, 0.0)),
+        color="C0",
+    )
+    assert any("data color" in f for f in other.artists["line"].faults())
+
+
+def test_link_leaves_an_anchored_artist_at_its_edge():
+    fig, image, phasor = _image_and_phasor()
+    ring = ep.overlay_circle(image, (12, 4), 1.5).artists["ellipse"][-1]
+    res = ep.link(ring, ep.Anchor.from_data(phasor, (0.0, 0.0)))
+    fig.canvas.draw()
+    box = ring.get_window_extent()
+    start = res.artists["line"].get_xydata()[0]
+    assert box.x1 - 1.0 <= start[0] <= box.x1 + 1.0  # the right edge, toward the target
+    assert res.artists["line"].faults() == []
+
+
+def test_link_follows_the_layout_and_moves_no_limits():
+    fig, image, phasor = _image_and_phasor()
+    limits = [(a.get_xlim(), a.get_ylim()) for a in (image, phasor)]
+    dst = ep.Anchor.from_data(phasor, (0.0, 0.0))
+    res = ep.link(ep.Anchor.from_data(image, (12, 4)), dst)
+    line = res.artists["line"]
+    assert line in fig.artists and line not in image.get_children()
+    phasor.set_xlim(-2.0, 2.0)
+    fig.set_size_inches(10.0, 4.0)
+    fig.canvas.draw()
+    np.testing.assert_allclose(line.get_xydata()[-1], dst.display(), atol=0.5)
+    phasor.set_xlim(-1.0, 1.0)
+    for u in np.linspace(0.0, 1.0, 6):
+        res.update(u)
+        fig.canvas.draw()
+    assert [(a.get_xlim(), a.get_ylim()) for a in (image, phasor)] == limits
+    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert list(res.axes) == [image, phasor]
+
+
+def test_link_update_is_idempotent_and_rejects_bad_inputs():
+    fig, image, phasor = _image_and_phasor()
+    res = ep.link(
+        ep.Anchor.from_data(image, (12, 4)), ep.Anchor.from_data(phasor, (0.0, 0.0))
+    )
+    res.update(0.3)
+    first = _pixels(fig)
+    res.update(0.9)
+    res.update(0.3)
+    np.testing.assert_array_equal(_pixels(fig), first)
+    with pytest.raises(TypeError):
+        ep.link("here", ep.Anchor.from_data(phasor, (0.0, 0.0)))

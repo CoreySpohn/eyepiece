@@ -1031,7 +1031,7 @@ def audit(fig, *, raise_on_fault=True):
     renderer = _renderer(root)
     found = {}
     for artist in root.artists:
-        if isinstance(artist, _Leader) and artist.get_visible():
+        if isinstance(artist, (_Leader, _Link)) and artist.get_visible():
             broken = artist.faults(renderer)
             if broken:
                 found[artist] = broken
@@ -2543,3 +2543,242 @@ def term_row(
             fade.set(_ease(level) if level < 1.0 else 1.0)
 
     return PlotResult(ax=at.axes, artists={"text": made}, update=update)
+
+
+# Link
+
+
+def _inside(p, q, box):
+    """The part of the segment p-q inside `box`, as ``(a, b)``, or None."""
+    d = q - p
+    lo, hi = 0.0, 1.0
+    for k, (a, b) in enumerate(((box.x0, box.x1), (box.y0, box.y1))):
+        if d[k] == 0.0:
+            if not a <= p[k] <= b:
+                return None
+            continue
+        t0, t1 = sorted(((a - p[k]) / d[k], (b - p[k]) / d[k]))
+        lo, hi = max(lo, t0), min(hi, t1)
+        if lo >= hi:
+            return None
+    return p + lo * d, p + hi * d
+
+
+class _Link(Line2D):
+    """A connector from a mark in one panel to a mark in another, grown from the first.
+
+    It is audited where it touches data: the part of it inside each panel it
+    passes through. `faults` lists the rules it breaks as the figure is now.
+    """
+
+    def __init__(self, source, target, *, avoid, strict, **kw):
+        super().__init__([], [], transform=IdentityTransform(), **kw)
+        self._source = source
+        self._target = target
+        self._avoid = avoid
+        self._strict = bool(strict)
+        self._grow = 1.0
+
+    def _ends(self, renderer=None):
+        """From the source's mark to the target's, each on its mark's box edge."""
+        p = self._source.display(renderer)
+        q = self._target.display(renderer)
+        if np.hypot(*(q - p)) <= 0.0:
+            return None
+        start, end = p, q
+        for anchor, here, there in ((self._source, p, q), (self._target, q, p)):
+            if anchor.artist is None:
+                continue
+            box = anchor.box(renderer)
+            if box.x0 < here[0] < box.x1 and box.y0 < here[1] < box.y1:
+                edge = _exit(box, here, there)
+                if edge is not None:
+                    if anchor is self._source:
+                        start = edge
+                    else:
+                        end = edge
+        return start, end
+
+    def faults(self, renderer=None):
+        """The rules the fully grown link breaks as the figure is now.
+
+        A link joins two panels, so the quarter-panel length rule of a
+        `leader` does not apply. What matters is where it touches data: the
+        part of the link inside each panel it passes through (its two ends,
+        and any panel between) crosses no line, patch, or collection of that
+        panel, and the link is not drawn in a color the data of those panels
+        use. A marker the link ends on is the mark it names, reference lines
+        drawn against the axes frame are scenery, and images are not
+        audited, since any line over an image crosses pixels. It also
+        crosses no other text.
+
+        Args:
+            renderer: The renderer drawing the figure, or None outside a
+                draw.
+
+        Returns:
+            A list of strings, one per broken rule; empty when the link keeps
+            every rule or is not drawn at all.
+        """
+        ends = self._ends(renderer)
+        if ends is None:
+            return []
+        start, end = ends
+        figure = self._source.figure
+        out = []
+        own = np.array(to_rgb(self.get_color()))
+        exclude = [a for a in (self._source.artist, self._target.artist) if a]
+        for panel in figure.axes:
+            part = _inside(start, end, panel.bbox)
+            if part is None:
+                continue
+            a, b = part
+            length = float(np.hypot(*(b - a)))
+            if length > 2.0 * _END_CLEAR_PX:
+                unit = (b - a) / length
+                a, b = a + _END_CLEAR_PX * unit, b - _END_CLEAR_PX * unit
+            if self._avoid is not None:
+                pool = [x for x in self._avoid if x.axes is panel and x.get_visible()]
+            else:
+                pool = [x for x in _default_avoid(panel, exclude) if x.get_visible()]
+            for artist in pool:
+                name = artist.get_label() or type(artist).__name__
+                ends_on = _ends_on(artist, start, renderer) or _ends_on(
+                    artist, end, renderer
+                )
+                if not ends_on and _crosses(artist, a, b, renderer):
+                    out.append(f"link crosses data: {name}")
+                for rgba in _data_colors(artist):
+                    if rgba[3] > 0.0 and np.allclose(own, rgba[:3], atol=2e-3):
+                        out.append(f"link takes a data color of its panel: {name}")
+                        break
+        pool = list(figure.texts) + [x for x in figure.artists if isinstance(x, Text)]
+        for panel in figure.axes:
+            pool += list(panel.texts)
+        for other in dict.fromkeys(pool):
+            if not (other.get_visible() and other.get_text()):
+                continue
+            box = other.get_window_extent(renderer)
+            edges = np.array(
+                [[box.x0, box.y0], [box.x1, box.y0], [box.x1, box.y1], [box.x0, box.y1]]
+            )
+            if _polyline_crosses(np.vstack([edges, edges[:1]]), start, end):
+                out.append(f"link crosses text: {other.get_text()!r}")
+        return out
+
+    def draw(self, renderer):
+        """Grow from the source toward the target; drawing never raises."""
+        if not self.get_visible() or self._grow <= 0.0:
+            return
+        ends = self._ends(renderer)
+        if ends is None:
+            return
+        start, end = ends
+        tip = start + self._grow * (end - start)
+        self.set_data([start[0], tip[0]], [start[1], tip[1]])
+        super().draw(renderer)
+
+
+def link(
+    source,
+    target,
+    *,
+    fig=None,
+    color=None,
+    lw=None,
+    avoid=None,
+    strict=True,
+    ease="smoothstep",
+    zorder=15,
+    line_kw=None,
+):
+    """Draw a line that grows from a mark in one panel to a mark in another.
+
+    The move shows that two views hold the same object: from "this pixel" of
+    an image, a line grows to the origin of the phasor panel that explains
+    it. A `leader` joins a caption to a mark in its own panel and keeps a
+    quarter-panel length rule that a line between panels breaks by
+    construction; a link is for the case where the line is the point. It is
+    a figure-level line in a neutral tone, resolved in display space when
+    the figure is drawn, so it follows layout and limits and never joins an
+    axes' autoscaling.
+
+    What a link is audited for is where it touches data (see
+    ``faults()``): the part of it inside each panel it passes through must
+    cross no line, patch, or collection, and the link takes no data color.
+    The part between panels is empty by construction. Drawing never
+    raises; `audit` raises `AttentionFault` for a strict link that breaks a
+    rule.
+
+    ``update(u)`` grows the line from the source: ``u = 0`` draws nothing
+    and ``u = 1`` (the rest state, when the link is made) reaches the
+    target.
+
+    Args:
+        source: Where the link starts: an `Anchor`, or an artist. An
+            anchored artist's box is left at its edge, toward the target.
+        target: Where it ends, the same way.
+        fig: The figure that owns the line. None uses the source's figure.
+        color: Line color. None uses a neutral two thirds of the way from
+            the background to the text color, read now.
+        lw: Line width in points. None uses 0.6 of
+            ``rcParams["lines.linewidth"]``.
+        avoid: The artists the link must not cross. None audits every line,
+            patch, and collection of every panel the link passes through,
+            except the anchored artists, spines, and the axes backgrounds.
+        strict: Whether `audit` raises for the link when it breaks a rule;
+            False leaves the faults for the caller to read.
+        ease: An easing kind for `eyepiece.ease`, applied to `u`.
+        zorder: Drawing order among the figure's children.
+        line_kw: Extra kwargs for the `Line2D`, applied last.
+
+    Returns:
+        A `MosaicResult` over the axes of the two anchors (source first),
+        with ``artists["line"]``, the link, whose ``faults()`` lists the
+        rules it breaks as the figure is now, and ``update(u)`` as above;
+        values outside [0, 1] are clipped.
+
+    Raises:
+        TypeError: If `source` or `target` is neither an `Anchor` nor an
+            artist.
+
+    Example::
+
+        res = ep.link(ep.Anchor.from_data(image_panel, (12, 30)),
+                      ep.Anchor.from_data(phasor_panel, (0.0, 0.0)))
+        res.update(0.5)  # halfway there
+        ep.audit(fig)
+    """
+    source = _as_anchor(source, "source")
+    target = _as_anchor(target, "target")
+    rc = matplotlib.rcParams
+    kw = {
+        "color": _style.neutral(0.6) if color is None else color,
+        "lw": 0.6 * float(rc["lines.linewidth"]) if lw is None else lw,
+        "solid_capstyle": "butt",
+        "zorder": zorder,
+        **(line_kw or {}),
+    }
+    line = _Link(
+        source,
+        target,
+        avoid=None if avoid is None else list(avoid),
+        strict=strict,
+        **kw,
+    )
+    line.set_clip_on(False)
+    line.set_in_layout(False)
+    owner = source.figure if fig is None else fig
+    owner.add_artist(line)
+
+    def update(u):
+        u = _check_u(u)
+        line.set_visible(u > 0.0)
+        line._grow = _ease(u, ease) if u < 1.0 else 1.0
+
+    update(1.0)
+    axes = [a for a in (source.axes, target.axes) if a is not None]
+    axes = list(dict.fromkeys(axes)) or list(owner.axes)
+    return MosaicResult(
+        axes=np.array(axes, dtype=object), artists={"line": line}, update=update
+    )
