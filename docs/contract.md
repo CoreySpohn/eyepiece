@@ -444,8 +444,11 @@ their artists are children of the figure rather than of an axes, so they
 never join autoscaling and a recording's drift check never sees them. Each
 returns a result whose `update(u)` sets progress absolutely and whose rest
 state, the state it is made in, is the one a still shows: a flight is
-absent, a callout and a leader are fully drawn. A leader that breaks the
-connector rules of the evidence guide raises when it is drawn.
+absent, a callout, a leader and a link are fully drawn. Drawing never
+raises, so a still or a PDF save is not aborted half way: a leader or link
+that breaks the connector rules of the evidence guide is found by its
+`faults()` or by `audit(fig)`, which raises `AttentionFault` for the strict
+ones.
 
 `Stage`, `build_axes`, and `collapse` follow the same rule. A stage sets
 each named group to an absolute presence and contrast computed from the
@@ -454,7 +457,13 @@ never compound and setting a state twice draws what setting it once does; a
 dimmed group blends toward the background it sits on, which reads the same
 on a light figure and a dark one. An axis build only clips and fades what
 the axes already draws, so it moves no limit. A collapse is a figure-level
-copy, absent at rest. The rest state of each, the one a still shows, is the
+copy, absent at rest. `indicate` and `circumscribe` are transient: at both
+ends of their progress the frame equals the frame without them, and
+`indicate` pulses from the artist's colors as they are when each update
+starts, so it composes with a stage that is set first. `term_row` places one
+text per term at draw time, so its terms are anchors and stage members, and
+a changed term re-lays the row. A flight can carry a segment or a bar and
+turn it. The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
 A `Tempo` holds the pace of such a clip in one place. Moves and holds are

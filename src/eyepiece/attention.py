@@ -20,6 +20,12 @@ animation frame still draws itself from its own state. Each has a rest
 state, which is the state it is in when it is made: a flight is absent (its
 copy hidden, its landing label shown), and a callout or a leader is fully
 drawn. A still that never calls `update` shows rest states only.
+
+Other moves say "this one" or join panels: `indicate` pulses an artist and
+returns it, `circumscribe` draws an outline on around it and lets it fade
+(both leave the frame as it was at either end), `term_row` lays an equation
+out as one text per term, and `link` grows a line between panels. Drawing
+never raises; `audit` is the explicit check of the leaders and links.
 """
 
 import math

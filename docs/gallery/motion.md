@@ -283,9 +283,11 @@ viewer sees a value read in one place become a point somewhere else.
 to draw one that breaks the connector rules of the
 {doc}`evidence guide <../evidence>`: it must end on the mark it names, run
 shorter than a quarter of its panel, cross no data and no other text, and
-take a neutral rather than a data color. By default a broken leader raises
-when the figure is drawn, so a recording fails rather than ships the frame;
-`faults()` on the leader lists what it breaks without drawing.
+take a neutral rather than a data color. Drawing never raises, so a still
+or a PDF save is never aborted half way; `faults()` on the leader lists what
+it breaks, and `audit(fig)` checks every leader and link of a figure at once
+and raises `AttentionFault` for those made with `strict=True` (the default).
+A recording calls it on the composite.
 
 Every position is an `Anchor`, a data point (`Anchor.from_data`) or a part
 of a drawn artist (`Anchor.from_artist`), resolved in display space when the
@@ -407,3 +409,72 @@ plt.show()
 In a clip the frame's time sets each move's progress, so any frame draws
 itself from its state alone, and the last frame, with every move at rest,
 is the composite still.
+
+## Emphasis: pulse, outline, readout, turn, link
+
+Five more moves say "this one" for a thing already on screen, or join two
+panels. `indicate` is a pulse: for a moment the artist's line width, marker
+size, or font size grows by 1.15 and its colors move toward the text color,
+then it returns, so a frame at the start or the end is the frame without the
+move. It adds no hue, and it pulses from wherever the artist is, so on an
+artist a `Stage` holds it swells from the stage's level (set the stage, then
+the pulse, in each frame). `circumscribe` draws an outline around an artist
+or an anchor, clockwise from the top, and lets it fade. `term_row` lays an
+equation or a readout out as one text per term, so each term can be the
+target of an anchor, a stage group, a flight, or a pulse of its own; a term
+whose text changes pushes its neighbors over at the next draw. `flight` turns
+what it carries, a segment or a bar, by `turn_deg`, so a stub beside the star
+can be carried and turned a quarter turn onto a velocity axis. `link` grows
+a line from a mark in one panel to a mark in another; the quarter-panel rule
+of a leader does not apply, and `faults()` instead checks where the link
+touches data, in every panel it passes through.
+
+```{code-cell} python
+fig, (star, speed) = plt.subplots(
+    1, 2, figsize=(8.0, 2.8), gridspec_kw={"wspace": 0.35}
+)
+star.set(xlim=(-1.0, 1.0), ylim=(-1.0, 1.0), xlabel="x", ylabel="y")
+speed.set(xlim=(0.0, 1.0), ylim=(-1.0, 1.0), xlabel="phase", ylabel="velocity")
+star.set_aspect("equal")
+orbit = np.linspace(0.0, 2.0 * np.pi, 200)
+star.plot(0.6 * np.cos(orbit), 0.6 * np.sin(orbit), color=ep.neutral(0.4))
+(stub,) = star.plot([0.6, 0.6], [0.0, 0.3], lw=3.0, color="C1", solid_capstyle="butt")
+(orbiter,) = star.plot([0.6], [0.0], "o", ms=7, color="C0")
+speed.plot(orbit / (2.0 * np.pi), 0.5 * np.sin(orbit), color=ep.neutral(0.4))
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+readout = ep.term_row(
+    ep.Anchor.from_data(speed, (0.05, -0.8)), [r"$v_r$", "=", "0.30"], ha="left"
+)
+ring = ep.circumscribe(orbiter, shape="ellipse", pad_pt=5.0)
+pulse = ep.indicate(stub)
+turn = ep.flight(
+    stub, ep.Anchor.from_data(speed, (0.0, 0.3)), fig=fig, turn_deg=90.0, arc=0.2
+)
+tie = ep.link(orbiter, ep.Anchor.from_data(speed, (0.0, 0.0)))
+
+
+def grab(ring_u, pulse_u, turn_u, link_u):
+    ring.update(ring_u)
+    pulse.update(pulse_u)
+    turn.update(turn_u)
+    tie.update(link_u)
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba()).copy()
+
+
+frames = [grab(0.55, 0.0, 0.0, 0.0), grab(0.0, 0.5, 0.0, 0.0), grab(0.0, 0.0, 0.5, 0.5)]
+shown, cells = plt.subplots(1, 3, figsize=(9.0, 1.8), layout="constrained")
+titles = ("outlined", "pulsed", "turned and linked")
+for cell, frame, title in zip(cells, frames, titles, strict=True):
+    cell.imshow(frame, interpolation="nearest")
+    cell.set_title(title)
+    cell.set_axis_off()
+plt.show()
+```
+
+The readout is running when its term's text is set in the loop, for example
+``readout.artists["text"][2].set_text(f"{v:.2f}")``; `Anchor.from_artist` of a
+term follows it. Call `audit(fig)` once the composite is laid out to vet every
+leader and link of the clip.
