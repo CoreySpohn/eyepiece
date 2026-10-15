@@ -153,7 +153,8 @@ the API reference, and the groups are:
   `rail_panels` for a strip of axes hung under the planes of a drawn rail.
 - **Motion.** `Timeline`, which declares an animation's beats in seconds and
   resolves them for any frame rate into a `Plan` of per-frame knob values,
-  with `ease`, `stagger`, and `frame_count`.
+  with `ease` (including `back_out` and `running_start`, which overshoot and
+  pull back), `stagger`, and `frame_count`.
 - **Cameras and morphs.** `zoom_path`, the optimal pan-and-zoom path between
   two views, `view_limits` for a data camera and `overview_box` to mark its
   view on an overview panel; `PageCamera`, which renders any view of a

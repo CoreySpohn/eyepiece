@@ -358,7 +358,7 @@ def angle_arc(
     Example::
 
         turn = ep.angle_arc((0, 0), 0.0, 40.0, 1.0, ax=ax, label=r"$\theta$")
-        for u in ep.ease("smoothstep", np.linspace(0.0, 1.0, 20)):
+        for u in ep.ease(np.linspace(0.0, 1.0, 20), "smoothstep"):
             turn.update(u)
             rec.frame()
         turn.update(end_angle=70.0)  # the angle opens further

@@ -86,14 +86,19 @@ print(f"frame {k}: zoom progress {s:.2f}, view width {path(s)[2]:.2f} lambda/D")
 
 Every frame of a ramp has moved: frame `i` of an `n`-frame ramp reaches
 progress `(i + 1) / n`, so the last frame shows the target exactly, and
-`mid` is the frame at progress one half. The easing curves all fix both ends
-and pass through one half at the midpoint; they differ in how gently they
-start and stop (the gray line is linear, for reference).
+`mid` is the frame at progress one half. The four plain easing curves all fix
+both ends and pass through one half at the midpoint; they differ in how gently
+they start and stop (the gray line is linear, for reference). The last two
+curves, `back_out` and `running_start`, also fix both ends exactly but leave
+the interval between them: the first overshoots its target by a tenth of the
+move and settles back, and the second pulls back by a tenth before it goes.
+Each takes a `strength`, the size of that excursion as a fraction of the move.
 
 ```{code-cell} python
 s = np.linspace(0.0, 1.0, 101)
-kinds = ("linear", "cosine", "smoothstep", "smootherstep")
-fig, axes = plt.subplots(1, 4, figsize=(7.5, 2.0), layout="constrained",
+kinds = ("linear", "cosine", "smoothstep", "smootherstep", "back_out",
+         "running_start")
+fig, axes = plt.subplots(1, 6, figsize=(9.0, 2.0), layout="constrained",
                          sharey=True)
 for axis, kind in zip(axes, kinds, strict=True):
     axis.plot(s, s, color=ep.blend(plt.rcParams["text.color"], 0.3), lw=1.0)
@@ -758,3 +763,38 @@ so they are anchors for a `callout` and members of a `Stage` group, and
 ``update(u, level)`` dims the whole readout once it has been read. Prefer it
 to a `term_row` term whose text is set in the loop: a term changes width as
 its digits change and pushes its neighbors, where a readout keeps its place.
+
+## Overshoot and anticipation
+
+An overshoot ease is for a move whose arrival should read as a landing. Only
+the input progress is clipped, never the eased value, so a move that places a
+mark with it can carry the mark past its target before it settles. A move
+that uses the eased value as an opacity, a fraction of a line, or a color
+blend clips it first, so `link`, `circumscribe`, `Stage`, `collapse` and
+`morph` accept these kinds and still draw valid colors and lengths. The
+player below flies a dot from one panel to the next under `back_out`; the dot
+passes the landing mark and comes back to it, and the last frame shows the
+landed state exactly.
+
+```{code-cell} python
+fig, (left, right) = plt.subplots(1, 2, figsize=(5.6, 2.2), layout="constrained")
+for axis in (left, right):
+    axis.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0), xticks=[], yticks=[])
+(read,) = left.plot([0.5], [0.5], "o", ms=9)
+(landed,) = right.plot([0.5], [0.5], "o", ms=9, color=read.get_color())
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+bounce = ep.flight(read, ep.Anchor.from_artist(landed), fig=fig, ease="back_out")
+N_FLIGHT = 28
+
+
+def draw_flight(fig, k):
+    u = k / (N_FLIGHT - 1)
+    bounce.update(u)
+    landed.set_visible(u >= 1.0)
+
+
+draw_flight(fig, 0)
+HTML(ep.animate(fig, draw_flight, N_FLIGHT, fps=14).jshtml(dpi=80))
+```

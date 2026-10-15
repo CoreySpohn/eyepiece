@@ -26,11 +26,20 @@ helpers never load matplotlib.
 import math
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import numpy as np
 
 _SNAP = 1e-9
-_EASINGS = ("linear", "smoothstep", "smootherstep", "cosine")
+_EASINGS = (
+    "linear",
+    "smoothstep",
+    "smootherstep",
+    "cosine",
+    "back_out",
+    "running_start",
+)
+_STRENGTH_KINDS = ("back_out", "running_start")
 _RESERVED = frozenset({"beat", "u", "index", "t"})
 _SPACES = ("linear", "log")
 _SQRT2 = math.sqrt(2.0)
@@ -67,25 +76,94 @@ def frame_count(seconds, fps):
     return math.floor(x + 0.5)
 
 
-def ease(u, kind="smoothstep"):
-    """Eased progress for progress `u`, clipped to [0, 1].
+_BACK_DEFAULT = 0.1
+_START_DEFAULT = 0.1
+_STRENGTH_MAX = 1000.0
 
-    Every curve fixes both ends (0 at 0, 1 at 1) and passes through 0.5 at
-    the midpoint. ``smoothstep`` and ``cosine`` start and stop with zero
-    slope; ``smootherstep`` also with zero curvature. Bound with
-    `functools.partial` to a kind, it is a valid Manim ``rate_func``.
+
+def _bisect(excess, target, hi):
+    """The x in [0, hi] where the increasing function `excess` reaches `target`."""
+    lo = 0.0
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if excess(mid) < target:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+@lru_cache(maxsize=32)
+def _back_constant(strength):
+    """Penner's overshoot constant whose peak is `strength` above 1."""
+    return _bisect(lambda s: 4.0 * s**3 / (27.0 * (s + 1.0) ** 2), strength, 1e4)
+
+
+@lru_cache(maxsize=32)
+def _start_pull(strength):
+    """Control value of the pull-back curve whose lowest point is -`strength`."""
+    t = np.linspace(0.0, 0.5, 4001)
+
+    def depth(k):
+        return -np.min(_pull_curve(t, -k))
+
+    return -_bisect(depth, strength, 1e4)
+
+
+def _pull_curve(t, pull):
+    """Degree-6 Bezier through control values 0, 0, pull, pull, 1, 1, 1."""
+    q = 1.0 - t
+    return (
+        pull * (15.0 * t**2 * q**4 + 20.0 * t**3 * q**3)
+        + 15.0 * t**4 * q**2
+        + 6.0 * t**5 * q
+        + t**6
+    )
+
+
+def ease(u, kind="smoothstep", strength=None):
+    """Eased progress for progress `u`; the input is clipped to [0, 1].
+
+    Every curve fixes both ends exactly (0 at 0, 1 at 1). ``smoothstep`` and
+    ``cosine`` start and stop with zero slope and pass through 0.5 at the
+    midpoint; ``smootherstep`` also has zero curvature at the ends. Bound
+    with `functools.partial` to a kind, it is a valid Manim ``rate_func``.
+
+    ``"back_out"`` overshoots 1 and then settles back onto it, and
+    ``"running_start"`` first pulls back below 0 and then goes,
+    after Manim's curve with a shallower default pull.
+    These two leave [0, 1] in between, and neither passes through 0.5 at the
+    midpoint. Only the input `u` is clipped, never the result, so a move that
+    eases a position can show the overshoot. A move that uses the eased value
+    as an opacity, a fraction of a path, or a color blend must clip it at the
+    use site; every move in this package does.
 
     Args:
         u: Progress, a float or an array; values outside [0, 1] are clipped.
-        kind: One of ``"linear"``, ``"smoothstep"``, ``"smootherstep"``, or
-            ``"cosine"``.
+        kind: One of ``"linear"``, ``"smoothstep"``, ``"smootherstep"``,
+            ``"cosine"``, ``"back_out"``, or ``"running_start"``.
+        strength: For ``"back_out"``, the peak overshoot beyond 1 as a
+            fraction of the move (default 0.1, the classic back curve). For
+            ``"running_start"``, the depth of the pull-back below 0 as a
+            fraction of the move (default 0.1). Positive and at most 1000; the
+            other kinds take none.
 
     Returns:
         A float for a scalar `u`, otherwise an array of the same shape.
 
     Raises:
-        ValueError: If `kind` is not one of the curves above.
+        ValueError: If `kind` is not one of the curves above, or `strength` is
+            given for a curve that takes none or is not positive and finite.
     """
+    if kind not in _EASINGS:
+        raise ValueError(f"unknown easing {kind!r}; use one of {_EASINGS}")
+    if strength is not None:
+        if kind not in _STRENGTH_KINDS:
+            raise ValueError(f"easing {kind!r} takes no strength")
+        if not math.isfinite(strength) or not 0.0 < strength <= _STRENGTH_MAX:
+            raise ValueError(
+                f"strength must be in (0, {_STRENGTH_MAX:g}], got {strength}"
+            )
     a = np.clip(np.asarray(u, dtype=float), 0.0, 1.0)
     if kind == "linear":
         out = a
@@ -95,8 +173,14 @@ def ease(u, kind="smoothstep"):
         out = a**3 * (a * (6.0 * a - 15.0) + 10.0)
     elif kind == "cosine":
         out = 0.5 - 0.5 * np.cos(np.pi * a)
+    elif kind == "back_out":
+        s = _back_constant(_BACK_DEFAULT if strength is None else float(strength))
+        out = (s + 1.0) * a**3 - (2.0 * s + 3.0) * a**2 + (s + 3.0) * a
+        out = np.where(a >= 1.0, 1.0, out)
     else:
-        raise ValueError(f"unknown easing {kind!r}; use one of {_EASINGS}")
+        pull = _start_pull(_START_DEFAULT if strength is None else float(strength))
+        out = np.where(a >= 1.0, 1.0, _pull_curve(a, pull))
+    out = np.where(a <= 0.0, 0.0, out)
     return float(out) if np.ndim(u) == 0 else out
 
 
@@ -273,8 +357,11 @@ class Beat:
         return self.stop - self.start
 
 
-def _apply_ease(r, how):
-    return float(how(r)) if callable(how) else ease(r, how)
+def _apply_ease(r, how="smoothstep"):
+    """Eased progress for a kind name or a callable; the input is clipped first."""
+    if callable(how):
+        return float(how(min(1.0, max(0.0, float(r)))))
+    return ease(r, how)
 
 
 def _interp(a, b, e, space):
@@ -377,7 +464,10 @@ class Timeline:
             name: The beat's name; None generates one.
             to: Target values for numeric knobs.
             ease: An easing kind for `eyepiece.ease`, or a callable mapping
-                progress in [0, 1] to eased progress.
+                progress in [0, 1] to eased progress. ``"back_out"`` and
+                ``"running_start"`` carry a knob past its ends and back, and
+                the frame's ``u`` leaves [0, 1] with it; bind a strength
+                with `functools.partial`.
             space: ``"linear"`` interpolates values; ``"log"`` interpolates
                 their logarithms, for widths and other scales, and needs
                 both ends positive.
@@ -541,7 +631,8 @@ class Plan:
             eased: Apply the beat's easing (a hold's progress is linear).
 
         Returns:
-            A float in [0, 1].
+            A float in [0, 1]; with ``"back_out"`` or ``"running_start"``
+            an eased value leaves that range between the ends.
         """
         b = self._beat(beat)
         if k < b.start:

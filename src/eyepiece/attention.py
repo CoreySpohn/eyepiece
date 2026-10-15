@@ -49,7 +49,7 @@ from matplotlib.text import Text
 from matplotlib.transforms import Bbox, IdentityTransform
 
 from eyepiece import _style
-from eyepiece._motion import ease as _ease
+from eyepiece._motion import _apply_ease as _ease
 from eyepiece._result import MosaicResult, PlotResult
 from eyepiece.emphasis import _own_background, _resolve_background
 
@@ -491,7 +491,9 @@ def flight(
             without a marker (its shape and style), a `Patch` (its shape and
             style) or a `Text` (string, font, color, box). None copies the
             source anchor's artist.
-        ease: An easing kind for `eyepiece.ease`, applied to `u` along the
+        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+            strength=0.2)``, applied to `u` along the
             path.
         fade: Fraction of the flight, at its end, over which `crossfade`
             runs, in (0, 1].
@@ -1613,7 +1615,9 @@ class Stage:
         Args:
             levels: Mapping of group name to a presence in [0, 1], or to a
                 ``(presence, contrast)`` pair.
-            ease: An easing kind for `eyepiece.ease`, or None for the levels
+            ease: An easing kind for `eyepiece.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+            strength=0.2)``, or None for the levels
                 as given. It shapes presence only, so a caller that ramps a
                 presence linearly in time gets a fade that starts and stops
                 gently, and presence 0 and 1 stay where they are. Contrast is
@@ -1633,7 +1637,7 @@ class Stage:
                 level = (level, 1.0)
             presence, contrast = (_check_u(v) for v in level)
             if ease is not None:
-                presence = _ease(presence, ease)
+                presence = min(1.0, max(0.0, _ease(presence, ease)))
             for look in self._looks[name]:
                 look.set(presence, contrast)
 
@@ -1648,7 +1652,9 @@ class Stage:
             u: Progress from `start` to the state, from 0 to 1; values
                 outside are clipped. At 1 (the default) the stage is exactly
                 in the state.
-            ease: An easing kind for `eyepiece.ease`, applied to `u`.
+            ease: An easing kind for `eyepiece.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+            strength=0.2)``, applied to `u`.
 
         Returns:
             The levels drawn, ``{name: (presence, contrast)}``.
@@ -1659,7 +1665,7 @@ class Stage:
             levels = end
         else:
             begin = start or {name: (1.0, 1.0) for name in self._looks}
-            e = _ease(u, ease)
+            e = min(1.0, max(0.0, _ease(u, ease)))  # a level cannot overshoot
             levels = {
                 name: tuple(
                     a + e * (b - a) for a, b in zip(begin[name], end[name], strict=True)
@@ -1949,7 +1955,9 @@ def collapse(
         to: Optional ``(start, end)`` pair of anchors the bar is carried to.
         width_pt: Line width of the segments in points. None uses twice
             ``rcParams["lines.linewidth"]``.
-        ease: An easing kind for `eyepiece.ease`.
+        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+            strength=0.2)``.
         zorder: Drawing order of the copy among the figure's children.
 
     Returns:
@@ -2007,7 +2015,10 @@ def collapse(
         if landing is not None and state["carry"] > 0.0:
             c = _ease(state["carry"], ease)
             place = place + c * (bar(*landing, renderer) - place)
-        shade = cells if target is None else cells + e * (target - cells)
+        shade = cells
+        if target is not None:
+            blend = min(1.0, max(0.0, e))  # a color cannot overshoot
+            shade = cells + blend * (target - cells)
         return place, shade
 
     rc = matplotlib.rcParams
@@ -2331,7 +2342,9 @@ def circumscribe(
         lw: Line width in points. None uses ``rcParams["lines.linewidth"]``.
         draw: Fraction of the progress spent drawing the outline on, in
             (0, 1); the rest fades it.
-        ease: An easing kind for `eyepiece.ease`, applied to the draw-on and
+        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+            strength=0.2)``, applied to the draw-on and
             to the fade.
         zorder: Drawing order among the figure's children.
         line_kw: Extra kwargs for the `Line2D`, applied last.
@@ -2380,11 +2393,11 @@ def circumscribe(
             return
         line.set_visible(True)
         if u < draw:
-            line._fraction = _ease(u / draw, ease)
+            line._fraction = min(1.0, max(0.0, _ease(u / draw, ease)))
             line.set_alpha(alpha)
         else:
             line._fraction = 1.0
-            level = 1.0 - _ease((u - draw) / (1.0 - draw), ease)
+            level = 1.0 - min(1.0, max(0.0, _ease((u - draw) / (1.0 - draw), ease)))
             line.set_alpha(level * (1.0 if alpha is None else alpha))
 
     update(1.0)
@@ -2632,9 +2645,10 @@ class _GhostMorph(PathPatch):
                 codes.append(Path.CLOSEPOLY)
         self.set_path(Path(np.vstack(vertices), codes))
         look_a, look_b = self._ends[0][2], self._ends[1][2]
-        edge = _lerp_color(look_a.edge, look_b.edge, e)
-        face = _lerp_color(look_a.face, look_b.face, e)
-        self.set_linewidth((1.0 - e) * look_a.lw + e * look_b.lw)
+        blend = min(1.0, max(0.0, e))  # colors and widths cannot overshoot
+        edge = _lerp_color(look_a.edge, look_b.edge, blend)
+        face = _lerp_color(look_a.face, look_b.face, blend)
+        self.set_linewidth((1.0 - blend) * look_a.lw + blend * look_b.lw)
         for color, setter in ((edge, self.set_edgecolor), (face, self.set_facecolor)):
             if color is None:
                 setter("none")
@@ -2706,7 +2720,9 @@ def morph(
         n: Points per subpath after resampling, at least 3.
         align: Whether closed pairs search the start point and direction.
             False pairs the resampled points as drawn.
-        ease: An easing kind for `eyepiece.ease`, applied to the progress.
+        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+            strength=0.2)``, applied to the progress.
         a_kw: Overrides for the style of the first path: any of
             ``edgecolor``, ``facecolor``, ``linewidth`` and ``alpha``.
         b_kw: The same for the second path.
@@ -3521,7 +3537,9 @@ def link(
             except the anchored artists, spines, and the axes backgrounds.
         strict: Whether `audit` raises for the link when it breaks a rule;
             False leaves the faults for the caller to read.
-        ease: An easing kind for `eyepiece.ease`, applied to `u`.
+        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+            strength=0.2)``, applied to `u`.
         zorder: Drawing order among the figure's children.
         line_kw: Extra kwargs for the `Line2D`, applied last.
 
@@ -3570,7 +3588,7 @@ def link(
         u = _check_u(u)
         level = _check_u(level)
         line.set_visible(u > 0.0 and level > 0.0)
-        line._grow = _ease(u, ease) if u < 1.0 else 1.0
+        line._grow = min(1.0, max(0.0, _ease(u, ease))) if u < 1.0 else 1.0
         base = 1.0 if alpha is None else alpha
         line.set_alpha(alpha if level >= 1.0 else base * level)
 

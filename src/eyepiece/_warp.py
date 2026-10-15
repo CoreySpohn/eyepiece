@@ -21,7 +21,7 @@ from matplotlib.patches import FancyArrowPatch, Patch, PathPatch, Polygon
 from matplotlib.path import Path
 from matplotlib.text import Annotation, Text
 
-from eyepiece._motion import ease as _ease
+from eyepiece._motion import _apply_ease as _ease
 from eyepiece._result import PlotResult
 from eyepiece.attention import _check_u, _line_parts, _path_parts, _resample
 
@@ -303,7 +303,7 @@ def _matrix_path(m, kind):
     """The function from eased progress to the 2x2 matrix applied."""
     ident = np.eye(2)
     if kind == "linear":
-        return lambda e: m if e >= 1.0 else ident + e * (m - ident)
+        return lambda e: ident + e * (m - ident)
     if np.linalg.det(m) <= 0.0:
         raise ValueError(
             "path='rotation' needs a matrix with positive determinant; a "
@@ -313,8 +313,9 @@ def _matrix_path(m, kind):
     rot = u @ vt
     stretch = vt.T @ np.diag(sv) @ vt
     angle = math.atan2(rot[1, 0], rot[0, 0])
+    # The stretch is clipped so a strong shrink cannot flip under an overshoot.
     return lambda e: (
-        m if e >= 1.0 else _rotation(e * angle) @ (ident + e * (stretch - ident))
+        _rotation(e * angle) @ (ident + min(1.0, max(0.0, e)) * (stretch - ident))
     )
 
 
@@ -373,7 +374,8 @@ def warp(
         about: The fixed point of a matrix, ``(x, y)``; default the origin.
             Not for a callable map.
         n: Subdivision of a path under a callable map, at least 1.
-        ease: An easing kind for `eyepiece.ease`, applied to the progress.
+        ease: An easing kind for `eyepiece.ease`, applied to the progress; a callable
+            from progress to eased progress also works, for a strength.
 
     Returns:
         A `PlotResult` on the axes of the first artist, whose ``artists``
@@ -447,13 +449,15 @@ def warp(
         u = _check_u(u)
         del level
         e = float(_ease(u, ease))
+        # Snap to the ends on the progress, not the eased value: an overshoot
+        # ease passes 1 before the move is over.
         for t in targets:
-            if e <= 0.0:
+            if u <= 0.0:
                 t.restore()
             elif pointwise:
-                t.build(t.points + e * (t.goal - t.points) if e < 1.0 else t.goal)
+                t.build(t.goal if u >= 1.0 else t.points + e * (t.goal - t.points))
             else:
-                a = moved(e)
+                a = m if u >= 1.0 else moved(e)
                 t.build((t.points - center) @ a.T + center)
 
     owner = next((i.axes for i in items if i.axes is not None), None)

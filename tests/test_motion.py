@@ -345,3 +345,75 @@ def test_motion_module_imports_without_matplotlib():
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == "False"
+
+
+# Overshoot and anticipation eases
+
+OVERSHOOT_KINDS = ["back_out", "running_start"]
+
+
+@pytest.mark.parametrize("kind", OVERSHOOT_KINDS)
+def test_overshoot_eases_end_exactly_at_zero_and_one(kind):
+    for strength in (None, 0.05, 0.1, 0.5):
+        assert ep.ease(0.0, kind, strength) == 0.0
+        assert ep.ease(1.0, kind, strength) == 1.0
+    # Only the input is clipped, so the ends hold outside [0, 1].
+    assert ep.ease(-2.0, kind) == 0.0
+    assert ep.ease(3.0, kind) == 1.0
+    values = ep.ease(np.array([-1.0, 0.0, 1.0, 2.0]), kind)
+    assert values.tolist() == [0.0, 0.0, 1.0, 1.0]
+
+
+@pytest.mark.parametrize("strength", [0.02, 0.1, 0.3, 1.0])
+def test_back_out_peaks_at_one_plus_strength_then_settles(strength):
+    s = np.linspace(0.0, 1.0, 20001)
+    values = ep.ease(s, "back_out", strength)
+    assert values.max() == pytest.approx(1.0 + strength, abs=1e-6)
+    peak = int(np.argmax(values))
+    assert np.all(np.diff(values[: peak + 1]) >= 0.0)
+    assert np.all(np.diff(values[peak:]) <= 1e-12)
+    assert values[-1] == 1.0
+
+
+@pytest.mark.parametrize("strength", [0.02, 0.1, 0.3])
+def test_running_start_dips_to_minus_strength_then_goes(strength):
+    s = np.linspace(0.0, 1.0, 20001)
+    values = ep.ease(s, "running_start", strength)
+    assert values.min() == pytest.approx(-strength, abs=1e-4)
+    assert values.max() == 1.0
+    low = int(np.argmin(values))
+    assert 0 < low < len(s) // 2
+    assert np.all(np.diff(values[low:]) >= -1e-12)
+
+
+def test_the_default_back_out_is_the_classic_ten_percent_overshoot():
+    s = np.linspace(0.0, 1.0, 20001)
+    assert ep.ease(s, "back_out").max() == pytest.approx(1.1, abs=1e-6)
+    assert ep.ease(s, "running_start").min() == pytest.approx(-0.1, abs=1e-4)
+
+
+@pytest.mark.parametrize("kind", ["linear", "smoothstep", "smootherstep", "cosine"])
+def test_other_kinds_take_no_strength_and_stay_inside_the_unit_interval(kind):
+    with pytest.raises(ValueError, match="strength"):
+        ep.ease(0.5, kind, 0.1)
+    values = ep.ease(np.linspace(0.0, 1.0, 101), kind)
+    assert values.min() >= 0.0 and values.max() <= 1.0
+
+
+@pytest.mark.parametrize("strength", [0.0, -0.1, math.inf, math.nan])
+def test_a_strength_must_be_positive_and_finite(strength):
+    with pytest.raises(ValueError, match="strength"):
+        ep.ease(0.5, "back_out", strength)
+
+
+@pytest.mark.parametrize("kind", OVERSHOOT_KINDS)
+def test_a_ramp_accepts_an_overshoot_ease_and_still_lands_on_its_target(kind):
+    plan = (
+        ep.Timeline(knobs={"x": 0.0})
+        .hold(0.1)
+        .ramp(1.0, name="go", to={"x": 2.0}, ease=kind)
+        .at_fps(24)
+    )
+    xs = [f["x"] for f in plan.frames]
+    assert xs[-1] == 2.0
+    assert (max(xs) > 2.0) if kind == "back_out" else (min(xs) < 0.0)

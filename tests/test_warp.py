@@ -312,3 +312,73 @@ def test_scatter_group_key():
     dots = ax.scatter([0.0], [1.0])
     assert isinstance(dots, PathCollection)
     assert ep.warp(dots, np.eye(2)).artists["scatter"] == [dots]
+
+
+def _extreme(line, move, us, pick):
+    best = None
+    for u in us:
+        move.update(u)
+        value = pick(_xy(line)[:, 0])
+        best = value if best is None else pick([best, value])
+    return best
+
+
+def _lands_like_smoothstep(make, path_kwargs):
+    """The final and first frames of an overshoot warp equal a plain one's."""
+    _fig, ax = _axes()
+    (ref_line,) = ax.plot(*_ring().T)
+    ref = ep.warp(ref_line, **path_kwargs)
+    ref.update(1.0)
+    want_end = _xy(ref_line).copy()
+    ref.update(0.0)
+    want_start = _xy(ref_line).copy()
+    _fig, ax = _axes()
+    (line,) = ax.plot(*_ring().T)
+    move = make(line)
+    return line, move, want_start, want_end
+
+
+TURN_AND_STRETCH = _rot(np.pi / 3.0) @ np.diag([2.0, 1.0])
+
+
+@pytest.mark.parametrize("path", ["linear", "rotation"])
+def test_back_out_warp_passes_its_image_and_lands_exactly(path):
+    kw = {"mapping": TURN_AND_STRETCH, "path": path}
+    line, move, start, end = _lands_like_smoothstep(
+        lambda ln: ep.warp(ln, ease="back_out", **kw), kw
+    )
+    ref_lines = np.linspace(0.0, 1.0, 201)[:-1]
+    # An overshoot carries the ring's rightmost point past the image's.
+    top = _extreme(line, move, ref_lines, np.max)
+    assert top > end[:, 0].max() + 0.05
+    move.update(1.0)
+    np.testing.assert_allclose(_xy(line), end, atol=1e-12)
+    move.update(0.0)
+    np.testing.assert_allclose(_xy(line), start, atol=1e-12)
+
+
+def test_back_out_pointwise_warp_passes_its_image_and_lands_exactly():
+    def shift(p):
+        return p + np.array([1.0, 0.0])
+
+    kw = {"mapping": shift}
+    line, move, _start, end = _lands_like_smoothstep(
+        lambda ln: ep.warp(ln, ease="back_out", **kw), kw
+    )
+    top = _extreme(line, move, np.linspace(0.0, 1.0, 201)[:-1], np.max)
+    assert top > end[:, 0].max() + 0.05
+    move.update(1.0)
+    np.testing.assert_allclose(_xy(line), end, atol=1e-12)
+
+
+@pytest.mark.parametrize("path", ["linear", "rotation"])
+def test_running_start_warp_pulls_back_before_it_goes(path):
+    kw = {"mapping": TURN_AND_STRETCH, "path": path}
+    line, move, start, end = _lands_like_smoothstep(
+        lambda ln: ep.warp(ln, ease="running_start", **kw), kw
+    )
+    pull = _extreme(line, move, np.linspace(0.0, 1.0, 201)[1:-1], np.min)
+    # Early in the move the ring's leftmost point sits left of where it began.
+    assert pull < start[:, 0].min() - 0.02
+    move.update(1.0)
+    np.testing.assert_allclose(_xy(line), end, atol=1e-12)
