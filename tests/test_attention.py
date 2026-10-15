@@ -5,6 +5,8 @@ leader keeps the connector rules; a callout sits beside its subject and is
 absent before its beat; all of it in light and dark.
 """
 
+import math
+
 import hwostyle
 import matplotlib.pyplot as plt
 import numpy as np
@@ -610,3 +612,146 @@ def test_indicate_rejects_what_it_cannot_pulse():
     with pytest.raises(ValueError, match="no artist"):
         ep.indicate([])
     assert fig
+
+
+# Circumscribe
+
+
+def _ink_box(fig, without):
+    """Display-space box (x0, x1, y0, y1) of the pixels that differ, or None."""
+    now = _pixels(fig)
+    rows, cols = np.nonzero(np.any(now != without, axis=-1))
+    if not len(rows):
+        return None
+    height = now.shape[0]
+    return cols.min(), cols.max() + 1, height - rows.max() - 1, height - rows.min()
+
+
+def _ink(fig, without):
+    return int(np.any(_pixels(fig) != without, axis=-1).sum())
+
+
+def _labelled_panel():
+    fig, ax = plt.subplots(figsize=(6.0, 4.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    ax.plot([0.0, 1.0], [0.1, 0.2], color=ep.neutral(0.3))
+    label = ax.text(0.5, 0.6, "this pixel", ha="center", va="center")
+    fig.canvas.draw()
+    return fig, ax, label
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("shape", ["rect", "ellipse"])
+def test_circumscribe_is_absent_at_both_ends_and_at_rest(mode, shape):
+    hwostyle.use(mode)
+    fig, _ax, label = _labelled_panel()
+    without = _pixels(fig)
+    ring = ep.circumscribe(label, shape=shape)
+    for u in (None, 0.0, 1.0):
+        if u is not None:
+            ring.update(u)
+        np.testing.assert_array_equal(_pixels(fig), without)
+    ring.update(0.4)
+    assert _ink(fig, without) > 0
+
+
+def test_circumscribe_rect_encloses_its_target_at_the_pad():
+    fig, _ax, label = _labelled_panel()
+    without = _pixels(fig)
+    box = label.get_window_extent()
+    ring = ep.circumscribe(label, pad_pt=6.0, lw=1.0)
+    pad = 6.0 * fig.dpi / 72.0
+    ring.update(0.6)  # fully drawn, not yet fading
+    x0, x1, y0, y1 = _ink_box(fig, without)
+    for got, want in (
+        (x0, box.x0 - pad),
+        (x1, box.x1 + pad),
+        (y0, box.y0 - pad),
+        (y1, box.y1 + pad),
+    ):
+        assert abs(got - want) <= 3.0
+    # Nothing inside the target's box.
+    now = _pixels(fig)
+    h = now.shape[0]
+    inside = (slice(h - int(box.y1), h - int(box.y0)), slice(int(box.x0), int(box.x1)))
+    np.testing.assert_array_equal(now[inside], without[inside])
+
+
+def test_circumscribe_ellipse_passes_outside_the_corners_of_the_box():
+    fig, _ax, label = _labelled_panel()
+    without = _pixels(fig)
+    box = label.get_window_extent()
+    ring = ep.circumscribe(label, shape="ellipse", pad_pt=2.0)
+    ring.update(0.6)
+    x0, x1, y0, y1 = _ink_box(fig, without)
+    assert x0 < box.x0 and x1 > box.x1 and y0 < box.y0 and y1 > box.y1
+    # Its horizontal extent is that of the ellipse through the corners.
+    half = 0.5 * (x1 - x0)
+    assert half == pytest.approx(
+        math.sqrt(0.5) * box.width + 2.0 * fig.dpi / 72.0, abs=2.0
+    )
+
+
+def test_circumscribe_draws_on_then_fades():
+    fig, _ax, label = _labelled_panel()
+    without = _pixels(fig)
+    ring = ep.circumscribe(label, draw=0.6)
+    inked = []
+    for u in (0.1, 0.3, 0.5, 0.6):
+        ring.update(u)
+        inked.append(_ink(fig, without))
+    assert 0 < inked[0] < inked[1] < inked[2] < inked[3]
+    full = _pixels(fig).astype(float)
+    strength = []
+    for u in (0.6, 0.75, 0.9):
+        ring.update(u)
+        strength.append(np.abs(_pixels(fig).astype(float) - without).sum())
+    assert strength[0] > strength[1] > strength[2] > 0.0
+    np.testing.assert_array_equal(full.shape, without.shape)
+
+
+def test_circumscribe_follows_its_target_and_takes_a_given_color():
+    fig, _ax, label = _labelled_panel()
+    without = _pixels(fig)
+    ring = ep.circumscribe(label, color="C3")
+    ring.update(0.6)
+    first = _ink_box(fig, without)
+    ring.update(0.0)
+    label.set_position((0.7, 0.6))
+    fig.canvas.draw()
+    moved_without = _pixels(fig)
+    ring.update(0.0)
+    np.testing.assert_array_equal(_pixels(fig), moved_without)
+    ring.update(0.6)
+    second = _ink_box(fig, moved_without)
+    assert second[0] > first[0] + 20
+    assert to_rgba(ring.artists["line"].get_color()) == to_rgba("C3")
+
+
+def test_circumscribe_belongs_to_the_figure_and_moves_no_limits():
+    fig, ax, _label = _labelled_panel()
+    limits = (ax.get_xlim(), ax.get_ylim())
+    ring = ep.circumscribe(ep.Anchor.from_data(ax, (0.5, 0.5)), shape="ellipse")
+    line = ring.artists["line"]
+    assert line in fig.artists and line not in ax.get_children()
+    for u in np.linspace(0.0, 1.0, 9):
+        ring.update(u)
+        fig.canvas.draw()
+    assert (ax.get_xlim(), ax.get_ylim()) == limits
+    assert set(ring.artists) <= ep.ARTIST_KEYS
+    # A data point has no extent: a ring of the pad around it.
+    ring.update(0.6)
+    ends = line.outline()
+    center = ax.transData.transform((0.5, 0.5))
+    np.testing.assert_allclose(np.hypot(*(ends - center).T), 4.0 * fig.dpi / 72.0)
+
+
+def test_circumscribe_rejects_bad_inputs():
+    _fig, ax, label = _labelled_panel()
+    with pytest.raises(ValueError, match="shape"):
+        ep.circumscribe(label, shape="star")
+    with pytest.raises(ValueError, match="draw"):
+        ep.circumscribe(label, draw=1.0)
+    with pytest.raises(TypeError):
+        ep.circumscribe("label")
+    assert ax

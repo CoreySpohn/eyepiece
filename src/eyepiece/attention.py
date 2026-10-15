@@ -2077,3 +2077,155 @@ def indicate(artists, *, scale=1.15, strength=0.6):
             channel.apply(k)
 
     return PlotResult(ax=getattr(items[0], "axes", None), artists=groups, update=update)
+
+
+# Circumscribe
+
+_ELLIPSE_STEPS = 160
+
+
+def _cut(vertices, fraction):
+    """The first `fraction` of a polyline's length, as vertices."""
+    seg = np.hypot(*np.diff(vertices, axis=0).T)
+    total = float(seg.sum())
+    if total <= 0.0 or fraction >= 1.0:
+        return vertices
+    reach = fraction * total
+    done = np.concatenate([[0.0], np.cumsum(seg)])
+    k = int(np.searchsorted(done, reach, side="right")) - 1
+    k = min(k, len(seg) - 1)
+    t = (reach - done[k]) / seg[k] if seg[k] > 0.0 else 0.0
+    tip = vertices[k] + t * (vertices[k + 1] - vertices[k])
+    return np.vstack([vertices[: k + 1], tip])
+
+
+class _Outline(Line2D):
+    """A closed outline around a target's box that draws on around its perimeter."""
+
+    def __init__(self, target, *, shape, pad_pt, **kw):
+        super().__init__([], [], transform=IdentityTransform(), **kw)
+        self._target = target
+        self._shape = shape
+        self._pad_pt = float(pad_pt)
+        self._fraction = 1.0
+
+    def outline(self, renderer=None):
+        """The whole outline, closed, in display pixels, as the figure is now."""
+        box = self._target.box(renderer)
+        pad = _pixels(renderer, _root_figure(self), self._pad_pt)
+        cx, cy = 0.5 * (box.x0 + box.x1), 0.5 * (box.y0 + box.y1)
+        if self._shape == "rect":
+            x0, x1, y0, y1 = box.x0 - pad, box.x1 + pad, box.y0 - pad, box.y1 + pad
+            return np.array(
+                [[cx, y1], [x1, y1], [x1, y0], [x0, y0], [x0, y1], [cx, y1]],
+                dtype=float,
+            )
+        # An ellipse through the corners of the padded box.
+        a = math.sqrt(0.5) * box.width + pad
+        b = math.sqrt(0.5) * box.height + pad
+        t = 0.5 * math.pi - np.linspace(0.0, 2.0 * math.pi, _ELLIPSE_STEPS + 1)
+        return np.c_[cx + a * np.cos(t), cy + b * np.sin(t)]
+
+    def draw(self, renderer):
+        """Draw the first part of the outline, from the top, clockwise."""
+        if not self.get_visible() or self._fraction <= 0.0:
+            return
+        points = _cut(self.outline(renderer), self._fraction)
+        self.set_data(points[:, 0], points[:, 1])
+        super().draw(renderer)
+
+
+def circumscribe(
+    target,
+    *,
+    shape="rect",
+    pad_pt=4.0,
+    color=None,
+    lw=None,
+    draw=0.6,
+    ease="smoothstep",
+    zorder=21,
+    line_kw=None,
+):
+    """Draw an outline around a thing, then let it go.
+
+    The move says "this one" for a thing the viewer has to find in a busy
+    panel: an outline draws on around the target's perimeter, from the top
+    and clockwise, and then fades. It is a figure-level artist resolved in
+    display space when the figure is drawn, so it follows its target and
+    never joins an axes' autoscaling. A data-point `Anchor` has no extent,
+    so its outline is a ring of `pad_pt` around the point.
+
+    ``update(u)`` is absolute: over the first `draw` of ``u`` the outline
+    draws on, and over the rest it fades. At ``u = 0`` and ``u = 1``, the
+    rest state, nothing is drawn and the frame is pixel-identical to the
+    frame without the move.
+
+    Args:
+        target: The thing to outline: an `Anchor` (a data point, or a part
+            of an artist's box) or an artist, outlined on its box.
+        shape: ``"rect"`` or ``"ellipse"`` (through the corners of the
+            padded box).
+        pad_pt: Gap between the target's box and the outline, in points.
+        color: Outline color. None uses the text color, read now.
+        lw: Line width in points. None uses ``rcParams["lines.linewidth"]``.
+        draw: Fraction of the progress spent drawing the outline on, in
+            (0, 1); the rest fades it.
+        ease: An easing kind for `eyepiece.ease`, applied to the draw-on and
+            to the fade.
+        zorder: Drawing order among the figure's children.
+        line_kw: Extra kwargs for the `Line2D`, applied last.
+
+    Returns:
+        A `PlotResult` on the target's axes (None for a target drawn on the
+        figure), with ``artists["line"]`` and ``update(u)``, `u` from 0 to 1;
+        values outside are clipped.
+
+    Raises:
+        TypeError: If `target` is neither an `Anchor` nor an artist.
+        ValueError: If `shape` is unknown or `draw` is outside (0, 1).
+
+    Example::
+
+        ring = ep.circumscribe(ep.Anchor.from_artist(label), pad_pt=6)
+        for u in np.linspace(0.0, 1.0, 24):
+            ring.update(u)
+            rec.frame()
+    """
+    if shape not in ("rect", "ellipse"):
+        raise ValueError(f"unknown shape: {shape!r}; known: ['rect', 'ellipse']")
+    draw = float(draw)
+    if not 0.0 < draw < 1.0:
+        raise ValueError(f"circumscribe draw must be in (0, 1), got {draw}")
+    target = _as_anchor(target, "target")
+    rc = matplotlib.rcParams
+    kw = {
+        "color": _style.neutral(1.0) if color is None else color,
+        "lw": float(rc["lines.linewidth"]) if lw is None else lw,
+        "solid_capstyle": "round",
+        "solid_joinstyle": "round",
+        "zorder": zorder,
+        **(line_kw or {}),
+    }
+    line = _Outline(target, shape=shape, pad_pt=pad_pt, **kw)
+    line.set_clip_on(False)
+    line.set_in_layout(False)
+    target.figure.add_artist(line)
+    alpha = line.get_alpha()
+
+    def update(u):
+        u = _check_u(u)
+        if u <= 0.0 or u >= 1.0:
+            line.set_visible(False)
+            return
+        line.set_visible(True)
+        if u < draw:
+            line._fraction = _ease(u / draw, ease)
+            line.set_alpha(alpha)
+        else:
+            line._fraction = 1.0
+            level = 1.0 - _ease((u - draw) / (1.0 - draw), ease)
+            line.set_alpha(level * (1.0 if alpha is None else alpha))
+
+    update(1.0)
+    return PlotResult(ax=target.axes, artists={"line": line}, update=update)
