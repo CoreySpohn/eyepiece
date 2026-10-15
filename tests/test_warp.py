@@ -1,5 +1,7 @@
 """Plane warp: a matrix or a pointwise map applied to drawn artists."""
 
+import functools
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -382,3 +384,25 @@ def test_running_start_warp_pulls_back_before_it_goes(path):
     assert pull < start[:, 0].min() - 0.02
     move.update(1.0)
     np.testing.assert_allclose(_xy(line), end, atol=1e-12)
+
+
+def test_rotation_warp_snaps_on_progress_not_on_the_eased_value():
+    # A strong back_out reaches an eased value of 1 well before u = 1, so a
+    # snap on the eased value would jump to the goal early.
+    fast = functools.partial(ep.ease, kind="back_out", strength=0.5)
+    assert fast(0.95) > 1.0
+    kw = {"mapping": TURN_AND_STRETCH, "path": "rotation"}
+    _fig, ax = _axes()
+    (ref_line,) = ax.plot(*_ring().T)
+    ref = ep.warp(ref_line, **kw)
+    ref.update(1.0)
+    goal = _xy(ref_line).copy()
+    _fig, ax = _axes()
+    (line,) = ax.plot(*_ring().T)
+    move = ep.warp(line, ease=fast, **kw)
+    move.update(0.95)
+    near = _xy(line).copy()
+    assert near.shape == goal.shape
+    assert np.abs(near - goal).max() > 1e-3  # still on the way, not at the goal
+    move.update(1.0)
+    np.testing.assert_allclose(_xy(line), goal, atol=1e-12)
