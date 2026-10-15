@@ -581,6 +581,24 @@ def test_mp4_without_ffmpeg_raises_actionable(tmp_path):
     plt.close(fig)
 
 
+def test_missing_ffmpeg_error_names_the_video_extra(monkeypatch):
+    import builtins
+
+    from eyepiece import _ffmpeg
+
+    monkeypatch.setattr(_ffmpeg.shutil, "which", lambda name: None)
+    real_import = builtins.__import__
+
+    def hide(name, *args, **kwargs):
+        if name == "imageio_ffmpeg":
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", hide)
+    with pytest.raises(RuntimeError, match=r"eyepiece\[video\]"):
+        _ffmpeg.resolve_ffmpeg()
+
+
 def test_recording_no_frames_names_every_sink(tmp_path):
     # A zero-frame gif is never written, but a zero-frame html player IS left
     # on disk as an empty stub, so the message has to name every sink and
