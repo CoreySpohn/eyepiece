@@ -3564,8 +3564,12 @@ def words(
         ha: Which end of the line `at` marks: ``"left"``, ``"center"`` or
             ``"right"``.
         color: Default color of the words. None uses ``rcParams["text.color"]``.
-        colors: Color of individual words: a dict of word index to color, or
-            a sequence with one color (or None for the default) per word.
+        colors: Color of individual words: a dict whose keys are word
+            indices or word strings, or a sequence with one color (or None
+            for the default) per word. A string key colors every occurrence
+            of that word, and a math word is matched by its full ``$...$``
+            text. A key that matches no word, or an index and a string that
+            reach one word with different colors, raises.
         fontsize: Font size in points. None uses ``rcParams["font.size"]``.
         zorder: Drawing order among the figure's children.
         text_kw: Extra kwargs for every `Text`, applied last. Keep them to
@@ -3581,7 +3585,8 @@ def words(
     Raises:
         TypeError: If `at` is neither an `Anchor` nor an artist.
         ValueError: If the line has no words or a newline, `ha` or `by` is
-            unknown, or `colors` does not match the words.
+            unknown, or `colors` does not match the words (a key naming no
+            word, a wrong length, or two colors for one word).
 
     Example::
 
@@ -3605,16 +3610,24 @@ def words(
     if colors is None:
         own = [None] * n
     elif isinstance(colors, dict):
-        bad = [
-            k
-            for k in colors
-            if isinstance(k, bool) or not isinstance(k, int) or not -n <= k < n
-        ]
-        if bad:
-            raise ValueError(f"colors has no word {bad[0]!r}; the line has {n} words")
+        tokens = [string[a:b] for a, b in spans]
         own = [None] * n
-        for k, value in colors.items():
-            own[k % n] = value
+        for key, value in colors.items():
+            if isinstance(key, str):
+                hits = [i for i, t in enumerate(tokens) if t == key]
+                if not hits:
+                    raise ValueError(f"colors key {key!r} matches no word of the line")
+            elif isinstance(key, int) and not isinstance(key, bool) and -n <= key < n:
+                hits = [key % n]
+            else:
+                raise ValueError(f"colors has no word {key!r}; the line has {n} words")
+            for i in hits:
+                if own[i] is not None and to_rgba(own[i]) != to_rgba(value):
+                    raise ValueError(
+                        f"colors gives word {i} ({tokens[i]!r}) two colors: "
+                        f"{own[i]!r} and {value!r}"
+                    )
+                own[i] = value
     else:
         own = list(colors)
         if len(own) != n:

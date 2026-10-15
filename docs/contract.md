@@ -502,7 +502,8 @@ on the eased value. A `readout` clips its eased value to [0, 1] before it
 interpolates, so a count passes neither its old value nor its new one. `words` cuts one line of text into one
 text per word, laid out once as a single string with each word's extent taken
 from the renderer, so its words are anchors and stage members too, math in
-``$...$`` stays whole, and the joined line at rest is the single text, pixel
+``$...$`` stays whole, a color is given by word index or by the word itself (a string key colors
+every occurrence), and the joined line at rest is the single text, pixel
 identical; its reveal is by opacity or by letters in place, never by motion. A flight can carry a segment or a bar and
 turn it. `morph` is a figure-level ghost like a flight, visible only
 between its ends, whose geometry at the ends is the two paths resampled by

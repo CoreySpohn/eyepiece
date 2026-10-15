@@ -1111,6 +1111,56 @@ def test_words_color_one_word_and_only_that_word():
     assert [n for k, n in enumerate(inside) if k != 3] == [0, 0, 0, 0]
 
 
+def _reddest_word(fig, line):
+    """The index of the word whose box holds the most red ink, and the counts."""
+    pixels = _pixels(fig).astype(int)
+    red = (pixels[..., 0] > 200) & (pixels[..., 1] < 80) & (pixels[..., 2] < 80)
+    height = pixels.shape[0]
+    counts = []
+    for t in line.artists["text"]:
+        box = t.get_window_extent()
+        x0, x1 = int(box.x0) - 1, int(box.x1) + 2
+        y0, y1 = int(height - box.y1) - 1, int(height - box.y0) + 2
+        counts.append(int(red[y0:y1, x0:x1].sum()))
+    return counts
+
+
+def test_words_color_by_string_hits_every_occurrence_and_only_those():
+    fig, line = _words_line(LINE, 100, 14, colors={"the": "#ff0000"})
+    counts = _reddest_word(fig, line)
+    assert [c > 30 for c in counts] == [True, False, False, True, False]
+    fig, line = _words_line(LINE, 100, 14, colors={"likelihood": "#ff0000"})
+    assert [c > 30 for c in _reddest_word(fig, line)] == [False] * 4 + [True]
+
+
+def test_words_color_by_string_matches_a_math_word_by_its_full_text():
+    fig, line = _words_line(
+        r"the $p(y | x)$ and $q$", 100, 14, colors={"$p(y | x)$": "#ff0000"}
+    )
+    assert [c > 30 for c in _reddest_word(fig, line)] == [False, True, False, False]
+    with pytest.raises(ValueError, match=r"'p\(y \| x\)'"):
+        _words_line(r"the $p(y | x)$", 100, 14, colors={"p(y | x)": "C0"})
+
+
+def test_words_color_by_string_mixes_with_an_index_and_agrees_with_it():
+    _fig, ax = _line_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    line = ep.words(at, "a b a", colors={"a": "C0", 1: "C1", 2: "C0", -1: "#1f77b4"})
+    got = [to_rgb(t.get_color()) for t in line.artists["text"]]
+    assert got[0] == got[2] == to_rgb("C0") and got[1] == to_rgb("C1")
+
+
+def test_words_color_by_string_rejects_a_missing_word_and_a_conflict():
+    _fig, ax = _line_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    with pytest.raises(ValueError, match="'posterior'"):
+        ep.words(at, "the prior", colors={"posterior": "C0"})
+    with pytest.raises(ValueError, match="two colors"):
+        ep.words(at, "the prior", colors={"prior": "C0", 1: "C1"})
+    with pytest.raises(ValueError, match="two colors"):
+        ep.words(at, "the prior", colors={1: "C0", -1: "C1"})
+
+
 def test_words_colors_accept_a_sequence_and_reject_a_mismatch():
     _fig, ax = _line_panel()
     at = ep.Anchor.from_data(ax, (0.1, 0.5))
