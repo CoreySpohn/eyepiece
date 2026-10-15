@@ -233,6 +233,7 @@ _LAZY_EXPORTS = {
     "flight": ("eyepiece.attention", "flight"),
     "indicate": ("eyepiece.attention", "indicate"),
     "leader": ("eyepiece.attention", "leader"),
+    "term_row": ("eyepiece.attention", "term_row"),
     "quad_image": ("eyepiece.morph", "quad_image"),
 }
 

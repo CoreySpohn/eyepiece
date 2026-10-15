@@ -5,6 +5,7 @@ leader keeps the connector rules; a callout sits beside its subject and is
 absent before its beat; all of it in light and dark.
 """
 
+import itertools
 import math
 
 import hwostyle
@@ -755,3 +756,179 @@ def test_circumscribe_rejects_bad_inputs():
     with pytest.raises(TypeError):
         ep.circumscribe("label")
     assert ax
+
+
+# Term row
+
+
+def _row_panel():
+    fig, ax = plt.subplots(figsize=(6.0, 3.0))
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    ax.plot([0.0, 1.0], [0.05, 0.1], color=ep.neutral(0.3))
+    return fig, ax
+
+
+EQUATION = [r"$\chi^2$", "=", r"$\sum_i (y_i - m_i)^2$", "=", "0.00"]
+
+
+def _boxes(row, fig):
+    fig.canvas.draw()
+    return [t.get_window_extent() for t in row.artists["text"]]
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_term_row_terms_read_left_to_right_without_overlap_on_one_baseline(mode):
+    hwostyle.use(mode)
+    fig, ax = _row_panel()
+    start = ep.Anchor.from_data(ax, (0.1, 0.6))
+    row = ep.term_row(start, EQUATION, gap_em=0.5)
+    boxes = _boxes(row, fig)
+    em = plt.rcParams["font.size"] * fig.dpi / 72.0
+    for left, right in itertools.pairwise(boxes):
+        assert right.x0 - left.x1 == pytest.approx(0.5 * em, abs=1.5)
+    assert boxes[0].x0 == pytest.approx(start.display()[0], abs=1.5)
+    ys = {round(t.get_position()[1], 3) for t in row.artists["text"]}
+    assert ys == {round(float(start.display()[1]), 3)}
+
+
+def test_term_row_shares_a_baseline_in_the_pixels():
+    fig, ax = _row_panel()
+    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), ["x", "$x$", "x"])
+    texts = row.artists["text"]
+    fig.canvas.draw()
+    blank = {}
+    for i in range(3):
+        for j, t in enumerate(texts):
+            t.set_alpha(1.0 if i == j else 0.0)
+        blank[i] = _pixels(fig)
+    for t in texts:
+        t.set_alpha(0.0)
+    empty = _pixels(fig)
+    bottoms = []
+    for i in range(3):
+        rows, _cols = np.nonzero(np.any(blank[i] != empty, axis=-1))
+        bottoms.append(rows.max())
+    assert max(bottoms) - min(bottoms) <= 1
+
+
+def test_term_row_relays_out_when_a_term_changes():
+    fig, ax = _row_panel()
+    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    first = _boxes(row, fig)
+    texts = row.artists["text"]
+    texts[2].set_text("$\\sum_i^{N} (y_i - m_i)^2 / \\sigma_i^2$")
+    after = _boxes(row, fig)
+    assert after[2].width > first[2].width
+    grown = after[2].width - first[2].width
+    # The neighbors made room, by exactly what the term grew.
+    assert after[3].x0 - first[3].x0 == pytest.approx(grown, abs=1.0)
+    assert after[0].x0 == pytest.approx(first[0].x0)
+    for left, right in itertools.pairwise(after):
+        assert right.x0 >= left.x1
+    texts[2].set_text("")  # a blank readout has no slot and no gap
+    blank = _boxes(row, fig)
+    assert blank[3].x0 < first[3].x0
+
+
+def test_term_row_terms_are_anchors_before_any_draw_and_follow_the_readout():
+    fig, ax = _row_panel()
+    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    anchor = ep.Anchor.from_artist(row.artists["text"][4], loc="left")
+    first = anchor.display()  # no draw yet
+    fig.canvas.draw()
+    np.testing.assert_allclose(anchor.display(), first, atol=0.01)
+    row.artists["text"][2].set_text(r"$\sum$")
+    assert anchor.display()[0] < first[0] - 20
+
+
+def test_term_row_ha_places_the_row_by_its_end():
+    fig, ax = _row_panel()
+    at = ep.Anchor.from_data(ax, (0.5, 0.6))
+    spans = {}
+    for ha in ("left", "center", "right"):
+        row = ep.term_row(at, EQUATION, ha=ha)
+        boxes = _boxes(row, fig)
+        spans[ha] = (boxes[0].x0, boxes[-1].x1)
+        for t in row.artists["text"]:
+            t.remove()
+    x = at.display()[0]
+    assert spans["left"][0] == pytest.approx(x, abs=1.5)
+    assert 0.5 * sum(spans["center"]) == pytest.approx(x, abs=1.5)
+    assert spans["right"][1] == pytest.approx(x, abs=1.5)
+
+
+def test_term_row_moves_no_data_limit_and_belongs_to_the_figure():
+    fig, ax = _row_panel()
+    limits = (ax.get_xlim(), ax.get_ylim())
+    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    for t in row.artists["text"]:
+        assert t in fig.artists and t not in ax.get_children()
+    row.artists["text"][4].set_text("12345.67")
+    fig.canvas.draw()
+    assert (ax.get_xlim(), ax.get_ylim()) == limits
+    assert set(row.artists) <= ep.ARTIST_KEYS
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_term_row_terms_stage_flight_and_indicate_alone(mode):
+    hwostyle.use(mode)
+    fig, ax = _row_panel()
+    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    terms = row.artists["text"]
+    fig.canvas.draw()
+    made = _pixels(fig)
+    boxes = [t.get_window_extent() for t in terms]
+    stage = ep.Stage({"lhs": terms[:1], "rest": terms[1:]})
+    stage.set(shown=["lhs"])
+    fig.canvas.draw()
+    assert to_rgba(terms[0].get_color())[3] == 1.0
+    assert to_rgba(terms[3].get_color())[3] == 0.0
+    # Hiding terms by the stage leaves the layout where it was.
+    for t, b in zip(terms, boxes, strict=True):
+        assert t.get_window_extent().x0 == pytest.approx(b.x0)
+    stage.rest()
+    np.testing.assert_array_equal(_pixels(fig), made)
+    pulse = ep.indicate(terms[2])
+    pulse.update(0.5)
+    fig.canvas.draw()
+    swollen = terms[2].get_window_extent()
+    assert swollen.width > boxes[2].width
+    for k in (0, 1, 3, 4):  # no neighbor moved
+        assert terms[k].get_window_extent().x0 == pytest.approx(boxes[k].x0)
+    pulse.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), made)
+    carry = ep.flight(
+        terms[4], ep.Anchor.from_data(ax, (0.8, 0.3)), fig=fig, mark=terms[4]
+    )
+    carry.update(1.0 - 1e-6)
+    fig.canvas.draw()
+    where = np.array(carry.artists["text"].get_position())
+    assert np.hypot(*(where - ax.transData.transform((0.8, 0.3)))) < 0.5
+
+
+def test_term_row_writes_on_term_by_term_and_rests_whole():
+    fig, ax = _row_panel()
+    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    texts = row.artists["text"]
+    fig.canvas.draw()
+    whole = _pixels(fig)
+    row.update(0.0)
+    assert not any(t.get_visible() for t in texts)
+    row.update(0.5)  # 5 terms: two done, the third arriving
+    assert [t.get_visible() for t in texts] == [True, True, True, False, False]
+    assert texts[0].get_alpha() in (None, 1.0) and 0.0 < texts[2].get_alpha() < 1.0
+    row.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), whole)
+
+
+def test_term_row_rejects_bad_inputs():
+    _fig, ax = _row_panel()
+    at = ep.Anchor.from_data(ax, (0.1, 0.6))
+    with pytest.raises(ValueError, match="no terms"):
+        ep.term_row(at, [])
+    with pytest.raises(ValueError, match="ha"):
+        ep.term_row(at, ["x"], ha="top")
+    with pytest.raises(ValueError, match="gap"):
+        ep.term_row(at, ["x"], gap_em=-1.0)
+    with pytest.raises(TypeError):
+        ep.term_row("here", ["x"])

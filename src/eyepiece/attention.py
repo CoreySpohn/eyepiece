@@ -2229,3 +2229,184 @@ def circumscribe(
 
     update(1.0)
     return PlotResult(ax=target.axes, artists={"line": line}, update=update)
+
+
+# Term row
+
+
+class _Row:
+    """The layout of a row of terms: one slot per term, side by side."""
+
+    def __init__(self, at, *, gap_em, ha, fontsize):
+        self.at = at
+        self.gap_em = float(gap_em)
+        self.ha = ha
+        self.fontsize = float(fontsize)
+        self.terms = []
+        self._probes = []
+
+    def add(self, term):
+        probe = Text(0.0, 0.0, "", fontproperties=term.get_fontproperties().copy())
+        probe.set_fontsize(self.fontsize)
+        self.terms.append(term)
+        self._probes.append(probe)
+
+    def layout(self, renderer=None):
+        """Put every term in its slot, as the text and the figure are now.
+
+        A slot is as wide as its term set at the row's own font size, so a
+        pulse that swells a term does not push its neighbors; the term is
+        centered on its slot. All terms sit on one baseline.
+        """
+        figure = _root_figure(self.terms[0])
+        em = _pixels(renderer, figure, self.fontsize)
+        widths = []
+        for term, probe in zip(self.terms, self._probes, strict=True):
+            probe.set_figure(figure)
+            probe.set_text(term.get_text())
+            widths.append(
+                Text.get_window_extent(probe, renderer).width
+                if term.get_text()
+                else 0.0
+            )
+        shown = [w for w in widths if w > 0.0]
+        gap = self.gap_em * em
+        total = sum(shown) + gap * max(0, len(shown) - 1)
+        x0, y = self.at.display(renderer)
+        x = x0 - {"left": 0.0, "center": 0.5, "right": 1.0}[self.ha] * total
+        for term, width in zip(self.terms, widths, strict=True):
+            term.set_position((float(x + 0.5 * width), float(y)))
+            if width > 0.0:
+                x += width + gap
+
+
+class _RowTerm(Text):
+    """One term of a row, laid out beside its neighbors whenever it is measured."""
+
+    def __init__(self, row, string, **kw):
+        super().__init__(
+            0.0,
+            0.0,
+            string,
+            transform=IdentityTransform(),
+            ha="center",
+            va="baseline",
+            **kw,
+        )
+        self._row = row
+
+    def get_window_extent(self, renderer=None, dpi=None):
+        """The term's box in its slot, as the row is laid out now."""
+        self._row.layout(renderer)
+        return super().get_window_extent(renderer, dpi)
+
+    def draw(self, renderer):
+        """Lay the row out, then draw the term."""
+        if not self.get_visible():
+            return
+        self._row.layout(renderer)
+        super().draw(renderer)
+
+
+def term_row(
+    at,
+    terms,
+    *,
+    gap_em=0.4,
+    ha="left",
+    color=None,
+    fontsize=None,
+    zorder=10,
+    text_kw=None,
+):
+    r"""Lay an equation or a readout out as one text per term.
+
+    Each term is its own `Text` (a plain string, or math in ``$...$``), set
+    left to right from an anchor on one baseline with a gap between
+    neighbors, so that any term can be the target of an `Anchor.from_artist`,
+    a member of a `Stage` group, the destination of a `flight`, the subject
+    of a `callout`, or pulsed alone with `indicate`. The slots are measured
+    and set when the figure is drawn (and when a term's box is asked for), so
+    the row stays laid out when a term's text changes: a running readout is
+    ``result.artists["text"][i].set_text("2.41")``, and the terms after it
+    move over to make room. A slot is as wide as its term at the row's font
+    size, so an `indicate` on one term swells it in place and moves none of
+    its neighbors.
+
+    The terms are figure-level artists in display space, so they never join
+    an axes' autoscaling and move no data limit. An empty term has no slot
+    and no gap, which lets a readout start blank.
+
+    ``update(u)`` writes the row on, one term after another: term ``i`` of
+    ``n`` is at full opacity once ``u`` reaches ``(i + 1) / n``. At ``u = 1``,
+    the rest state, every term is drawn as made. A row that a `Stage` owns
+    is shown and hidden by the stage instead, and ``update`` is not called.
+
+    Args:
+        at: Where the row starts: an `Anchor`, or an artist. Its point is the
+            baseline's left end, center, or right end, by `ha`.
+        terms: The terms in order: strings, or ``(string, color)`` pairs.
+        gap_em: Gap between neighbors, in font sizes.
+        ha: Which end of the row `at` marks: ``"left"``, ``"center"`` or
+            ``"right"``.
+        color: Default term color. None uses ``rcParams["text.color"]``.
+        fontsize: Font size in points. None uses ``rcParams["font.size"]``.
+        zorder: Drawing order among the figure's children.
+        text_kw: Extra kwargs for every `Text`, applied last.
+
+    Returns:
+        A `PlotResult` on the anchor's axes (None for an anchor drawn on the
+        figure), with ``artists["text"]``, the terms in order, and
+        ``update(u)`` as above.
+
+    Raises:
+        TypeError: If `at` is neither an `Anchor` nor an artist.
+        ValueError: If there are no terms, `ha` is unknown, or `gap_em` is
+            negative.
+
+    Example::
+
+        row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.9)),
+                          ["$\chi^2$", "=", "0.0"])
+        row.artists["text"][2].set_text("2.41")  # the readout runs
+        ep.Anchor.from_artist(row.artists["text"][0])  # a term is an anchor
+    """
+    at = _as_anchor(at, "at")
+    if ha not in ("left", "center", "right"):
+        raise ValueError(f"unknown ha: {ha!r}; known: ['left', 'center', 'right']")
+    if float(gap_em) < 0.0:
+        raise ValueError(f"gap_em must not be negative, got {gap_em}")
+    pieces = [(t, None) if isinstance(t, str) else (str(t[0]), t[1]) for t in terms]
+    if not pieces:
+        raise ValueError("term_row has no terms")
+    rc = matplotlib.rcParams
+    size = float(rc["font.size"]) if fontsize is None else float(fontsize)
+    row = _Row(at, gap_em=gap_em, ha=ha, fontsize=size)
+    figure = at.figure
+    made = []
+    for string, own in pieces:
+        kw = {
+            "color": rc["text.color"]
+            if color is None and own is None
+            else own or color,
+            "fontsize": size,
+            "zorder": zorder,
+            **(text_kw or {}),
+        }
+        term = _RowTerm(row, string, **kw)
+        term.set_clip_on(False)
+        term.set_in_layout(False)
+        figure.add_artist(term)
+        row.add(term)
+        made.append(term)
+    fades = [_TextFade(t) for t in made]
+    n = len(made)
+
+    def update(u):
+        u = _check_u(u)
+        for i, (term, fade) in enumerate(zip(made, fades, strict=True)):
+            level = min(1.0, max(0.0, n * u - i))
+            term.set_visible(level > 0.0)
+            fade.set(_ease(level) if level < 1.0 else 1.0)
+
+    return PlotResult(ax=at.axes, artists={"text": made}, update=update)
