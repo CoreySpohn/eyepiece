@@ -31,7 +31,8 @@ from matplotlib.axes import Axes
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_rgb, to_rgba, to_rgba_array
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch, Rectangle
+from matplotlib.patches import Patch, PathPatch, Rectangle
+from matplotlib.path import Path
 from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox, IdentityTransform
@@ -280,10 +281,93 @@ class _GhostLine(Line2D):
         super().draw(renderer)
 
 
+def _turned(offsets, angle):
+    """`offsets` (N, 2) rotated counterclockwise by `angle` radians."""
+    c, s = math.cos(angle), math.sin(angle)
+    return offsets @ np.array([[c, s], [-s, c]])
+
+
+def _display_points(artist):
+    xy = np.asarray(artist.get_transform().transform(artist.get_xydata()), dtype=float)
+    return xy[np.all(np.isfinite(xy), axis=1)]
+
+
+def _center(points):
+    return 0.5 * (points.min(axis=0) + points.max(axis=0))
+
+
+class _GhostPath(Line2D):
+    """A copy of a line segment (or polyline) that flies and turns."""
+
+    def __init__(self, mark, path, spin):
+        super().__init__(
+            [np.nan],
+            [np.nan],
+            transform=IdentityTransform(),
+            linestyle=mark.get_linestyle(),
+            linewidth=mark.get_linewidth(),
+            color=mark.get_color(),
+            alpha=mark.get_alpha(),
+            solid_capstyle=mark.get_solid_capstyle(),
+            dash_capstyle=mark.get_dash_capstyle(),
+            solid_joinstyle=mark.get_solid_joinstyle(),
+            drawstyle=mark.get_drawstyle(),
+        )
+        self._mark = mark
+        self._route = path
+        self._spin = spin
+
+    def draw(self, renderer):
+        """Put the copy where the flight's progress says, turned, then draw it."""
+        if not self.get_visible():
+            return
+        points = _display_points(self._mark)
+        if not len(points):
+            return
+        shape = _turned(points - _center(points), self._spin())
+        xy = shape + self._route(renderer)
+        self.set_data(xy[:, 0], xy[:, 1])
+        super().draw(renderer)
+
+
+class _GhostPatch(PathPatch):
+    """A copy of a patch (a bar, say) that flies and turns."""
+
+    def __init__(self, mark, path, spin):
+        super().__init__(
+            Path(np.zeros((1, 2)), [Path.MOVETO]),
+            transform=IdentityTransform(),
+            facecolor=mark.get_facecolor(),
+            edgecolor=mark.get_edgecolor(),
+            linewidth=mark.get_linewidth(),
+            linestyle=mark.get_linestyle(),
+            alpha=mark.get_alpha(),
+            joinstyle=mark.get_joinstyle(),
+            capstyle=mark.get_capstyle(),
+        )
+        self._mark = mark
+        self._route = path
+        self._spin = spin
+
+    def draw(self, renderer):
+        """Put the copy where the flight's progress says, turned, then draw it."""
+        if not self.get_visible():
+            return
+        mark = self._mark
+        path = mark.get_path()
+        points = np.asarray(mark.get_transform().transform(path.vertices), dtype=float)
+        finite = points[np.all(np.isfinite(points), axis=1)]
+        if not len(finite):
+            return
+        shape = _turned(points - _center(finite), self._spin())
+        self.set_path(Path(shape + self._route(renderer), path.codes))
+        super().draw(renderer)
+
+
 class _GhostText(Text):
     """A copy of a label that flies between two anchors."""
 
-    def __init__(self, mark, path):
+    def __init__(self, mark, path, spin=None):
         super().__init__(
             0.0,
             0.0,
@@ -306,13 +390,26 @@ class _GhostText(Text):
                 }
             )
         self._route = path
+        self._spin = spin
+        self._turn0 = mark.get_rotation()
 
     def draw(self, renderer):
         """Put the copy where the flight's progress says, then draw it."""
         if not self.get_visible():
             return
+        if self._spin is not None:
+            self.set_rotation(self._turn0 + math.degrees(self._spin()))
         self.set_position(tuple(self._route(renderer)))
         super().draw(renderer)
+
+
+def _is_path(line):
+    """Whether a line is drawn as a line (two or more points, no marker)."""
+    return (
+        len(line.get_xydata()) >= 2
+        and line.get_linestyle() not in ("None", "none", "", " ")
+        and line.get_marker() in (None, "None", "none", "", " ")
+    )
 
 
 def flight(
@@ -321,6 +418,7 @@ def flight(
     *,
     fig,
     arc=0.0,
+    turn_deg=0.0,
     crossfade=None,
     mark=None,
     ease="smoothstep",
@@ -336,6 +434,14 @@ def flight(
     anchor and is hidden again when it lands, where the caller shows the
     destination mark. Both ends are resolved when the figure is drawn, so a
     flight lands on the destination as it is drawn then.
+
+    The mark can be a marker (a dot), a line segment or polyline, a patch (a
+    bar), or a text. A segment, polyline or patch is carried at its size in
+    display pixels, centered on the path, and `turn_deg` turns it as it
+    travels: a short segment beside a star in one panel is carried and turned
+    a quarter turn onto the velocity axis of another, where it becomes the
+    bar or the dot the viewer is meant to read there. A text turns too; a
+    marker is a point and does not.
 
     The ghost is a figure-level artist. Inside an axes it would join the
     axes' autoscaling, and a recording would report the data limits it
@@ -355,14 +461,20 @@ def flight(
         arc: How far the path bows away from the straight line, as a
             fraction of the distance flown, to the left of the direction of
             travel; negative bows right. 0 flies straight.
+        turn_deg: How far the ghost turns by the time it lands, in degrees,
+            counterclockwise on the screen (negative turns clockwise); it
+            turns about its center, in step with the eased travel. 0 keeps
+            its orientation. Not for a marker.
         crossfade: Optional `Text` the ghost lands into. Over the last
             `fade` of the flight the ghost fades out while this text fades
             in; it is at full opacity at ``u = 1`` and at none for progress
             before the fade starts. Keep it visible: its opacity carries the
             crossfade.
-        mark: The artist the ghost copies the look of: a `Line2D` marker
-            (marker, size, colors) or a `Text` (string, font, color, box).
-            None copies the source anchor's artist.
+        mark: The artist the ghost copies: a `Line2D` marker (marker, size,
+            colors), a `Line2D` of two or more points drawn as a line
+            without a marker (its shape and style), a `Patch` (its shape and
+            style) or a `Text` (string, font, color, box). None copies the
+            source anchor's artist.
         ease: An easing kind for `eyepiece.ease`, applied to `u` along the
             path.
         fade: Fraction of the flight, at its end, over which `crossfade`
@@ -371,15 +483,16 @@ def flight(
 
     Returns:
         A `MosaicResult` over the axes the two anchors belong to (source
-        first), with ``artists["line"]`` (a `Line2D` ghost) or
-        ``artists["text"]`` (a `Text` ghost), and ``update(u)`` that sets
-        the progress; values outside [0, 1] are clipped.
+        first), with ``artists["line"]`` (a `Line2D` ghost), ``artists["fill"]``
+        (a patch ghost) or ``artists["text"]`` (a `Text` ghost), and
+        ``update(u)`` that sets the progress; values outside [0, 1] are
+        clipped.
 
     Raises:
         TypeError: If an anchor is neither an `Anchor` nor an artist, or the
-            mark is neither a `Line2D` nor a `Text`.
-        ValueError: If there is no mark to copy, or `fade` is outside
-            (0, 1].
+            mark is neither a `Line2D`, a `Patch` nor a `Text`.
+        ValueError: If there is no mark to copy, `fade` is outside (0, 1],
+            or `turn_deg` is not zero for a marker.
 
     Example::
 
@@ -389,6 +502,12 @@ def flight(
         for u in np.linspace(0.0, 1.0, 30):
             carry.update(u)
             rec.frame()
+
+    A segment turned a quarter turn onto another axis::
+
+        stub, = star_panel.plot([x0, x1], [y0, y1], lw=3)
+        carry = ep.flight(stub, ep.Anchor.from_data(velocity_panel, (0.0, 1.2)),
+                          fig=fig, turn_deg=90.0)
     """
     source = _as_anchor(source, "source")
     destination = _as_anchor(destination, "destination")
@@ -399,6 +518,7 @@ def flight(
     if not 0.0 < fade <= 1.0:
         raise ValueError(f"flight fade must be in (0, 1], got {fade}")
     arc = float(arc)
+    turn = math.radians(float(turn_deg))
     state = {"u": 1.0}
 
     def where(renderer):
@@ -410,12 +530,25 @@ def flight(
         control = 0.5 * (p0 + p1) + 2.0 * arc * np.array([-step[1], step[0]])
         return (1.0 - e) ** 2 * p0 + 2.0 * (1.0 - e) * e * control + e**2 * p1
 
-    if isinstance(mark, Line2D):
+    def spin():
+        return turn * _ease(state["u"], ease)
+
+    if isinstance(mark, Line2D) and _is_path(mark):
+        ghost, key = _GhostPath(mark, where, spin), "line"
+    elif isinstance(mark, Line2D):
+        if turn != 0.0:
+            raise ValueError(
+                "a marker is a point and does not turn: turn_deg must be 0"
+            )
         ghost, key = _GhostLine(mark, where), "line"
     elif isinstance(mark, Text):
-        ghost, key = _GhostText(mark, where), "text"
+        ghost, key = _GhostText(mark, where, spin), "text"
+    elif isinstance(mark, Patch):
+        ghost, key = _GhostPatch(mark, where, spin), "fill"
     else:
-        raise TypeError(f"flight copies a Line2D or a Text, got {type(mark).__name__}")
+        raise TypeError(
+            f"flight copies a Line2D, a Patch or a Text, got {type(mark).__name__}"
+        )
     ghost.set_zorder(zorder)
     ghost.set_clip_on(False)
     ghost.set_in_layout(False)

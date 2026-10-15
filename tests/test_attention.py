@@ -211,7 +211,7 @@ def test_flight_rejects_what_it_cannot_copy():
             ep.Anchor.from_data(ax, (0, 0)), ep.Anchor.from_data(ax, (1, 1)), fig=fig
         )
     with pytest.raises(TypeError):
-        ep.flight(ax.patch, ep.Anchor.from_data(ax, (1, 1)), fig=fig)
+        ep.flight(ax.imshow(np.zeros((2, 2))), ep.Anchor.from_data(ax, (1, 1)), fig=fig)
     (dot,) = ax.plot([0.0], [0.0], "o")
     with pytest.raises(ValueError, match="fade"):
         ep.flight(dot, dot, fig=fig, fade=0.0)
@@ -932,3 +932,158 @@ def test_term_row_rejects_bad_inputs():
         ep.term_row(at, ["x"], gap_em=-1.0)
     with pytest.raises(TypeError):
         ep.term_row("here", ["x"])
+
+
+# Turning flight
+
+
+def _stub_panels():
+    """A short slanted segment and a bar in one panel, a velocity axis beside it."""
+    fig, (star, speed) = plt.subplots(1, 2, figsize=(7.0, 3.0), layout="constrained")
+    star.set(xlim=(-1.0, 1.0), ylim=(-1.0, 1.0))
+    speed.set(xlim=(0.0, 1.0), ylim=(-1.0, 1.0))
+    (stub,) = star.plot(
+        [0.1, 0.4], [0.1, 0.3], lw=3.0, color="C2", solid_capstyle="butt"
+    )
+    bar = star.add_patch(
+        plt.Rectangle((-0.6, -0.5), 0.3, 0.1, fc="C3", ec="C4", lw=2.0)
+    )
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    return fig, star, speed, stub, bar
+
+
+def _ghost_geometry(carry, fig, u):
+    carry.update(u)
+    fig.canvas.draw()
+    xy = carry.artists["line"].get_xydata()
+    return xy[0], xy[-1], 0.5 * (xy.min(axis=0) + xy.max(axis=0))
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_turning_flight_is_absent_at_both_ends_and_at_rest(mode):
+    hwostyle.use(mode)
+    fig, _star, speed, stub, bar = _stub_panels()
+    without = _pixels(fig)
+    for mark in (stub, bar):
+        carry = ep.flight(
+            mark, ep.Anchor.from_data(speed, (0.5, 0.0)), fig=fig, turn_deg=90.0
+        )
+        np.testing.assert_array_equal(_pixels(fig), without)  # the rest state
+        for u in (0.0, 1.0):
+            carry.update(u)
+            np.testing.assert_array_equal(_pixels(fig), without)
+        carry.update(0.5)
+        assert not np.array_equal(_pixels(fig), without)
+        carry.update(1.0)
+
+
+def test_turning_flight_carries_a_segment_and_turns_it_a_quarter_turn():
+    fig, _star, speed, stub, _bar = _stub_panels()
+    dest = ep.Anchor.from_data(speed, (0.5, 0.2))
+    carry = ep.flight(stub, dest, fig=fig, turn_deg=90.0)
+    ghost = carry.artists["line"]
+    src = stub.get_transform().transform(stub.get_xydata())
+    vec = src[1] - src[0]
+    length = np.hypot(*vec)
+    # Just after take-off it is the source segment, on the source segment.
+    a, b, center = _ghost_geometry(carry, fig, 1e-6)
+    np.testing.assert_allclose(b - a, vec, atol=0.5)
+    np.testing.assert_allclose(center, src.mean(axis=0), atol=0.5)
+    # Half way (smoothstep is 0.5 there) it has turned an eighth of a turn.
+    a, b, _ = _ghost_geometry(carry, fig, 0.5)
+    got = b - a
+    assert np.hypot(*got) == pytest.approx(length, abs=0.5)
+    turned = math.degrees(math.atan2(got[1], got[0]) - math.atan2(vec[1], vec[0]))
+    assert turned == pytest.approx(45.0, abs=0.5)
+    # Just before landing it is the segment turned 90 degrees, on the destination.
+    a, b, center = _ghost_geometry(carry, fig, 1.0 - 1e-6)
+    np.testing.assert_allclose(b - a, [-vec[1], vec[0]], atol=0.5)
+    assert np.hypot(*(center - dest.display())) < 0.5
+    # It wears the segment it copies.
+    assert ghost.get_linewidth() == stub.get_linewidth()
+    assert to_rgba(ghost.get_color()) == to_rgba(stub.get_color())
+    assert ghost.get_solid_capstyle() == "butt"
+
+
+def test_turning_flight_turns_clockwise_for_a_negative_angle():
+    fig, _star, speed, stub, _bar = _stub_panels()
+    carry = ep.flight(
+        stub, ep.Anchor.from_data(speed, (0.5, 0.2)), fig=fig, turn_deg=-90.0
+    )
+    src = stub.get_transform().transform(stub.get_xydata())
+    vec = src[1] - src[0]
+    a, b, _ = _ghost_geometry(carry, fig, 1.0 - 1e-6)
+    np.testing.assert_allclose(b - a, [vec[1], -vec[0]], atol=0.5)
+
+
+def test_flight_without_a_turn_keeps_the_segment_orientation():
+    fig, _star, speed, stub, _bar = _stub_panels()
+    carry = ep.flight(stub, ep.Anchor.from_data(speed, (0.5, 0.2)), fig=fig)
+    src = stub.get_transform().transform(stub.get_xydata())
+    a, b, _ = _ghost_geometry(carry, fig, 0.7)
+    np.testing.assert_allclose(b - a, src[1] - src[0], atol=0.5)
+
+
+def test_flight_carries_a_bar_patch_and_turns_it():
+    fig, _star, speed, _stub, bar = _stub_panels()
+    dest = ep.Anchor.from_data(speed, (0.5, -0.4))
+    carry = ep.flight(bar, dest, fig=fig, turn_deg=90.0)
+    ghost = carry.artists["fill"]
+    assert ghost in fig.artists and set(carry.artists) <= ep.ARTIST_KEYS
+    box = bar.get_window_extent()
+
+    def ghost_box(u):
+        carry.update(u)
+        fig.canvas.draw()
+        return ghost.get_path().get_extents()
+
+    start = ghost_box(1e-6)
+    assert start.width == pytest.approx(box.width, abs=1.5)  # strokes aside
+    np.testing.assert_allclose(
+        [0.5 * (start.x0 + start.x1), 0.5 * (start.y0 + start.y1)],
+        [0.5 * (box.x0 + box.x1), 0.5 * (box.y0 + box.y1)],
+        atol=0.5,
+    )
+    end = ghost_box(1.0 - 1e-6)
+    assert end.width == pytest.approx(start.height, abs=0.5)
+    assert end.height == pytest.approx(start.width, abs=0.5)
+    center = [0.5 * (end.x0 + end.x1), 0.5 * (end.y0 + end.y1)]
+    assert np.hypot(*(np.array(center) - dest.display())) < 0.5
+    assert to_rgba(ghost.get_facecolor()) == to_rgba(bar.get_facecolor())
+    assert to_rgba(ghost.get_edgecolor()) == to_rgba(bar.get_edgecolor())
+    assert ghost.get_linewidth() == bar.get_linewidth()
+
+
+def test_turning_flight_ghost_moves_no_limits_and_is_idempotent():
+    fig, star, speed, stub, bar = _stub_panels()
+    limits = [(a.get_xlim(), a.get_ylim()) for a in (star, speed)]
+    carries = [
+        ep.flight(m, ep.Anchor.from_data(speed, (0.5, 0.0)), fig=fig, turn_deg=90.0)
+        for m in (stub, bar)
+    ]
+    for u in np.linspace(0.0, 1.0, 7):
+        for carry in carries:
+            carry.update(u)
+        fig.canvas.draw()
+    assert [(a.get_xlim(), a.get_ylim()) for a in (star, speed)] == limits
+    for carry in carries:
+        carry.update(0.4)
+    first = _pixels(fig)
+    for carry in carries:
+        carry.update(0.9)
+        carry.update(0.4)
+    np.testing.assert_array_equal(_pixels(fig), first)
+
+
+def test_flight_turns_a_text_and_refuses_to_turn_a_marker():
+    fig, ax = plt.subplots()
+    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
+    note = ax.text(0.2, 0.8, "v")
+    carry = ep.flight(note, ep.Anchor.from_data(ax, (0.8, 0.2)), fig=fig, turn_deg=90.0)
+    carry.update(1.0 - 1e-6)
+    fig.canvas.draw()
+    assert carry.artists["text"].get_rotation() == pytest.approx(90.0, abs=0.01)
+    (dot,) = ax.plot([0.5], [0.5], "o")
+    with pytest.raises(ValueError, match="marker"):
+        ep.flight(dot, ep.Anchor.from_data(ax, (0.8, 0.2)), fig=fig, turn_deg=45.0)
