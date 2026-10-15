@@ -970,6 +970,20 @@ def test_still_is_pixel_identical_to_the_encoded_frame(tmp_path):
     plt.close(fig)
 
 
+def test_a_still_at_an_exact_half_frame_rounds_up_like_every_other_time(tmp_path):
+    fig, line = _stills_figure()
+    still = tmp_path / "half.png"
+    # 0.125 s at 4 fps is frame 0.5: it rounds up to frame 1, not to even (0)
+    with record(fig, tmp_path / "m.html", fps=4, dpi=60, stills={still: 0.125}) as rec:
+        for k in range(3):
+            line.set_ydata([0, k + 1])
+            rec.frame()
+    frames = _html_frames(tmp_path / "m.html")
+    assert np.array_equal(_png(still), frames[1])
+    assert not np.array_equal(frames[0], frames[1])
+    plt.close(fig)
+
+
 def test_still_matches_an_mp4_frame_decoded_with_ffmpeg(tmp_path):
     if not HAS_FFMPEG:
         pytest.skip("needs ffmpeg")
