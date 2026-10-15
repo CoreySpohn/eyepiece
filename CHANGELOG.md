@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.13.0](https://github.com/CoreySpohn/eyepiece/compare/v0.12.0...v0.13.0) (2026-10-15)
+
+
+### Features
+
+* **attention:** add build_axes to draw an axis on in sequence ([d03c6aa](https://github.com/CoreySpohn/eyepiece/commit/d03c6aa477b166979322e79602eb57e539e64d24))
+* **attention:** add collapse to gather a row of cells into a bar ([6907feb](https://github.com/CoreySpohn/eyepiece/commit/6907feb8c4d588960b7afa984876c268fe94f68c))
+* **attention:** add Stage to show, dim or hide named groups ([4803fa4](https://github.com/CoreySpohn/eyepiece/commit/4803fa4fab54d0026006e398b4aff850ea2adb38))
+* **attention:** add Tempo, one factor for a staged clip's pace ([daf75f4](https://github.com/CoreySpohn/eyepiece/commit/daf75f4f57b35a3d8ddbf128b8be11307c3af85d))
+* **attention:** color and weight callout key terms; let captions rise ([a877df0](https://github.com/CoreySpohn/eyepiece/commit/a877df0045b8694c7627d85cf9b49a84fbf72499))
+
 ## [0.12.0](https://github.com/CoreySpohn/eyepiece/compare/v0.11.0...v0.12.0) (2026-10-14)
 
 
