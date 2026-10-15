@@ -670,6 +670,54 @@ for fault in ept.readability_faults(fig):
 Pass `at` and `times` to sample a clip at its beat ends. `assert_readable`
 raises `ReadabilityError` with the same report, for a test suite.
 
+## Caption placement and wrapping
+
+A caption at the player's default position, the bottom of the picture, lands
+on the figure's own bottom line. `eyepiece.testing.caption_line` finds the
+`line:` setting of a WebVTT cue that keeps the captions clear of the text the
+figure shows at the times the captions are on screen. The cue itself is wrapped
+at a clause boundary, 42 characters to a line and two lines to a cue.
+
+```{code-cell} python
+import eyepiece.testing as ept
+from eyepiece import narration as nr
+from matplotlib.patches import Rectangle
+
+fig = plt.figure(figsize=(7.0, 3.6), dpi=100)
+fig.text(0.5, 0.88, "Two kinds of world", fontsize=16, ha="center")
+fig.text(0.5, 0.5, "band present: 0.24 of the sky", fontsize=14, ha="center")
+fig.text(0.5, 0.05, "what is left: area 0.24 and 0.07", fontsize=14, ha="center")
+
+line = ept.caption_line(fig)
+
+sentence = (
+    "Water worlds with the band cover 0.24, and dry worlds with the band "
+    "cover 0.07."
+)
+words = sentence.split()
+line_of_text = nr.Line("a", sentence, pad_after_s=0.0)
+spoken = nr.Spoken(
+    "x", 5.0, tuple(nr.Word(w, i * 5 / 14, (i + 1) * 5 / 14) for i, w in enumerate(words))
+)
+cues = nr.captions(nr.Narration(nr.Script((line_of_text,)), {"a": spoken}))
+
+top = 1.0 - line / 100.0
+fig.add_artist(Rectangle((0.1, top - 0.14), 0.8, 0.14, transform=fig.transFigure,
+                         fc="black", alpha=0.75, ec="none"))
+fig.text(0.5, top - 0.07, cues[0][2], color="white", ha="center", va="center",
+         fontsize=11)
+print(f"line:{line:g}%")
+print(cues[0][2])
+plt.show()
+```
+
+`write_vtt(narration, path, line=line)` writes the setting on every cue, and
+`write_captions` writes the WebVTT and the SRT file together. A line of the
+script may carry `display=` text, so the caption reads `Pr(H|E)` while the voice
+says "P of H given E"; the cue marks stay on the spoken words. When no position
+is clear, `caption_line` raises, and the clip reserves a caption band in its
+layout instead.
+
 ## Arrows, angle arcs and a compass
 
 `arrow`, `angle_arc` and `compass` are marks that an explanation builds up

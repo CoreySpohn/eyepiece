@@ -4,6 +4,7 @@ Nothing here needs Kokoro: the timing is a fixture written beside the tests,
 and the synthesis runs through a fake speaker.
 """
 
+import itertools
 import json
 import subprocess
 import sys
@@ -602,7 +603,7 @@ def test_vtt_is_webvtt_with_dot_timestamps(tmp_path):
     text = nr.write_vtt(tl, tmp_path / "clip.vtt").read_text()
     lines = text.splitlines()
     assert lines[0] == "WEBVTT"
-    assert lines[2] == "00:00:00.100 --> 00:00:01.700"
+    assert lines[2] == "00:00:00.100 --> 00:00:01.950"
     assert lines[3] == "The coronagraph blocks the starlight."
     assert "," not in lines[2]
 
@@ -631,7 +632,9 @@ def _fill_audio(tl, directory, scale=1.0):
 def test_the_audio_track_places_each_line_at_its_speech_start(tmp_path):
     tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
     _fill_audio(tl, tmp_path)
-    path = nr.audio_track(tl, tmp_path, tmp_path / "track.wav")
+    path = nr.audio_track(
+        tl, tmp_path, tmp_path / "track.wav", rate=None, room_tone_db=None, fade_s=0.0
+    )
     with wave.open(str(path), "rb") as handle:
         rate = handle.getframerate()
         data = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
@@ -683,7 +686,14 @@ def test_the_audio_track_reads_compressed_audio(tmp_path):
             check=True,
         )  # fmt: skip
         wav.unlink()
-    path = nr.audio_track(tl, tmp_path, tmp_path / "out" / "track.wav")
+    path = nr.audio_track(
+        tl,
+        tmp_path,
+        tmp_path / "out" / "track.wav",
+        rate=None,
+        room_tone_db=None,
+        fade_s=0.0,
+    )
     with wave.open(str(path), "rb") as handle:
         data = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
     assert data[int(0.5 * 24000)] == 1000
@@ -699,7 +709,7 @@ def test_mux_adds_an_audio_stream_and_copies_the_picture(tmp_path):
     )  # fmt: skip
     wav = tmp_path / "a.wav"
     _write_clip(wav, 2.0)
-    out = nr.mux(video, wav, tmp_path / "out.mp4")
+    out = nr.mux(video, wav, tmp_path / "out.mp4", loudness=None)
     probe = subprocess.run(
         [ffmpeg, "-i", str(out)], capture_output=True, text=True, check=False
     ).stderr
@@ -714,3 +724,274 @@ def test_mux_reports_ffmpegs_own_message(tmp_path):
     _write_clip(wav, 1.0)
     with pytest.raises(RuntimeError, match=r"bad\.mp4"):
         nr.mux(tmp_path / "bad.mp4", wav, tmp_path / "out.mp4")
+
+
+# Audio finishing
+
+
+def _read_track(path):
+    with wave.open(str(path), "rb") as handle:
+        rate = handle.getframerate()
+        data = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
+    return rate, data.astype(float)
+
+
+def _dbfs(x):
+    return 20.0 * np.log10(np.sqrt(np.mean(x**2)) / 32767.0)
+
+
+def test_the_track_is_48_khz_with_a_finite_room_tone_below_the_floor(tmp_path):
+    _ffmpeg_or_skip()
+    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    _fill_audio(tl, tmp_path)
+    path = nr.audio_track(tl, tmp_path, tmp_path / "track.wav")
+    rate, data = _read_track(path)
+    assert rate == 48000
+    assert len(data) == round(tl.total_s * rate)
+    gap = data[int(0.1 * rate) : int(0.9 * rate)]
+    level = _dbfs(gap)
+    assert np.isfinite(level)
+    assert level < -55.0
+    assert level > -65.0
+
+
+def test_room_tone_can_be_turned_off(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    _fill_audio(tl, tmp_path)
+    path = nr.audio_track(
+        tl, tmp_path, tmp_path / "t.wav", rate=None, room_tone_db=None
+    )
+    assert not _read_track(path)[1][:20000].any()
+
+
+def test_lines_start_and_stop_without_a_click(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    _fill_audio(tl, tmp_path)
+    kwargs = {"rate": None, "room_tone_db": None}
+    bare = nr.audio_track(tl, tmp_path, tmp_path / "a.wav", fade_s=0.0, **kwargs)
+    faded = nr.audio_track(tl, tmp_path, tmp_path / "b.wav", fade_s=0.008, **kwargs)
+    rate, hard = _read_track(bare)
+    _, soft = _read_track(faded)
+    assert np.abs(np.diff(hard)).max() >= 1000
+    assert np.abs(np.diff(soft)).max() < 20
+    first = round(tl.beat("open").speech_start_s * rate)
+    assert soft[first] == 0.0
+    assert soft[first + int(0.01 * rate)] == 1000
+
+
+def test_the_track_is_reproducible_and_the_seed_changes_it(tmp_path):
+    _ffmpeg_or_skip()
+    tl = nr.Narration.load(SCRIPT, DATA, head_s=1.0)
+    _fill_audio(tl, tmp_path)
+    one = nr.audio_track(tl, tmp_path, tmp_path / "one.wav")
+    two = nr.audio_track(tl, tmp_path, tmp_path / "two.wav")
+    other = nr.audio_track(tl, tmp_path, tmp_path / "three.wav", seed=1)
+    assert one.read_bytes() == two.read_bytes()
+    assert one.read_bytes() != other.read_bytes()
+
+
+def test_a_negative_fade_is_refused(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA)
+    with pytest.raises(ValueError, match="fade_s"):
+        nr.audio_track(tl, tmp_path, tmp_path / "t.wav", fade_s=-1.0)
+
+
+def _tone(path, seconds, level, rate=24000, hz=440.0):
+    t = np.arange(int(seconds * rate)) / rate
+    data = np.round(level * np.sin(2 * np.pi * hz * t)).astype("<i2")
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes(data.tobytes())
+
+
+def _integrated_lufs(ffmpeg, path):
+    done = subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostats", "-i", str(path), "-af", "ebur128",
+         "-f", "null", "-"],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    summary = done.stderr.rsplit("Integrated loudness:", 1)[1]
+    return float(summary.split("I:")[1].split("LUFS")[0])
+
+
+def _silent_video(ffmpeg, path, seconds):
+    subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+         f"color=c=white:s=64x64:r=10:d={seconds}", "-pix_fmt", "yuv420p", str(path)],
+        check=True,
+    )  # fmt: skip
+
+
+@pytest.mark.parametrize("level", [800, 6000])
+def test_mux_normalizes_to_the_target_within_one_lu(tmp_path, level):
+    ffmpeg = _ffmpeg_or_skip()
+    _silent_video(ffmpeg, tmp_path / "v.mp4", 6)
+    _tone(tmp_path / "a.wav", 6.0, level)
+    out = nr.mux(tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4")
+    assert abs(_integrated_lufs(ffmpeg, out) - (-16.0)) < 1.0
+
+
+def test_the_loudness_target_is_a_parameter(tmp_path):
+    ffmpeg = _ffmpeg_or_skip()
+    _silent_video(ffmpeg, tmp_path / "v.mp4", 6)
+    _tone(tmp_path / "a.wav", 6.0, 3000)
+    out = nr.mux(
+        tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4", loudness=-23.0
+    )
+    assert abs(_integrated_lufs(ffmpeg, out) - (-23.0)) < 1.0
+
+
+def test_mux_keeps_silence_silent_instead_of_failing(tmp_path):
+    ffmpeg = _ffmpeg_or_skip()
+    _silent_video(ffmpeg, tmp_path / "v.mp4", 2)
+    _tone(tmp_path / "a.wav", 2.0, 0)
+    out = nr.mux(tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4")
+    assert out.exists()
+
+
+# Caption limits
+
+
+def _one_line_narration(text, spans, display=None):
+    """A one-line narration whose words last as `spans` says."""
+    line = nr.Line("a", text, pad_after_s=0.0, display=display)
+    words = tuple(nr.Word(w, a, b) for w, (a, b) in zip(line.words, spans, strict=True))
+    return nr.Narration(nr.Script((line,)), {"a": nr.Spoken("x", spans[-1][1], words)})
+
+
+D51 = "Water worlds with the band cover 0.24, and dry worlds with the band cover 0.07."
+
+
+def _even(n, total):
+    return [(i * total / n, (i + 1) * total / n) for i in range(n)]
+
+
+def test_the_79_character_line_becomes_two_lines_within_the_limits():
+    words = D51.split()
+    tl = _one_line_narration(D51, _even(len(words), 5.0))
+    (cue,) = nr.captions(tl)
+    start, end, text = cue
+    assert len(D51) == 79
+    lines = text.split("\n")
+    assert lines == [
+        "Water worlds with the band cover 0.24,",
+        "and dry worlds with the band cover 0.07.",
+    ]
+    assert all(len(x) <= 42 for x in lines)
+    assert start == 0.0
+    assert 5.0 <= end <= 5.0 + 0.15 + 1e-9
+
+
+def test_captions_without_a_clause_break_split_evenly():
+    text = "one two three four five six seven eight nine ten eleven twelve " * 2
+    tl = _one_line_narration(text.strip(), _even(24, 6.0))
+    cues = nr.captions(tl)
+    assert len(cues) >= 2
+    for _, _, t in cues:
+        assert len(t.split("\n")) <= 2
+        assert all(len(x) <= 42 for x in t.split("\n"))
+    joined = " ".join(t.replace("\n", " ") for _, _, t in cues)
+    assert joined == text.strip()
+
+
+def test_a_long_sentence_splits_at_a_clause_boundary_with_timing_kept():
+    words = (
+        "Light from the star reaches the mask, and the mask removes most of it, "
+        "so the planet stays."
+    ).split()
+    tl = _one_line_narration(" ".join(words), _even(len(words), 12.0))
+    cues = nr.captions(tl)
+    assert len(cues) >= 2
+    assert cues[0][0] == 0.0
+    assert all(b - a <= 7.0 + 0.15 + 1e-9 for a, b, _ in cues)
+    assert cues[0][2].replace("\n", " ").endswith(",")
+    for (_, end, _), (start, _, _) in itertools.pairwise(cues):
+        assert end <= start
+
+
+def test_a_cue_lasts_at_least_the_minimum_and_never_into_the_next():
+    tl = _one_line_narration("Yes. No.", [(0.0, 0.2), (0.3, 0.5)])
+    first, second = nr.captions(tl, min_s=1.0)
+    assert first[1] == second[0]
+    assert second[1] - second[0] >= 1.0
+
+
+def test_reading_speed_holds_a_fast_cue_longer():
+    words = ["alpha"] * 6
+    tl = _one_line_narration(" ".join(words) + ".", _even(6, 1.0))
+    ((a, b, text),) = nr.captions(tl, min_s=0.0, max_cps=10.0)
+    assert b - a >= len(text) / 10.0 - 1e-9
+
+
+def test_caption_limits_are_validated():
+    tl = _one_line_narration("Yes.", [(0.0, 0.5)])
+    with pytest.raises(ValueError, match="max_lines"):
+        nr.captions(tl, max_lines=3)
+    with pytest.raises(ValueError, match="positive"):
+        nr.captions(tl, max_cps=0.0)
+
+
+def test_srt_and_vtt_carry_the_wrapped_cue(tmp_path):
+    words = D51.split()
+    tl = _one_line_narration(D51, _even(len(words), 5.0))
+    vtt, srt = nr.write_captions(tl, tmp_path / "clip")
+    assert vtt.suffix == ".vtt" and srt.suffix == ".srt"
+    assert "0.24,\nand dry worlds" in vtt.read_text()
+    assert "0.24,\nand dry worlds" in srt.read_text()
+
+
+def test_vtt_line_setting_is_written_on_every_cue(tmp_path):
+    tl = nr.Narration.load(SCRIPT, DATA)
+    text = nr.write_vtt(tl, tmp_path / "c.vtt", line=62.5).read_text()
+    stamps = [x for x in text.splitlines() if "-->" in x]
+    assert len(stamps) == 2
+    assert all(x.endswith(" line:62.5%") for x in stamps)
+    plain = nr.write_vtt(tl, tmp_path / "d.vtt").read_text()
+    assert "line:" not in plain
+
+
+# Spoken versus displayed text
+
+
+def test_a_caption_shows_the_display_text_and_the_times_do_not_move():
+    spoken = "The posterior is P of H given E."
+    spans = _even(8, 4.0)
+    plain = _one_line_narration(spoken, spans)
+    shown = _one_line_narration(spoken, spans, display="The posterior is Pr(H|E).")
+    (a0, b0, t0), (a1, b1, t1) = nr.captions(plain)[0], nr.captions(shown)[0]
+    assert t0 == "The posterior is P of H given E."
+    assert t1 == "The posterior is Pr(H|E)."
+    assert (a0, b0) == (a1, b1)
+
+
+def test_display_text_leaves_the_cue_marks_and_cache_key_alone():
+    marked = "The {indicate:post}posterior is P of H given E."
+    a = nr.Line("a", marked)
+    b = nr.Line("a", marked, display="The posterior is Pr(H|E).")
+    assert b.cues == a.cues
+    assert b.spoken == a.spoken
+    script_a, script_b = nr.Script((a,)), nr.Script((b,))
+    assert script_a.cache_keys() == script_b.cache_keys()
+    spoken = nr.estimate(a)
+    tl_a = nr.Narration(script_a, {"a": spoken})
+    tl_b = nr.Narration(script_b, {"a": spoken})
+    assert tl_a.cue("a", "indicate", "post") == tl_b.cue("a", "indicate", "post")
+    assert nr.sentences(tl_a) == nr.sentences(tl_b)
+
+
+def test_display_text_with_the_same_sentence_count_keeps_sentence_spans():
+    line = nr.Line("a", "One two. Three four.", pad_after_s=0.0, display="1 2. 3 4.")
+    words = tuple(nr.Word(w, i * 1.0, i * 1.0 + 0.9) for i, w in enumerate(line.words))
+    tl = nr.Narration(nr.Script((line,)), {"a": nr.Spoken("x", 4.0, words)})
+    cues = nr.captions(tl, min_s=0.0)
+    assert [c[2] for c in cues] == ["1 2.", "3 4."]
+    assert cues[0][0] == 0.0 and cues[1][0] == 2.0
+
+
+def test_display_text_may_not_be_empty_or_carry_marks():
+    with pytest.raises(ValueError, match="display"):
+        nr.Line("a", "Hello.", display="  ")
+    with pytest.raises(ValueError, match="cue marks"):
+        nr.Line("a", "Hello.", display="{indicate:x}Hello.")

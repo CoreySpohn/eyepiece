@@ -90,6 +90,11 @@ class Line:
         text: The text with cue marks.
         pad_before_s: Silence before the speech starts, in seconds.
         pad_after_s: Silence after the speech ends, in seconds.
+        display: Text the captions show instead of the spoken words, or None
+            to show the spoken words. A line may say "P of H given E" while
+            the caption reads "Pr(H|E)". It carries no cue marks and does
+            not enter the cache key, and the cue marks stay bound to the
+            spoken words.
         spoken: The text with marks removed (set from `text`).
         cues: The marks, as `Cue` (set from `text`).
     """
@@ -98,6 +103,7 @@ class Line:
     text: str
     pad_before_s: float = 0.0
     pad_after_s: float = 0.5
+    display: str | None = None
     spoken: str = field(init=False, compare=False)
     cues: tuple = field(init=False, compare=False)
 
@@ -111,6 +117,13 @@ class Line:
             raise ValueError(f"line {self.key!r}: {err}") from None
         if not spoken:
             raise ValueError(f"line {self.key!r} has no words")
+        if self.display is not None:
+            if not self.display.split():
+                raise ValueError(f"line {self.key!r}: display text is empty")
+            if _STRAY.search(self.display):
+                raise ValueError(
+                    f"line {self.key!r}: display text must not hold cue marks"
+                )
         object.__setattr__(self, "spoken", spoken)
         object.__setattr__(self, "cues", cues)
 
