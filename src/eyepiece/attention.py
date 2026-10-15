@@ -1598,7 +1598,7 @@ class Stage:
                 out[name] = (0.0, 1.0)
         return out
 
-    def weigh(self, levels):
+    def weigh(self, levels, *, ease=None):
         """Set the named groups to absolute levels; leave the others alone.
 
         A group not named keeps whatever its artists show, so a group can be
@@ -1608,9 +1608,18 @@ class Stage:
         Args:
             levels: Mapping of group name to a presence in [0, 1], or to a
                 ``(presence, contrast)`` pair.
+            ease: An easing kind for `eyepiece.ease`, or None for the levels
+                as given. It shapes presence only, so a caller that ramps a
+                presence linearly in time gets a fade that starts and stops
+                gently, and presence 0 and 1 stay where they are. Contrast is
+                always taken as given: a caller that ramps a contrast applies
+                `eyepiece.ease` to its own progress. Pass the uneased
+                progress, never a value `weigh` or `ease` has already shaped,
+                or the curve is applied twice.
 
         Raises:
             KeyError: If a name is not a group of the stage.
+            ValueError: If ``ease`` is not an easing kind.
         """
         for name, level in levels.items():
             if name not in self._looks:
@@ -1618,6 +1627,8 @@ class Stage:
             if not isinstance(level, (tuple, list)):
                 level = (level, 1.0)
             presence, contrast = (_check_u(v) for v in level)
+            if ease is not None:
+                presence = _ease(presence, ease)
             for look in self._looks[name]:
                 look.set(presence, contrast)
 

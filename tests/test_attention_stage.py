@@ -363,3 +363,48 @@ def test_callout_rises_into_place_as_it_fades_in():
     res.update(1.0)
     fig.canvas.draw()
     assert caption.get_window_extent().y0 == pytest.approx(rest)
+
+
+def _line_contrast(fig, ax, bg):
+    probe = ax.transData.transform((0.5, 0.5)).astype(int)
+    pixel = _pixels(fig)[int(fig.bbox.height - probe[1]), probe[0], :3] / 255.0
+    return float(np.abs(pixel - bg).max())
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_an_eased_weigh_fades_gently_and_keeps_both_ends(mode):
+    hwostyle.use(mode)
+    fig, ax, groups = _scene()
+    stage = ep.Stage(groups, dim=0.35)
+    bg = np.asarray(to_rgba(ax.get_facecolor()))[:3]
+    full = _line_contrast(fig, ax, bg)
+
+    def presence(u, **kw):
+        stage.weigh({"line": u}, **kw)
+        return _line_contrast(fig, ax, bg) / full
+
+    tol = 2.0 / 255.0 / full
+    assert presence(0.0, ease="smoothstep") == pytest.approx(0.0, abs=tol)
+    assert presence(1.0, ease="smoothstep") == pytest.approx(1.0, abs=tol)
+    assert presence(0.5, ease="smoothstep") == pytest.approx(0.5, abs=tol)
+    assert presence(0.2, ease="smoothstep") < presence(0.2) - 0.05
+    assert presence(0.8, ease="smoothstep") > presence(0.8) + 0.05
+
+
+@pytest.mark.parametrize("contrast", [0.35, 0.6, 1.0])
+def test_an_eased_weigh_takes_a_contrast_as_given(contrast):
+    hwostyle.use("light")
+    fig, ax, groups = _scene()
+    stage = ep.Stage(groups, dim=0.35)
+    bg = np.asarray(to_rgba(ax.get_facecolor()))[:3]
+    full = _line_contrast(fig, ax, bg)
+    tol = 2.0 / 255.0 / full
+    stage.weigh({"line": (1.0, contrast)}, ease="smoothstep")
+    assert _line_contrast(fig, ax, bg) / full == pytest.approx(contrast, abs=tol)
+
+
+def test_weigh_refuses_an_unknown_easing():
+    _fig, _ax, groups = _scene()
+    stage = ep.Stage(groups, dim=0.35)
+    with pytest.raises(ValueError, match="unknown easing"):
+        stage.weigh({"line": 0.5}, ease="bouncy")
