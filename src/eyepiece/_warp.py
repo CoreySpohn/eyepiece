@@ -380,8 +380,10 @@ def warp(
         group the moved artists by kind (``line``, ``text``, ``arrow``,
         ``fill`` for patches, ``scatter``, ``collection``), and with
         ``update(u, level=1.0)``, `u` from 0 to 1 (values outside are
-        clipped) and `level` the fraction of the warp applied, so a `Stage`
-        can weigh it.
+        clipped). `level` is accepted for the signature every move shares
+        and does not change the geometry: a warp edits the caller's own
+        artists, whose opacity belongs to the caller or a `Stage`, so
+        dimming a group never undoes its warp.
 
     Raises:
         TypeError: If an artist is not of a kind listed above, including a
@@ -443,8 +445,8 @@ def warp(
 
     def update(u, level=1.0):
         u = _check_u(u)
-        level = min(1.0, max(0.0, float(level)))
-        e = float(_ease(u, ease)) * level
+        del level
+        e = float(_ease(u, ease))
         for t in targets:
             if e <= 0.0:
                 t.restore()

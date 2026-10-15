@@ -198,12 +198,12 @@ def test_every_kind_reaches_its_image():
     fig.canvas.draw()
 
 
-def test_level_scales_the_warp_and_draws_cleanly():
+def test_level_never_changes_the_geometry():
     fig, ax = _axes()
     (line,) = ax.plot([1.0, 2.0], [0.0, 0.0])
     move = ep.warp(line, 3.0 * np.eye(2), ease="linear")
     move.update(1.0, level=0.5)
-    assert np.allclose(_xy(line), [[2.0, 0.0], [4.0, 0.0]])
+    assert np.allclose(_xy(line), [[3.0, 0.0], [6.0, 0.0]])
     fig.canvas.draw()
 
 

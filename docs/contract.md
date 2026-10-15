@@ -496,8 +496,9 @@ given, in place and in data coordinates, so it creates nothing and an artist
 keeps its place, style and stage membership. Its rest state is the start,
 ``u = 0``, the geometry the artists had when the move was made (a path that a
 pointwise map subdivided is put back as drawn); at ``u = 1`` the geometry is
-exactly ``M p`` or ``f(p)``. Its `level` is the fraction of the warp applied,
-so a `Stage` can hold it partway. It leaves axis limits alone.
+exactly ``M p`` or ``f(p)``. Its `level` changes nothing: the artists'
+opacity belongs to the caller or a `Stage`, so dimming a warped group never
+undoes the warp. It leaves axis limits alone.
 
 `eyepiece.testing` is the readability check for such a clip, a submodule
 imported by name rather than a top-level export, because it belongs to a test
