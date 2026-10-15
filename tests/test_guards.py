@@ -167,6 +167,7 @@ _EXPECTED_ALL = [
     "fading_track",
     "file_metadata",
     "flight",
+    "follow_zoom",
     "frame_count",
     "hist_fill",
     "hist_vs_pdf",

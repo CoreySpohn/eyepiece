@@ -7,7 +7,7 @@ lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
 ``_schematic``, ``_phasor``, ``insets``, ``profiles``, ``emphasis``,
 ``_motion``, ``camera``, ``_pixel_morph``, ``attention``, ``_warp``,
-``_arrows``) are
+``_arrows``, ``_zoom``) are
 internal organization and are not part of the public API. The vocabularies a
 caller reads against are exported alongside the functions: ``ARTIST_KEYS``,
 the key set a result's ``artists`` dict draws from; ``PRESETS``, the
@@ -89,6 +89,7 @@ __all__ = [
     "fading_track",
     "file_metadata",
     "flight",
+    "follow_zoom",
     "frame_count",
     "hist_fill",
     "hist_vs_pdf",
@@ -240,6 +241,7 @@ _LAZY_EXPORTS = {
     "brush": ("eyepiece._pixel_morph", "brush"),
     "angle_arc": ("eyepiece._arrows", "angle_arc"),
     "arrow": ("eyepiece._arrows", "arrow"),
+    "follow_zoom": ("eyepiece._zoom", "follow_zoom"),
     "compass": ("eyepiece._arrows", "compass"),
     "Anchor": ("eyepiece.attention", "Anchor"),
     "AttentionFault": ("eyepiece.attention", "AttentionFault"),

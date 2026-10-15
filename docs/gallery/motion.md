@@ -848,3 +848,69 @@ given to `Anchor.from_artist`, `Stage`, `indicate`, or `callout`, and the
 colors pick out the two factors the sentence names. In a clip the reveal runs
 before the caption's words are spoken, and the words that stay on screen are
 the same texts that the later moves point at.
+
+## Following zoom
+
+`follow_zoom` hangs a magnified inset on a panel and keeps its window on a
+moving point, as a camera operator holds a planet in a field of speckle. The
+inset is not a second plot: it draws the panel's own artists again through a
+smaller window, so anything that moves or changes in the panel moves in the
+inset on the same draw. A frame box on the panel marks the region the window
+covers, and two connectors join the box to the inset. All three are placed
+each time the figure is drawn, so the target can be an artist whose position
+changes every frame, an `Anchor`, or a function of a time that ``update``
+sets, and nothing needs calling per frame to make the window follow.
+
+The magnification is exact on both axes and the box and the window always agree.
+``update(u)`` fades the inset, the box and the connectors in; ``level`` is their
+opacity and never changes where the window sits. The connectors are audited as
+a `link` is, so ``ep.audit`` names one that crosses data, and they are hidden
+while the box overlaps the inset: put the inset in a corner the target does not
+reach. The panel keeps the whole field in view, so the viewer never loses the place
+while the inset reads at five times.
+
+```{code-cell} python
+import eyepiece.testing as ept
+
+rng = np.random.default_rng(7)
+yy, xx = np.mgrid[-4:4:160j, -6:6:240j]
+rings = np.cos(3.0 * np.hypot(xx, yy)) * np.exp(-0.15 * np.hypot(xx, yy) ** 2)
+field = rings + 0.15 * rng.standard_normal(rings.shape)
+
+fig, ax = plt.subplots(figsize=(8.0, 4.4), dpi=100)
+ax.imshow(field, extent=(-6, 6, -4, 4), cmap="magma", vmin=-0.6, vmax=1.0)
+ax.set(xlim=(-6, 6), ylim=(-4, 4), xticks=[], yticks=[])
+ax.set_title("A planet crossing the speckle field", fontsize=16)
+(planet,) = ax.plot([], [], "o", ms=5, mfc="none", mec="white", mew=1.2)
+
+
+def orbit(t):
+    return 3.4 * np.cos(2.2 * t - 1.0), 2.1 * np.sin(2.2 * t - 1.0)
+
+
+planet.set_data(*([v] for v in orbit(0.0)))
+fig.canvas.draw()
+fig.set_layout_engine("none")
+
+zoom = ep.follow_zoom(ax, planet, zoom=5.0, loc="lower left", size=0.36)
+
+
+def pose(t):
+    planet.set_data(*([v] for v in orbit(t)))
+    zoom.update(min(1.0, t / 0.4))
+
+
+N_ZOOM = 60
+
+
+def draw_zoom(fig, k):
+    pose(2.8 * k / (N_ZOOM - 1))
+
+ept.assert_readable(fig, at=pose, times=[0.0, 0.5, 1.4, 2.8])
+ep.audit(fig)
+HTML(ep.animate(fig, draw_zoom, N_ZOOM, fps=20).jshtml(dpi=80))
+```
+
+The target above is the marker itself, so nothing but its position is updated
+per frame. With a callable target, ``zoom.update(1.0, time=t)`` poses the window
+at time ``t`` and keeps that time until it is changed.

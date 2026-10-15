@@ -179,7 +179,8 @@ the API reference, and the groups are:
   path into another keeping its identity, `warp`, which carries drawn
   artists through a matrix or a pointwise map of the plane (with `warp_grid`
   for the grid), `arrow`, `angle_arc` and `compass`, marks that grow, sweep
-  and turn on the same artists, and `audit`, which checks the
+  and turn on the same artists, `follow_zoom`, a magnified inset that
+  follows a moving point, and `audit`, which checks the
   leaders and links of a figure; and `Tempo`, which sets a
   clip's pace in one place: how long moves and settles last, and how long
   each caption holds for its number of words.
