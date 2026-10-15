@@ -27,6 +27,11 @@ Four kinds of fault are reported:
   checks are not looked at here: `audit` covers a connector crossing data,
   and this check covers the words.
 
+`speech_rate` is the check on the voice rather than the picture: it reads the
+word times of a `eyepiece.narration.Narration` and reports each line's words
+per minute and the lines faster than a ceiling. `assert_speech_rate` raises
+on them.
+
 A clip is described by the figure and a callable `at` that poses it at a
 time; the times to sample (beat ends, turn midpoints, cue times) are the
 caller's.
@@ -44,6 +49,7 @@ Example::
 import itertools
 import math
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import numpy as np
 from matplotlib.axis import Axis
@@ -63,9 +69,13 @@ __all__ = [
     "VENUES",
     "ReadabilityError",
     "ReadabilityFault",
+    "SpeechRate",
+    "SpeechRateError",
     "assert_readable",
+    "assert_speech_rate",
     "caption_line",
     "readability_faults",
+    "speech_rate",
 ]
 
 KINDS = ("overlap", "outside", "small", "on-marks")
@@ -603,3 +613,91 @@ def caption_line(
     raise ValueError(
         "no clear position for the captions; reserve a caption band in the layout"
     )
+
+
+# Fastest narration pace that stays easy to follow while a figure also moves.
+SPEECH_CEILING_WPM = 160.0
+
+
+class SpeechRate(NamedTuple):
+    """Speaking pace of each narrated line.
+
+    Attributes:
+        rates: Words per minute of each line, in script order, as a tuple of
+            ``(line_key, wpm)``.
+        fast: The ``(line_key, wpm)`` pairs above the ceiling.
+        ceiling: The ceiling the lines were compared with, in words per minute.
+    """
+
+    rates: tuple
+    fast: tuple
+    ceiling: float
+
+
+class SpeechRateError(AssertionError):
+    """A narrated line is spoken faster than the ceiling.
+
+    Attributes:
+        result: The `SpeechRate`.
+    """
+
+    def __init__(self, result):
+        """Build the report from the result."""
+        self.result = result
+        lines = [
+            f"{len(result.fast)} line(s) faster than {result.ceiling:g} words/min:"
+        ]
+        lines += [f"  {key}: {wpm:.0f} words/min" for key, wpm in result.fast]
+        super().__init__("\n".join(lines))
+
+
+def speech_rate(narration, *, ceiling=SPEECH_CEILING_WPM):
+    """Words per minute of each narrated line, and the lines above a ceiling.
+
+    The rate of a line is its spoken words over the time from the start of its
+    first word to the end of its last, from the cached word times. Padding
+    before and after a line and the pause between lines do not count; a pause
+    inside a line does, as a listener hears it. A written word with no letters
+    or digits (a dash standing alone) is not a spoken word and is not counted.
+
+    Args:
+        narration: A `eyepiece.narration.Narration`, from ``load`` for the
+            cached word times or ``estimated`` for a first layout.
+        ceiling: Fastest allowed pace in words per minute. The default, 160,
+            is the pace past which a viewer cannot follow a moving figure.
+
+    Returns:
+        A `SpeechRate` of per-line rates, the lines strictly above `ceiling`,
+        and the ceiling. A line whose words span no time has an infinite rate.
+    """
+    rates = []
+    for beat in narration.beats:
+        words = [w for w in beat.words if any(ch.isalnum() for ch in w.text)]
+        if not words:
+            continue
+        span = max(w.end_s for w in words) - min(w.start_s for w in words)
+        rates.append((beat.key, 60.0 * len(words) / span if span > 0 else math.inf))
+    fast = tuple(item for item in rates if item[1] > ceiling)
+    return SpeechRate(tuple(rates), fast, float(ceiling))
+
+
+def assert_speech_rate(narration, **kwargs):
+    """Raise `SpeechRateError` if any line is spoken faster than the ceiling.
+
+    Takes the arguments of `speech_rate`.
+
+    Args:
+        narration: A `eyepiece.narration.Narration`.
+        **kwargs: Passed to `speech_rate` (``ceiling``).
+
+    Returns:
+        The `SpeechRate`, when every line is within the ceiling.
+
+    Raises:
+        SpeechRateError: If any line is above the ceiling; its `result`
+            attribute holds the `SpeechRate`.
+    """
+    result = speech_rate(narration, **kwargs)
+    if result.fast:
+        raise SpeechRateError(result)
+    return result

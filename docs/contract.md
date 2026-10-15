@@ -572,6 +572,13 @@ captions: it returns the WebVTT `line:` percentage of the lowest strip, two
 caption lines tall, that no visible text of the figure touches at any sampled
 time, and raises when there is none.
 
+`speech_rate(narration, ceiling=160)` checks the voice instead of the picture.
+For each line of a `Narration` it returns the words per minute, spoken words
+over the span from the start of the first word to the end of the last in the
+cached word times, so padding and the pauses between lines do not count and a
+pause inside a line does. The result lists the lines strictly above the
+ceiling; `assert_speech_rate` raises `SpeechRateError` naming them.
+
 A `Tempo` holds the pace of such a clip in one place. Moves and holds are
 written in nominal seconds and multiplied by its `factor`; a caption holds,
 after it has finished arriving, for `factor * (base_s + word_s * words)`,
