@@ -319,21 +319,43 @@ def _max_shift(before, after):
     return max(shifts, default=0.0)
 
 
+class ScaleDriftError(RuntimeError):
+    """A data scale changed mid-recording and `on_rescale="raise"` was set.
+
+    The message names every axes and the ratio its span changed by. `record`
+    deletes the files it had started before this propagates.
+    """
+
+
+_ON_RESCALE = ("warn", "raise", "ignore")
+
+
 class _Recorder:
     """Frame grabber yielded by `record`; fans one figure out to every sink."""
 
     def __init__(
-        self, fig, writers, counter, layout_dpi, allow_rescale=False, free=frozenset()
+        self,
+        fig,
+        writers,
+        counter,
+        layout_dpi,
+        on_rescale="warn",
+        free=frozenset(),
+        stills=None,
+        stills_dpi=None,
     ):
         self.fig = fig
         self.writers = writers
         self._counter = counter
         self._layout_dpi = layout_dpi
         self._layout_frozen = False
-        self._allow_rescale = allow_rescale
+        self._on_rescale = on_rescale
         self._free = free
         self._first_scales = None
         self._warned = False
+        self._stills = stills or {}
+        self._stills_dpi = stills_dpi or layout_dpi
+        self.stills_written = []
 
     def frame(self):
         """Grab the figure exactly as it stands now, into every open sink.
@@ -351,8 +373,26 @@ class _Recorder:
         facecolor = self.fig.get_facecolor()
         for writer in self.writers:
             writer.grab_frame(facecolor=facecolor)
+        for path in self._stills.get(self._counter["frames"], ()):
+            self._write_still(path, facecolor)
         self._counter["frames"] += 1
         self._check_scales()
+
+    def _write_still(self, path, facecolor):
+        """Save the figure as it stands as a PNG, the state the sinks just grabbed.
+
+        The metadata is cleared so the same frame always gives the same file.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.fig.savefig(
+            path,
+            format="png",
+            dpi=self._stills_dpi,
+            facecolor=facecolor,
+            metadata={"Software": None},
+        )
+        self.stills_written.append(path)
 
     def _freeze_layout(self):
         """Settle the layout at the sink dpi, then lock it in place.
@@ -384,7 +424,7 @@ class _Recorder:
         self._layout_frozen = True
 
     def _check_scales(self):
-        """Warn once if any axes changed what its numbers mean mid-recording.
+        """Report once if any axes changed what its numbers mean mid-recording.
 
         A reader cannot separate a change in the data from a change in the
         drawing, so a scale that follows the data redraws every frame at
@@ -392,7 +432,7 @@ class _Recorder:
         as one that never moved. That failure is silent -- the animation
         renders perfectly -- so it is caught here rather than in review.
         """
-        if self._allow_rescale or self._warned:
+        if self._on_rescale == "ignore" or self._warned:
             return
         current = _scale_signature(self.fig)
         if self._first_scales is None:
@@ -402,17 +442,18 @@ class _Recorder:
         if not messages:
             return
         self._warned = True
-        warnings.warn(
+        text = (
             "data scales changed during recording, so a quantity is drawn at "
             "a different size in different frames and the change will read as "
             "a change in the data: "
             + "; ".join(messages)
             + ". Pin the limits from the union over all frames before the "
-            "frame loop, or pass allow_rescale=True if the rescaling is the "
-            "point.",
-            RuntimeWarning,
-            stacklevel=3,
+            'frame loop, or pass on_rescale="ignore" if the rescaling is the '
+            "point."
         )
+        if self._on_rescale == "raise":
+            raise ScaleDriftError(text)
+        warnings.warn(text, RuntimeWarning, stacklevel=3)
 
     def hold(self, n):
         """Repeat the current figure for `n` frames, to dwell on a moment.
@@ -432,8 +473,12 @@ def record(
     fps=10,
     dpi=None,
     extra_ffmpeg_args=None,
-    allow_rescale=False,
+    on_rescale="warn",
     free_limits=(),
+    stills=None,
+    plan=None,
+    stills_dpi=None,
+    allow_rescale=None,
 ):
     """Open every output file at once and record `fig` frame by frame.
 
@@ -483,26 +528,49 @@ def record(
             replaces that crop instead of adding to it (ffmpeg honors the
             last `-vf` only), which reopens the odd-dimension h264 failure;
             include the crop in your own filter chain if you need one.
-        allow_rescale: Silence the scale-drift warning. Every axes' limits
-            and color norms are fingerprinted on the first frame and
-            compared on each later one, because an axis that follows the
-            data redraws every frame at full height and hides the very
-            change the animation exists to show. Pass True when the
+        on_rescale: What to do when a data scale drifts: "warn" (a
+            `RuntimeWarning`, once), "raise" (a `ScaleDriftError`, after
+            which every file this call had started, stills included, is
+            deleted so no partial output survives), or "ignore" (no check).
+            Every axes' limits and color norms are fingerprinted on the
+            first frame and compared on each later one, because an axis that
+            follows the data redraws every frame at full height and hides the
+            very change the animation exists to show. Use "ignore" when the
             rescaling is deliberate.
         free_limits: An axes, or axes, whose limits are allowed to change,
             such as a camera zooming through `view_limits`. Only their limits are
             exempt: their color norms, and every other axes, are still
-            checked, which `allow_rescale=True` would not do.
+            checked, which `on_rescale="ignore"` would not do.
+        stills: PNG files to write from chosen frames during the same
+            encode, as a mapping from path to when. A number is a time in
+            seconds, mapped to the frame at ``round(t * fps)``; a beat name
+            (needs `plan`) is that beat's last frame, its settled state; a
+            ``(beat, where)`` pair picks ``"start"``, ``"mid"`` or ``"last"``.
+            A still is the figure as the sinks grabbed it at that frame, with
+            no second pass over the frames. Parent directories are created.
+        plan: The `Plan` the frames were laid out by, to name stills by beat.
+            Its fps must equal `fps`.
+        stills_dpi: Dpi of the stills; None uses the first sink's dpi, which
+            makes a still pixel-identical to that sink's frame.
+        allow_rescale: Deprecated; `True` means ``on_rescale="ignore"``. It
+            warns with a `DeprecationWarning` and will be removed in a later
+            release.
 
     Yields:
         A recorder with `.frame()` and `.hold(n)`.
 
     Raises:
-        ValueError: If a path has an unsupported suffix, or an axes in
-            `free_limits` is not on `fig`.
+        ValueError: If a path has an unsupported suffix, an axes in
+            `free_limits` is not on `fig`, `on_rescale` is not one of the
+            three values, or a still names a beat without a `plan`, an
+            unknown beat, or a negative time.
+        ScaleDriftError: If a scale drifted and `on_rescale` is "raise".
         RuntimeError: If an mp4 sink is requested and no ffmpeg is found,
-            or if the block exits without ever grabbing a frame.
+            or if the block exits without ever grabbing a frame, or before
+            the frame a still asked for.
     """
+    on_rescale = _resolve_on_rescale(on_rescale, allow_rescale)
+    still_frames = _resolve_stills(stills, plan, fps)
     free = set()
     if isinstance(free_limits, Axes):
         free_limits = [free_limits]
@@ -535,34 +603,110 @@ def record(
             fig.set_layout_engine(None)
 
     counter = {"frames": 0}
-    with ExitStack() as stack:
-        stack.callback(restore_engine)
-        stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
-        stack.enter_context(_agg_canvas(fig))
-        writers = [_make_writer(p, fps, extra_ffmpeg_args) for p in paths]
-        for writer, path in zip(writers, paths, strict=True):
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-            stack.enter_context(
-                _sink(writer, fig, str(path), _sink_dpi(path, dpi), counter)
+    recorder = None
+    try:
+        with ExitStack() as stack:
+            stack.callback(restore_engine)
+            stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
+            stack.enter_context(_agg_canvas(fig))
+            writers = [_make_writer(p, fps, extra_ffmpeg_args) for p in paths]
+            for writer, path in zip(writers, paths, strict=True):
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+                stack.enter_context(
+                    _sink(writer, fig, str(path), _sink_dpi(path, dpi), counter)
+                )
+            recorder = _Recorder(
+                fig,
+                writers,
+                counter,
+                _sink_dpi(paths[0], dpi) if paths else fig.dpi,
+                on_rescale=on_rescale,
+                free=free,
+                stills=still_frames,
+                stills_dpi=stills_dpi,
             )
-        yield _Recorder(
-            fig,
-            writers,
-            counter,
-            _sink_dpi(paths[0], dpi) if paths else fig.dpi,
-            allow_rescale=allow_rescale,
-            free=free,
+            yield recorder
+            _check_frames(counter, paths)
+            _check_stills_reached(still_frames, counter["frames"])
+    except ScaleDriftError:
+        # The sinks have closed by now; a half-written movie must not pass
+        # for a finished one.
+        for path in [*paths, *(recorder.stills_written if recorder else ())]:
+            Path(path).unlink(missing_ok=True)
+        raise
+
+
+def _resolve_on_rescale(on_rescale, allow_rescale):
+    """The effective `on_rescale`, folding in the deprecated `allow_rescale`."""
+    if on_rescale not in _ON_RESCALE:
+        raise ValueError(f"on_rescale must be one of {_ON_RESCALE}, got {on_rescale!r}")
+    if allow_rescale is None:
+        return on_rescale
+    warnings.warn(
+        "record(allow_rescale=) is deprecated; pass on_rescale='ignore' instead of "
+        "allow_rescale=True (the default on_rescale='warn' is allow_rescale=False)",
+        DeprecationWarning,
+        stacklevel=4,
+    )
+    if allow_rescale:
+        if on_rescale == "raise":
+            raise ValueError("allow_rescale=True contradicts on_rescale='raise'")
+        return "ignore"
+    return on_rescale
+
+
+def _resolve_stills(stills, plan, fps):
+    """Map each still's frame index to its paths, failing before anything opens."""
+    if not stills:
+        return {}
+    if plan is not None and abs(plan.fps - fps) > 1e-9:
+        raise ValueError(f"plan was resolved at {plan.fps} fps but record has {fps}")
+    frames = {}
+    for path, when in dict(stills).items():
+        frames.setdefault(_still_frame(when, plan, fps), []).append(path)
+    return frames
+
+
+def _still_frame(when, plan, fps):
+    """Frame index for one `stills` entry: seconds, a beat name, or (beat, where)."""
+    if isinstance(when, str) or isinstance(when, tuple):
+        beat, where = (when, "last") if isinstance(when, str) else when
+        if plan is None:
+            raise ValueError(f"a still at beat {beat!r} needs plan=")
+        pick = {"start": plan.start, "mid": plan.mid, "last": plan.last}.get(where)
+        if pick is None:
+            raise ValueError(f"a still's where is start, mid or last, got {where!r}")
+        try:
+            return pick(beat)
+        except KeyError:
+            raise ValueError(f"the plan has no beat named {beat!r}") from None
+    if when < 0:
+        raise ValueError(f"a still's time must be at least 0 s, got {when}")
+    return round(when * fps)
+
+
+def _check_stills_reached(still_frames, grabbed):
+    """Fail if the recording ended before a requested still's frame."""
+    late = sorted(k for k in still_frames if k >= grabbed)
+    if late:
+        raise RuntimeError(
+            f"the recording grabbed {grabbed} frames, so the stills at frame "
+            f"{late[0]} and later were never written"
         )
-        if not counter["frames"]:
-            # Raised here rather than per sink so the message can name them
-            # all. It travels out through the sinks, which take their
-            # exception path and close without adding noise of their own.
-            joined = ", ".join(str(p) for p in paths)
-            raise RuntimeError(
-                f"no frames were grabbed, so the outputs are empty or "
-                f"missing ({joined}); call rec.frame() at least once "
-                "inside the record block"
-            )
+
+
+def _check_frames(counter, paths):
+    """Raise if no frame was grabbed."""
+    if not counter["frames"]:
+        # Raised here rather than per sink so the message can name them
+        # all. It travels out through the sinks, which take their
+        # exception path and close without adding noise of their own.
+        joined = ", ".join(str(p) for p in paths)
+        raise RuntimeError(
+            f"no frames were grabbed, so the outputs are empty or "
+            f"missing ({joined}); call rec.frame() at least once "
+            "inside the record block"
+        )
 
 
 _BITEXACT = ("-fflags", "+bitexact", "-flags:v", "+bitexact", "-map_metadata", "-1")
@@ -787,7 +931,16 @@ class Animation:
             self._consumed = True
         return iter(self.frames)
 
-    def save(self, *paths, dpi=None, fps=None):
+    def save(
+        self,
+        *paths,
+        dpi=None,
+        fps=None,
+        stills=None,
+        plan=None,
+        on_rescale="warn",
+        stills_dpi=None,
+    ):
         """Render every frame once, into every path.
 
         Args:
@@ -795,6 +948,11 @@ class Animation:
             dpi: Rasterization dpi for every sink. None gives each sink the
                 default for its suffix.
             fps: Playback rate override; None keeps the animation's own.
+            stills: PNGs to write from chosen frames during this render; see
+                `record`.
+            plan: The `Plan` the frames follow, to name stills by beat.
+            on_rescale: "warn", "raise" or "ignore"; see `record`.
+            stills_dpi: Dpi of the stills; None uses the first sink's.
 
         Returns:
             The list of `pathlib.Path` written, in the order given.
@@ -805,13 +963,31 @@ class Animation:
         """
         frames = self._frame_iter()
         rate = self.fps if fps is None else fps
-        with record(self.fig, *paths, fps=rate, dpi=dpi) as rec:
+        with record(
+            self.fig,
+            *paths,
+            fps=rate,
+            dpi=dpi,
+            on_rescale=on_rescale,
+            stills=stills,
+            plan=plan,
+            stills_dpi=stills_dpi,
+        ) as rec:
             for ctx in frames:
                 self.draw(self.fig, ctx)
                 rec.frame()
         return [Path(p) for p in paths]
 
-    def jshtml(self, dpi=100, fps=None):
+    def jshtml(
+        self,
+        dpi=100,
+        fps=None,
+        *,
+        stills=None,
+        plan=None,
+        on_rescale="warn",
+        stills_dpi=None,
+    ):
         """Render a self-contained HTML player and return it as a string.
 
         The frames are embedded as base64 PNGs, so the result needs no
@@ -832,6 +1008,11 @@ class Animation:
             dpi: Rasterization dpi for the embedded frames. Frames cost
                 roughly 30 kB each at the default.
             fps: Playback rate override; None keeps the animation's own.
+            stills: PNGs to write from chosen frames during this render; see
+                `record`.
+            plan: The `Plan` the frames follow, to name stills by beat.
+            on_rescale: "warn", "raise" or "ignore"; see `record`.
+            stills_dpi: Dpi of the stills; None uses the player's dpi.
 
         Returns:
             The HTML document as a string.
@@ -844,7 +1025,16 @@ class Animation:
         with tempfile.TemporaryDirectory() as tmp_dir:
             path = Path(tmp_dir) / "animation.html"
             rate = self.fps if fps is None else fps
-            with record(self.fig, path, fps=rate, dpi=dpi) as rec:
+            with record(
+                self.fig,
+                path,
+                fps=rate,
+                dpi=dpi,
+                on_rescale=on_rescale,
+                stills=stills,
+                plan=plan,
+                stills_dpi=stills_dpi,
+            ) as rec:
                 for ctx in frames:
                     self.draw(self.fig, ctx)
                     rec.frame()
