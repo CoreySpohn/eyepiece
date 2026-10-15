@@ -31,7 +31,13 @@ SCRIPT = nr.Script(
 ```
 
 The kind is the move the clip runs (`indicate`, `circumscribe`, or any name
-the clip understands) and the target names what it acts on. Write the
+the clip understands) and the target names what it acts on. A line can start an
+equation move with ``{transform:bayes}``: the cue's time starts the ramp that
+drives ``ep.transform(a, b)`` and the clip names its own target (`bayes` here),
+as it does for any kind. `Cue` and `Narration` take it unchanged, since a kind
+is free text. Give that line a `min_s` at least as long as the ramp, as for a
+pulse, so the line does not end in the middle of the move, and name a term of
+either equation as an `indicate` target (``{indicate:num}``) the same way. Write the
 numbers in a line as they appear on the figure, and read them from the
 figure's source rather than typing them twice. The voice defaults to Kokoro
 `bm_george`, a British English voice, with language code `"b"`.

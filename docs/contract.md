@@ -522,7 +522,23 @@ identical; its reveal is by opacity or by letters in place, never by motion. A f
 turn it. `morph` is a figure-level ghost like a flight, visible only
 between its ends, whose geometry at the ends is the two paths resampled by
 arc length (and, for a closed pair, the second rolled and possibly reversed
-to lie on the first). `write` is a figure-level ghost of a text, visible only before ``u = 1``: it
+to lie on the first). `equation` lays mathtext out as glyph outlines, one figure-level patch per glyph or rule, in
+display pixels, with named groups (``{{name:...}}``, found by hiding the group with ``\phantom``
+and reading what disappears, and raising when the hidden group would move any other glyph); a group is an
+artist with the box of its glyphs, laid out where the equation is, so anchors, callouts,
+outlines, pulses and a `Stage` act on it unchanged. Its ``update(u, level=1.0)`` writes the
+terms on, left to right, and at ``u = 1`` the equation is whole; `level` is an opacity and never
+geometry. `transform` carries one equation into another, owns the visibility of both, rests at
+``u = 1`` (the second equation shown, the first hidden) and draws the first alone at ``u = 0``,
+each pixel-identical to that equation drawn alone. Matching is by glyph identity (font and
+glyph, never the character code): inside a tag both equations share (or a `key_map` pair), in
+left-to-right order, then across glyphs in no tag, and a tagged glyph never pairs outside its tag.
+Matched glyphs run an eased, staggered translation with an optional arc; unmatched glyphs of the
+first fade out and of the second fade in, by opacity only; a fraction bar changes length through
+the arc-length sampling of `morph`. A transform's narration cue is ``{transform:name}``, whose time
+starts its ramp. Not supported: ``usetex``, several math spans in one string, escaped braces
+(they raise), and the size animation of ``\left ... \right``.
+`write` is a figure-level ghost of a text, visible only before ``u = 1``: it
 hides the real text until the end, where the text is shown with the
 visibility it had, so the rest state is the text as drawn. Its outlines are
 laid out as the text lays itself out, its stroke and fill take the text's

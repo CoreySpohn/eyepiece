@@ -1506,6 +1506,8 @@ def _looks(target, background, seen, out):
         return
     bg = background if background is not None else _resolve_background(target)
     out.append(_Look(target, bg))
+    for part in getattr(target, "_pieces", ()):
+        _looks(part, background, seen, out)
     if isinstance(target, Text):
         for part in (
             target.get_bbox_patch(),
