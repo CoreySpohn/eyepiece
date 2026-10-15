@@ -244,7 +244,7 @@ def test_a_tagged_glyph_never_pairs_outside_its_tag():
 def test_key_map_pairs_two_named_tags():
     _fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{r:y}}+{{s:x}}$")
     none = ep.transform(a, b)
-    assert len(none.pairs) == 1  # only the plus matches without a map
+    assert len(none.pairs) == 3  # tags that share nothing pair by order
     _fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{r:y}}+{{s:x}}$")
     mapped = ep.transform(a, b, key_map={"p": "s", "q": "r"})
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
@@ -312,3 +312,24 @@ def test_a_tag_keeps_a_group_together_where_order_would_not():
         assert ga[i].piece.tag == gb[j].piece.tag
     assert len(move.pairs) == 7  # a, 2, =, c, 2 and the tagged b, 2
     assert len(move.gone) == 1 and len(move.new) == 1  # the plus and the minus
+
+
+def test_tagged_into_untagged_pairs_by_glyph_order():
+    _fig, a, b = _pair(r"${{t:a^2}}+b^2=c^2$", PYTH_B)
+    move = ep.transform(a, b)
+    ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    assert len(move.pairs) >= 6
+    for i, j in move.pairs:
+        assert ga[i].piece.key == gb[j].piece.key
+
+
+def test_a_tag_with_a_lost_partner_warns():
+    _fig, a, b = _pair(r"${{t:a}}+{{u:b}}$", r"${{t:b}}+{{v:a}}$")
+    with pytest.warns(UserWarning, match="'u'"):
+        ep.transform(a, b)
+
+
+def test_a_new_tag_that_adds_content_does_not_warn(recwarn):
+    _fig, a, b = _pair(BAYES_A, BAYES_B)
+    ep.transform(a, b)
+    assert not [w for w in recwarn if issubclass(w.category, UserWarning)]

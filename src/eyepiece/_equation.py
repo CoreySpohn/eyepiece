@@ -18,6 +18,7 @@ fraction bar changes its length through the same arc-length sampling as
 
 import math
 import re
+import warnings
 from collections import Counter
 from dataclasses import dataclass
 
@@ -515,19 +516,45 @@ def equation(
 # Transform
 
 
+def _warn_unpaired_tags(eq, left, other_left, other_tags, mapped):
+    """Warn about a tag with no partner whose left-over glyphs `other` also has.
+
+    `left` and `other_left` are the unpaired glyphs of `eq` and the other
+    equation. A tag that merely adds new content (its glyphs match nothing
+    left over) stays silent.
+    """
+    wanted = {g.piece.key for g in other_left}
+    for tag in eq.tags:
+        if tag == "all" or tag in mapped or tag in other_tags:
+            continue
+        keys = {g.piece.key for g in left if g.piece.tag == tag}
+        if keys & wanted:
+            warnings.warn(
+                f"tag {tag!r} has no partner in the other equation, so its "
+                "glyphs fade instead of moving; name the partner in key_map "
+                "or give both equations the same tag",
+                UserWarning,
+                stacklevel=4,
+            )
+
+
 def _match(eq_a, eq_b, key_map):
     """Pair glyphs of two equations; return pairs and the unmatched of each.
 
     Pairs are indices into each equation's ``glyphs``. Inside a tag the two
     equations share (or a pair named in `key_map`), equal glyphs pair in
     left-to-right order; glyphs in no tag then pair across the equations. A
-    tagged glyph never pairs outside its tag.
+    tagged glyph never pairs outside its tag. Equations that share no tag name
+    and have no `key_map` pair every glyph by order, ignoring tags, so a
+    tagged equation can move into an untagged one.
     """
     used_a, used_b, pairs = set(), set(), []
 
-    def ordered(eq, tag, used):
+    def ordered(eq, tag, used, anytag=False):
         idx = [
-            i for i, g in enumerate(eq.glyphs) if g.piece.tag == tag and i not in used
+            i
+            for i, g in enumerate(eq.glyphs)
+            if (anytag or g.piece.tag == tag) and i not in used
         ]
         return sorted(idx, key=lambda i: tuple(eq.glyphs[i].piece.center))
 
@@ -544,12 +571,23 @@ def _match(eq_a, eq_b, key_map):
                     break
 
     mapped = dict(key_map)
+    if not mapped and not set(eq_a.tags) & set(eq_b.tags):
+        pair_up(ordered(eq_a, None, used_a, True), ordered(eq_b, None, used_b, True))
+        gone = [i for i in range(len(eq_a.glyphs)) if i not in used_a]
+        new = [j for j in range(len(eq_b.glyphs)) if j not in used_b]
+        return pairs, gone, new
     for ta, tb in [*mapped.items(), *((t, t) for t in eq_a.tags if t not in mapped)]:
         if tb in eq_b.tags and ta in eq_a.tags:
             pair_up(ordered(eq_a, ta, used_a), ordered(eq_b, tb, used_b))
     pair_up(ordered(eq_a, None, used_a), ordered(eq_b, None, used_b))
     gone = [i for i in range(len(eq_a.glyphs)) if i not in used_a]
     new = [j for j in range(len(eq_b.glyphs)) if j not in used_b]
+    gone_g = [eq_a.glyphs[i] for i in gone]
+    new_g = [eq_b.glyphs[j] for j in new]
+    _warn_unpaired_tags(eq_a, gone_g, new_g, eq_b.tags, mapped)
+    _warn_unpaired_tags(
+        eq_b, new_g, gone_g, eq_a.tags, {v: k for k, v in mapped.items()}
+    )
     return pairs, gone, new
 
 
