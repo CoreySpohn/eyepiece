@@ -508,7 +508,12 @@ identical; its reveal is by opacity or by letters in place, never by motion. A f
 turn it. `morph` is a figure-level ghost like a flight, visible only
 between its ends, whose geometry at the ends is the two paths resampled by
 arc length (and, for a closed pair, the second rolled and possibly reversed
-to lie on the first). `arrow`, `angle_arc` and `compass` are drawn marks, not
+to lie on the first). `write` is a figure-level ghost of a text, visible only before ``u = 1``: it
+hides the real text until the end, where the text is shown with the
+visibility it had, so the rest state is the text as drawn. Its outlines are
+laid out as the text lays itself out, its stroke and fill take the text's
+color and opacity at draw time, and its eased tracing and fill are clamped
+to [0, 1]. `arrow`, `angle_arc` and `compass` are drawn marks, not
 overlays: each is one patch (an arrow, an arc whose head is tangent to the
 arc, or a north and an east arrow) added without joining autoscaling, and
 `update` sets its growth `u`, its ends or angles, and a `level` opacity on the

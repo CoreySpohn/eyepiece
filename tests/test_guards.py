@@ -223,6 +223,7 @@ _EXPECTED_ALL = [
     "warp",
     "warp_grid",
     "words",
+    "write",
     "zoom_path",
 ]
 

@@ -176,7 +176,8 @@ the API reference, and the groups are:
   `readout`, a number that counts to a new value in a fixed layout,
   `words`, one line of text with one text per word to color or reveal alone,
   `link`, a line that grows between panels, `morph`, a ghost that carries one
-  path into another keeping its identity, `warp`, which carries drawn
+  path into another keeping its identity, `write`, which traces a text's
+  glyph outlines and then fills them, `warp`, which carries drawn
   artists through a matrix or a pointwise map of the plane (with `warp_grid`
   for the grid), `arrow`, `angle_arc` and `compass`, marks that grow, sweep
   and turn on the same artists, `follow_zoom`, a magnified inset that

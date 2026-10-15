@@ -145,6 +145,7 @@ __all__ = [
     "warp",
     "warp_grid",
     "words",
+    "write",
     "zoom_path",
 ]
 
@@ -258,6 +259,7 @@ _LAZY_EXPORTS = {
     "morph": ("eyepiece.attention", "morph"),
     "readout": ("eyepiece.attention", "readout"),
     "term_row": ("eyepiece.attention", "term_row"),
+    "write": ("eyepiece.attention", "write"),
     "quad_image": ("eyepiece._pixel_morph", "quad_image"),
 }
 

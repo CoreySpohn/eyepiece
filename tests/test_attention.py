@@ -2525,3 +2525,217 @@ def test_morph_keeps_colors_and_widths_valid_under_an_overshoot_ease(kind):
         assert ghost.get_linewidth() >= 0.0
         for color in (ghost.get_edgecolor(), ghost.get_facecolor()):
             assert np.all((0.0 <= np.asarray(color)) & (np.asarray(color) <= 1.0))
+
+
+# Write
+
+
+def _write_fig(string="Write ij", size=28, **kw):
+    fig = plt.figure(figsize=(5.0, 2.0), dpi=100)
+    text = fig.text(0.1, 0.4, string, fontsize=size, **kw)
+    fig.canvas.draw()
+    return fig, text
+
+
+def _pixels_of(fig):
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba()).copy()
+
+
+def _length(lines):
+    return sum(
+        float(np.hypot(*np.diff(line, axis=0).T).sum())
+        for glyph in lines
+        for line in glyph
+    )
+
+
+def test_write_is_exported():
+    import eyepiece.attention
+
+    assert ep.write is eyepiece.attention.write
+
+
+@pytest.mark.parametrize("string", ["Write ij", r"$E=\frac{m}{2}v^2$", "two\nlines"])
+def test_write_rest_state_is_pixel_exact(string):
+    fig, text = _write_fig(string)
+    before = _pixels_of(fig)
+    move = ep.write(text)
+    assert np.array_equal(_pixels_of(fig), before)
+    for u in (0.0, 0.4, 0.8):
+        move.update(u)
+    move.update(1.0)
+    assert text.get_visible()
+    assert np.array_equal(_pixels_of(fig), before)
+    plt.close(fig)
+
+
+def test_write_start_draws_nothing_and_the_ghost_leaves_at_the_end():
+    fig, text = _write_fig()
+    blank = _pixels_of(plt.figure(figsize=(5.0, 2.0), dpi=100))
+    move = ep.write(text)
+    ghost = move.artists["fill"]
+    move.update(0.0)
+    assert not text.get_visible()
+    assert np.array_equal(_pixels_of(fig), blank)
+    move.update(0.5)
+    assert ghost.get_visible()
+    assert not text.get_visible()
+    move.update(1.0)
+    assert not ghost.get_visible()
+    assert text.get_visible()
+    plt.close("all")
+
+
+def test_write_stroke_length_is_monotone_and_reaches_the_outline():
+    fig, text = _write_fig()
+    move = ep.write(text)
+    ghost = move.artists["fill"]
+    us = np.linspace(0.0, 1.0, 41)
+    lengths = [_length(ghost.strokes(u)) for u in us]
+    assert lengths[0] == 0.0
+    assert np.all(np.diff(lengths) >= -1e-9)
+    whole = sum(ghost._lengths)
+    assert lengths[-1] == pytest.approx(whole, rel=1e-9)
+    # The tracing is complete when the fill window is still open.
+    assert _length(ghost.strokes(0.7)) == pytest.approx(whole, rel=1e-9)
+    plt.close(fig)
+
+
+def test_write_glyphs_are_in_reading_order():
+    fig, text = _write_fig("abc def")
+    ghost = ep.write(text).artists["fill"]
+    glyphs = ghost.glyphs()
+    assert len(glyphs) == 6
+    lefts = [min(v[:, 0].min() for v, _ in g) for g in glyphs]
+    assert lefts == sorted(lefts)
+    # Glyphs are started in that order.
+    traced, _ = ghost.times(0.2)
+    assert all(a >= b for a, b in itertools.pairwise(traced))
+    plt.close(fig)
+
+
+def test_write_fraction_bar_is_written_in_reading_order():
+    fig, text = _write_fig(r"Contrast $C = \frac{F_p}{F_s}$", size=30)
+    ghost = ep.write(text, lag=0.6).artists["fill"]
+    glyphs = ghost.glyphs()
+    lefts = [min(v[:, 0].min() for v, _ in g) for g in glyphs]
+    assert lefts == sorted(lefts)
+    # The bar is the widest glyph: after "C =" and before the numerator.
+    widths = [
+        max(v[:, 0].max() for v, _ in g) - left
+        for g, left in zip(glyphs, lefts, strict=True)
+    ]
+    bar = int(np.argmax(widths))
+    assert bar == len(glyphs) - 5
+    traced, _ = ghost.times(0.3)
+    assert traced[bar] <= traced[bar - 1] <= traced[bar - 2]
+    plt.close(fig)
+
+
+def test_write_lines_go_top_down():
+    fig, text = _write_fig("one\ntwo")
+    glyphs = ep.write(text).artists["fill"].glyphs()
+    tops = [max(v[:, 1].max() for v, _ in g) for g in glyphs]
+    assert min(tops[:3]) > max(tops[3:])
+    plt.close(fig)
+
+
+def test_write_mathtext_gives_glyphs_and_rules():
+    fig, text = _write_fig(r"$\frac{a}{b}$")
+    ghost = ep.write(text).artists["fill"]
+    # a, b and the fraction bar.
+    assert len(ghost.glyphs()) == 3
+    plt.close(fig)
+
+
+def test_write_glyphs_sit_on_the_text():
+    fig, text = _write_fig("Hxl", rotation=20)
+    ghost = ep.write(text).artists["fill"]
+    pts = np.vstack([v for g in ghost.glyphs() for v, _ in g])
+    box = text.get_window_extent()
+    assert pts[:, 0].min() >= box.x0 - 2.0 and pts[:, 0].max() <= box.x1 + 2.0
+    assert pts[:, 1].min() >= box.y0 - 2.0 and pts[:, 1].max() <= box.y1 + 2.0
+    plt.close(fig)
+
+
+def test_write_fill_covers_the_text_just_before_the_end():
+    fig, text = _write_fig()
+    final = _pixels_of(fig)
+    move = ep.write(text)
+    move.update(0.999)
+    near = _pixels_of(fig)
+    ink = final[..., 0] < 128
+    assert ink.any()
+    assert np.mean(near[..., 0][ink] < 160) > 0.9
+    assert np.mean(near[..., 0][~ink] < 160) < 0.02
+    plt.close(fig)
+
+
+def test_write_level_is_opacity_only():
+    fig, text = _write_fig()
+    move = ep.write(text)
+    move.update(0.5)
+    full = _pixels_of(fig)
+    move.update(0.5, level=0.0)
+    assert (_pixels_of(fig)[..., :3] == 255).all()
+    move.update(0.5, level=0.5)
+    half = _pixels_of(fig)
+    assert half[..., 0].min() > full[..., 0].min()
+    plt.close(fig)
+
+
+def test_write_keeps_a_hidden_text_hidden():
+    fig, text = _write_fig()
+    text.set_visible(False)
+    move = ep.write(text)
+    move.update(0.5)
+    assert not move.artists["fill"].get_visible()
+    move.update(1.0)
+    assert not text.get_visible()
+    plt.close(fig)
+
+
+def test_write_follows_the_text_when_it_moves():
+    fig, text = _write_fig()
+    ghost = ep.write(text).artists["fill"]
+    before = ghost.glyphs()[0][0][0].copy()
+    text.set_position((0.3, 0.4))
+    after = ghost.glyphs()[0][0][0]
+    assert after[:, 0].mean() - before[:, 0].mean() == pytest.approx(
+        0.2 * fig.bbox.width
+    )
+    plt.close(fig)
+
+
+def test_write_overshooting_ease_is_clamped():
+    fig, text = _write_fig()
+    move = ep.write(text, ease=lambda r: 1.4 * r - 0.2)
+    traced, fill = move.artists["fill"].times(0.3)
+    assert all(0.0 <= t <= 1.0 for t in traced) and 0.0 <= fill <= 1.0
+    plt.close(fig)
+
+
+def test_write_is_readable_at_every_beat():
+    ept = pytest.importorskip("eyepiece.testing")
+    fig, text = _write_fig()
+    move = ep.write(text)
+    for u in (0.0, 0.5, 1.0):
+        move.update(u)
+        ept.assert_readable(fig)
+    plt.close(fig)
+
+
+def test_write_rejects_bad_input():
+    fig, text = _write_fig()
+    with pytest.raises(TypeError):
+        ep.write(fig)
+    with pytest.raises(ValueError):
+        ep.write(text, draw=1.0)
+    with pytest.raises(ValueError):
+        ep.write(text, draw=0.5, overlap=0.5)
+    with pytest.raises(ValueError):
+        ep.write(text, lag=2.0)
+    with pytest.raises(ValueError):
+        ep.write(fig.text(0.5, 0.5, "   "))
+    plt.close(fig)
