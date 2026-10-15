@@ -376,3 +376,60 @@ def test_a_new_tag_that_adds_content_does_not_warn(recwarn):
     _fig, a, b = _pair(BAYES_A, BAYES_B)
     ep.transform(a, b)
     assert not [w for w in recwarn if issubclass(w.category, UserWarning)]
+
+
+def test_update_order_and_interleaved_levels_do_not_change_pixels():
+    us = [0.0, 0.1, 0.35, 0.5, 0.72, 0.9, 1.0]
+    fig, a, b = _pair(BAYES_A, BAYES_B)
+    move = ep.transform(a, b)
+    inorder = {}
+    for u in us:
+        move.update(u)
+        inorder[u] = _pixels(fig)
+    rng = np.random.default_rng(3)
+    for u in rng.permutation(us):
+        move.update(float(rng.choice(us)), level=0.3)
+        move.update(float(u), level=float(rng.uniform(0.1, 0.9)))
+        move.update(float(u))
+        assert np.array_equal(_pixels(fig), inorder[float(u)]), u
+
+
+def test_set_dpi_round_trip_and_native_200_dpi_agree():
+    def build(dpi):
+        fig, _ax, at = _stage(dpi=dpi)
+        a = ep.equation(at, BAYES_A, fontsize=40)
+        b = ep.equation(at, BAYES_B, fontsize=40)
+        return fig, ep.transform(a, b)
+
+    fig, move = build(100)
+    move.update(0.5)
+    before = _pixels(fig)
+    fig.set_dpi(200)
+    big = _pixels(fig)
+    native, native_move = build(200)
+    native_move.update(0.5)
+    assert np.array_equal(big, _pixels(native))
+    fig.set_dpi(100)
+    assert np.array_equal(before, _pixels(fig))
+
+
+def test_savefig_at_200_dpi_matches_a_native_200_dpi_build():
+    import io
+
+    def build(dpi):
+        fig, _ax, at = _stage(dpi=dpi)
+        a = ep.equation(at, BAYES_A, fontsize=40)
+        b = ep.equation(at, BAYES_B, fontsize=40)
+        move = ep.transform(a, b)
+        move.update(0.5)
+        return fig
+
+    def raw(fig, dpi):
+        buf = io.BytesIO()
+        fig.savefig(buf, format="rgba", dpi=dpi)
+        return buf.getvalue()
+
+    fig = build(100)
+    saved = raw(fig, 200)
+    assert saved == raw(build(200), 200)
+    assert np.array_equal(_pixels(fig), _pixels(build(100)))  # savefig left dpi alone
