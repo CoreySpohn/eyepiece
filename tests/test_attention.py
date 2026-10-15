@@ -2672,6 +2672,35 @@ def test_write_fill_covers_the_text_just_before_the_end():
     plt.close(fig)
 
 
+def test_write_has_no_jump_into_the_rest_state():
+    fig, text = _write_fig(r"Write the $p(\theta | d)$ out", size=34)
+    final = _pixels_of(fig).astype(float)
+    move = ep.write(text)
+    frames = []
+    for u in np.linspace(0.0, 1.0, 61):
+        move.update(u)
+        frames.append(_pixels_of(fig).astype(float))
+    steps = [np.abs(b - a).max() for a, b in itertools.pairwise(frames)]
+    mid = max(steps[:-1])
+    assert steps[-1] <= mid
+    assert max(steps[-5:]) <= mid
+    assert np.array_equal(frames[-1], final)
+    # The strokes are gone before the text takes over.
+    assert move.artists["fill"].times(0.999)[1] > 0.999
+    plt.close(fig)
+
+
+def test_write_restores_the_texts_own_alpha():
+    fig, text = _write_fig()
+    text.set_alpha(0.6)
+    move = ep.write(text)
+    for u in (0.2, 0.85, 0.95, 1.0):
+        move.update(u)
+        _pixels_of(fig)
+        assert text.get_alpha() == 0.6
+    plt.close(fig)
+
+
 def test_write_level_is_opacity_only():
     fig, text = _write_fig()
     move = ep.write(text)

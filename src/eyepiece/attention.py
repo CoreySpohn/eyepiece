@@ -2864,7 +2864,7 @@ def _ring(vertices, closed):
 
 
 class _GhostWrite(Artist):
-    """The ghost of a write: glyph outlines traced, then filled."""
+    """The ghost of a write: glyph outlines traced, then the text faded in."""
 
     def __init__(self, text, *, draw, overlap, lag, lw, ease):
         super().__init__()
@@ -2880,7 +2880,6 @@ class _GhostWrite(Artist):
         self._glyphs = None
         self._lengths = None
         kw = {"transform": IdentityTransform(), "clip_on": False}
-        self._fill = PathPatch(Path(np.zeros((1, 2)), [Path.MOVETO]), lw=0, **kw)
         self._stroke = PathPatch(
             Path(np.zeros((1, 2)), [Path.MOVETO]),
             fill=False,
@@ -2971,7 +2970,6 @@ class _GhostWrite(Artist):
         alpha = 1.0 if text.get_alpha() is None else float(text.get_alpha())
         alpha *= self._level
         _, fill = self.times(self._u)
-        glyphs = self.glyphs(renderer)
         verts, codes = [], []
         for lines in self.strokes(self._u, renderer):
             for line in lines:
@@ -2980,7 +2978,7 @@ class _GhostWrite(Artist):
         figure = _root_figure(text)
         size = text.get_fontproperties().get_size_in_points()
         lw = _WRITE_LW_EM * size if self._lw is None else self._lw
-        for patch in (self._fill, self._stroke):
+        for patch in (self._stroke,):
             patch.set_figure(figure)
             patch.set_clip_box(text.get_clip_box())
             patch.set_clip_path(text.get_clip_path())
@@ -2991,15 +2989,16 @@ class _GhostWrite(Artist):
             self._stroke.set_linewidth(lw)
             self._stroke.draw(renderer)
         if fill > 0.0:
-            vs, cs = [], []
-            for glyph in glyphs:
-                for vertices, _closed in glyph:
-                    vs.append(_ring(vertices, True))
-                    cs += [Path.MOVETO, *[Path.LINETO] * (len(vertices) - 1)]
-                    cs.append(Path.CLOSEPOLY)
-            self._fill.set_path(Path(np.vstack(vs), cs))
-            self._fill.set_facecolor((*color, alpha * fill))
-            self._fill.draw(renderer)
+            # The text itself fades in, so the last frames are its own
+            # rasterization. Its alpha and visibility are restored exactly.
+            was_alpha, was_visible = text.get_alpha(), text.get_visible()
+            text.set_alpha(alpha * fill)
+            text.set_visible(True)
+            try:
+                text.draw(renderer)
+            finally:
+                text.set_alpha(was_alpha)
+                text.set_visible(was_visible)
 
 
 def write(
@@ -3017,8 +3016,8 @@ def write(
     The move is for a label or a short equation that should arrive the way
     a hand would put it on a board, so the eye follows the writing. A ghost
     traces the outline of each glyph in reading order, one glyph starting
-    before the one before it has finished, and then the fill fades in as the
-    stroke fades out. The outlines come from the font the text itself uses
+    before the one before it has finished, and then the text itself fades in
+    as the stroke fades out. The outlines come from the font the text itself uses
     (its `FontProperties`, size, rotation, alignment and transform, laid out
     as the text lays itself out), so the ghost sits on the text. Mathtext
     works through the mathtext parser: every symbol is a glyph, and a
@@ -3033,9 +3032,9 @@ def write(
     ``update(u, level=1.0)`` is absolute. Over ``0 < u < draw`` the strokes
     are traced; the fill starts at ``draw - overlap`` and is complete at
     ``u = 1``. At ``u = 0`` nothing is drawn, and at ``u = 1`` the text is
-    drawn as it is without the move. The glyph outlines are straight
-    segments, so a ghost differs from the rasterized text by at most a
-    pixel of antialiasing; the exact text appears at ``u = 1``.
+    drawn as it is without the move. The fill is the real text drawn at a
+    fractional opacity, so the last frames converge on its rasterization
+    and the swap at ``u = 1`` does not jump; the strokes are gone by then.
 
     Args:
         text: The `Text` artist to write. It must stay in its figure, and
