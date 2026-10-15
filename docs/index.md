@@ -173,7 +173,9 @@ the API reference, and the groups are:
   returns the artist to where it was, `circumscribe`, an outline that draws
   on and fades, `term_row`, an equation or readout with one text per term,
   `link`, a line that grows between panels, `morph`, a ghost that carries one
-  path into another keeping its identity, and `audit`, which checks the
+  path into another keeping its identity, `warp`, which carries drawn
+  artists through a matrix or a pointwise map of the plane (with `warp_grid`
+  for the grid), and `audit`, which checks the
   leaders and links of a figure; and `Tempo`, which sets a
   clip's pace in one place: how long moves and settles last, and how long
   each caption holds for its number of words.

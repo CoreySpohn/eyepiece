@@ -6,7 +6,7 @@ detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
 ``_schematic``, ``_phasor``, ``insets``, ``profiles``, ``emphasis``,
-``_motion``, ``camera``, ``_pixel_morph``, ``attention``) are
+``_motion``, ``camera``, ``_pixel_morph``, ``attention``, ``_warp``) are
 internal organization and are not part of the public API. The vocabularies a
 caller reads against are exported alongside the functions: ``ARTIST_KEYS``,
 the key set a result's ``artists`` dict draws from; ``PRESETS``, the
@@ -136,6 +136,8 @@ __all__ = [
     "trail",
     "triptych",
     "view_limits",
+    "warp",
+    "warp_grid",
     "zoom_path",
 ]
 
@@ -220,6 +222,8 @@ _LAZY_EXPORTS = {
     "pixel_quads": ("eyepiece._motion", "pixel_quads"),
     "stagger": ("eyepiece._motion", "stagger"),
     "view_limits": ("eyepiece._motion", "view_limits"),
+    "warp": ("eyepiece._warp", "warp"),
+    "warp_grid": ("eyepiece._warp", "warp_grid"),
     "zoom_path": ("eyepiece._motion", "zoom_path"),
     "RawSink": ("eyepiece.anim", "RawSink"),
     "ScaleDriftError": ("eyepiece.anim", "ScaleDriftError"),

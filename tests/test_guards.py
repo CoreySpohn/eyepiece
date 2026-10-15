@@ -215,6 +215,8 @@ _EXPECTED_ALL = [
     "trail",
     "triptych",
     "view_limits",
+    "warp",
+    "warp_grid",
     "zoom_path",
 ]
 
