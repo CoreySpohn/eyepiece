@@ -1004,7 +1004,7 @@ def test_still_matches_an_mp4_frame_decoded_with_ffmpeg(tmp_path):
     plt.close(fig)
 
 
-def test_stills_by_beat_name_use_the_plan(tmp_path):
+def test_stills_by_span_name_use_the_plan(tmp_path):
     from eyepiece import Timeline
 
     tl = Timeline()
@@ -1023,9 +1023,11 @@ def test_stills_by_beat_name_use_the_plan(tmp_path):
             line.set_ydata([0, k + 1])
             rec.frame()
     frames = _html_frames(tmp_path / "b.html")
-    assert np.array_equal(_png(tmp_path / "open.png"), frames[plan.last("open")])
     assert np.array_equal(
-        _png(tmp_path / "close_start.png"), frames[plan.start("close")]
+        _png(tmp_path / "open.png"), frames[plan.frame_of("open", "last")]
+    )
+    assert np.array_equal(
+        _png(tmp_path / "close_start.png"), frames[plan.frame_of("close", "start")]
     )
     plt.close(fig)
 
@@ -1040,7 +1042,7 @@ def test_still_inputs_are_validated_before_anything_opens(tmp_path):
     out = tmp_path / "v.gif"
     bad = [
         ({tmp_path / "a.png": "a"}, None, 4, "needs plan"),
-        ({tmp_path / "a.png": "zzz"}, plan, 4, "no beat named"),
+        ({tmp_path / "a.png": "zzz"}, plan, 4, "no span named"),
         ({tmp_path / "a.png": ("a", "end")}, plan, 4, "start, mid or last"),
         ({tmp_path / "a.png": -1.0}, None, 4, "at least 0"),
         ({tmp_path / "a.png": "a"}, plan, 5, "fps"),
