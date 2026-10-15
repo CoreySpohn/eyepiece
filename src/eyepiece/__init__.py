@@ -6,7 +6,7 @@ detection maps, complex optical fields, and the like). Every public name
 lives at the top level of this package; the submodules that implement them
 (``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
 ``_schematic``, ``_phasor``, ``insets``, ``profiles``, ``emphasis``,
-``_motion``, ``camera``, ``_pixel_morph``, ``attention``) are
+``_motion``, ``camera``, ``_pixel_morph``, ``attention``, ``_arrows``) are
 internal organization and are not part of the public API. The vocabularies a
 caller reads against are exported alongside the functions: ``ARTIST_KEYS``,
 the key set a result's ``artists`` dict draws from; ``PRESETS``, the
@@ -55,7 +55,9 @@ __all__ = [
     "Tempo",
     "Timeline",
     "__version__",
+    "angle_arc",
     "animate",
+    "arrow",
     "audit",
     "backing",
     "blend",
@@ -69,6 +71,7 @@ __all__ = [
     "collapse",
     "compare_grid",
     "compare_row",
+    "compass",
     "convergence",
     "corner",
     "corner_overlay",
@@ -225,6 +228,9 @@ _LAZY_EXPORTS = {
     "overview_box": ("eyepiece.camera", "overview_box"),
     "spotlight": ("eyepiece.camera", "spotlight"),
     "brush": ("eyepiece._pixel_morph", "brush"),
+    "angle_arc": ("eyepiece._arrows", "angle_arc"),
+    "arrow": ("eyepiece._arrows", "arrow"),
+    "compass": ("eyepiece._arrows", "compass"),
     "Anchor": ("eyepiece.attention", "Anchor"),
     "AttentionFault": ("eyepiece.attention", "AttentionFault"),
     "audit": ("eyepiece.attention", "audit"),
