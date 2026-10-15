@@ -2666,6 +2666,8 @@ class _Link(Line2D):
         pool = list(figure.texts) + [x for x in figure.artists if isinstance(x, Text)]
         for panel in figure.axes:
             pool += list(panel.texts)
+            pool += [panel.title, panel._left_title, panel._right_title]
+            pool += [panel.xaxis.label, panel.yaxis.label]
         for other in dict.fromkeys(pool):
             if not (other.get_visible() and other.get_text()):
                 continue
@@ -2721,9 +2723,14 @@ def link(
     raises; `audit` raises `AttentionFault` for a strict link that breaks a
     rule.
 
-    ``update(u)`` grows the line from the source: ``u = 0`` draws nothing
-    and ``u = 1`` (the rest state, when the link is made) reaches the
-    target.
+    ``update(u, level=1.0)`` grows the line from the source: ``u = 0``
+    draws nothing and ``u = 1`` (the rest state, when the link is made)
+    reaches the target; ``level`` fades the whole line (1 as drawn, 0 gone),
+    so a link can recede with the caption it serves.
+
+    The audit reads the figure when ``faults()`` runs, not when the link is
+    made: every text, panel title and axis label present then counts, so
+    audit the composite after everything is drawn.
 
     Args:
         source: Where the link starts: an `Anchor`, or an artist. An
@@ -2746,8 +2753,8 @@ def link(
     Returns:
         A `MosaicResult` over the axes of the two anchors (source first),
         with ``artists["line"]``, the link, whose ``faults()`` lists the
-        rules it breaks as the figure is now, and ``update(u)`` as above;
-        values outside [0, 1] are clipped.
+        rules it breaks as the figure is now, and ``update(u, level)`` as
+        above; values outside [0, 1] are clipped.
 
     Raises:
         TypeError: If `source` or `target` is neither an `Anchor` nor an
@@ -2782,10 +2789,15 @@ def link(
     owner = source.figure if fig is None else fig
     owner.add_artist(line)
 
-    def update(u):
+    alpha = line.get_alpha()
+
+    def update(u, level=1.0):
         u = _check_u(u)
-        line.set_visible(u > 0.0)
+        level = _check_u(level)
+        line.set_visible(u > 0.0 and level > 0.0)
         line._grow = _ease(u, ease) if u < 1.0 else 1.0
+        base = 1.0 if alpha is None else alpha
+        line.set_alpha(alpha if level >= 1.0 else base * level)
 
     update(1.0)
     axes = [a for a in (source.axes, target.axes) if a is not None]

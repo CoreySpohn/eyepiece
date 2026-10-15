@@ -1152,6 +1152,41 @@ def test_link_is_whole_at_rest_absent_at_zero_and_grows_from_the_source(mode):
     np.testing.assert_array_equal(_pixels(fig), whole)
 
 
+@pytest.mark.parametrize("mode", MODES)
+def test_link_fades_with_its_level_and_returns_whole(mode):
+    hwostyle.use(mode)
+    fig, image, phasor = _image_and_phasor()
+    without = _pixels(fig)
+    res = ep.link(
+        ep.Anchor.from_data(image, (12, 4)), ep.Anchor.from_data(phasor, (0.0, 0.0))
+    )
+    whole = _pixels(fig)
+    res.update(1.0, level=0.35)
+    dimmed = _pixels(fig)
+    assert not np.array_equal(dimmed, whole)
+    assert not np.array_equal(dimmed, without)
+    res.update(1.0, level=0.0)
+    np.testing.assert_array_equal(_pixels(fig), without)
+    res.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), whole)
+
+
+def test_link_audit_reads_titles_and_axis_labels_made_after_it():
+    fig, image, phasor = _image_and_phasor()
+    # From the image up past the phasor panel's top edge, where its title sits.
+    res = ep.link(
+        ep.Anchor.from_data(image, (8, 8)),
+        ep.Anchor.from_data(phasor, (0.5, 1.6)),
+        strict=False,
+    )
+    assert not any("crosses text" in f for f in res.artists["line"].faults())
+    phasor.set_title("a title in the way")
+    phasor.set_xlabel("an axis label")
+    fig.canvas.draw()
+    faults = res.artists["line"].faults()
+    assert any("a title in the way" in f for f in faults), faults
+
+
 def test_link_takes_a_neutral_and_keeps_the_cross_panel_length():
     fig, image, phasor = _image_and_phasor()
     res = ep.link(
