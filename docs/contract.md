@@ -466,6 +466,18 @@ a changed term re-lays the row. A flight can carry a segment or a bar and
 turn it. The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
+`eyepiece.testing` is the readability check for such a clip, a submodule
+imported by name rather than a top-level export, because it belongs to a test
+suite and not to a figure. `readability_faults(fig, at=pose, times=...)`
+poses the figure at each sample time, draws it, and returns a list of faults
+in output pixels: two visible texts, or a text and another's backing box,
+whose extents overlap by more than a tolerance; text or marks the figure edge
+clips; text under the venue's minimum height; and text drawn over a data mark
+of its own color. It does not repeat `audit`, which owns the connectors, and
+a label with an opaque backing box is not reported over marks. The result is
+deterministic and the figure keeps its dpi. `assert_readable` raises
+`ReadabilityError` with the report.
+
 A `Tempo` holds the pace of such a clip in one place. Moves and holds are
 written in nominal seconds and multiplied by its `factor`; a caption holds,
 after it has finished arriving, for `factor * (base_s + word_s * words)`,

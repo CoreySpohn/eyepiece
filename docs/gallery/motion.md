@@ -478,3 +478,26 @@ The readout is running when its term's text is set in the loop, for example
 ``readout.artists["text"][2].set_text(f"{v:.2f}")``; `Anchor.from_artist` of a
 term follows it. Call `audit(fig)` once the composite is laid out to vet every
 leader and link of the clip.
+
+## Readability check
+
+A clip can draw without error and still be unreadable. `eyepiece.testing`
+draws the figure at each sample time and lists what a viewer could not read.
+Here a third label hangs four pixels into the second row of a step list, which
+is the kind of collision no exception reports.
+
+```{code-cell} python
+import eyepiece.testing as ept
+
+fig = plt.figure(figsize=(6.0, 2.4), dpi=100)
+fig.text(0.05, 0.8, "1  Steer the beam", fontsize=14)
+row = fig.text(0.05, 0.62, "2  Hold the star on the mask", fontsize=14)
+fig.canvas.draw()
+low = row.get_window_extent().y0
+label = fig.text(0.05, (low + 4.0) / fig.bbox.height, "axis label", fontsize=14, va="top")
+for fault in ept.readability_faults(fig):
+    print(fault)
+```
+
+Pass `at` and `times` to sample a clip at its beat ends. `assert_readable`
+raises `ReadabilityError` with the same report, for a test suite.
