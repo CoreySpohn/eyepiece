@@ -308,7 +308,9 @@ colored by the phase colormap, onto any axes, and `phasor(ring=True)` draws
 its ring through it. On a given axes it adds the one collection and touches
 nothing else: not the aspect, the ticks, the spines, or limits that were
 set. Called without an axes, it makes a new one with an equal aspect so the
-ring is round.
+ring is round. The ring is 180 overlapping round-capped segments, which hides
+the dark stripe that butt-capped segments leave at every joint; it holds for
+the dark figure below as well as a light one.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(3.4, 3.4), layout="constrained")

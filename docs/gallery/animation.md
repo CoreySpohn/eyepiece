@@ -232,8 +232,7 @@ release and warns that it is deprecated.
 
 ## Presets
 
-`PRESETS` holds measured frame rate and dpi pairs for the usual
-destinations. An entry splats straight into `record` and into `.jshtml`,
+`PRESETS` holds frame rate and dpi pairs for the usual destinations. An entry splats straight into `record` and into `.jshtml`,
 both of which take an `fps` and a `dpi`. An animation otherwise carries the
 frame rate it was bound with, so `.save` and `.video` take a dpi alone and a
 preset reaches them one value at a time.
@@ -249,3 +248,27 @@ and an `.mp4` at the `talk` one, which is usually what mixed output wants.
 Passing `dpi` to `record` or to `.save` overrides that for every sink at
 once, which is what the recording above did to put the gif and the player on
 the same rasterization.
+
+The video presets run at 30 fps, because flat graphics cost almost nothing
+extra in bytes and a slow move at 10 fps reads as a series of jumps. Use
+`talk_60` for turns and camera moves, where 30 fps still judders. `doc_hd`
+rasterizes at 200 dpi, the resolution of a documentation still, so a clip
+beside its still is not visibly softer on a high-density screen.
+
+## The encoder profile
+
+Every mp4 eyepiece writes, through `record`, `RawSink` and
+`narration.mux`, shares one profile, `ENCODER_PROFILE`. It converts the frames
+with the BT.709 matrix into limited-range yuv420p and tags the stream, since
+players assume that matrix for untagged HD video and ffmpeg converts with
+BT.601 by default, which moves a saturated brand color by up to 19 levels.
+It also sets constant quality, the animation tune, a keyframe every two
+seconds so a reader scrubbing a clip lands quickly, and `+faststart`.
+
+```{code-cell} python
+for key, value in ep.ENCODER_PROFILE.items():
+    print(f"{key:>11}: {value}")
+```
+
+Pass `encoder={...}` to `record`, `RawSink` or `mux` to replace single keys,
+for example `encoder={"crf": 23}` for a smaller file.

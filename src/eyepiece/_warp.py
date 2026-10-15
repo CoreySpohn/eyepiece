@@ -22,6 +22,7 @@ from matplotlib.path import Path
 from matplotlib.text import Annotation, Text
 
 from eyepiece._motion import _apply_ease as _ease
+from eyepiece._motion import _Unsnap
 from eyepiece._result import PlotResult
 from eyepiece.attention import _check_u, _line_parts, _path_parts, _resample
 
@@ -445,9 +446,12 @@ def warp(
         center = np.zeros(2) if about is None else np.asarray(about, dtype=float)
         moved = _matrix_path(m, path)
 
+    snap = _Unsnap(items)
+
     def update(u, level=1.0):
         u = _check_u(u)
         del level
+        snap.moving(0.0 < u < 1.0)
         e = float(_ease(u, ease))
         # Snap to the ends on the progress, not the eased value: an overshoot
         # ease passes 1 before the move is over.

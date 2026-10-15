@@ -117,6 +117,7 @@ def test_import_blocker_really_blocks():
 
 _EXPECTED_ALL = [
     "ARTIST_KEYS",
+    "ENCODER_PROFILE",
     "GLYPHS",
     "PRESETS",
     "Anchor",

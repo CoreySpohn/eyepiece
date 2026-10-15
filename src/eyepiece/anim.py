@@ -59,8 +59,15 @@ The mechanics this module does own, each closing a specific trap:
   figures, and savefig's dpi wins over the figure's, so an embedded player
   would carry 300-dpi frames. The writer dpi is the only effective control.
 
-`PRESETS` holds measured fps/dpi pairs for the usual destinations, e.g.
-`record(fig, "talk.mp4", **PRESETS["talk"])`.
+`PRESETS` holds fps/dpi pairs for the usual destinations, e.g.
+`record(fig, "talk.mp4", **PRESETS["talk"])`. Video presets run at 30 fps,
+which keeps a slow move smooth and costs little in bytes for flat graphics.
+Use ``talk_60`` for turns and camera moves, where 30 fps still judders.
+``doc_hd`` rasterizes at 200 dpi, the resolution of a documentation still,
+so a clip beside its still is not visibly softer on a 2x screen.
+
+mp4 sinks all share one encoder profile, `eyepiece.ENCODER_PROFILE`: BT.709
+tagged, crf 18, the animation tune, a keyframe every 2 s and faststart.
 """
 
 import os
@@ -77,13 +84,20 @@ from matplotlib.animation import FFMpegWriter, HTMLWriter, PillowWriter
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-from eyepiece._ffmpeg import resolve_ffmpeg
+from eyepiece._ffmpeg import (
+    convert_filter,
+    encoder_args,
+    resolve_ffmpeg,
+    with_caller_pixels,
+)
 
 PRESETS = {
-    "talk": {"fps": 10, "dpi": 120},
+    "talk": {"fps": 30, "dpi": 120},
+    "talk_60": {"fps": 60, "dpi": 120},
     "gif": {"fps": 8, "dpi": 85},
     "jshtml": {"fps": 14, "dpi": 100},
-    "docs": {"fps": 10, "dpi": 100},
+    "docs": {"fps": 30, "dpi": 100},
+    "doc_hd": {"fps": 30, "dpi": 200},
 }
 
 _SUFFIX_PRESET = {".mp4": "talk", ".gif": "gif", ".html": "jshtml"}
@@ -105,7 +119,7 @@ def _resolve_ffmpeg():
     return resolve_ffmpeg(matplotlib.rcParams.get("animation.ffmpeg_path", "ffmpeg"))
 
 
-def _make_writer(path, fps, extra_ffmpeg_args):
+def _make_writer(path, fps, extra_ffmpeg_args, encoder=None):
     """Build the MovieWriter that owns a single output path.
 
     Args:
@@ -118,6 +132,9 @@ def _make_writer(path, fps, extra_ffmpeg_args):
             honors only the last `-vf`, which brings the odd-dimension h264
             failure back; write the crop into your own filter chain if you
             need one.
+        encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace for an mp4. An
+            ``-pix_fmt`` in the extra arguments turns the color conversion
+            and tags off, since the caller then owns the pixel format.
 
     Returns:
         An unopened `MovieWriter`.
@@ -127,8 +144,10 @@ def _make_writer(path, fps, extra_ffmpeg_args):
     """
     suffix = Path(path).suffix.lower()
     if suffix == ".mp4":
-        crop = ["-vf", "crop=trunc(iw/2)*2:trunc(ih/2)*2"]
-        return FFMpegWriter(fps=fps, extra_args=crop + list(extra_ffmpeg_args or []))
+        encoder = with_caller_pixels(encoder, extra_ffmpeg_args)
+        chain = ["crop=trunc(iw/2)*2:trunc(ih/2)*2", convert_filter(encoder)]
+        movie = ["-vf", ",".join(f for f in chain if f), *encoder_args(fps, encoder)]
+        return FFMpegWriter(fps=fps, extra_args=movie + list(extra_ffmpeg_args or []))
     if suffix == ".gif":
         return PillowWriter(fps=fps)
     if suffix == ".html":
@@ -473,6 +492,7 @@ def record(
     fps=10,
     dpi=None,
     extra_ffmpeg_args=None,
+    encoder=None,
     on_rescale="warn",
     free_limits=(),
     stills=None,
@@ -528,6 +548,8 @@ def record(
             replaces that crop instead of adding to it (ffmpeg honors the
             last `-vf` only), which reopens the odd-dimension h264 failure;
             include the crop in your own filter chain if you need one.
+        encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace for the mp4
+            sinks, e.g. ``{"crf": 23}``; the rest of the profile stays.
         on_rescale: What to do when a data scale drifts: "warn" (a
             `RuntimeWarning`, once), "raise" (a `ScaleDriftError`, after
             which every file this call had started, stills included, is
@@ -609,7 +631,7 @@ def record(
             stack.callback(restore_engine)
             stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
             stack.enter_context(_agg_canvas(fig))
-            writers = [_make_writer(p, fps, extra_ffmpeg_args) for p in paths]
+            writers = [_make_writer(p, fps, extra_ffmpeg_args, encoder) for p in paths]
             for writer, path in zip(writers, paths, strict=True):
                 Path(path).parent.mkdir(parents=True, exist_ok=True)
                 stack.enter_context(
@@ -737,6 +759,8 @@ class RawSink:
         fps: Frames per second.
         extra_ffmpeg_args: Extra ffmpeg output arguments, appended last, so
             they override the defaults (``-crf 18`` among them).
+        encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace, e.g.
+            ``{"crf": 23}``; the rest of the profile stays.
 
     Raises:
         ValueError: If the path is not an mp4 or a dimension is not a
@@ -744,7 +768,7 @@ class RawSink:
         RuntimeError: If no ffmpeg can be found.
     """
 
-    def __init__(self, path, size_px, fps, *, extra_ffmpeg_args=None):
+    def __init__(self, path, size_px, fps, *, extra_ffmpeg_args=None, encoder=None):
         """Validate the size and start ffmpeg on a file beside `path`."""
         path = Path(path)
         if path.suffix.lower() != ".mp4":
@@ -759,12 +783,16 @@ class RawSink:
         self.frames = 0
         path.parent.mkdir(parents=True, exist_ok=True)
         self._partial = path.with_name(f".{path.stem}.partial.mp4")
+        encoder = with_caller_pixels(encoder, extra_ffmpeg_args)
+        convert = convert_filter(encoder)
+        filters = ["-vf", convert] if convert else []
         cmd = [
             _resolve_ffmpeg(), "-y", "-loglevel", "error",
             "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{width}x{height}",
             "-r", str(fps), "-i", "-", "-an",
-            "-vcodec", "libx264", "-pix_fmt", "yuv420p", "-crf", "18",
-            *_BITEXACT, *(extra_ffmpeg_args or ()), str(self._partial),
+            "-vcodec", "libx264", "-pix_fmt", "yuv420p",
+            *filters, *encoder_args(fps, encoder), *_BITEXACT,
+            *(extra_ffmpeg_args or ()), str(self._partial),
         ]  # fmt: skip
         # stderr goes to a file, not a pipe: a pipe nobody reads fills after
         # about 64 kB and then blocks ffmpeg, and with it every write.

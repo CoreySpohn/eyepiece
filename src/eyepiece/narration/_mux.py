@@ -17,7 +17,7 @@ from pathlib import Path
 
 import numpy as np
 
-from eyepiece._ffmpeg import resolve_ffmpeg
+from eyepiece._ffmpeg import _merged_profile, resolve_ffmpeg
 
 from ._timeline import MissingAudioError
 
@@ -199,6 +199,7 @@ def mux(
     true_peak=-1.0,
     lra=11.0,
     rate=48000,
+    encoder=None,
 ):
     """Join a silent video and an audio track into one MP4.
 
@@ -207,7 +208,10 @@ def mux(
     ffmpeg's ``loudnorm``: the first measures the track, the second applies a
     linear gain from that measurement, so the speech keeps its dynamics. The
     default, -16 LUFS with a -1 dBTP ceiling, is the usual target for spoken
-    web audio; broadcast uses -23 LUFS. A silent track is left as it is.
+    web audio; broadcast uses -23 LUFS. A silent track is left as it is. The
+    container follows the shared encoder profile (`eyepiece.ENCODER_PROFILE`):
+    the BT.709 tags are written into the copied stream and the index moves to
+    the front.
 
     Args:
         video: Silent MP4 from the render.
@@ -219,6 +223,8 @@ def mux(
         true_peak: True-peak ceiling in dBTP.
         lra: Loudness range target in LU.
         rate: Sample rate of the encoded audio in Hz.
+        encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace; only the
+            color tags and ``faststart`` apply to a copied picture.
 
     Returns:
         The path written.
@@ -243,12 +249,23 @@ def mux(
                 f":offset={stats['target_offset']}:linear=true"
             )
             audio_args += ["-af", target]
+    profile = _merged_profile(encoder)
+    tags = (
+        [
+            "-bsf:v",
+            "h264_metadata=colour_primaries=1:transfer_characteristics=1"
+            ":matrix_coefficients=1:video_full_range_flag=0",
+        ]
+        if profile["colorspace"] == "bt709"
+        else []
+    )
+    faststart = ["-movflags", "+faststart"] if profile["faststart"] else []
     cmd = [
         ffmpeg, "-y", "-loglevel", "error",
         "-i", str(video), "-i", str(audio),
         "-map", "0:v:0", "-map", "1:a:0",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", bitrate, *audio_args,
-        "-movflags", "+faststart", "-shortest", str(path),
+        "-c:v", "copy", *tags, "-c:a", "aac", "-b:a", bitrate, *audio_args,
+        *faststart, "-shortest", str(path),
     ]  # fmt: skip
     done = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if done.returncode:

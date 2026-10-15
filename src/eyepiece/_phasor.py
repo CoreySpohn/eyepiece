@@ -328,6 +328,29 @@ def _dial_axes(ax, at, size, size_units="data"):
     return inset
 
 
+def _gradient_stroke(segments, colors, width, **kw):
+    """A stroke of short segments, each its own color, with no seams between.
+
+    Butt-capped segments leave a dark stripe at every joint: antialiasing
+    covers the joint pixel about half by each neighbor, and half of half is
+    only three quarters. Round caps run each segment half a width past its
+    ends, over the next one, so every joint pixel is covered in full by the
+    segment drawn later. The colors must be opaque for the overlap to be
+    invisible.
+
+    Args:
+        segments: ``(N, 2, 2)`` array of segment end points.
+        colors: One RGBA row per segment.
+        width: Line width in points.
+        **kw: Further `LineCollection` properties.
+
+    Returns:
+        A `LineCollection`.
+    """
+    kw = {"capstyle": "round", "joinstyle": "round", **kw}
+    return LineCollection(segments, colors=colors, linewidths=width, **kw)
+
+
 def _ring(radius, cmap, width, center=0j, n=180):
     """The circle of `radius`, each segment colored by the phase at its angle.
 
@@ -340,12 +363,8 @@ def _ring(radius, cmap, width, center=0j, n=180):
         pts = pts + np.array([center.real, center.imag])
     segments = np.stack([pts[:-1], pts[1:]], axis=1)
     mid = 0.5 * (phi[:-1] + phi[1:])
-    return LineCollection(
-        segments,
-        colors=cmap((mid + np.pi) / (2.0 * np.pi)),
-        linewidths=width,
-        capstyle="butt",
-        zorder=2,
+    return _gradient_stroke(
+        segments, cmap((mid + np.pi) / (2.0 * np.pi)), width, zorder=2
     )
 
 

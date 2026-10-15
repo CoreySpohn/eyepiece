@@ -19,6 +19,7 @@ import numpy as np
 from matplotlib.path import Path
 
 from eyepiece import _style
+from eyepiece._motion import _Unsnap
 from eyepiece._phasor import HEAD_LENGTH, HEAD_PER_MARKER, HEAD_WIDTH, _Arrow
 from eyepiece._result import PlotResult
 from eyepiece.attention import _check_u, _TextFade
@@ -210,6 +211,7 @@ def arrow(
         )
     base_alpha = patch.get_alpha()
     fade = None if note is None else _TextFade(note)
+    snap = _Unsnap([patch])
 
     def update(u=1.0, *, tail=None, head=None, level=1.0):
         u = _check_u(u)
@@ -224,6 +226,7 @@ def arrow(
         else:
             mid = 0.5 * (a + b)
             start, stop = mid + u * (a - mid), mid + u * (b - mid)
+        snap.moving(0.0 < u < 1.0)
         patch.set_positions(tuple(start), tuple(stop))
         _set_level(patch, base_alpha, level)
         if note is not None:
@@ -406,6 +409,7 @@ def angle_arc(
     scale = _finite(label_scale, "label_scale")
     base_alpha = patch.get_alpha()
     fade = None if note is None else _TextFade(note)
+    snap = _Unsnap([patch])
 
     def update(
         u=1.0, *, end_angle=None, start_angle=None, radius=None, center=None, level=1.0
@@ -426,6 +430,7 @@ def angle_arc(
         if abs(sweep) > 360.0:
             raise ValueError(f"the sweep may not exceed 360 degrees, got {sweep}")
         drawn = u * sweep
+        snap.moving(0.0 < u < 1.0)
         patch.set_arc(state["center"], state["radius"], state["start"], drawn)
         _set_level(patch, base_alpha, level)
         if note is not None:
