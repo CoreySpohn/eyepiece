@@ -469,6 +469,14 @@ arc length (and, for a closed pair, the second rolled and possibly reversed
 to lie on the first). The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
+`warp` differs from the figure-level moves: it reshapes the artists it is
+given, in place and in data coordinates, so it creates nothing and an artist
+keeps its place, style and stage membership. Its rest state is the start,
+``u = 0``, the geometry the artists had when the move was made (a path that a
+pointwise map subdivided is put back as drawn); at ``u = 1`` the geometry is
+exactly ``M p`` or ``f(p)``. Its `level` is the fraction of the warp applied,
+so a `Stage` can hold it partway. It leaves axis limits alone.
+
 `eyepiece.testing` is the readability check for such a clip, a submodule
 imported by name rather than a top-level export, because it belongs to a test
 suite and not to a figure. `readability_faults(fig, at=pose, times=...)`

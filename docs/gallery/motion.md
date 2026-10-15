@@ -528,6 +528,82 @@ the ring growing into the box without a twist. The ghost is hidden at
 ``u = 0`` and ``u = 1``, so in a clip the caller shows the ring before the
 move and the box after it.
 
+## Warp: the plane moves
+
+`warp` applies a 2x2 matrix or a pointwise map to artists that are already
+drawn, in the data coordinates of their axes, so the viewer watches a shape
+become its image. Nothing is replaced: the same lines, patches, arrows,
+collections and texts are reshaped in place, and the move is at its start
+when it is made. A matrix is blended as ``I + u (M - I)``, which shrinks a
+rotation through the origin; ``path="rotation"`` splits the matrix into a
+rotation and a stretch and turns the rotation through its angle instead.
+A pointwise map first subdivides each path (keeping its corners, using the
+same arc-length sampling as `morph`) and moves every point along the line to
+its image. `warp_grid` draws the coordinate grid that usually carries the
+move. Arrows from `ep.arrow` are `FancyArrowPatch` artists and are accepted
+once that function is merged.
+
+```{code-cell} python
+from matplotlib.patches import FancyArrowPatch
+
+fig, ax = plt.subplots(figsize=(8.0, 2.6))
+ax.set(xlim=(-3.2, 3.2), ylim=(-1.2, 1.2), xticks=[], yticks=[])
+ax.set_aspect("equal")
+fig.set_layout_engine("none")
+
+grid = ep.warp_grid(ax, extent=(-8, 8, -4, 4), color=ep.neutral(0.5))
+phi = np.linspace(0.0, 2.0 * np.pi, 120, endpoint=False)
+(disk,) = ax.plot(0.8 * np.cos(phi), 0.8 * np.sin(phi), color="C1", lw=2.0)
+arrow = ax.add_patch(FancyArrowPatch((0, 0), (0.8, 0), color="C0", mutation_scale=12))
+tag = ax.text(0.9, 0.9, "(0.8, 0)", color="C0")
+
+shear = np.array([[1.0, 1.0], [0.0, 1.0]])
+turn = ep.warp([grid, disk, arrow, tag], shear, path="linear")
+
+shown, cells = plt.subplots(1, 4, figsize=(9.0, 1.7), layout="constrained")
+for cell, u in zip(cells, (0.0, 0.33, 0.66, 1.0), strict=True):
+    turn.update(u)
+    fig.canvas.draw()
+    cell.imshow(np.asarray(fig.canvas.buffer_rgba()).copy(), interpolation="nearest")
+    cell.set_title(f"u = {u:g}")
+    cell.set_axis_off()
+plt.show()
+```
+
+A swirl is a pointwise map, here a rotation whose angle falls with distance;
+the straight grid lines bend into spirals on the way because they were
+subdivided before they moved.
+
+```{code-cell} python
+fig, ax = plt.subplots(figsize=(8.0, 2.6))
+ax.set(xlim=(-3.2, 3.2), ylim=(-1.2, 1.2), xticks=[], yticks=[])
+ax.set_aspect("equal")
+fig.set_layout_engine("none")
+
+grid = ep.warp_grid(ax, extent=(-4, 4, -2, 2), color=ep.neutral(0.5))
+
+
+def swirl(p):
+    r = np.hypot(p[:, 0], p[:, 1])
+    a = 1.2 * np.exp(-0.5 * r**2)
+    return np.c_[
+        np.cos(a) * p[:, 0] - np.sin(a) * p[:, 1],
+        np.sin(a) * p[:, 0] + np.cos(a) * p[:, 1],
+    ]
+
+
+twist = ep.warp(grid, swirl)
+
+shown, cells = plt.subplots(1, 4, figsize=(9.0, 1.7), layout="constrained")
+for cell, u in zip(cells, (0.0, 0.33, 0.66, 1.0), strict=True):
+    twist.update(u)
+    fig.canvas.draw()
+    cell.imshow(np.asarray(fig.canvas.buffer_rgba()).copy(), interpolation="nearest")
+    cell.set_title(f"u = {u:g}")
+    cell.set_axis_off()
+plt.show()
+```
+
 ## Readability check
 
 A clip can draw without error and still be unreadable. `eyepiece.testing`
