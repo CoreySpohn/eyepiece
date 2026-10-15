@@ -1,5 +1,7 @@
 """Following zoom: a magnified inset that tracks a moving point."""
 
+import itertools
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -255,3 +257,103 @@ def test_a_patch_and_a_scatter_land_where_the_window_says():
         inset.bbox.y0 + 0.5 * inset.bbox.height,
     )
     assert tuple(img[int(fig.bbox.height - cy), int(cx), :3]) == (255, 0, 0)
+
+
+def _orbit(t):
+    return 3.4 * np.cos(2.2 * t - 1.0), 2.1 * np.sin(2.2 * t - 1.0)
+
+
+def _orbit_panel(**kw):
+    fig, ax = plt.subplots(figsize=(8.0, 4.4), dpi=100)
+    ax.imshow(np.zeros((8, 12)), extent=(-6, 6, -4, 4), cmap="gray")
+    ax.set(xlim=(-6, 6), ylim=(-4, 4))
+    fig.set_layout_engine("none")
+    return fig, ax, ep.follow_zoom(ax, _orbit, loc="auto", size=0.36, **kw)
+
+
+def _corner_of(res, ax):
+    box = res.insets[0].bbox
+    frame = ax.bbox
+    right = 0.5 * (box.x0 + box.x1) > 0.5 * (frame.x0 + frame.x1)
+    top = 0.5 * (box.y0 + box.y1) > 0.5 * (frame.y0 + frame.y1)
+    return ("upper" if top else "lower") + (" right" if right else " left")
+
+
+def test_auto_never_puts_the_target_under_the_inset_through_the_orbit():
+    fig, ax, res = _orbit_panel()
+    for t in np.linspace(0.0, 2.0 * np.pi / 2.2, 240):
+        res.update(1.0, time=t)
+        fig.canvas.draw()
+        box = res.insets[0].bbox
+        tx, ty = ax.transData.transform(_orbit(t))
+        cx, cy = 0.5 * (box.x0 + box.x1), 0.5 * (box.y0 + box.y1)
+        assert max(abs(tx - cx), abs(ty - cy)) > 0.5 * box.width
+
+
+def test_auto_flips_a_bounded_number_of_times_along_a_path():
+    fig, ax, res = _orbit_panel()
+    corners = []
+    for t in np.linspace(0.0, 2.0 * np.pi / 2.2, 400):
+        res.update(1.0, time=t)
+        fig.canvas.draw()
+        corners.append(_corner_of(res, ax))
+    flips = sum(a != b for a, b in itertools.pairwise(corners))
+    assert 1 <= flips <= 4
+
+
+def test_auto_does_not_flicker_on_a_target_hovering_where_corners_tie():
+    fig, ax = plt.subplots(figsize=(6.0, 4.0), dpi=100)
+    ax.set(xlim=(-1, 1), ylim=(-1, 1))
+    fig.set_layout_engine("none")
+    res = ep.follow_zoom(
+        ax, lambda t: (0.03 * np.sin(40.0 * t), -0.03 * np.cos(40.0 * t)), loc="auto"
+    )
+    corners = []
+    for k in range(80):
+        res.update(1.0, time=k * 0.013)
+        fig.canvas.draw()
+        corners.append(_corner_of(res, ax))
+    assert len(set(corners)) == 1
+
+
+def test_explicit_corners_are_unchanged_by_the_target():
+    fig, ax, _ = _panel()
+    res = ep.follow_zoom(ax, _track, loc="lower right", size=0.3)
+    seen = set()
+    for t in (0.0, 0.3, 0.7, 1.0):
+        res.update(1.0, time=t)
+        fig.canvas.draw()
+        seen.add(_corner_of(res, ax))
+    assert seen == {"lower right"}
+
+
+def test_auto_rest_state_is_pixel_exact():
+    fig, _, res = _orbit_panel()
+    res.update(0.0)
+    plain_fig, plain_ax = plt.subplots(figsize=(8.0, 4.4), dpi=100)
+    plain_ax.imshow(np.zeros((8, 12)), extent=(-6, 6, -4, 4), cmap="gray")
+    plain_ax.set(xlim=(-6, 6), ylim=(-4, 4))
+    plain_fig.set_layout_engine("none")
+    assert np.array_equal(_pixels(fig), _pixels(plain_fig))
+    res.update(1.0, time=1.1)
+    first = _pixels(fig)
+    res.update(0.3)
+    res.update(1.0, time=1.1)
+    assert np.array_equal(_pixels(fig), first)
+
+
+@pytest.mark.parametrize("shade", [0.0, 1.0])
+def test_the_frame_reads_on_a_dark_and_on_a_light_underlay(shade):
+    fig, ax = plt.subplots(figsize=(6.0, 4.0), dpi=100)
+    ax.imshow(
+        np.full((8, 12), shade), extent=(0, 12, 0, 8), cmap="gray", vmin=0, vmax=1
+    )
+    ax.set(xlim=(0, 12), ylim=(0, 8))
+    fig.set_layout_engine("none")
+    res = ep.follow_zoom(ax, (4.0, 3.0), loc="upper right", zoom=3.0)
+    img = _pixels(fig)[..., :3].astype(float).mean(axis=-1)
+    box = res.artists["ellipse"].get_window_extent()
+    top, bottom = int(fig.bbox.height - box.y1), int(fig.bbox.height - box.y0)
+    region = img[top - 3 : bottom + 4, int(box.x0) - 3 : int(box.x1) + 4]
+    ring = region.ravel()
+    assert np.abs(ring - shade * 255.0).max() > 100.0

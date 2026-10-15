@@ -528,6 +528,7 @@ at every draw, so following needs no per-frame call; the window is exactly
 `update(u, level)` fades all of it in with `u`, `level` is an opacity only, and
 at ``u = 0`` the figure is pixel for pixel the one without the zoom. The parent's
 artists are borrowed for each draw and handed back as they were.
+`loc="auto"` holds the corner farthest from the target, switching only when another is farther by a quarter of the inset's side; the frame, box and connectors carry a halo in the panel's background so they read on dark and light images.
 The rest state of each, the one a still shows, is the
 figure as drawn: every group at full weight and every axis finished.
 
