@@ -447,6 +447,17 @@ sees it. A camera's moving limits are declared to `record` with
 `free_limits=`, which exempts only those limits from the drift check and
 still checks that axes' color scale.
 
+### Stills come from the encode
+
+`record(stills=...)` writes chosen frames as PNGs while the sinks encode, from
+the figure exactly as the sinks grabbed it at that frame, so a still is the
+same pixels as that frame and costs no second pass. A time is rounded to the
+nearest frame, a beat name resolves through the `Plan` to the beat's settled
+last frame, and a request the recording never reaches is an error rather than
+a missing file. `on_rescale` is one of `"warn"`, `"raise"` and `"ignore"`;
+`"raise"` raises `ScaleDriftError` and removes every output the call began, so
+a failed run leaves nothing that could pass for a finished one.
+
 ### Attention moves sit on the figure
 
 `flight`, `callout`, and `leader` say where to look; none of them is data.

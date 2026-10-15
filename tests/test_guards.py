@@ -129,6 +129,7 @@ _EXPECTED_ALL = [
     "Plan",
     "PlotResult",
     "RawSink",
+    "ScaleDriftError",
     "SourceStyles",
     "Stage",
     "Tempo",

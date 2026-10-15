@@ -625,12 +625,12 @@ def test_record_is_quiet_when_limits_are_pinned(tmp_path):
     plt.close(fig)
 
 
-def test_record_allow_rescale_silences_the_warning(tmp_path):
+def test_record_on_rescale_ignore_silences_the_warning(tmp_path):
     fig, ax = plt.subplots()
     (line,) = ax.plot([0, 1], [0, 5.3])
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        with record(fig, tmp_path / "ok.gif", fps=5, allow_rescale=True) as rec:
+        with record(fig, tmp_path / "ok.gif", fps=5, on_rescale="ignore") as rec:
             for peak in (5.3, 0.6):
                 line.set_ydata([0, peak])
                 ax.relim()
@@ -850,3 +850,226 @@ def test_free_limits_accepts_a_single_axes(tmp_path):
                 ax.set_xlim(0, w)
                 rec.frame()
     plt.close(fig)
+
+
+# -- on_rescale and stills ------------------------------------------------
+
+
+def _drifting(fig, ax, line, rec, peaks=(5.3, 1.1, 0.6)):
+    for peak in peaks:
+        line.set_ydata([0, peak])
+        ax.relim()
+        ax.autoscale_view()
+        rec.frame()
+
+
+def test_on_rescale_raise_deletes_every_partial_output(tmp_path):
+    fig, ax = plt.subplots()
+    (line,) = ax.plot([0, 1], [0, 5.3])
+    outs = [tmp_path / "d.gif", tmp_path / "d.html"]
+    still = tmp_path / "d.png"
+    with pytest.raises(eyepiece.ScaleDriftError, match="data scales changed"):
+        with record(fig, *outs, fps=5, on_rescale="raise", stills={still: 0.0}) as rec:
+            _drifting(fig, ax, line, rec)
+    assert not any(p.exists() for p in [*outs, still])
+    assert list(tmp_path.iterdir()) == []
+    plt.close(fig)
+
+
+def test_on_rescale_raise_is_quiet_when_pinned(tmp_path):
+    fig, ax = plt.subplots()
+    (line,) = ax.plot([0, 1], [0, 5.3])
+    ax.set_ylim(0, 5.6)
+    with record(fig, tmp_path / "p.gif", fps=5, on_rescale="raise") as rec:
+        for peak in (5.3, 1.1):
+            line.set_ydata([0, peak])
+            rec.frame()
+    assert (tmp_path / "p.gif").exists()
+    plt.close(fig)
+
+
+def test_on_rescale_rejects_unknown_value(tmp_path):
+    fig, _ = _fig_line()
+    with pytest.raises(ValueError, match="on_rescale"):
+        with record(fig, tmp_path / "x.gif", fps=5, on_rescale="loud"):
+            pass
+    plt.close(fig)
+
+
+def test_allow_rescale_deprecation_warns_once_and_still_works(tmp_path):
+    fig, ax = plt.subplots()
+    (line,) = ax.plot([0, 1], [0, 5.3])
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with record(fig, tmp_path / "a.gif", fps=5, allow_rescale=True) as rec:
+            _drifting(fig, ax, line, rec)
+    assert [w.category for w in caught] == [DeprecationWarning]
+    assert "on_rescale" in str(caught[0].message)
+    assert caught[0].filename == __file__
+    plt.close(fig)
+
+
+def test_allow_rescale_false_keeps_the_check_and_conflict_is_an_error(tmp_path):
+    fig, ax = plt.subplots()
+    (line,) = ax.plot([0, 1], [0, 5.3])
+    with pytest.warns(DeprecationWarning), pytest.warns(RuntimeWarning):
+        with record(fig, tmp_path / "f.gif", fps=5, allow_rescale=False) as rec:
+            _drifting(fig, ax, line, rec)
+    with pytest.warns(DeprecationWarning), pytest.raises(ValueError, match="contra"):
+        with record(
+            fig, tmp_path / "g.gif", fps=5, allow_rescale=True, on_rescale="raise"
+        ):
+            pass
+    plt.close(fig)
+
+
+def _stills_figure():
+    fig, ax = plt.subplots(figsize=(2.4, 1.8))
+    (line,) = ax.plot([0, 1], [0, 1])
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 6)
+    return fig, line
+
+
+def _png(path):
+    return np.asarray(Image.open(path).convert("RGB"))
+
+
+def test_still_is_pixel_identical_to_the_encoded_frame(tmp_path):
+    fig, line = _stills_figure()
+    still = tmp_path / "s" / "at_half.png"
+    with record(fig, tmp_path / "m.html", fps=4, dpi=60, stills={still: 0.5}) as rec:
+        for k in range(5):
+            line.set_ydata([0, k + 1])
+            rec.frame()
+    frames = _html_frames(tmp_path / "m.html")
+    assert len(frames) == 5
+    assert np.array_equal(_png(still), frames[2])
+    assert not np.array_equal(frames[2], frames[3])
+    plt.close(fig)
+
+
+def test_still_matches_an_mp4_frame_decoded_with_ffmpeg(tmp_path):
+    if not HAS_FFMPEG:
+        pytest.skip("needs ffmpeg")
+    import subprocess
+
+    from eyepiece._ffmpeg import resolve_ffmpeg
+
+    fig, line = _stills_figure()
+    still = tmp_path / "s.png"
+    lossless = ["-vcodec", "libx264rgb", "-crf", "0", "-pix_fmt", "rgb24"]
+    with record(
+        fig,
+        tmp_path / "m.mp4",
+        fps=4,
+        dpi=60,
+        extra_ffmpeg_args=lossless,
+        stills={still: 0.75},
+    ) as rec:
+        for k in range(5):
+            line.set_ydata([0, k + 1])
+            rec.frame()
+    out = tmp_path / "dec.png"
+    select = "select=eq(n\\,3)"
+    cmd = [resolve_ffmpeg(), "-loglevel", "error", "-i", str(tmp_path / "m.mp4")]
+    cmd += ["-vf", select, "-vframes", "1", "-pix_fmt", "rgb24", str(out)]
+    done = subprocess.run(cmd, capture_output=True)
+    if done.returncode or not out.exists():
+        pytest.skip("this ffmpeg has no lossless rgb h264")
+    decoded, ref = _png(out).astype(int), _png(still).astype(int)
+    assert decoded.shape == ref.shape
+    assert np.abs(decoded - ref).max() <= 2
+    plt.close(fig)
+
+
+def test_stills_by_beat_name_use_the_plan(tmp_path):
+    from eyepiece import Timeline
+
+    tl = Timeline()
+    tl.hold(0.5, name="open")
+    tl.hold(0.5, name="close")
+    plan = tl.at_fps(4)
+    fig, line = _stills_figure()
+    stills = {
+        tmp_path / "open.png": "open",
+        tmp_path / "close_start.png": ("close", "start"),
+    }
+    with record(
+        fig, tmp_path / "b.html", fps=4, dpi=60, plan=plan, stills=stills
+    ) as rec:
+        for k in range(plan.n_frames):
+            line.set_ydata([0, k + 1])
+            rec.frame()
+    frames = _html_frames(tmp_path / "b.html")
+    assert np.array_equal(_png(tmp_path / "open.png"), frames[plan.last("open")])
+    assert np.array_equal(
+        _png(tmp_path / "close_start.png"), frames[plan.start("close")]
+    )
+    plt.close(fig)
+
+
+def test_still_inputs_are_validated_before_anything_opens(tmp_path):
+    from eyepiece import Timeline
+
+    tl = Timeline()
+    tl.hold(1.0, name="a")
+    plan = tl.at_fps(4)
+    fig, _ = _stills_figure()
+    out = tmp_path / "v.gif"
+    bad = [
+        ({tmp_path / "a.png": "a"}, None, 4, "needs plan"),
+        ({tmp_path / "a.png": "zzz"}, plan, 4, "no beat named"),
+        ({tmp_path / "a.png": ("a", "end")}, plan, 4, "start, mid or last"),
+        ({tmp_path / "a.png": -1.0}, None, 4, "at least 0"),
+        ({tmp_path / "a.png": "a"}, plan, 5, "fps"),
+    ]
+    for stills, pl, fps, match in bad:
+        with pytest.raises(ValueError, match=match):
+            with record(fig, out, fps=fps, plan=pl, stills=stills):
+                pass
+    assert list(tmp_path.iterdir()) == []
+    plt.close(fig)
+
+
+def test_a_still_past_the_last_frame_is_an_error(tmp_path):
+    fig, _ = _stills_figure()
+    with pytest.raises(RuntimeError, match="never written"):
+        with record(
+            fig, tmp_path / "e.gif", fps=4, stills={tmp_path / "e.png": 9.0}
+        ) as rec:
+            rec.frame()
+            rec.frame()
+    plt.close(fig)
+
+
+def test_animation_save_and_jshtml_pass_stills_and_on_rescale_through(tmp_path):
+    fig, line = _stills_figure()
+
+    def draw(f, k):
+        line.set_ydata([0, k + 1])
+
+    anim = animate(fig, draw, 4, fps=4)
+    saved = tmp_path / "sv.png"
+    anim.save(tmp_path / "sv.gif", dpi=60, stills={saved: 0.25})
+    assert saved.exists()
+    shown = tmp_path / "js.png"
+    html = anim.jshtml(dpi=60, stills={shown: 0.5})
+    html_path = tmp_path / "js.html"
+    html_path.write_text(html)
+    frames = _html_frames(html_path)
+    assert np.array_equal(_png(shown), frames[2])
+
+    fig2, ax2 = plt.subplots()
+    (l2,) = ax2.plot([0, 1], [0, 5.3])
+
+    def drift(f, peak):
+        l2.set_ydata([0, peak])
+        ax2.relim()
+        ax2.autoscale_view()
+
+    bad = animate(fig2, drift, [5.3, 1.1, 0.6], fps=4)
+    with pytest.raises(eyepiece.ScaleDriftError):
+        bad.save(tmp_path / "bad.gif", on_rescale="raise")
+    assert not (tmp_path / "bad.gif").exists()
+    plt.close(fig2)

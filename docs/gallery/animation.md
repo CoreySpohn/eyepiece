@@ -185,6 +185,51 @@ truncates both dimensions to even numbers. A `-vf` passed through
 ffmpeg honors only the last one, so a caller who needs their own filter
 chain has to include the crop in it.
 
+## Stills from the same encode
+
+A talk or a page often needs one frame of an animation as a picture: the
+settled end of a beat, or the figure at a chosen second. `stills=` writes
+those PNGs during the encode itself, from the state the sinks just grabbed, so
+there is no second pass over the frames and a still is pixel-identical to that
+frame of the first sink. A number is a time in seconds, a beat name is that
+beat's settled last frame, and `("beat", "mid")` picks the start, middle or
+last frame. Beat names need the `Plan` the frames were laid out by.
+
+```{code-cell} python
+tl = ep.Timeline()
+tl.hold(0.5, name="open")
+tl.hold(0.5, name="close")
+plan = tl.at_fps(4)
+
+fig, ax = plt.subplots(figsize=(3.0, 2.2), layout="constrained")
+(line,) = ax.plot([0, 1], [0, 1])
+ax.set_xlim(0, 1)
+ax.set_ylim(0, 8)
+
+with tempfile.TemporaryDirectory() as tmp_dir:
+    tmp = Path(tmp_dir)
+    stills = {tmp / "open.png": "open", tmp / "at_1s.png": 0.75}
+    with ep.record(
+        fig, tmp / "beats.html", fps=4, dpi=80, plan=plan, stills=stills
+    ) as rec:
+        for k in range(plan.n_frames):
+            line.set_ydata([0, k + 1])
+            rec.frame()
+    print({p.name: p.stat().st_size for p in sorted(tmp.glob("*.png"))})
+```
+
+`Animation.save` and `.jshtml` take the same `stills=`, `plan=` and
+`on_rescale=` arguments.
+
+## When the scale drifts
+
+`on_rescale` decides what the scale-drift check does: `"warn"` (the default)
+emits a `RuntimeWarning` once, `"ignore"` skips the check for a rescaling that
+is the point, and `"raise"` throws `ScaleDriftError` and deletes every file the
+call had started, so a batch render never leaves a movie with a quietly
+changing axis behind. It replaces `allow_rescale`, which still works for one
+release and warns that it is deprecated.
+
 ## Presets
 
 `PRESETS` holds measured frame rate and dpi pairs for the usual

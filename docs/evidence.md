@@ -84,8 +84,9 @@ Three consequences the library enforces or documents:
 data redraws every frame at full height, so a quantity that falls by an order of
 magnitude reads as one that never moved. `record` fingerprints every axes'
 limits and color norms on the first frame, compares on each later frame, and
-warns when one drifts, naming the ratio. Pass `allow_rescale=True` when the
-rescaling is the point. A limit that merely happens not to move is not pinned:
+warns when one drifts, naming the ratio. Pass `on_rescale="ignore"` when the
+rescaling is the point, or `"raise"` to fail the run and delete its partial
+outputs. A limit that merely happens not to move is not pinned:
 `Line2D.set_data` does not request an autoscale, so such a figure is one added
 artist away from the defect.
 
