@@ -25,7 +25,8 @@ Other moves say "this one" or join panels: `indicate` pulses an artist and
 returns it, `circumscribe` draws an outline on around it and lets it fade
 (both leave the frame as it was at either end), `term_row` lays an equation
 out as one text per term, `readout` counts a number to a new value in a fixed
-layout, `link` grows a line between panels, and `morph` carries one path into
+layout, `words` sets a line as one text per word to color or reveal alone,
+`link` grows a line between panels, and `morph` carries one path into
 another. Drawing never raises; `audit` is the explicit
 check of the leaders and links.
 """
@@ -2862,6 +2863,16 @@ class _RowTerm(Text):
         super().draw(renderer)
 
 
+def _write_on(texts, fades, u, ease="smoothstep"):
+    """Fade the texts in one by one: text ``i`` of ``n`` is whole at ``(i + 1) / n``."""
+    n = len(texts)
+    for i, (text, fade) in enumerate(zip(texts, fades, strict=True)):
+        level = min(1.0, max(0.0, n * u - i))
+        text.set_visible(level > 0.0)
+        shaped = min(1.0, max(0.0, _ease(level, ease)))  # opacity cannot overshoot
+        fade.set(shaped if level < 1.0 else 1.0)
+
+
 def term_row(
     at,
     terms,
@@ -2960,14 +2971,9 @@ def term_row(
         row.add(term)
         made.append(term)
     fades = [_TextFade(t) for t in made]
-    n = len(made)
 
     def update(u):
-        u = _check_u(u)
-        for i, (term, fade) in enumerate(zip(made, fades, strict=True)):
-            level = min(1.0, max(0.0, n * u - i))
-            term.set_visible(level > 0.0)
-            fade.set(_ease(level) if level < 1.0 else 1.0)
+        _write_on(made, fades, _check_u(u))
 
     return PlotResult(ax=at.axes, artists={"text": made}, update=update)
 
@@ -3344,6 +3350,325 @@ def readout(
 
     return _ReadoutResult(
         ax=at.axes, artists={"text": parts}, update=update, set=set_value
+    )
+
+
+# Words
+
+
+def _has_math(string):
+    """Whether matplotlib reads `string` as mathtext (an even count of bare ``$``)."""
+    count = string.count("$") - string.count("\\$")
+    return count > 0 and count % 2 == 0
+
+
+def _word_spans(string):
+    """The ``(start, end)`` of each word of `string`, math in ``$...$`` kept whole."""
+    spans = []
+    start = None
+    in_math = False
+    math_line = _has_math(string)
+    i = 0
+    while i < len(string):
+        ch = string[i]
+        if ch == "\\" and i + 1 < len(string):
+            if start is None:
+                start = i
+            i += 2
+            continue
+        if ch == "$" and math_line:
+            in_math = not in_math
+        if ch.isspace() and not in_math:
+            if start is not None:
+                spans.append((start, i))
+                start = None
+        elif start is None:
+            start = i
+        i += 1
+    if start is not None:
+        spans.append((start, len(string)))
+    return spans
+
+
+def _text_props(word):
+    """The properties that decide a word's size on the page, for a measuring probe."""
+    return {
+        "fontproperties": word.get_fontproperties().copy(),
+        "parse_math": word.get_parse_math(),
+        "usetex": word.get_usetex(),
+    }
+
+
+class _Line:
+    """The layout of one line of text cut into words, laid out once as a string.
+
+    A word starts where the line up to the end of that word, measured as one
+    string, ends less the word's own width, so the spacing and the kerning
+    inside each word are those of a single text. Widths depend only on the
+    font and the dpi, so they are cached by the size in pixels.
+
+    One engine measures and draws every word. A string with math is drawn
+    entirely as mathtext, plain parts included, whose spacing differs from
+    plain text, so on such a line the plain words are measured and drawn as
+    mathtext too (see `_WordText`).
+    """
+
+    def __init__(self, at, string, spans, *, ha):
+        self.at = at
+        self.string = string
+        self.spans = spans
+        self.ha = ha
+        self.as_math = _has_math(string)
+        self.words = []
+        self._probe = None
+        self._cache = {}
+
+    def add(self, word):
+        self.words.append(word)
+        if self._probe is None:
+            # The probe has the properties the words are drawn with, the font
+            # size included, however the caller set them.
+            self._probe = _WordText(None, "", **_text_props(word))
+            self._probe.set_figure(_root_figure(word))
+            self._probe._as_math = self.as_math
+
+    def _width(self, text, renderer):
+        probe = self._probe
+        probe.set_text(text)
+        return float(Text.get_window_extent(probe, renderer).width)
+
+    def _measure(self, renderer, figure):
+        key = round(_pixels(renderer, figure, self._probe.get_fontsize()), 6)
+        if key not in self._cache:
+            self._probe.set_figure(figure)
+            starts, total = [], 0.0
+            for a, b in self.spans:
+                total = self._width(self.string[:b], renderer)
+                starts.append(total - self._width(self.string[a:b], renderer))
+            self._cache = {key: (starts, total)}
+        return self._cache[key]
+
+    def layout(self, renderer=None):
+        """Put every word at its place on the line, as the figure is now."""
+        figure = _root_figure(self.words[0])
+        starts, total = self._measure(renderer, figure)
+        x0, y = self.at.display(renderer)
+        x0 -= {"left": 0.0, "center": 0.5, "right": 1.0}[self.ha] * total
+        for word, start in zip(self.words, starts, strict=True):
+            word.set_position((float(x0 + start), float(y)))
+
+
+class _WordText(Text):
+    """One word of a line, placed on the line whenever it is measured or drawn."""
+
+    def __init__(self, line, string, **kw):
+        super().__init__(
+            0.0,
+            0.0,
+            string,
+            transform=IdentityTransform(),
+            ha="left",
+            va="baseline",
+            **kw,
+        )
+        self._line = line
+        self._as_math = line is not None and line.as_math
+
+    def _preprocess_math(self, s):
+        """Read a plain word as mathtext on a line that has math in it."""
+        if self._as_math and not self.get_usetex() and self.get_parse_math():
+            return s, True
+        return super()._preprocess_math(s)
+
+    def get_window_extent(self, renderer=None, dpi=None):
+        """The word's box on the line, as the line is laid out now."""
+        self._line.layout(renderer)
+        return super().get_window_extent(renderer, dpi)
+
+    def draw(self, renderer):
+        """Lay the line out, then draw the word."""
+        if not self.get_visible():
+            return
+        self._line.layout(renderer)
+        super().draw(renderer)
+
+
+@dataclass(frozen=True, eq=False)
+class _WordsResult(PlotResult):
+    """A `PlotResult` of `words`, which also carries ``reveal(u, by=...)``."""
+
+    reveal: Callable | None = None
+
+
+def words(
+    at,
+    string,
+    *,
+    by="word",
+    ease="smoothstep",
+    ha="left",
+    color=None,
+    colors=None,
+    fontsize=None,
+    zorder=10,
+    text_kw=None,
+):
+    r"""Set one line of text as one text per word, to color or reveal alone.
+
+    The line is laid out once, as a single string: each word sits where it
+    would in one `Text` of the whole line, with that text's spacing, and its
+    extent comes from the renderer, so no gap is chosen by hand. A word in
+    ``$...$`` (math may hold spaces) is kept whole. Every word is a
+    figure-level `Text`, so it can be the target of an `Anchor.from_artist`,
+    a member of a `Stage` group, the destination of a `flight`, the subject
+    of a `callout`, or pulsed alone with `indicate`, and the line is laid out
+    again whenever the figure is drawn, so it follows resizing and a new dpi.
+
+    `words` colors or reveals words inside one ordinary line, which keeps the
+    spacing of one text and does not re-lay when a word changes. The `term_row`
+    docstring says which tool to use for terms the caller spaces and for a
+    number that counts.
+
+    The reveal is in place: a word comes in where it will stay, by opacity
+    alone, never by moving, so text does not arrive with motion. By
+    ``"word"`` the words come in left to right, each fading in as the one
+    before it finishes. By ``"letter"`` the letters of each word come in
+    left to right, one after another with no fade (a math word counts as one
+    letter, and is whole when it arrives); the box of a word that is partly
+    spelled is the box of the letters shown, so anchor on a finished line.
+    At ``u = 1``, the rest state, every word is drawn whole as made. A line
+    that a `Stage` owns is shown and hidden by the stage instead, and the
+    reveal is not called. ``level`` below 1 dims every word by opacity only,
+    never by geometry, and is written only while it is below 1.
+
+    One engine measures and draws every word. A string that has math is
+    rendered by matplotlib entirely as mathtext, plain parts included, so
+    on such a line the plain words are set as mathtext too. At ``u = 1`` the
+    joined line is then pixel-identical to one `Text` with the same
+    properties, with or without math, in the tests' fonts, sizes and dpis;
+    where a font rounds a glyph to a different subpixel position the
+    difference stays within one pixel. Trailing spaces of the string are not
+    part of the line, so ``ha="right"`` ends at the last word. A line with
+    an odd number of unescaped ``$`` has no math, as in matplotlib.
+
+    Args:
+        at: Where the line starts: an `Anchor`, or an artist. Its point is
+            the baseline's left end, center, or right end, by `ha`.
+        string: The line, on one line (no newline).
+        by: What ``update`` reveals by: ``"word"`` or ``"letter"``.
+        ease: An easing kind for `eyepiece.ease`, or a callable taking the
+            clipped progress, shaping how each word fades in by word. Only
+            its input is clipped; an overshoot is clamped to [0, 1] where it
+            becomes opacity, and the end states are exact. A reveal by
+            letter counts letters evenly in ``u``.
+        ha: Which end of the line `at` marks: ``"left"``, ``"center"`` or
+            ``"right"``.
+        color: Default color of the words. None uses ``rcParams["text.color"]``.
+        colors: Color of individual words: a dict of word index to color, or
+            a sequence with one color (or None for the default) per word.
+        fontsize: Font size in points. None uses ``rcParams["font.size"]``.
+        zorder: Drawing order among the figure's children.
+        text_kw: Extra kwargs for every `Text`, applied last. Keep them to
+            properties shared by the whole line (font family, weight, size);
+            the layout reads the size from the words, so a size here is used.
+
+    Returns:
+        A `PlotResult` on the anchor's axes (None for an anchor drawn on the
+        figure), with ``artists["text"]``, the words in order. ``update(u,
+        level=1.0)`` reveals by `by`, and ``reveal(u, by="word", level=1.0, ease=...)``
+        reveals by either.
+
+    Raises:
+        TypeError: If `at` is neither an `Anchor` nor an artist.
+        ValueError: If the line has no words or a newline, `ha` or `by` is
+            unknown, or `colors` does not match the words.
+
+    Example::
+
+        line = ep.words(ep.Anchor.from_data(ax, (0.1, 0.5)),
+                        "the prior times the likelihood", colors={1: "C0", 4: "C1"})
+        line.reveal(0.5, by="letter")
+        ep.Anchor.from_artist(line.artists["text"][1], loc="bottom")  # a word
+    """
+    at = _as_anchor(at, "at")
+    if ha not in ("left", "center", "right"):
+        raise ValueError(f"unknown ha: {ha!r}; known: ['left', 'center', 'right']")
+    if by not in ("word", "letter"):
+        raise ValueError(f"unknown by: {by!r}; known: ['word', 'letter']")
+    string = str(string)
+    if "\n" in string:
+        raise ValueError("words sets one line; split the text into lines first")
+    spans = _word_spans(string)
+    if not spans:
+        raise ValueError("words has no words")
+    n = len(spans)
+    if colors is None:
+        own = [None] * n
+    elif isinstance(colors, dict):
+        bad = [
+            k
+            for k in colors
+            if isinstance(k, bool) or not isinstance(k, int) or not -n <= k < n
+        ]
+        if bad:
+            raise ValueError(f"colors has no word {bad[0]!r}; the line has {n} words")
+        own = [None] * n
+        for k, value in colors.items():
+            own[k % n] = value
+    else:
+        own = list(colors)
+        if len(own) != n:
+            raise ValueError(f"colors has {len(own)} entries for {n} words")
+    rc = matplotlib.rcParams
+    size = float(rc["font.size"]) if fontsize is None else float(fontsize)
+    base = rc["text.color"] if color is None else color
+    line = _Line(at, string, spans, ha=ha)
+    figure = at.figure
+    made = []
+    for (a, b), mine in zip(spans, own, strict=True):
+        kw = {
+            "color": base if mine is None else mine,
+            "fontsize": size,
+            "zorder": zorder,
+            **(text_kw or {}),
+        }
+        word = _WordText(line, string[a:b], **kw)
+        word.set_clip_on(False)
+        word.set_in_layout(False)
+        figure.add_artist(word)
+        line.add(word)
+        made.append(word)
+    fades = [_TextFade(t) for t in made]
+    whole = [t.get_text() for t in made]
+    units = [1 if "$" in w else len(w) for w in whole]
+
+    def reveal(u, by="word", level=1.0, ease=ease):
+        u = _check_u(u)
+        level = _check_u(level)
+        if by not in ("word", "letter"):
+            raise ValueError(f"unknown by: {by!r}; known: ['word', 'letter']")
+        if by == "word":
+            for word, text in zip(made, whole, strict=True):
+                word.set_text(text)
+            _write_on(made, fades, u, ease)
+        else:
+            shown = math.floor(sum(units) * u + 1e-9)
+            for word, fade, text, count in zip(made, fades, whole, units, strict=True):
+                k = min(count, max(0, shown))
+                shown -= k
+                word.set_text(text[:k] if 0 < k < count else text)
+                word.set_visible(k > 0)
+                fade.set(1.0)
+        if level < 1.0:
+            for word in made:
+                base = word.get_alpha()
+                word.set_alpha(level * (1.0 if base is None else base))
+
+    def update(u, level=1.0):
+        reveal(u, by, level, ease)
+
+    return _WordsResult(
+        ax=at.axes, artists={"text": made}, update=update, reveal=reveal
     )
 
 

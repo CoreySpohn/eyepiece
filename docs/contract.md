@@ -499,7 +499,11 @@ level, a fraction of a path, a color blend, or a line width, the move clips the
 factor itself before blending, so a position or a warp may overshoot and
 nothing else can go invalid. A move snaps to its ends on the progress, never
 on the eased value. A `readout` clips its eased value to [0, 1] before it
-interpolates, so a count passes neither its old value nor its new one. A flight can carry a segment or a bar and
+interpolates, so a count passes neither its old value nor its new one. `words` cuts one line of text into one
+text per word, laid out once as a single string with each word's extent taken
+from the renderer, so its words are anchors and stage members too, math in
+``$...$`` stays whole, and the joined line at rest is the single text, pixel
+identical; its reveal is by opacity or by letters in place, never by motion. A flight can carry a segment or a bar and
 turn it. `morph` is a figure-level ghost like a flight, visible only
 between its ends, whose geometry at the ends is the two paths resampled by
 arc length (and, for a closed pair, the second rolled and possibly reversed
