@@ -310,5 +310,5 @@ def test_a_tag_keeps_a_group_together_where_order_would_not():
     for i, j in move.pairs:
         assert ga[i].piece.key == gb[j].piece.key
         assert ga[i].piece.tag == gb[j].piece.tag
-    assert len(move.pairs) == 6  # a, 2, c, 2 and the tagged b, 2
-    assert len(move.gone) == 2 and len(move.new) == 2  # plus and minus signs
+    assert len(move.pairs) == 7  # a, 2, =, c, 2 and the tagged b, 2
+    assert len(move.gone) == 1 and len(move.new) == 1  # the plus and the minus
