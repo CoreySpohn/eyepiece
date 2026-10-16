@@ -36,7 +36,7 @@ from matplotlib.transforms import Bbox, IdentityTransform
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import _Unsnap
 from eyepiece._motion import stagger as _stagger
-from eyepiece._result import PlotResult
+from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import (
     Anchor,
     _as_anchor,
@@ -796,6 +796,8 @@ def transform(
 ):
     """Carry one equation into another, glyph by glyph.
 
+    Its matched glyphs travel and rules stretch; unpaired glyphs fade in place.
+
     Glyphs that are the same character in both equations (the same font and
     glyph, so a bar matches a bar and an ``E`` an ``E``) move from their place
     in `eq_a` to their place in `eq_b`. They pair inside the tags the two
@@ -1021,6 +1023,28 @@ def transform(
         for j in fades_in:
             _set_alpha(eb.glyphs[j], arrive * level)
 
+    # Sharing a progress does not make a changed typesetting rigid. Keep a
+    # matched group only when every outline has the same translation; rules
+    # stretch independently and replacements may scale differently on x and y.
+    rigid = []
+    for kind, item in units:
+        if kind != "pairs":
+            continue
+        members = [
+            (ea.glyphs[i], eb.glyphs[j])
+            for i, j in item
+            if not ea.glyphs[i].piece.is_rule
+        ]
+        if len(members) < 2:
+            continue
+        shift = members[0][1].piece.local[0] - members[0][0].piece.local[0]
+        if all(
+            a.piece.local.shape == b.piece.local.shape
+            and np.allclose(b.piece.local - a.piece.local, shift)
+            for a, b in members
+        ):
+            rigid.append(tuple(a for a, _ in members))
+
     update(1.0)
     return _TransformResult(
         ax=eq_a.ax,
@@ -1030,4 +1054,15 @@ def transform(
         gone=tuple(gone),
         new=tuple(new),
         replaced=tuple((tuple(ia), tuple(ib)) for ia, ib in replaced),
+        contract=MotionContract(
+            moves=tuple(g for g in (*ea.glyphs, *eb.glyphs) if id(g) in moving),
+            rest=tuple(
+                [ea.glyphs[i] for i in fades_out] + [eb.glyphs[j] for j in fades_in]
+            ),
+            groups=tuple(rigid),
+            may_overlap=tuple(
+                (a, b) for swap in swaps for a in swap.source for b in swap.target
+            ),
+            rectilinear=tuple(g for g in (*ea.glyphs, *eb.glyphs) if g.piece.is_rule),
+        ),
     )

@@ -174,6 +174,45 @@ are the caller's contract, and pinning them from the union over all frames is
 part of building the figure rather than part of the frame loop. `record` warns
 when one drifts anyway.
 
+## Motion contract
+
+`MotionContract` is a frozen record of what a move promises about its own
+artists. `PlotResult.contract` and `MosaicResult.contract` hold it, or None
+when the primitive declares no motion contract. The new `contract` argument is
+keyword-only, preserving positional arguments in result subclasses.
+`Stage.contract` describes its staged artists. The artists are the ones the figure draws, not copies
+made for the checker. Pass a result directly as
+`motion_faults(fig, at, times, moves=[result])`.
+
+- `moves` is a tuple of artists whose geometry may move or change shape;
+  the checker also accepts the older name `artists` in a declaration.
+- `rest` is a tuple of artists whose geometry stays still; opacity and color
+  may change.
+- `groups` is a tuple of artist tuples that move rigidly, or dicts of the
+  form `{"artists": (...), "scales": True}` for uniform scaling.
+- `may_overlap` is a tuple of artist pairs whose overlap is intentional.
+- `settles` is always True and cannot be set by the caller: a move must be
+  continuous into its rest state.
+- `arrives_after_motion` is a tuple of text artists that fade in after the
+  geometry has settled. Path glyphs are not text artists.
+- `rectilinear` is a tuple of bars, rules or boxes that stay axis-aligned
+  rectangles at every progress, including intermediate states.
+
+Declare only what is true. Empty tuples make no promise. A warp may deform
+its inputs, a growing compass is not rigid, and a replacement equation term
+may stretch by different factors on its two axes, so none earns a rigid
+group merely by sharing one progress. A transform declares matched glyphs
+as rigid only when their relative layout stays the same; its rules remain
+rectilinear even when their lengths change. A word reveal by letters changes
+its visible extent, and `reveal` can choose that mode on each call, so a word
+contract allows changing extents across both reveal modes. A write declares
+its stationary real text; its renderer-only ghost has no independently
+traceable geometry. An inset's spines and virtual
+layout artists likewise do not become traceable marks by being declared.
+These declarations describe drawing and do not change it. The checker reads
+`moves`, `rest`, `groups` and `may_overlap`; `settles`, `arrives_after_motion`
+and `rectilinear` also state promises that a caller can check directly.
+
 ## Routed keyword arguments
 
 A parameter the primitive owns semantically is a real keyword argument:
@@ -749,8 +788,8 @@ or a kink in speed (measured over elapsed time) on an artist that keeps its
 shape; it is off unless `spikes=True` or `kinds` names it, because a small hop
 is sometimes the intended motion. A move is a dict, or any object whose
 `contract` is a dict or has the same fields, with the keys `name`, `span`,
-`artists`, `rest`, `groups` and `may_overlap`; a move's `rest`, `groups` and
-`may_overlap` hold only over its `span`. The call restores the figure's dpi and
+`artists` (or `moves`), `rest`, `groups` and `may_overlap`; a move's `rest`,
+`groups` and `may_overlap` hold only over its `span`. The call restores the figure's dpi and
 canvas and is deterministic. It costs the draw time of each frame plus a
 little; the frames are kept only for `jump` and `dead`. `assert_motion` raises
 `MotionError` with the report.

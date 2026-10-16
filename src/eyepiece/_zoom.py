@@ -26,7 +26,7 @@ from matplotlib.transforms import Bbox, IdentityTransform
 
 from eyepiece import _style
 from eyepiece._motion import _apply_ease as _ease
-from eyepiece._result import PlotResult
+from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import (
     Anchor,
     _as_anchor,
@@ -364,6 +364,8 @@ def follow_zoom(
 ):
     """Hang a magnified inset on a panel that follows a moving point.
 
+    Its box and connectors follow the target; the parent artists stay untouched.
+
     The inset shows the panel's own artists (lines, patches, collections
     and images; they are drawn again, not re-plotted, so a moving mark and
     changing data show in it with nothing to refresh) through a window
@@ -552,4 +554,11 @@ def follow_zoom(
         artists={"ellipse": box, "lines": links},
         update=update,
         insets=(inset,),
+        contract=MotionContract(
+            moves=(box, *links),
+            # The paired connectors span the same gap between the two boxes.
+            may_overlap=(tuple(links),),
+            rest=() if loc == "auto" else (inset.patch,),
+            rectilinear=(box, inset.patch),
+        ),
     )

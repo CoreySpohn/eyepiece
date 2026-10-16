@@ -925,6 +925,8 @@ def _trace_box(artist, renderer):
 def _declared(move, key, default=None):
     """Field `key` of a declared move: a dict, or an object holding a contract."""
     contract = move if isinstance(move, dict) else getattr(move, "contract", move)
+    if key == "artists":
+        default = _declared(move, "moves", default)
     if isinstance(contract, dict):
         value = contract.get(key, default)
     else:
@@ -1584,7 +1586,7 @@ def motion_faults(
         times: Sample times, or a `Span` to sample at every frame.
         moves: Declared moves, each a dict (or an object whose ``contract`` is
             a dict or has the same fields) with any of ``name``, ``span``
-            (start, stop), ``artists`` (those that may move), ``rest``,
+            (start, stop), ``artists`` (or ``moves``, those that may move), ``rest``,
             ``groups`` and ``may_overlap``; the last three hold only over
             the span. None declares nothing; ``jump``, ``outside`` and the
             text ``overlap`` still run.
@@ -1645,7 +1647,10 @@ def motion_faults(
         extra = [
             a
             for move in moves or ()
-            for a in _declared(move, "artists") or ()
+            for a in (
+                *(_declared(move, "artists") or ()),
+                *(_declared(move, "rest") or ()),
+            )
             if isinstance(a, AxesImage)
         ]
         for k, t in enumerate(samples):

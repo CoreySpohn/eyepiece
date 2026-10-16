@@ -23,7 +23,7 @@ from matplotlib.text import Annotation, Text
 
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import _Unsnap
-from eyepiece._result import PlotResult
+from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import _check_u, _line_parts, _path_parts, _resample
 
 _WARP_POINTS = 200
@@ -331,6 +331,8 @@ def warp(
 ):
     """Carry drawn artists through a map of the plane, continuously.
 
+    Its input artists reshape in place; their styles and axis limits stay fixed.
+
     The move is a matrix applied to the plane (Manim's ``ApplyMatrix``) or
     a pointwise map (Manim's ``Homotopy``). Every artist given is reshaped
     in place, in the data coordinates of its axes: lines, polygons and path
@@ -465,7 +467,12 @@ def warp(
                 t.build((t.points - center) @ a.T + center)
 
     owner = next((i.axes for i in items if i.axes is not None), None)
-    return PlotResult(ax=owner, artists=groups, update=update)
+    return PlotResult(
+        ax=owner,
+        artists=groups,
+        update=update,
+        contract=MotionContract(moves=tuple(items)),
+    )
 
 
 def warp_grid(
