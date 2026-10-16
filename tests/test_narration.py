@@ -8,7 +8,9 @@ import itertools
 import json
 import subprocess
 import sys
+import warnings
 import wave
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -131,6 +133,56 @@ def test_the_cache_key_changes_with_the_words():
 
 def test_the_script_lists_the_keys_of_its_lines():
     assert SCRIPT.cache_keys() == ("491f7023363ff02d", "ce02f99ce8f3585a")
+
+
+def test_script_json_round_trip_preserves_all_fields_and_cache_keys(tmp_path):
+    script = nr.Script(
+        (
+            nr.Line(
+                "post",
+                "  The {show:eq}{indicate:post}posterior is 0.943.  ",
+                pad_before_s=0.2,
+                pad_after_s=1.1,
+                display="The posterior is Pr(H|E).",
+            ),
+            nr.Line("end", "A plain line."),
+        ),
+        voice="af_heart",
+        speed=0.9,
+        lang="a",
+        engine="another_engine",
+        engine_version="2.0",
+        model="another_model",
+    )
+    path = tmp_path / "script.json"
+    script.to_json(path)
+    restored = nr.Script.from_json(str(path))
+    assert asdict(restored) == asdict(script)
+    assert isinstance(restored.lines, tuple)
+    assert restored.cache_keys() == script.cache_keys()
+
+
+@pytest.mark.parametrize(
+    "digits,spoken",
+    [
+        ("0.943", "zero point nine four three"),
+        ("12", "twelve"),
+        ("42", "forty two"),
+        ("105", "one hundred and five"),
+        ("1200", "one thousand two hundred"),
+        ("-12", "minus twelve"),
+        ("+12", "plus twelve"),
+    ],
+)
+def test_estimate_times_numbers_as_their_spoken_words(digits, spoken):
+    numeric = nr.Line("a", f"It is {digits}.")
+    expanded = nr.Line("a", f"It is {spoken}.")
+    timing = nr.estimate(numeric)
+    assert timing.duration_s == pytest.approx(nr.estimate(expanded).duration_s)
+    assert tuple(w.text for w in timing.words) == numeric.words
+    assert timing.words[-1].end_s == pytest.approx(
+        nr.estimate(expanded).words[-1].end_s
+    )
 
 
 # The layout
@@ -394,6 +446,39 @@ def _synthesize(tmp_path, calls, **kwargs):
     return synth.synthesize(
         SCRIPT, tmp_path, speak=_fake_speak(calls), write_audio=_write_wav, **kwargs
     )
+
+
+def test_synthesis_cli_loads_json_and_speaks_the_right_lines(tmp_path, monkeypatch):
+    path = tmp_path / "script.json"
+    path.write_text(
+        json.dumps(
+            {
+                "lines": [
+                    {"key": "first", "text": "The {indicate:star}star."},
+                    {"key": "last", "text": "The planet.", "display": "A planet."},
+                ],
+                "voice": "af_heart",
+                "lang": "a",
+            }
+        )
+    )
+    calls, scripts = [], []
+
+    def engine(script):
+        scripts.append(script)
+        return _fake_speak(calls)
+
+    monkeypatch.setitem(synth.ENGINES, "kokoro", engine)
+    monkeypatch.setattr(synth, "_write_compressed", _write_wav)
+    cache = tmp_path / "cache"
+    synth.main([str(path), str(cache)])
+    assert calls == ["first", "last"]
+    assert len(scripts) == 1
+    script = scripts[0]
+    assert (script.voice, script.lang) == ("af_heart", "a")
+    assert script.line("first").cues == (nr.Cue("indicate", "star", 1),)
+    assert script.line("last").display == "A planet."
+    assert {p.stem for p in cache.glob("*.json")} == set(script.cache_keys())
 
 
 def test_synthesis_speaks_each_line_once_and_records_the_pair(tmp_path):
@@ -1033,6 +1118,27 @@ def test_display_text_with_the_same_sentence_count_keeps_sentence_spans():
     assert cues[0][0] == 0.0 and cues[1][0] == 2.0
 
 
+def test_captions_warn_once_per_mismatched_line_and_never_for_matched_lines():
+    script = nr.Script(
+        (
+            nr.Line("mismatch", "One. Two.", display="One and two together."),
+            nr.Line("matched", "Three. Four.", display="3. 4."),
+            nr.Line("plain", "Five. Six."),
+            nr.Line("also_bad", "Seven and eight.", display="Seven. Eight."),
+        )
+    )
+    narration = nr.Narration.estimated(script)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cues = nr.captions(narration, max_chars=8, max_lines=1)
+    assert len(cues) > len(script.lines)
+    assert len(caught) == 2
+    assert all(w.category is UserWarning for w in caught)
+    assert "mismatch" in str(caught[0].message)
+    assert "also_bad" in str(caught[1].message)
+    assert all("sentence" in str(w.message) for w in caught)
+
+
 def test_display_text_may_not_be_empty_or_carry_marks():
     with pytest.raises(ValueError, match="display"):
         nr.Line("a", "Hello.", display="  ")
@@ -1162,3 +1268,24 @@ def test_synthesis_cli_reports_bad_speech_without_a_traceback(tmp_path):
     assert done.returncode != 0
     assert "contrast" in done.stderr and "1e-15" in done.stderr
     assert "Traceback" not in done.stderr
+
+
+def test_estimate_cli_rejects_speech_faults_before_printing_or_synthesis(
+    tmp_path, monkeypatch, capsys
+):
+    path = tmp_path / "script.py"
+    path.write_text(
+        "from eyepiece import narration as nr\n"
+        "SCRIPT = nr.Script((nr.Line('clean', 'A clean line.'), "
+        "nr.Line('bad', 'It is 1e-15.')))\n"
+    )
+    script = synth._load_script(path)
+    with pytest.raises(nr.SpeechTextError) as expected:
+        nr.check_script_speech(script)
+    monkeypatch.setitem(sys.modules, "kokoro", None)
+    with pytest.raises(SystemExit) as stopped:
+        synth.main([str(path), "--estimate"])
+    assert stopped.value.code == 2
+    captured = capsys.readouterr()
+    assert str(expected.value) in captured.err
+    assert captured.out == ""

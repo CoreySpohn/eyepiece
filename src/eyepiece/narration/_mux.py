@@ -13,6 +13,7 @@ import json
 import re
 import subprocess
 import tempfile
+import warnings
 import wave
 from pathlib import Path
 
@@ -378,6 +379,13 @@ def _units(narration):
         if len(pieces) == len(spoken):
             pairs = list(zip(spoken, pieces, strict=True))
         else:
+            warnings.warn(
+                f"line {beat.key!r}: display text has {len(pieces)} sentences "
+                f"but spoken text has {len(spoken)}; caption timing may drift "
+                "within the line",
+                UserWarning,
+                stacklevel=3,
+            )
             pairs = [(list(beat.words), shown.split())]
         out += [_spread(tokens, g[0].start_s, g[-1].end_s) for g, tokens in pairs]
     return out
@@ -482,7 +490,9 @@ def captions(
     of the first spoken word; a cue ends a moment after its last word, and is
     held to at least `min_s` and to the
     time its characters need at `max_cps`, but never past the start of the
-    next cue. A line with display text shows it; see `Line`.
+    next cue. A line with display text shows it; see `Line`. If its sentence
+    count differs from the speech, a `UserWarning` names the line once per
+    call, since caption timing may drift within that line.
 
     Args:
         narration: The `Narration`.

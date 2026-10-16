@@ -17,7 +17,8 @@ This module imports only the standard library.
 import hashlib
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from pathlib import Path
 
 _MARK = re.compile(r"\{(?P<kind>[a-z_][a-z0-9_]*):(?P<target>[^{}\s:]+)\}")
 _STRAY = re.compile(r"[{}]")
@@ -205,6 +206,41 @@ class Script:
     def cache_keys(self):
         """The cache key of every line, in order."""
         return tuple(self.line_key(line) for line in self.lines)
+
+    def to_json(self, path):
+        """Write this script to JSON without importing its defining module.
+
+        Derived spoken text and cues are rebuilt from the marked text on
+        load, preserving every line field and cache key.
+
+        Args:
+            path: Output JSON path, as a string or path-like object.
+
+        Returns:
+            The path written.
+        """
+        record = {f.name: getattr(self, f.name) for f in fields(self)}
+        record["lines"] = [
+            {f.name: getattr(line, f.name) for f in fields(line) if f.init}
+            for line in self.lines
+        ]
+        path = Path(path)
+        path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+        return path
+
+    @classmethod
+    def from_json(cls, path):
+        """Load a script written by `to_json`, including its voice settings.
+
+        Args:
+            path: Input JSON path, as a string or path-like object.
+
+        Returns:
+            The script with its derived spoken text and cues restored.
+        """
+        record = json.loads(Path(path).read_text(encoding="utf-8"))
+        record["lines"] = tuple(Line(**line) for line in record["lines"])
+        return cls(**record)
 
 
 def line_hash(
