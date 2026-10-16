@@ -18,6 +18,7 @@ Importing this package loads neither matplotlib nor Kokoro.
 
 from ._mux import (
     audio_track,
+    caption_at,
     captions,
     mux,
     sentences,
@@ -59,6 +60,7 @@ __all__ = [
     "Spoken",
     "Word",
     "audio_track",
+    "caption_at",
     "captions",
     "estimate",
     "line_hash",

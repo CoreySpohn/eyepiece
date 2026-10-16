@@ -383,16 +383,40 @@ def _units(narration):
     return out
 
 
+def _breaks(texts):
+    """Word breaks outside brackets and away from standalone operators.
+
+    If none are available, return every word break so long text still splits.
+    """
+    found = set()
+    depth = 0
+    for i, text in enumerate(texts[:-1], start=1):
+        for char in text:
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth = max(0, depth - 1)
+        if (
+            depth == 0
+            and any(c.isalnum() for c in text)
+            and any(c.isalnum() for c in texts[i])
+        ):
+            found.add(i)
+    return found or set(range(1, len(texts)))
+
+
 def _best_break(texts, allowed):
     """Index at which to break a token list, preferring a clause boundary.
 
     Among the breaks ``allowed`` accepts, a break after a comma, colon,
     semicolon or dash wins when it leaves two parts that are not badly
-    unequal; otherwise the most equal parts win. None if no break is allowed.
+    unequal; otherwise the most equal parts win. Bracketed text and standalone
+    operators stay together unless every word break is forbidden. None if no
+    break meets ``allowed``.
     """
     sizes = [len(t) for t in texts]
     found = []
-    for i in range(1, len(texts)):
+    for i in sorted(_breaks(texts)):
         if not allowed(i):
             continue
         left, right = sum(sizes[:i]) + i - 1, sum(sizes[i:]) + len(texts) - i - 1
@@ -452,9 +476,11 @@ def captions(
     lines of `max_chars` characters, or that lasts longer than `max_cue_s`,
     is split first at a clause boundary (after a comma, colon, semicolon or
     dash), and at the most even word break when it has none. Within a cue the
-    lines break at a clause boundary when one leaves two even lines. Cue
-    start times are the start times of the first spoken word; a cue ends a
-    moment after its last word, and is held to at least `min_s` and to the
+    lines break at a clause boundary when one leaves two even lines. Breaks
+    stay outside brackets and away from tokens with no letters or digits,
+    unless every word break is forbidden. Cue start times are the start times
+    of the first spoken word; a cue ends a moment after its last word, and is
+    held to at least `min_s` and to the
     time its characters need at `max_cps`, but never past the start of the
     next cue. A line with display text shows it; see `Line`.
 
@@ -491,6 +517,22 @@ def captions(
             end = min(end, cues[i + 1][0])
         out.append((a, max(end, a), text))
     return out
+
+
+def caption_at(cues, t) -> str:
+    """Return the caption active at a time on the clip's clock.
+
+    Args:
+        cues: The list of ``(start_s, end_s, text)`` from `captions`.
+        t: Time in seconds, with cue starts included and ends excluded.
+
+    Returns:
+        The active cue's text, or an empty string between or outside cues.
+    """
+    for start, end, text in cues:
+        if start <= t < end:
+            return text
+    return ""
 
 
 def _stamp(seconds, sep):

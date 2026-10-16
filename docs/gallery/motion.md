@@ -987,6 +987,27 @@ says "P of H given E"; the cue marks stay on the spoken words. When no position
 is clear, `caption_line` raises, and the clip reserves a caption band in its
 layout instead.
 
+## Captions at a playback time
+
+`nr.caption_at(cues, t)` returns the text to show at time `t` in seconds.
+A cue includes its start and excludes its end; gaps and times outside the
+cues return an empty string. Generate the cues once with `nr.captions` and
+look up the text as the playback clock advances. Cue and line breaks keep
+bracketed text together and avoid either side of a token with no letters or
+digits, such as `/` or `-`. If every break is forbidden, the usual split
+still lets a long sentence fit.
+
+```{code-cell} python
+from eyepiece import narration as nr
+
+line = nr.Line("ratio", "Compute a / b - 1; cap +/-1% applies.")
+script = nr.Script((line,))
+narration = nr.Narration(script, {"ratio": nr.estimate(line)})
+cues = nr.captions(narration, max_chars=14)
+print(nr.caption_at(cues, cues[0][0]))
+print(repr(nr.caption_at(cues, cues[-1][1])))
+```
+
 ## Arrows, angle arcs and a compass
 
 `arrow`, `angle_arc` and `compass` are marks that an explanation builds up
