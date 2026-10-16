@@ -59,6 +59,7 @@ Example::
 
 import itertools
 import math
+import numbers
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -2159,8 +2160,12 @@ def check_clip(
     for step in steps or ():
         if isinstance(step, str):
             step_frames.add(plan._span(step).k0)
-        elif isinstance(step, int) and 0 <= step < plan.n_frames:
-            step_frames.add(step)
+        elif (
+            isinstance(step, numbers.Integral)
+            and not isinstance(step, bool)
+            and 0 <= step < plan.n_frames
+        ):
+            step_frames.add(int(step))
         else:
             raise ValueError(
                 f"a step is a span name or a frame index in [0, {plan.n_frames}), "
