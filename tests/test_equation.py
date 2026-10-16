@@ -324,6 +324,22 @@ def test_a_fraction_bar_changes_length_through_the_morph_sampling():
     assert start < mid < end
 
 
+def test_a_fraction_bar_stays_a_rectangle_while_it_stretches():
+    """The ends of the bar stay square at every step, never slanted."""
+    fig, a, b = _pair(r"$\frac{a}{b}$", r"$\frac{a+c}{b+d}$")
+    move = ep.transform(a, b)
+    for u in (0.1, 0.25, 0.5, 0.75, 0.9):
+        move.update(u)
+        fig.canvas.draw()
+        bars = [g for g in a.artists["glyphs"] if g.piece.is_rule and g.get_visible()]
+        assert bars, "the bar is drawn by the first equation's rule"
+        for bar in bars:
+            v = bar.get_path().vertices
+            xs = np.unique(np.round(v[:, 0], 6))
+            ys = np.unique(np.round(v[:, 1], 6))
+            assert len(xs) == 2 and len(ys) == 2, (u, v)
+
+
 def test_transform_checks_its_arguments():
     _fig, a, b = _pair(PYTH_A, PYTH_B)
     with pytest.raises(TypeError):

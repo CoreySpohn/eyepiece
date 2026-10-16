@@ -611,7 +611,7 @@ carried as one box that moves and scales onto the box of what is left in the sec
 while the second, drawn inside the moving box, fades in. Glyphs with no counterpart at all
 fade out in the first `fade` of the beat or fade in in the last, so when anything fades in
 the motion takes the first ``1 - fade``, and new text arrives after the motion has settled. A
-fraction bar changes length through the arc-length sampling of `morph`. A transform's narration cue is ``{move:name}``, whose time
+fraction bar stretches as a rectangle, each corner moving to its partner, so its ends stay square. A transform's narration cue is ``{move:name}``, whose time
 starts its ramp. Not supported: ``usetex``, several math spans in one string, escaped braces
 (they raise), and the size animation of ``\left ... \right``.
 `write` is a figure-level ghost of a text, visible only before ``u = 1``: it

@@ -654,8 +654,8 @@ with the old glyphs fading out as the new ones fade in inside it. Glyphs with
 no counterpart at all fade out where they stand, in the first part of the beat,
 or fade in where they will stand, in the last part, after everything has
 settled. A tagged glyph pairs only inside its tag, and `key_map` pairs two
-differently named tags. The bar of a fraction changes length by the same
-arc-length sampling as `morph`, and a group arcs on `arc` (up going right, down going left) only as far as it
+differently named tags. The bar of a fraction stretches as a rectangle with
+square ends, and a group arcs on `arc` (up going right, down going left) only as far as it
 travels sideways. At ``u = 1`` the figure shows the second equation, as every
 move rests, and ``update(0)`` shows the first. The first clip turns Bayes' rule
 into the numbers of a worked example: the left side stays, the bar stretches,

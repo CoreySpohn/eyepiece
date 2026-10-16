@@ -12,8 +12,7 @@ take a group unchanged.
 `transform` carries one equation into another. Glyphs that are the same
 character in both move from one place to the other; glyphs that match
 nothing fade out where they stand or fade in where they will stand; a
-fraction bar changes its length through the same arc-length sampling as
-`morph`.
+fraction bar stretches as a rectangle, each corner moving to its partner.
 """
 
 import math
@@ -806,15 +805,14 @@ def transform(
     every glyph by order, ignoring tags. `key_map` pairs two differently named
     tags, `eq_a`'s name to `eq_b`'s.
 
-    The motion is by group, so a word is never torn: all the matched glyphs of
-    one tag, or one run of neighbouring glyphs in no tag, share one eased
-    progress and move rigidly. The groups start left to right by their place in
-    `eq_a`, spread over `stagger` of the motion. A fraction bar changes length
-    by the same arc-length sampling as `morph`. A group arcs on the way by
-    `arc`, scaled by how far it travels across (``min(1, travel / fontsize)``):
-    a group moving right rises and a group moving left dips, so two groups
-    that swap places pass each other, and a group that does not move sideways
-    does not arc.
+    The motion is by group, so a word is never torn: all the matched glyphs of one tag,
+    or one run of neighbouring glyphs in no tag, share one eased progress and move
+    rigidly. The groups start left to right by their place in `eq_a`, spread over
+    `stagger` of the motion. A fraction bar stretches as a rectangle, each corner moving
+    to its partner, so its ends stay square. A group arcs on the way by `arc`, scaled by
+    how far it travels across (``min(1, travel / fontsize)``): a group moving right
+    rises and a group moving left dips, so two groups that swap places pass each other,
+    and a group that does not move sideways does not arc.
 
     A tag the two equations share whose glyphs do not all match (``num`` that
     becomes another ``num``) is a replacement, as in a fade-transform: what
@@ -925,7 +923,14 @@ def transform(
     rules = {}
     for i, j in pairs:
         pa, pb = ea.glyphs[i].piece, eb.glyphs[j].piece
-        if pa.is_rule:
+        # Two rules are both rectangles with the same corner order, so moving
+        # each corner to its partner keeps the bar a rectangle at every step.
+        # Arc-length resampling would pair a corner with a point along an
+        # edge and slant the ends part way.
+        same_shape = pa.local.shape == pb.local.shape and np.array_equal(
+            np.asarray(pa.codes), np.asarray(pb.codes)
+        )
+        if pa.is_rule and not same_shape:
             rules[i] = _morph_pairs(
                 _path_parts(Path(pa.local, pa.codes)),
                 _path_parts(Path(pb.local, pb.codes)),
