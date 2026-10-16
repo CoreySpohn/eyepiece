@@ -468,8 +468,8 @@ interpolates between samples or reevaluates a simulation.
 
 A `Timeline` interpolates how a figure is shown, never what was simulated. Its
 knobs are presentation quantities: a title, an angle a construction has turned
-through, the width of a camera's view, the progress of a morph. A ramp may
-move them smoothly between holds, and the frames it produces drive a draw
+through, the width of a camera's view, the progress of a morph. A move may
+change them smoothly between holds, and the frames it produces drive a draw
 function or a camera. It never interpolates between the samples of a
 `Sequence` or stands in for a physical time, so the two clocks stay apart: the
 `Sequence` says what was measured when, and the timeline says when the viewer
@@ -477,16 +477,66 @@ sees it. A camera's moving limits are declared to `record` with
 `free_limits=`, which exempts only those limits from the drift check and
 still checks that axes' color scale.
 
+### One clock places everything timed
+
+The named span is the only timed primitive: a hold, a subject entering or
+leaving, a move, a caption, a pulse, a ring, a line of narration and a
+section are all spans of one `Timeline`, and the knobs a span writes are all a
+draw function reads, through `Plan.value(k, knob)`. A draw function never sees
+time. Times are exact sums, so `Time` handles place one span after another
+without drift. One rule turns seconds into frames everywhere: a span from `s`
+to `e` seconds covers frames `k0 = frame_count(s)` up to
+`k1 = max(k0 + 1, frame_count(e))`, its progress on frame `k` is
+`ease((k - k0 + 1) / n)` and exactly 1 from `k1` on, and a time that falls on
+half a frame rounds up. Two spans that write one knob on the same frame raise.
+The other checks are faults (text arriving over motion, a caption leaving
+before it is read, a span that rounds to no frames); a strict timeline raises
+them and any other records them in `Plan.faults`, with information-level
+entries for what the clock did on its own (a skipped pulse, a span truncated
+at the end of the clip).
+
+Names live in two places. Span and knob names share one namespace, and a
+repeat raises. Sections and lines share a second one, so a span may carry the
+name of the line it sits in (the `square` line may hold the `square` entry),
+but two sections or lines may not share a name. No user-given name may hold
+`:`, because event names and cue marks use it as a separator.
+
+A span truncated at the end of the clip keeps its speed: it plays the frames
+it has and the rest are never drawn, and the information-level fault says by
+how many frames. A span that a cue places can start later than its word when
+the cursor is still busy; the wait is an information-level `late` fault up to
+`Timeline(max_late_s=0.5)` seconds and an error beyond it, which a strict
+timeline raises, naming the span, the cue word and the seconds. In a narrated
+clip speech reads the captions, so a caption that the next caption replaces
+leaves without a read-time check; a silent clip keeps it.
+
+Narration is placement only. `Narration.place` lays one line on the clock and
+is pure, a cue is the start of its word with no lead, and the lead of each
+kind of move (a subject arrives 0.1 s ahead of its word, a pulse is centered
+on it, a ring starts on it) belongs to the clock, applied once. A line lasts
+until its speech and padding end or its last extending span ends plus 0.6 s,
+solved in one pass as the spans are placed; `Timeline.narration` returns the
+`Narration` with those starts and ends for `audio_track`, `mux` and the
+captions. The same function builds the silent clip: a pulse or ring placed
+only by a cue is skipped and recorded rather than placed at a guess.
+
 ### Stills come from the encode
 
 `record(stills=...)` writes chosen frames as PNGs while the sinks encode, from
 the figure exactly as the sinks grabbed it at that frame, so a still is the
-same pixels as that frame and costs no second pass. A time is rounded to the
-nearest frame, a beat name resolves through the `Plan` to the beat's settled
+same pixels as that frame and costs no second pass. A time is converted to a
+frame by the same rule as every span boundary (`frame_count`, half a frame
+rounds up), a span name resolves through the `Plan` to the span's settled
 last frame, and a request the recording never reaches is an error rather than
 a missing file. `on_rescale` is one of `"warn"`, `"raise"` and `"ignore"`;
 `"raise"` raises `ScaleDriftError` and removes every output the call began, so
-a failed run leaves nothing that could pass for a finished one.
+a failed run leaves nothing that could pass for a finished one. The last
+frame of a span is `(span, "last")`, never `span.end`: the end time is the
+first instant after the span, and a time that rounds to the clip's frame count
+is past the last frame and is the "never written" error. A recording given its
+`plan` also warns once, as it closes, about every knob the draw function never
+read and every knob that never changes (the always-present `pulse.*` and
+`ring.*` knobs excepted), because a clip about motion needs a knob that moves.
 
 ### Attention moves sit on the figure
 

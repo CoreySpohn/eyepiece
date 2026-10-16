@@ -5,8 +5,8 @@ in front of the word it names and fires at that word's start::
 
     What leaks through is {indicate:speckle}speckle.
 
-The kind is the attention move to run (``indicate``, ``circumscribe``,
-``link``, ``flight``, ``caption``, or any name the clip understands) and the
+The kind is the move to run (``show``, ``indicate``, ``circumscribe``,
+``move``, or any name the clip understands) and the
 target names what it acts on. The marks are stripped before the text is
 spoken. The cache key hashes only the spoken text, so moving a mark never
 costs a new synthesis.

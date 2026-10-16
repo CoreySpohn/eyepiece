@@ -12,10 +12,10 @@ kernelspec:
 
 # Motion and cameras
 
-An explanatory animation is a sequence of beats: the viewer reads while
+An explanatory animation is a sequence of moves: the viewer reads while
 nothing moves, then something moves while no new text arrives. This page
 builds the three tools that kind of animation needs on one synthetic
-coronagraph field. A `Timeline` decides when each beat happens. A camera
+coronagraph field. A `Timeline` decides when each move happens. A camera
 decides where the viewer looks, either by changing an axes' limits or by
 moving over a finished figure. A morph changes how the data are drawn while
 every pixel keeps its identity, so the viewer can follow it from one
@@ -54,39 +54,42 @@ NORM = LogNorm(1e-12, 1e-7)
 
 ## A timeline
 
-A `Timeline` declares its beats in seconds and the presentation knobs they
-set or move. A hold may change knobs when it starts, a new title for
-instance; a ramp moves numeric knobs (linearly, or in log space for widths
-and other scales) and changes nothing else, so text never arrives during
-motion. `read` sizes a hold from the words on screen by the reading rule
-of `Tempo`. Resolving the timeline for a frame rate gives a `Plan`, whose
-frames are plain dicts, one per frame, and whose `progress` reads any
-beat's clock. Here the zoom beat moves no knob: its clock drives a camera
-path in the next section.
+A `Timeline` declares named spans in seconds. A span is the one primitive:
+a hold, a subject entering or leaving, a move, a caption arriving, a pulse,
+a ring. Each span writes the knobs it names, and `Timeline.at_fps` derives
+every knob on every frame from them, so a draw function never sees time. A
+hold may step knobs when it starts, a new title for instance; a move ramps
+numeric knobs (linearly, or in log space for widths and other scales) and
+changes nothing else, so text never arrives during motion. `read` sizes a
+hold from the words on screen by the reading rule of `Tempo`. Resolving the
+timeline for a frame rate gives a `Plan`, whose frames are plain dicts, one
+per frame, and whose `progress` reads any span's clock. Here the zoom span
+writes no knob: its clock drives a camera path in the next section.
 
 ```{code-cell} python
 FULL = (0.0, 0.0, 28.0)
 CLOSE = (*PLANET_XY, 4.0)
 path, length = ep.zoom_path(FULL, CLOSE)
 
-tl = ep.Timeline(knobs={"title": ""})
+tl = ep.Timeline({"title": ""})
 tl.read("The whole field, star at the center", name="intro",
-        set={"title": "The whole field"})
-tl.hold(1.0, name="cue", set={"title": "Down to the companion"})
-tl.ramp(4.0, name="zoom")
+        to={"title": "The whole field"})
+tl.hold(1.0, name="cue", to={"title": "Down to the companion"})
+tl.move("zoom", 4.0)
 tl.hold(2.0, name="close")
 
 plan = tl.at_fps(24)
-for beat in plan.beats:
-    print(f"{beat.name:6s} {beat.kind:5s} frames {beat.start:3d}-{beat.stop - 1:3d}")
-k = plan.mid("zoom")
+for span in plan.spans.values():
+    print(f"{span.name:6s} {span.kind:5s} frames {span.k0:3d}-{span.k1 - 1:3d}")
+k = plan.frame_of("zoom", "mid")
 s = plan.progress(k, "zoom")
 print(f"frame {k}: zoom progress {s:.2f}, view width {path(s)[2]:.2f} lambda/D")
 ```
 
-Every frame of a ramp has moved: frame `i` of an `n`-frame ramp reaches
-progress `(i + 1) / n`, so the last frame shows the target exactly, and
-`mid` is the frame at progress one half. The four plain easing curves all fix
+Every frame of a span has moved: a span from `s` to `e` seconds covers frames
+`frame_count(s)` up to `max(k0 + 1, frame_count(e))`, frame `i` of its `n`
+frames reaches progress `(i + 1) / n` before easing, and the last frame shows
+the target exactly. The middle frame of a span is `k0 + (n - 1) // 2`. The four plain easing curves all fix
 both ends and pass through one half at the midpoint; they differ in how gently
 they start and stop (the gray line is linear, for reference). The last two
 curves, `back_out` and `running_start`, also fix both ends exactly but leave
@@ -109,6 +112,96 @@ axes[0].set_ylabel("eased progress")
 plt.show()
 ```
 
+## One clock for a whole clip
+
+The same `Timeline` places everything timed in a clip, narration included.
+Each verb returns a `Span` handle, so `at=slide.end + 0.2` places a span
+after another without float drift (a `Time` adds exactly). Without `at=`, a
+span starts at the cursor `now` and moves it on; with `at=` it starts where
+told and the cursor stays. `together` starts a group at `now` and `stagger`
+spaces its targets. A subject span writes the knob of its own name, so
+`enter("star")` ramps `star` from 0 to 1, `pulse("speckle")` ramps
+`pulse.speckle`, and a caption writes `caption.<name>`.
+
+Given a `Narration`, the same function lays each span on the word that names
+it. A mark `{show:star}` starts `enter("star")` a tenth of a second before
+the word, `{indicate:speckle}` centers the pulse on its word, and
+`{circumscribe:halo}` starts the ring on it. Lines open in script order with
+`line`, and a line lasts until its speech and padding end or its last
+moving span ends plus 0.6 s, whichever is later. Run without a narration, the
+function builds the silent clip: sections replace lines, a caption leaves once
+it has been read, and a pulse or ring that only a cue places is skipped and
+recorded in `plan.faults` as information. The plan also lists its events
+(starts, middles, ends and cues, each with the frame that shows it) and the
+frames a contact sheet should draw.
+
+```{code-cell} python
+from eyepiece import narration as nr
+
+SCRIPT = nr.Script(
+    (
+        nr.Line(
+            "find",
+            "The coronagraph blocks the {show:star}star, and what leaks "
+            "through is {indicate:speckle}speckle.",
+        ),
+        nr.Line(
+            "reveal",
+            "A faint {show:planet}planet stands out of it, "
+            "{circumscribe:halo}circled here.",
+        ),
+    )
+)
+
+
+def clip(narration=None):
+    tl = ep.Timeline(tempo=ep.Tempo(), narration=narration)
+    part = tl.line if narration is not None else tl.section
+    part("find")
+    tl.enter("star")
+    tl.pulse("speckle")
+    part("reveal")
+    tl.enter("planet", caption="a planet, 1e-10 of the star")
+    tl.ring("halo")
+    return tl
+
+
+silent = clip().at_fps(30)
+voiced = clip(nr.Narration.estimated(SCRIPT)).at_fps(30)
+
+print(f"silent:   {silent.n_frames} frames, {len(silent.spans)} spans")
+print(f"narrated: {voiced.n_frames} frames, {len(voiced.spans)} spans")
+for fault in silent.faults:
+    print(f"  silent {fault.severity}: {fault.message}")
+for event in voiced.events(what="cue"):
+    print(f"  {event.name:28s} {event.t_s:5.2f} s  frame {event.frame:3d}")
+print("review frames:", voiced.review_frames())
+
+fig, axes = plt.subplots(2, 1, figsize=(7.0, 3.6), layout="constrained", sharex=True)
+for ax, plan, title in ((axes[0], silent, "silent"), (axes[1], voiced, "narrated")):
+    t = np.arange(plan.n_frames) / plan.fps
+    for color, knob in zip(hwostyle.palette, plan.knobs, strict=False):
+        trace = [plan.value(k, knob) for k in range(plan.n_frames)]
+        ax.plot(t, trace, label=knob, color=color)
+    for event in plan.events(what="cue"):
+        ax.axvline(event.t_s, color="0.5", lw=0.8, ls=":")
+    ax.set_title(title, fontsize="small", loc="left")
+axes[0].legend(ncol=5, fontsize="x-small", loc="lower right",
+               bbox_to_anchor=(1.0, 1.0))
+axes[1].set_xlabel("seconds")
+plt.show()
+```
+
+Two writers on one knob in the same frames always raise, naming both spans
+and the knob. The other checks are faults with a severity. An error raises
+when the timeline is strict, the default, and is listed in `plan.faults`
+otherwise: a span that rounds to no frames, text arriving while something
+moves, a caption leaving before it has been read, a subject leaving while its
+own caption arrives, two subjects entering at once, a mark no verb fires and
+a verb whose mark the line lacks. An information fault, such as a skipped
+pulse or a span clamped to the end of the clip, only records what happened.
+`with_=` names an overlap that a clip allows.
+
 ## A data camera
 
 A data camera changes an axes' limits, so the data magnify while text and
@@ -119,7 +212,7 @@ context. `view_limits` turns a view into limits, `overview_box` marks it on
 an overview panel, and `record(free_limits=...)` lets those limits move
 without tripping the recorder's scale-drift guard, which still checks the
 color scale. The player below resolves the same timeline at 8 frames per
-second instead of 24, which only changes where the beat boundaries fall.
+second instead of 24, which only changes where the span boundaries fall.
 
 ```{code-cell} python
 fig, (ax, over) = plt.subplots(1, 2, figsize=(5.0, 2.6), layout="constrained",
@@ -667,7 +760,7 @@ for fault in ept.readability_faults(fig):
     print(fault)
 ```
 
-Pass `at` and `times` to sample a clip at its beat ends. `assert_readable`
+Pass `at` and `times` to sample a clip at its span ends. `assert_readable`
 raises `ReadabilityError` with the same report, for a test suite.
 
 ## Caption placement and wrapping

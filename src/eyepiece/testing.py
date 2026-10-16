@@ -33,7 +33,7 @@ per minute and the lines faster than a ceiling. `assert_speech_rate` raises
 on them.
 
 A clip is described by the figure and a callable `at` that poses it at a
-time; the times to sample (beat ends, turn midpoints, cue times) are the
+time; the times to sample (span ends, turn midpoints, cue times) are the
 caller's.
 
 Example::
@@ -465,7 +465,7 @@ def readability_faults(
     Args:
         fig: The figure to check.
         at: Callable ``at(t)`` that poses the figure at time `t` (a clip's
-            update at a beat end, a turn midpoint or a cue time). None checks
+            update at a span end, a turn midpoint or a cue time). None checks
             the figure as drawn.
         times: Sample times passed to `at`. None, with `at` given, is an
             error; with no `at`, the figure is checked once.

@@ -1,0 +1,81 @@
+{
+ "key": "1b12b610a4c62e1e",
+ "duration_s": 5.275,
+ "words": [
+  [
+   "Stack",
+   0.25,
+   0.55
+  ],
+  [
+   "those",
+   0.55,
+   0.8375
+  ],
+  [
+   "two",
+   0.8375,
+   1.0875
+  ],
+  [
+   "areas,",
+   1.0875,
+   1.85
+  ],
+  [
+   "and",
+   1.95,
+   2.0875
+  ],
+  [
+   "stretch",
+   2.0875,
+   2.475
+  ],
+  [
+   "them",
+   2.475,
+   2.725
+  ],
+  [
+   "until",
+   2.725,
+   3.1
+  ],
+  [
+   "their",
+   3.1,
+   3.3125
+  ],
+  [
+   "total",
+   3.3125,
+   3.725
+  ],
+  [
+   "height",
+   3.725,
+   4.1375
+  ],
+  [
+   "is",
+   4.1375,
+   4.3125
+  ],
+  [
+   "one.",
+   4.3125,
+   5.0
+  ]
+ ],
+ "text": "Stack those two areas, and stretch them until their total height is one.",
+ "audio": "1b12b610a4c62e1e.opus",
+ "rate": 24000,
+ "samples": 126600,
+ "voice": "bm_george",
+ "speed": 1.0,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}
