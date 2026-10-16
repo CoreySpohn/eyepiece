@@ -1003,7 +1003,8 @@ def test_a_callback_branching_on_stop_reaches_its_final_state():
 
     found = ept.motion_faults(fig, at, ept.Span(0.0, stop))
     assert block.get_alpha() == 1.0
-    assert found == [] or _kinds(found) == ["jump"]
+    assert _kinds(found) == ["jump"]
+    assert found[0].time == stop
 
 
 def test_pixels_are_kept_only_for_the_kinds_that_read_them(monkeypatch):
@@ -1142,3 +1143,186 @@ def test_a_clip_with_text_and_a_move_runs_clean():
 
     found = ept.motion_faults(fig, at, SPAN, rest=[title], spikes=True)
     assert found == []
+
+
+# second review round: counterexamples, each with a clean control
+
+
+def test_collection_boxes_pair_paths_offsets_and_sizes_like_the_renderer():
+    _, ax = _scatter_clip()
+    lines = LineCollection(
+        [[(0, 0), (10, 0)], [(0, 0), (10, 0)]],
+        offsets=[(50, 100), (150, 100)],
+        offset_transform=IdentityTransform(),
+        transform=IdentityTransform(),
+    )
+    ax.add_collection(lines)
+    box = ept._collection_box(lines, DPI)
+    assert (box.x0, box.x1) == pytest.approx((50.0, 160.0), abs=2.0)
+    dots = ax.scatter([100, 390], [50, 50], s=[10000, 4], transform=IdentityTransform())
+    box = ept._collection_box(dots, DPI)
+    assert box.x1 == pytest.approx(392.1, abs=0.5)  # the big marker is not on the right
+    assert box.x0 == pytest.approx(100 - 100 * DPI / 144.0, abs=1.0)
+
+
+def test_steady_travel_of_a_tiny_faint_artist_is_not_a_jump():
+    fig = _figure()
+    dot = _box(fig, 30, 80, 2, 2, alpha=0.2)
+
+    def at(t):
+        _move(dot, 30 + 120 * t, 80)
+
+    assert ept.motion_faults(fig, at, SPAN, kinds=["jump"]) == []
+
+
+def test_repeated_teleports_of_a_still_artist_are_each_a_jump():
+    fig = _figure()
+    dot = _box(fig, 30, 80, 20, 20)
+
+    def at(t):
+        k = round(t * 30.0)
+        _move(dot, 30 + 80.0 * (k // 15), 80)
+
+    found = ept.motion_faults(fig, at, SPAN, kinds=["jump"])
+    assert [round(f.time, 3) for f in found] == [0.5, 1.0, 1.5, 2.0]
+
+
+def test_taking_the_clip_off_at_the_end_of_a_reveal_is_not_outside():
+    # (clip removed at the end, how far the clip opens, faults expected)
+    for remove, reach, expected in ((True, 100.0, []), (False, 40.0, ["outside"])):
+        fig = _figure()
+        bar = _box(fig, 50, 80, 100, 20)
+        clip = Bbox([[0, 0], [50, 200]])
+        bar.set_clip_box(TransformedBbox(clip, IdentityTransform()))
+
+        def at(t, bar=bar, clip=clip, remove=remove, reach=reach):
+            clip.x1 = 50 + reach * min(t / 1.8, 1.0)
+            bar.set_clip_on(not (remove and t > 1.9))
+
+        moves = [{"artists": [bar]}]
+        found = ept.motion_faults(fig, at, SPAN, kinds=["outside"], moves=moves)
+        assert _kinds(found) == expected, (remove, reach)
+
+
+def test_a_far_away_move_span_does_not_hide_the_step_into_rest():
+    fig, at = _ramp_clip(final_step=2.5)
+    moves = [{"name": "elsewhere", "span": (3.0, 4.0)}]
+    found = ept.motion_faults(fig, at, ept.Span(0.0, 2.5), moves=moves, kinds=["jump"])
+    assert _kinds(found) == ["jump"]
+
+
+def test_a_rest_declaration_outside_the_clip_is_ignored():
+    fig = _figure()
+    block = _box(fig, 100, 80)
+    other = _box(fig, 20, 80)
+
+    def at(t):
+        _move(other, 20 + 100 * t / DURATION, 80)
+
+    moves = [{"span": (2.5, 3.0), "rest": [block]}]
+    assert ept.motion_faults(fig, at, SPAN, moves=moves) == []
+    with pytest.raises(ValueError, match="not visible"):
+        ept.motion_faults(fig, at, SPAN, rest=[_box(fig, 0, 0, alpha=0.0)])
+
+
+def test_a_width_wobble_of_a_fixed_bar_is_not_a_spike():
+    fig = _figure()
+    bar = _box(fig, 40, 80, 100, 20)
+
+    def at(t):
+        bar.set_width(100 + 20 * math.sin(math.pi * t / DURATION) ** 2)
+
+    assert "spike" not in _kinds(ept.motion_faults(fig, at, SPAN, spikes=True))
+
+
+def test_pixel_rectangles_translating_together_do_not_tear():
+    fig = _figure()
+    a = _box(fig, 50, 80, 20, 20)
+    b = _box(fig, 120, 80, 40, 20)
+
+    def at(t):
+        _move(a, 50 + 10 * t, 80)
+        _move(b, 120 + 10 * t, 80)
+
+    assert ept.motion_faults(fig, at, SPAN, groups=[[a, b]], kinds=["tear"]) == []
+
+    def apart(t):
+        _move(a, 50 + 10 * t, 80)
+        _move(b, 120 + 10 * t * 21 / 41 + 10 * t, 80)
+
+    found = ept.motion_faults(fig, apart, SPAN, groups=[[a, b]], kinds=["tear"])
+    assert _kinds(found) == ["tear"]
+
+
+def test_resampling_a_straight_line_does_not_drift():
+    fig = _figure()
+    line = fig.add_artist(Line2D([30, 130], [50, 50], transform=IdentityTransform()))
+    line.set_clip_on(False)
+
+    def at(t):
+        mid = 30 + 100 * t / DURATION
+        line.set_data([30, mid, 130], [50, 50, 50])
+
+    assert ept.motion_faults(fig, at, SPAN, rest=[line], kinds=["drift"]) == []
+
+
+def test_a_declared_image_that_changes_is_not_dead():
+    fig, ax = plt.subplots(figsize=(4.0, 2.0), dpi=DPI)
+    image = ax.imshow([[0.0, 1.0], [1.0, 0.0]], vmin=0, vmax=1)
+
+    def at(t):
+        image.set_data([[t / DURATION, 1.0], [1.0, 0.0]])
+
+    moves = [{"name": "picture", "artists": [image]}]
+    assert ept.motion_faults(fig, at, SPAN, moves=moves, kinds=["dead"]) == []
+    frozen = ept.motion_faults(fig, lambda t: None, SPAN, moves=moves, kinds=["dead"])
+    assert _kinds(frozen) == ["dead"]
+    assert "never visible" not in frozen[0].detail
+
+
+def test_a_velocity_change_is_dated_at_its_first_sample():
+    fig = _figure()
+    block = _box(fig, 20, 80, 20, 20)
+
+    def at(t):
+        _move(block, 20 + 20 * t + 20 * (t >= 0.5) + 60 * (t >= 1.5), 80)
+
+    found = [f for f in ept.motion_faults(fig, at, SPAN, kinds=["spike"])]
+    assert found and found[0].time == pytest.approx(0.5, abs=1.0 / 30.0)
+
+
+@pytest.mark.parametrize("fps", [24, 30, 60])
+def test_slow_overlap_is_found_at_every_frame_rate(fps):
+    fig = _figure()
+    a = _box(fig, 100, 80, 30, 20)
+    b = _box(fig, 110, 85, 30, 20)
+
+    def at(t):
+        _move(a, 100 + 5.5 * t, 80)
+        _move(b, 110 + 5.5 * t, 85)
+
+    found = ept.motion_faults(fig, at, SPAN, fps=fps, moves=[{"artists": [a, b]}])
+    assert _kinds(found) == ["overlap"]
+
+
+def test_many_identical_declarations_cost_about_one(monkeypatch):
+    fig = _figure()
+    block = _box(fig, 20, 80)
+
+    def at(t):
+        _move(block, 20 + 100 * t / DURATION, 80)
+
+    calls = []
+    real = ept.np.abs
+
+    def counting(x, *a, **k):
+        calls.append(1)
+        return real(x, *a, **k)
+
+    monkeypatch.setattr(ept.np, "abs", counting)
+    one = [{"name": "m", "artists": [block]}]
+    ept.motion_faults(fig, at, SPAN, moves=one, kinds=["dead"])
+    few = len(calls)
+    calls.clear()
+    ept.motion_faults(fig, at, SPAN, moves=one * 20, kinds=["dead"])
+    assert len(calls) <= few + 2

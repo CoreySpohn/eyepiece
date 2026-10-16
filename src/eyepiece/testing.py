@@ -744,6 +744,8 @@ def _ink(artist):
         drawn = artist.get_linestyle() not in ("None", "none", "", " ")
         drawn = drawn or artist.get_marker() not in (None, "None", "none", "", " ")
         return base * to_rgba(artist.get_color())[3] if drawn else 0.0
+    if isinstance(artist, AxesImage):
+        return base
     if isinstance(artist, Collection):
         top = 0.0
         for colors in (artist.get_facecolor(), artist.get_edgecolor()):
@@ -753,30 +755,55 @@ def _ink(artist):
     return 0.0
 
 
-def _traced(fig):
-    """Artists whose position is traced: text, patches, collections and lines."""
+def _traced(fig, extra=()):
+    """Artists whose position is traced: text, patches, collections and lines.
+
+    `extra` adds artists of other kinds, such as the images a move declares.
+    """
     skip = {id(fig.patch)} | {id(ax.patch) for ax in fig.axes}
+    done = set()
     for artist in _walk(fig):
         if id(artist) in skip or isinstance(artist, Spine):
             continue
         if isinstance(artist, (Text, Patch, Collection, Line2D)) and (
             _ink(artist) >= _SHOWN
         ):
+            done.add(id(artist))
+            yield artist
+    for artist in extra:
+        if id(artist) not in done and artist.get_visible() and _ink(artist) >= _SHOWN:
             yield artist
 
 
-def _collection_points(artist):
-    """Display points that mark where a collection sits."""
+def _collection_points(artist, dpi=72.0):
+    """(display points, pad around each) that mark where a collection sits.
+
+    Paths, offsets and marker sizes pair the way the renderer pairs them: the
+    i-th element uses the i-th path and offset, each cycling when shorter.
+    """
     offsets = np.ma.filled(np.ma.asarray(artist.get_offsets(), dtype=float), np.nan)
     shifts = artist.get_offset_transform().transform(offsets) if offsets.size else None
     if isinstance(artist, PathCollection) and shifts is not None:
-        return shifts
-    # Paths are drawn through the collection's transform, then shifted.
+        sizes = np.asarray(artist.get_sizes(), dtype=float)
+        if sizes.size:
+            pad = np.sqrt(np.resize(sizes, len(shifts))) * dpi / 144.0
+        else:
+            pad = np.zeros(len(shifts))
+        return shifts, pad
     shifts = np.zeros((1, 2)) if shifts is None else shifts
-    shape = np.concatenate(
-        [artist.get_transform().transform(p.vertices) for p in artist.get_paths()]
-    )
-    return (shape[None, :, :] + shifts[:, None, :]).reshape(-1, 2)
+    paths = [artist.get_transform().transform(p.vertices) for p in artist.get_paths()]
+    if not paths:
+        return np.empty((0, 2)), np.zeros(0)
+    if len(shifts) == 1:
+        points = np.concatenate(paths) + shifts[0]
+    elif len(paths) == 1:
+        points = (paths[0][None, :, :] + shifts[:, None, :]).reshape(-1, 2)
+    else:
+        count = max(len(paths), len(shifts))
+        points = np.concatenate(
+            [paths[i % len(paths)] + shifts[i % len(shifts)] for i in range(count)]
+        )
+    return points, np.zeros(len(points))
 
 
 def _collection_box(artist, dpi):
@@ -785,13 +812,14 @@ def _collection_box(artist, dpi):
     widths = np.atleast_1d(artist.get_linewidths())
     if widths.size:
         pad = float(np.max(widths)) * dpi / 144.0
-    points = _collection_points(artist)
-    if isinstance(artist, PathCollection) and len(artist.get_sizes()):
-        pad += float(np.sqrt(np.max(artist.get_sizes()))) * dpi / 144.0
-    points = points[np.isfinite(points).all(axis=1)]
+    points, around = _collection_points(artist, dpi)
+    keep = np.isfinite(points).all(axis=1)
+    points, around = points[keep], around[keep] + pad
     if not len(points):
         return None
-    return Bbox([points.min(axis=0) - pad, points.max(axis=0) + pad])
+    return Bbox(
+        [(points - around[:, None]).min(axis=0), (points + around[:, None]).max(axis=0)]
+    )
 
 
 def _polygon_centroid(path):
@@ -818,13 +846,21 @@ def _ink_centroid(artist, box):
     """Where the artist's ink sits: unlike a box center, it turns with a rotation."""
     try:
         if isinstance(artist, Patch):
-            transform = artist.get_patch_transform() + artist.get_transform()
-            return _polygon_centroid(transform.transform_path(artist.get_path()))
+            # Patch.get_transform already includes the patch transform.
+            path = artist.get_transform().transform_path(artist.get_path())
+            return _polygon_centroid(path)
         if isinstance(artist, Line2D):
             xy = artist.get_transform().transform(artist.get_xydata())
-            return xy[np.isfinite(xy).all(axis=1)].mean(axis=0)
+            xy = xy[np.isfinite(xy).all(axis=1)]
+            seg = np.linalg.norm(np.diff(xy, axis=0), axis=1)
+            if artist.get_linestyle() not in ("None", "none", "", " ") and (
+                seg.sum() > 1e-9
+            ):
+                mid = (xy[1:] + xy[:-1]) / 2.0  # resampling a line keeps its centroid
+                return (mid * seg[:, None]).sum(axis=0) / seg.sum()
+            return xy.mean(axis=0)
         if isinstance(artist, Collection):
-            xy = _collection_points(artist)
+            xy = _collection_points(artist)[0]
             return xy[np.isfinite(xy).all(axis=1)].mean(axis=0)
     except (ValueError, AttributeError, TypeError, IndexError):
         pass
@@ -907,7 +943,7 @@ class _Trace:
         self.ticks = set()  # tick labels, which trade places as limits move
         self.tick_text = {}  # tick label -> {sample index: its string}
 
-    def add(self, k, fig, renderer):
+    def add(self, k, fig, renderer, extra=()):
         fig.canvas.draw()
         if self.keep_frames:
             self.frames.append(np.asarray(fig.canvas.buffer_rgba()).copy())
@@ -917,7 +953,7 @@ class _Trace:
                 self.ticks.add(axis.offsetText)
                 for tick in axis.get_major_ticks() + axis.get_minor_ticks():
                     self.ticks.update((tick.label1, tick.label2))
-        for artist in _traced(fig):
+        for artist in _traced(fig, extra):
             got = _trace_box(artist, renderer)
             if got is None:
                 continue
@@ -940,10 +976,10 @@ class _Trace:
         return got[0] if got[1] is None else _intersect(got[0], got[1])
 
     def moving(self, artist, k, tol):
-        """True when the artist travels more than `tol` within `_WINDOW_S` of k.
+        """True when the artist would travel more than `tol` in `_WINDOW_S`.
 
-        The test is over clip time rather than a single step, so it gives the
-        same answer at any frame rate.
+        The test is a speed over elapsed clip time, so it gives the same
+        answer at any frame rate.
         """
         here = self.box(artist, k)
         if here is None:
@@ -951,11 +987,15 @@ class _Trace:
         for direction in (-1, 1):
             j = k + direction
             while 0 <= j < len(self.times):
-                near = abs(self.times[j] - self.times[k]) <= _WINDOW_S + 1e-9
-                if not near and abs(j - k) > 1:
+                dt = abs(self.times[j] - self.times[k])
+                if dt > _WINDOW_S + 1e-9 and abs(j - k) > 1:
                     break
                 there = self.box(artist, j)
-                if there is not None and _edges_move(here, there) > tol:
+                if (
+                    there is not None
+                    and dt > 0
+                    and _edges_move(here, there) * _WINDOW_S / dt > tol
+                ):
                     return True
                 j += direction
         return False
@@ -1003,19 +1043,27 @@ def _check_teleports(trace, tol, jump_ratio):
     """Jumps of one artist, for a clip too still for the pixel baseline to exist."""
     found = []
     for artist in trace.order:
+        if artist in trace.ticks and len(set(trace.tick_text[artist].values())) > 1:
+            continue  # a tick label that changes its string is trading places
         ks = sorted(trace.boxes[artist])
         first = trace.first_box(artist)
         limit = max(
             jump_ratio * tol, 0.5 * max(first[2] - first[0], first[3] - first[1])
         )
         flagged = False
-        for a, b in itertools.pairwise(ks):
-            step = (
-                _edges_move(trace.box(artist, a), trace.box(artist, b))
-                if b == a + 1
-                else 0.0
-            )
-            hit = step > limit
+        steps = [
+            _edges_move(trace.box(artist, a), trace.box(artist, b))
+            if b == a + 1
+            else 0.0
+            for a, b in itertools.pairwise(ks)
+        ]
+        for n, (_, b) in enumerate(itertools.pairwise(ks)):
+            step = steps[n]
+            after = steps[n + 1] if n + 1 < len(steps) else None
+            before = steps[n - 1] if n else after
+            after = before if after is None else after
+            # Steady travel has a neighbor as long as the step; a hop has none.
+            hit = step > limit and min(before, after) < 0.5 * step
             if hit and not flagged:
                 detail = f"{trace.label(artist)} jumps {step:.0f} px in one frame"
                 found.append(
@@ -1038,6 +1086,14 @@ def _check_jump(trace, jump_ratio, rest_times, tol):
     moving = [i for i, v in enumerate(size) if v > _STEP_FLOOR]
     if len(moving) < 3:
         return _check_teleports(trace, tol, jump_ratio)
+    found = _jumps(trace, size, moving, jump_ratio, rest_times, tol)
+    seen = {f[0] for f in found}
+    return found + [
+        f for f in _check_teleports(trace, tol, jump_ratio) if f[0] not in seen
+    ]
+
+
+def _jumps(trace, size, moving, jump_ratio, rest_times, tol):
     median = float(np.median([size[i] for i in moving]))
     last = len(size) - 1
     if rest_times:
@@ -1046,7 +1102,7 @@ def _check_jump(trace, jump_ratio, rest_times, tol):
             k = next((k for k, s in enumerate(trace.times) if s >= t), None)
             if k is not None and k >= 1:
                 entries.add(min(k - 1, last))
-    else:
+    if not rest_times or not entries:
         entries = {moving[-1]}
     found = []
     for i, value in enumerate(size):
@@ -1075,6 +1131,7 @@ def _check_jump(trace, jump_ratio, rest_times, tol):
 
 def _check_dead(trace, moves):
     found = []
+    cache = {}  # moves that watch one region over one span are checked once
     times = trace.times
     for move in moves:
         span = _declared(move, "span")
@@ -1111,14 +1168,16 @@ def _check_dead(trace, moves):
                 ),
                 slice(max(int(region[0]), 0), max(int(region[2]) + 1, 0)),
             )
-        ref = trace.frames[first][crop].astype(np.int16)
-        moved = False
-        for k in range(first + 1, stop + 1):
-            now = trace.frames[k][crop].astype(np.int16)
-            if now.size and np.abs(now - ref).max() > 0:
-                moved = True
-                break
-        if not moved:
+        key = (crop[0].start, crop[0].stop, crop[1].start, crop[1].stop, first, stop)
+        if key not in cache:
+            ref = trace.frames[first][crop].astype(np.int16)
+            cache[key] = False
+            for k in range(first + 1, stop + 1):
+                now = trace.frames[k][crop].astype(np.int16)
+                if now.size and np.abs(now - ref).max() > 0:
+                    cache[key] = True
+                    break
+        if not cache[key]:
             detail = (
                 f"{name!r} changes no pixel between t={times[first]:g} "
                 f"and t={times[stop]:g}"
@@ -1129,16 +1188,18 @@ def _check_dead(trace, moves):
 
 
 def _live(trace, artist, what, lo, hi):
-    ks = [k for k in sorted(trace.boxes.get(artist, {})) if lo <= trace.times[k] <= hi]
-    if not ks:
+    own = sorted(trace.boxes.get(artist, {}))
+    if not own:
         raise ValueError(f"the {what} artist {artist!r} is not visible at any sample")
-    return ks
+    return [k for k in own if lo <= trace.times[k] <= hi]
 
 
 def _check_drift(trace, rest, tol):
     found = []
     for artist, lo, hi in rest:
         ks = _live(trace, artist, "rest", lo, hi)
+        if not ks:
+            continue  # the declaration lies outside the sampled clip
         home = trace.boxes[artist][ks[0]]
         worst, first = 0.0, None
         for k in ks:
@@ -1248,7 +1309,14 @@ def _is_reveal(trace, artist, tol):
     """True when the clip box only ever widens, and ends up uncovering the artist."""
     ks = sorted(trace.boxes[artist])
     clips = [trace.boxes[artist][k][1] for k in ks]
-    if any(c is None for c in clips) or len(set(clips)) < 2:
+    removed = clips[-1] is None  # taking the clip off is the last step of a reveal
+    while clips and clips[-1] is None:
+        clips.pop()
+    if (
+        not clips
+        or any(c is None for c in clips)
+        or (len(set(clips)) < 2 and not removed)
+    ):
         return False
     eps = 1e-6
     for a, b in itertools.pairwise(clips):
@@ -1259,6 +1327,8 @@ def _is_reveal(trace, artist, tol):
             or b[3] < a[3] - eps
         ):
             return False
+    if removed:
+        return True
     growth = (clips[0][0] - clips[-1][0]) + (clips[0][1] - clips[-1][1])
     growth += (clips[-1][2] - clips[0][2]) + (clips[-1][3] - clips[0][3])
     if growth <= tol:
@@ -1329,7 +1399,7 @@ def _spike_run(trace, artist, run, spike_px):
     dims = boxes[:, 2:] - boxes[:, :2]
     # A dimension that grows or shrinks takes the center with it, so only the
     # other one can be followed; a change this small is not a shape change.
-    free = np.ptp(dims, axis=0) <= 0.25 * np.maximum(dims[0], spike_px)
+    free = np.ptp(dims, axis=0) <= spike_px
     if not free.any():
         return None
     c = ((boxes[:, :2] + boxes[:, 2:]) / 2.0)[:, free]
@@ -1365,7 +1435,7 @@ def _spike_run(trace, artist, run, spike_px):
     floor = max(_KINK_FLOOR_PX, _KINK_RATIO * float(np.median(moving)))
     top = int(np.argmax(kink))
     if kink[top] > floor:
-        k = run[top + 1]
+        k = run[int(np.argmax(kink > floor)) + 1]
         detail = (
             f"{trace.label(artist)} changes velocity by {kink[top]:.1f} px "
             f"in one frame ({kink[top] / np.median(moving):.1f} median speeds)"
@@ -1546,9 +1616,15 @@ def motion_faults(
         FigureCanvasAgg(fig)  # a canvas that cannot hand back pixels
     try:
         trace = _Trace(samples, keep_frames=bool({"jump", "dead"} & set(kinds)))
+        extra = [
+            a
+            for move in moves or ()
+            for a in _declared(move, "artists") or ()
+            if isinstance(a, AxesImage)
+        ]
         for k, t in enumerate(samples):
             at(t)
-            trace.add(k, fig, _renderer(fig))
+            trace.add(k, fig, _renderer(fig), extra)
     finally:
         fig.set_canvas(old_canvas)
         if dpi is not None:
