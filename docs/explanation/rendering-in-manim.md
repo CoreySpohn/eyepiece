@@ -1,4 +1,4 @@
-# Manim and slides
+# Rendering in Manim
 
 `eyepiece.manim` renders the same prepared views and sequences as
 `eyepiece.mpl`, as native Manim Community objects for talks and explainer
@@ -9,6 +9,8 @@ provides no scene class, slide scheduler, or deck template of its own.
 The code on this page is shown rather than executed. Rendering Manim media
 needs system libraries a documentation builder does not have, and it is
 exercised by the library's render tests instead.
+
+See {doc}`eyepiece-and-manim` for the motion vocabulary and its limits.
 
 ## Installation
 

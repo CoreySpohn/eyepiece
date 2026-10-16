@@ -1,4 +1,4 @@
-"""Keep tutorial and task pages linked, executable, and plain ASCII."""
+"""Keep documentation pages linked, executable, and plain ASCII."""
 
 import re
 from pathlib import Path
@@ -6,9 +6,20 @@ from pathlib import Path
 import pytest
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
-PAGES = sorted((DOCS / "tutorials").glob("*.md")) + sorted(
-    (DOCS / "how-to").glob("*.md")
+EXPLANATION_NAMES = (
+    "contract",
+    "clock",
+    "evidence",
+    "narration-design",
+    "prepared-views",
+    "eyepiece-and-manim",
+    "rendering-in-manim",
 )
+PAGES = [
+    *sorted((DOCS / "tutorials").glob("*.md")),
+    *sorted((DOCS / "how-to").glob("*.md")),
+    *(DOCS / "explanation" / f"{name}.md" for name in EXPLANATION_NAMES),
+]
 CONTRACTION = re.compile(
     r"\b\w+n't\b|\b(?:it|that|there|here|what|who)'s\b|\b\w+'(?:re|ve|ll|d|m)\b",
     re.IGNORECASE,
@@ -100,3 +111,50 @@ def test_reject_invalid_page(text):
 def test_code_fences_allow_ascii_contractions():
     text = 'A marker.\n```{code-cell} python\nlabel = "it\'s ready"\n```\n'
     assert check_page(text) == ['label = "it\'s ready"']
+
+
+@pytest.mark.parametrize(
+    "page", [*sorted(DOCS.rglob("*.md")), DOCS.parent / "README.md"]
+)
+def test_doc_links_resolve(page):
+    for link in re.findall(r"\{doc\}`([^`]+)`", page.read_text()):
+        target = re.sub(r"^.*<([^>]+)>$", r"\1", link)
+        base = DOCS if target.startswith("/") else page.parent
+        resolved = (base / target.lstrip("/")).with_suffix(".md")
+        assert resolved.is_file(), f"Broken doc link in {page}: {link}"
+
+
+def test_all_docs_pages_in_toctrees():
+    pages = {page.resolve() for page in DOCS.rglob("*.md")}
+    assert pages - {DOCS / "index.md"} <= toctree_pages()
+
+
+def test_explanation_toctree_order():
+    _, blocks = split_fences((DOCS / "index.md").read_text())
+    tree = next(
+        body
+        for info, body in blocks
+        if info == "{toctree}" and ":caption: Explanation" in body
+    )
+    entries = [line for line in tree.splitlines() if line and not line.startswith(":")]
+    assert entries == [f"explanation/{name}" for name in EXPLANATION_NAMES] + [
+        "viz-convention"
+    ]
+
+
+def test_manim_parity_cell_lists_all_rows():
+    page = DOCS / "explanation" / "eyepiece-and-manim.md"
+    cells = check_page(page.read_text())
+    assert cells, "The parity table needs an executable cell"
+    code = "\n".join(cells)
+    for name in (
+        "FadeIn",
+        "Create",
+        "Indicate",
+        "Circumscribe",
+        "Write",
+        "Transform",
+        "TransformMatchingTex",
+        "rate functions",
+    ):
+        assert re.search(rf'^\s+"{re.escape(name)}[", ]', code, re.M), name

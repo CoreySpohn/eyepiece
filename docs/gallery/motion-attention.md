@@ -32,7 +32,7 @@ viewer sees a value read in one place become a point somewhere else.
 `callout` writes a caption of a few words beside the thing it names.
 `leader` joins a caption to its mark when the two cannot touch, and refuses
 to draw one that breaks the connector rules of the
-{doc}`evidence guide <../evidence>`: it must end on the mark it names, run
+{doc}`evidence guide <../explanation/evidence>`: it must end on the mark it names, run
 shorter than a quarter of its panel, cross no data and no other text, and
 take a neutral rather than a data color. Drawing never raises, so a still
 or a PDF save is never aborted half way; `faults()` on the leader lists what

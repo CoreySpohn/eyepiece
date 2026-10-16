@@ -17,7 +17,7 @@ plotting framework two releases later.
 eyepiece owns generic mechanisms over arrays: norms and colormaps, panel
 grids, colorbar geometry, extents and labels, animation, styled saving, the
 prepared-view records with their display mapping and renderers, and the
-{doc}`return contract <contract>` that ties them together. Your library
+{doc}`return contract <explanation/contract>` that ties them together. Your library
 owns knowledge of its own types: which attribute holds the array, what units
 it is in, how a chromatic field is laid out, what a sensible default view of
 it is, and every scientific step between the object and the arrays a figure
@@ -117,7 +117,7 @@ advertises the extra ships only after that eyepiece version is on PyPI.
 ## The function contract
 
 A plotting function follows the same contract every eyepiece primitive
-follows, which is documented in full on the {doc}`contract <contract>` page
+follows, which is documented in full on the {doc}`contract <explanation/contract>` page
 and summarized here as it applies to you.
 
 The shape is stateless and data-first:
@@ -211,7 +211,7 @@ transform.
 
 A plot family that needs more than one output, a paper still, a strip of
 epochs, a movie, and a talk, is split in two: a preparation function that
-turns your types into {doc}`prepared views <prepared-views>`, and rendering
+turns your types into {doc}`prepared views <explanation/prepared-views>`, and rendering
 that eyepiece does. The preparation is where your library's knowledge lives,
 and it runs once for every output.
 
@@ -309,7 +309,7 @@ When a device turns out to be genuinely generic, the answer is promotion,
 not duplication. A drawing shape that has been hand-rolled independently in
 two or more places, and that takes only arrays and floats, is a candidate
 for eyepiece under the accretion rule on the
-{doc}`contract <contract>` page. Copying it into a second library's plotting
+{doc}`contract <explanation/contract>` page. Copying it into a second library's plotting
 module instead is how two implementations drift.
 
 ## Visual language

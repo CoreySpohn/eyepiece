@@ -31,7 +31,7 @@ The layer has four parts, each in its own namespace.
 
 Importing `eyepiece.prepared` loads neither renderer, so a library can build
 records in its base install. The renderers are documented here and on the
-{doc}`Manim page <manim>`; the {doc}`prepared gallery <gallery/prepared>`
+{doc}`Manim page <rendering-in-manim>`; the {doc}`prepared gallery <../gallery/prepared>`
 shows a still, a strip, and a movie from one preparation.
 
 ```{code-cell} python
@@ -254,7 +254,22 @@ never shows two time labels and a clock label may itself be named `"time"`.
 Without a `Clock`, each slot gains a `"<slot>/time"` label in the default
 format.
 
+(which-cast)=
+## Which cast does a clip use?
+
+A prepared-view clip uses `eyepiece.style.SourceCast` to give each source a
+stable palette slot and marker: it records a source and its colors. A
+`MotifSet` declares roles, the meanings that colors and other visual channels
+carry across a clip. Use it for named subjects in an ax-first animation and
+for the clip's meaning checks. These are separate inputs: a `SourceCast` goes
+to a prepared renderer's `cast=`, while a `MotifSet` goes to
+`check_clip(motifs=...)`. A clip that uses both paths keeps their assignments
+consistent explicitly; neither object is converted into the other. See
+{ref}`motifs` for the role vocabulary.
+
 ## Appearance: cast and profile
+
+See {ref}`which-cast` when choosing between a source cast and a role cast.
 
 A renderer takes two appearance inputs, and both are explicit.
 
@@ -440,5 +455,5 @@ from that.
 
 A consumer that wants to drive native Manim geometry straight from a
 scientific model, evaluating it at each playback time, does so in its own
-code and needs no viz import; the {doc}`Manim page <manim>` shows that
+code and needs no viz import; the {doc}`Manim page <rendering-in-manim>` shows that
 recipe beside the prepared renderer.
