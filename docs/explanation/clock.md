@@ -277,7 +277,8 @@ thickness that passes while it is horizontal or vertical. A move is a dict, or a
 `contract` is a dict or has the same fields, with the keys `name`, `span`,
 `artists` (or `moves`), `rest`, `groups`, `may_overlap` and `rectilinear`; a
 move's `rest`, `groups`, `may_overlap` and `rectilinear` hold only over its
-`span`. The call restores the figure's dpi and
+`span`, `may_overlap` also over the tenth of a second on either side in which
+the span's motion already counts as moving. The call restores the figure's dpi and
 canvas and is deterministic. It costs the draw time of each frame plus a
 little; the frames are kept only for `jump` and `dead`. `assert_motion` raises
 `MotionError` with the report.

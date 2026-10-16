@@ -398,6 +398,25 @@ def test_a_declared_pair_may_overlap():
     assert ept.motion_faults(fig, at, SPAN, moves=moves) == []
 
 
+def test_a_pair_allowed_over_a_span_is_allowed_where_it_starts_to_move():
+    # Overlapping labels ride together over the second half of the clip. A
+    # sample just before the span counts as moving, because its look-ahead
+    # window reaches the span's first frames, so the allowance covers it too.
+    fig = _figure()
+    a = fig.text(0.05, 0.5, "riding label", fontsize=14)
+    b = fig.text(0.08, 0.5, "riding label", fontsize=14)
+
+    def at(t):
+        u = min(max(t - 1.0, 0.0), 1.0)
+        a.set_position((0.05 + 0.5 * u, 0.5))
+        b.set_position((0.08 + 0.5 * u, 0.5))
+
+    move = {"name": "ride", "span": (1.0, 2.0), "artists": [a, b]}
+    assert _kinds(ept.motion_faults(fig, at, SPAN, moves=[move])) == ["overlap"]
+    move["may_overlap"] = [(a, b)]
+    assert ept.motion_faults(fig, at, SPAN, moves=[move]) == []
+
+
 def test_a_faint_pair_crossing_is_not_an_overlap_fault():
     fig, at, a, b, moves = _crossing()
     a.set_alpha(0.1)

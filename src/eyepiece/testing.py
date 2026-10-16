@@ -1440,7 +1440,13 @@ def _check_overlap(trace, candidates, allowed, tol, move_tol):
             for b in here[i + 1 :]:
                 pair = frozenset((a, b))
                 t = trace.times[k]
-                if any(p == pair and lo <= t <= hi for p, lo, hi in allowed):
+                # A pair counts as moving when it travels within _WINDOW_S of
+                # a sample, so an allowance over a span holds that far past
+                # either end of it, where the span's own motion is seen.
+                if any(
+                    p == pair and lo - _WINDOW_S <= t <= hi + _WINDOW_S
+                    for p, lo, hi in allowed
+                ):
                     continue
                 x = _intersect(trace.seen(a, k), trace.seen(b, k))
                 if x is None or x[2] - x[0] <= tol or x[3] - x[1] <= tol:
@@ -1727,7 +1733,9 @@ def motion_faults(
             a dict or has the same fields) with any of ``name``, ``span``
             (start, stop), ``artists`` (or ``moves``, those that may move),
             ``rest``, ``groups`` and ``may_overlap``; the last three hold only
-            over the span. None declares nothing; ``jump``, ``outside`` and the
+            over the span (``may_overlap`` also a tenth of a second past
+            either end, where the span's motion first and last counts as
+            moving). None declares nothing; ``jump``, ``outside`` and the
             text ``overlap`` still run.
         steps: Sample times in seconds at which discontinuities are intended.
             A ``jump`` is omitted only when its destination sample time
