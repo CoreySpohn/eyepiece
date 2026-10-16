@@ -207,6 +207,50 @@ def test_axis_label_writes_on_after_the_spine():
     assert 0 < label_ink(0.8) < label_ink(1.0)
 
 
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize(
+    "axis, before_label, during_label",
+    [("x", 0.5, 0.8), ("y", 0.5, 0.8), ("both", 0.75, 0.9)],
+)
+@pytest.mark.parametrize("title", [False, True])
+@pytest.mark.parametrize("label", [False, True])
+def test_axis_build_titles_arrive_last_only_when_requested(
+    mode, axis, before_label, during_label, title, label
+):
+    hwostyle.use(mode)
+    fig, ax = _axes()
+    center = ax.set_title("Center")
+    left = ax.set_title("Left", loc="left", alpha=0.65)
+    right = ax.set_title("Right", loc="right", alpha=0.4)
+    right.set_visible(False)
+    titles = (center, left, right)
+    alphas = [text.get_alpha() for text in titles]
+    plain = _pixels(fig)
+    build = ep.build_axes(ax, axis=axis, label=label, spine_end=0.6, title=title)
+    np.testing.assert_array_equal(_pixels(fig), plain)
+
+    for u in (0.0, before_label):
+        build.update(u)
+        if title:
+            assert all(text.get_alpha() == 0.0 for text in titles)
+        else:
+            assert [text.get_alpha() for text in titles] == alphas
+        assert not right.get_visible()
+
+    build.update(during_label)
+    if title:
+        assert 0.0 < center.get_alpha() < 1.0
+        assert 0.0 < left.get_alpha() < 0.65
+    else:
+        assert [text.get_alpha() for text in titles] == alphas
+    build.update(1.0)
+    assert [text.get_alpha() for text in titles] == alphas
+    np.testing.assert_array_equal(_pixels(fig), plain)
+    build.update(0.0)
+    build.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), plain)
+
+
 # Collapse
 
 

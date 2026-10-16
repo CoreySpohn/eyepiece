@@ -6,8 +6,9 @@ reads them without a speech model. A cue mark in the text fires an attention
 move on the word that names its subject, and the length of each line sets the
 length of the part of the clip that shows it.
 
-The code on this page is shown rather than executed. The motion gallery
-includes a runnable example of number wording for speech.
+The code on this page is shown rather than executed. The
+{doc}`motion checks catalog <gallery/motion-checks>` includes a runnable
+example of number wording for speech.
 
 ## The script
 

@@ -23,7 +23,8 @@ Example::
 
 The library never imports a simulation library and never mutates
 matplotlib's global state at import time; style is applied explicitly by
-the caller (see ``eyepiece._style``), not captured when this package loads.
+the caller (see ``eyepiece.neutral`` and ``eyepiece.backing``), not captured
+when this package loads.
 
 Every name below loads lazily on first access (PEP 562): ``import eyepiece``
 alone never imports matplotlib, and ``import eyepiece.prepared`` -- the pure
