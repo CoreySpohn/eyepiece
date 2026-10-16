@@ -650,8 +650,9 @@ both moves from its place in the first to its place in the second, and it moves
 with its group: a tag, or a run of neighbours in no tag, takes one eased
 progress, so a word travels whole, and the groups start left to right. A tag
 that both equations have but whose glyphs do not match, such as ``num`` becoming
-another ``num``, is carried as one box that moves and scales onto the new box,
-with the old glyphs fading out as the new ones fade in inside it. Glyphs with
+another ``num``, morphs: the outlines of the old glyphs turn into the outlines
+of the new ones, as ManimCE's `Transform` does (the next clip and the
+comparison below show it). Glyphs with
 no counterpart at all fade out where they stand, in the first part of the beat,
 or fade in where they will stand, in the last part, after everything has
 settled. A tagged glyph pairs only inside its tag, and `key_map` pairs two
@@ -697,15 +698,17 @@ for k in (0, N_BAYES - 1):
 HTML(ep.animate(fig, draw_bayes, N_BAYES, fps=20).jshtml(dpi=80))
 ```
 
-A replaced tag can also change shape. With ``replace="morph"`` the outlines of
-the old glyphs turn into the outlines of the new ones, aligned as ManimCE's
-`Transform` aligns paths: glyph for glyph in reading order, the side with
-fewer glyphs gaining stacked copies of its own, a hole that one glyph lacks
-growing from a point, and every outline split until both have the same
-curves. The morph is the default; ``replace="fade"`` keeps the box. Below, the same
-Bayes move twice, the fade first and the morph second. The thirteen glyphs of
-the numerator outnumber the four of ``0.24``, so several outlines gather on
-each new glyph and the middle of the move is crowded, as it is in Manim.
+A replaced tag changes shape by default. The outlines of the old glyphs turn
+into the outlines of the new ones, aligned as ManimCE's `Transform` aligns
+paths: glyph for glyph in reading order, the side with fewer glyphs gaining
+stacked copies of its own, a hole that one glyph lacks growing from a point, and
+every outline split until both have the same curves. ``replace="fade"`` is the
+option that keeps the older behavior: the old glyphs ride a box that moves and
+scales onto the box of the new ones, fading out as the new ones fade in inside
+it. Below, the same Bayes move twice, the fade first and the morph second. The
+thirteen glyphs of the numerator outnumber the four of ``0.24``, so several
+outlines gather on each new glyph and the middle of the morph is crowded, as it
+is in Manim.
 
 ```{code-cell} python
 from IPython.display import display

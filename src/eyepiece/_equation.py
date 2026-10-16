@@ -15,6 +15,7 @@ nothing fade out where they stand or fade in where they will stand; a
 fraction bar stretches as a rectangle, each corner moving to its partner.
 """
 
+import itertools
 import math
 import re
 import warnings
@@ -143,6 +144,14 @@ class _Piece:
         self.local = local
         self.codes = codes
         self.tag = None
+        # A glyph with curves is drawn from its cubic form always, so the rest
+        # state and a morph rasterize the same outline. A piece of straight
+        # segments keeps its own path, which Agg may snap at rest.
+        self.draw_local, self.draw_codes = local, codes
+        if np.isin(codes, (Path.CURVE3, Path.CURVE4)).any():
+            self.draw_local, self.draw_codes = _bezier.flatten(
+                _bezier.to_cubic(Path(local, codes))
+            )
         self.box = np.array([*local.min(axis=0), *local.max(axis=0)])
         self.center = 0.5 * (self.box[:2] + self.box[2:])
 
@@ -324,7 +333,7 @@ class _Glyph(PathPatch):
 
     def vertices(self, renderer):
         """The piece in display pixels, in its place or part way to its partner."""
-        own = self.eq.place(self.piece.local, renderer)
+        own = self.eq.place(self.piece.draw_local, renderer)
         pose = self.pose
         if pose is None:
             return own
@@ -333,15 +342,15 @@ class _Glyph(PathPatch):
         if isinstance(pose, _BoxPose):
             v = pose.group.map(self, pose.side, pose.e, renderer)
             weight = 1.0 - pose.e if pose.side == "a" else pose.e
-            return v + weight * _snap_shift(own, renderer.height, self.piece.codes)
+            return v + weight * _snap_shift(own, renderer.height, self.piece.draw_codes)
         partner = pose.partner
-        there = partner.eq.place(partner.piece.local, renderer)
+        there = partner.eq.place(partner.piece.draw_local, renderer)
         v = (1.0 - pose.e) * own + pose.e * there
         v[:, 1] += self._lift(renderer, own, there)
         return (
             v
-            + (1.0 - pose.e) * _snap_shift(own, renderer.height, self.piece.codes)
-            + pose.e * _snap_shift(there, renderer.height, partner.piece.codes)
+            + (1.0 - pose.e) * _snap_shift(own, renderer.height, self.piece.draw_codes)
+            + pose.e * _snap_shift(there, renderer.height, partner.piece.draw_codes)
         )
 
     def rule_path(self, renderer):
@@ -376,7 +385,7 @@ class _Glyph(PathPatch):
         elif isinstance(self.pose, _MorphPose):
             self.set_path(Path(self.vertices(renderer), self.pose.job.codes))
         else:
-            self.set_path(Path(self.vertices(renderer), self.piece.codes))
+            self.set_path(Path(self.vertices(renderer), self.piece.draw_codes))
         super().draw(renderer)
 
 
@@ -469,6 +478,9 @@ class _Morph:
         by_source = len(source) >= len(target)
         self.carriers = source if by_source else target
         self.jobs = []
+        # A replacement has glyphs on both sides, so no pair is a null point;
+        # align_groups itself also takes an empty side.
+        assert min(al.index_a) >= 0 and min(al.index_b) >= 0
         for k in range(len(al.a)):
             ga = source[al.index_a[k]]
             gb = target[al.index_b[k]]
@@ -542,7 +554,7 @@ class _Replacement:
         hi = (1.0 - e) * a_hi + e * b_hi
         src_lo, src_hi = (a_lo, a_hi) if side == "a" else (b_lo, b_hi)
         size = np.where(src_hi - src_lo > 1e-9, src_hi - src_lo, 1.0)
-        own = glyph.eq.place(glyph.piece.local, renderer)
+        own = glyph.eq.place(glyph.piece.draw_local, renderer)
         return lo + (own - src_lo) * (hi - lo) / size
 
 
@@ -1200,7 +1212,13 @@ def transform(
             ),
             groups=tuple(rigid),
             may_overlap=tuple(
-                (a, b) for swap in swaps for a in swap.source for b in swap.target
+                pair
+                for swap in swaps
+                for pair in (
+                    itertools.combinations([*swap.source, *swap.target], 2)
+                    if isinstance(swap, _Morph)
+                    else ((a, b) for a in swap.source for b in swap.target)
+                )
             ),
             # A rule inside a replaced term deforms with the term, so only rules
             # that pair rule to rule, or that fade in place, stay rectangles.

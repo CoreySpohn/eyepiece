@@ -664,6 +664,7 @@ def test_auto_align_keeps_the_shared_shift_still_without_a_tag():
 
 
 def _left_anchored_bayes(replace="fade"):
+    """The gallery's Bayes clip; ``replace=None`` takes transform's default."""
     fig = plt.figure(figsize=(7.6, 2.4), dpi=80)
     board = fig.add_axes([0, 0, 1, 1])
     board.set(xlim=(0, 1), ylim=(0, 1))
@@ -672,7 +673,8 @@ def _left_anchored_bayes(replace="fade"):
     colors = {"lhs": "C0", "num": "C1", "den": "C3", "res": "C2"}
     a = ep.equation(left, BAYES_A, fontsize=34, colors=colors, ha="left")
     b = ep.equation(left, BAYES_B, fontsize=34, colors=colors, ha="left")
-    return fig, ep.transform(a, b, stagger=0.55, replace=replace)
+    options = {} if replace is None else {"replace": replace}
+    return fig, ep.transform(a, b, stagger=0.55, **options)
 
 
 def test_left_anchored_bayes_moves_without_a_jump_into_or_out_of_rest():
@@ -696,9 +698,9 @@ def test_replace_must_be_fade_or_morph():
         ep.transform(a, b, replace="dissolve")
 
 
-def test_morph_leaves_the_pairing_and_the_default_alone():
+def test_morph_and_fade_pair_the_same_glyphs():
     _fig, a, b = _pair(BAYES_A, BAYES_B)
-    fade = ep.transform(a, b)
+    fade = ep.transform(a, b, replace="fade")
     morph = ep.transform(a, b, replace="morph")
     assert (fade.pairs, fade.gone, fade.new, fade.replaced) == (
         morph.pairs,
@@ -817,7 +819,7 @@ def test_morph_carrier_reaches_the_target_outline_as_the_move_ends():
     target = b.artists["glyphs"][0]
     move.update(1.0)
     # Matplotlib puts a dummy vertex at the origin on each closing code.
-    real = np.asarray(target.piece.codes) != Path.CLOSEPOLY
+    real = np.asarray(target.piece.draw_codes) != Path.CLOSEPOLY
     final = target.vertices(renderer)[real]
     move.update(1.0 - 1e-6)
     drawn = glyph.vertices(renderer)
@@ -845,3 +847,34 @@ def test_morph_is_a_move_of_the_motion_part_of_the_beat():
     assert len(again) >= len(settled) and ga
     for v, w in zip(settled, again, strict=False):
         assert np.allclose(v, w, atol=1e-6)
+
+
+@pytest.mark.parametrize("replace", ["fade", "morph"])
+def test_curved_glyphs_do_not_pop_when_a_move_starts_or_ends(replace):
+    """A curved glyph rasterizes alike at rest and in motion: no antialiasing step."""
+    fig, a, b = _pair(r"${{t:a}}$", r"${{t:g}}$")
+    move = ep.transform(a, b, replace=replace, align=None, stagger=1.0)
+    move.update(0.0)
+    start = _pixels(fig).astype(int)
+    move.update(1.0)
+    end = _pixels(fig).astype(int)
+    for u, rest in ((1e-3, start), (1.0 - 1e-3, end)):
+        move.update(u)
+        assert np.abs(_pixels(fig).astype(int) - rest).max() < 25, (replace, u)
+    for tex in ("a", r"\mathrm{Pr}(E|H)", "0.24"):
+        fig, a, b = _pair(f"${{{{t:{tex}}}}}$", r"${{t:x^2}}$")
+        move = ep.transform(a, b, replace=replace, align=None, stagger=1.0)
+        move.update(0.0)
+        rest = _pixels(fig).astype(int)
+        move.update(1e-9)
+        assert np.abs(_pixels(fig).astype(int) - rest).max() < 25, (replace, tex)
+
+
+def test_default_morph_bayes_lints_clean_with_its_declared_contract():
+    fig, move = _left_anchored_bayes(None)
+    duration = 2.0
+
+    def at(t):
+        move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
+
+    assert ept.motion_faults(fig, at, ept.Span(0.0, duration), moves=[move]) == []

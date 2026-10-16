@@ -261,3 +261,48 @@ def test_alignment_matches_manim_when_it_is_installed():
         got_b = np.vstack([c.reshape(-1, 2) for c in b])
         assert np.allclose(got_a, ma.points[:, :2], atol=1e-12)
         assert np.allclose(got_b, mb.points[:, :2], atol=1e-12)
+
+
+def test_group_alignment_matches_manim_padding_and_copy_flags():
+    manim = pytest.importorskip("manim")
+
+    def vmobject(char):
+        vm = manim.VMobject()
+        vm.set_fill(opacity=1.0)
+        vm.set_points(
+            np.vstack(
+                [
+                    np.hstack([curve, np.zeros((4, 1))])
+                    for contour in _glyph(char)
+                    for curve in contour
+                ]
+            )
+        )
+        return vm
+
+    for chars_a, chars_b in (
+        ("abc", "12345"),
+        ("abcdefghijkl", "0.24"),
+        ("0.24", "ab"),
+    ):
+        ga = manim.VGroup(*[vmobject(c) for c in chars_a])
+        gb = manim.VGroup(*[vmobject(c) for c in chars_b])
+        ga.align_submobjects(gb)
+        mine = _bezier.align_groups(
+            [_glyph(c) for c in chars_a], [_glyph(c) for c in chars_b]
+        )
+        assert len(ga.submobjects) == len(mine.a) == len(gb.submobjects)
+        for k, (ma, mb) in enumerate(zip(ga.submobjects, gb.submobjects, strict=True)):
+            # Manim's copies are faded to zero opacity; the originals are not.
+            assert (ma.get_fill_opacity() == 0.0) == mine.copy_a[k]
+            assert (mb.get_fill_opacity() == 0.0) == mine.copy_b[k]
+            ref_a = chars_a[mine.index_a[k]]
+            ref_b = chars_b[mine.index_b[k]]
+            assert np.allclose(
+                ma.points[:, :2],
+                np.vstack([c.reshape(-1, 2) for c in _glyph(ref_a)]),
+            )
+            assert np.allclose(
+                mb.points[:, :2],
+                np.vstack([c.reshape(-1, 2) for c in _glyph(ref_b)]),
+            )
