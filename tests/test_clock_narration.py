@@ -46,50 +46,50 @@ SMALL = nr.Script(
 BAYES = nr.Script(
     (
         nr.Line(
-            "l_question",
+            "question",
             "How does seeing a deep band change the chance that a planet has water?",
             pad_after_s=0.6,
         ),
         nr.Line(
-            "l_square",
+            "square",
             "This {show:square}square holds every possible world, and its area is one.",
         ),
         nr.Line(
-            "l_water",
+            "water",
             "{show:water}Water worlds fill the left {indicate:water_label}0.3 "
             "of the square.",
         ),
         nr.Line(
-            "l_band_h",
+            "band_h",
             "A deep {show:band_h}band appears in {indicate:band_h_label}0.8 "
             "of the water worlds.",
         ),
         nr.Line(
-            "l_band_n",
+            "band_n",
             "It also appears in the {show:band_n}dry worlds, in "
             "{indicate:band_n_label}0.1 of them.",
         ),
         nr.Line(
-            "l_rule",
+            "rule",
             "We see the band, so every world without it is {show:rule}ruled out.",
         ),
         nr.Line(
-            "l_areas",
+            "areas",
             "Two {show:areas}areas are left. Water worlds with the band cover "
             "{circumscribe:area_h}0.24, and dry worlds with the band cover "
             "{circumscribe:area_n}0.07.",
         ),
         nr.Line(
-            "l_stretch",
+            "stretch",
             "{move:dim}Stack those two areas, and {move:stretch}stretch "
             "them until their total height is one.",
         ),
         nr.Line(
-            "l_bar",
+            "bar",
             "In the finished bar, the {show:bar}water part has a height of 0.77.",
         ),
         nr.Line(
-            "l_result",
+            "result",
             "{show:eq}That is the water area, {indicate:num}0.24, divided by "
             "the {indicate:den}total that is left. Seeing the band raises the "
             "chance of water from {indicate:prior}0.3 to {indicate:post}0.77.",
@@ -120,8 +120,8 @@ def bayes_clock(narration=None, strict=True):
 
     def line(key):
         if narration is not None:
-            return tl.line("l_" + key)
-        return tl.section("s_" + key)
+            return tl.line(key)
+        return tl.section(key)
 
     line("question")
     tl.hold(0.5)
@@ -198,16 +198,16 @@ def two_pass(narration, motion):
 
 def bayes_motion(tempo):
     return (
-        ("l_square", "show", "square", tempo.seconds(0.6), SHOW_LEAD_S),
-        ("l_water", "show", "water", tempo.seconds(0.6), SHOW_LEAD_S),
-        ("l_band_h", "show", "band_h", tempo.seconds(0.6), SHOW_LEAD_S),
-        ("l_band_n", "show", "band_n", tempo.seconds(0.6), SHOW_LEAD_S),
-        ("l_rule", "show", "rule", tempo.seconds(0.75), SHOW_LEAD_S),
-        ("l_areas", "show", "areas", tempo.seconds(0.5), SHOW_LEAD_S),
-        ("l_stretch", "move", "dim", tempo.seconds(0.5), SHOW_LEAD_S),
-        ("l_stretch", "move", "stretch", tempo.seconds(1.75), 0.0),
-        ("l_bar", "show", "bar", tempo.seconds(0.5), SHOW_LEAD_S),
-        ("l_result", "show", "eq", tempo.seconds(0.5), SHOW_LEAD_S),
+        ("square", "show", "square", tempo.seconds(0.6), SHOW_LEAD_S),
+        ("water", "show", "water", tempo.seconds(0.6), SHOW_LEAD_S),
+        ("band_h", "show", "band_h", tempo.seconds(0.6), SHOW_LEAD_S),
+        ("band_n", "show", "band_n", tempo.seconds(0.6), SHOW_LEAD_S),
+        ("rule", "show", "rule", tempo.seconds(0.75), SHOW_LEAD_S),
+        ("areas", "show", "areas", tempo.seconds(0.5), SHOW_LEAD_S),
+        ("stretch", "move", "dim", tempo.seconds(0.5), SHOW_LEAD_S),
+        ("stretch", "move", "stretch", tempo.seconds(1.75), 0.0),
+        ("bar", "show", "bar", tempo.seconds(0.5), SHOW_LEAD_S),
+        ("result", "show", "eq", tempo.seconds(0.5), SHOW_LEAD_S),
     )
 
 
@@ -216,7 +216,7 @@ def bayes_motion(tempo):
 
 
 def test_line_starts_and_ends_match_the_two_pass_layout_within_a_millisecond(bayes):
-    plan = bayes_clock(bayes, strict=False).at_fps(30)
+    plan = bayes_clock(bayes).at_fps(30)
     old = two_pass(bayes, bayes_motion(ep.Tempo()))
     assert set(old) == {b.key for b in plan.narration.beats}
     for beat in plan.narration.beats:
@@ -226,7 +226,7 @@ def test_line_starts_and_ends_match_the_two_pass_layout_within_a_millisecond(bay
 
 
 def test_span_starts_match_the_hand_placed_ones_within_a_millisecond(bayes):
-    plan = bayes_clock(bayes, strict=False).at_fps(30)
+    plan = bayes_clock(bayes).at_fps(30)
     narration = plan.narration
 
     def word(key, kind, target):
@@ -244,26 +244,26 @@ def test_span_starts_match_the_hand_placed_ones_within_a_millisecond(bayes):
         return max(start, word(key, "indicate", target) - 0.5 * PULSE_S)
 
     want = {
-        "square": show("l_square", "square"),
-        "water": show("l_water", "water"),
-        "band_h": show("l_band_h", "band_h"),
-        "band_n": show("l_band_n", "band_n"),
-        "rule": show("l_rule", "rule"),
-        "areas": show("l_areas", "areas"),
-        "bar": show("l_bar", "bar"),
-        "eq": show("l_result", "eq"),
+        "square": show("square", "square"),
+        "water": show("water", "water"),
+        "band_h": show("band_h", "band_h"),
+        "band_n": show("band_n", "band_n"),
+        "rule": show("rule", "rule"),
+        "areas": show("areas", "areas"),
+        "bar": show("bar", "bar"),
+        "eq": show("result", "eq"),
         "dim": max(
-            narration.beat("l_stretch").start_s,
-            word("l_stretch", "move", "dim") - SHOW_LEAD_S,
+            narration.beat("stretch").start_s,
+            word("stretch", "move", "dim") - SHOW_LEAD_S,
         ),
-        "stretch": word("l_stretch", "move", "stretch"),
-        "ring.area_h": word("l_areas", "circumscribe", "area_h"),
-        "ring.area_n": word("l_areas", "circumscribe", "area_n"),
-        "pulse.water_label": pulse("l_water", "water_label"),
-        "pulse.band_h_label": pulse("l_band_h", "band_h_label"),
-        "pulse.band_n_label": pulse("l_band_n", "band_n_label"),
-        "pulse.num": pulse("l_result", "num"),
-        "pulse.post": pulse("l_result", "post"),
+        "stretch": word("stretch", "move", "stretch"),
+        "ring.area_h": word("areas", "circumscribe", "area_h"),
+        "ring.area_n": word("areas", "circumscribe", "area_n"),
+        "pulse.water_label": pulse("water", "water_label"),
+        "pulse.band_h_label": pulse("band_h", "band_h_label"),
+        "pulse.band_n_label": pulse("band_n", "band_n_label"),
+        "pulse.num": pulse("result", "num"),
+        "pulse.post": pulse("result", "post"),
     }
     for name, start in want.items():
         assert plan.spans[name].start_s == pytest.approx(start, abs=1e-3), name
@@ -282,7 +282,7 @@ def test_span_starts_match_the_hand_placed_ones_within_a_millisecond(bayes):
 def test_cue_frames_are_the_rounded_cue_times_and_within_a_frame_of_the_floor(
     bayes, fps
 ):
-    plan = bayes_clock(bayes, strict=False).at_fps(fps)
+    plan = bayes_clock(bayes).at_fps(fps)
     cues = plan.events(what="cue")
     assert len(cues) == len(bayes.cues()) == 19
     for event, cue in zip(
@@ -299,7 +299,7 @@ def test_every_value_a_draw_function_reads_is_within_a_frame_of_the_continuous_o
     bayes, fps
 ):
     """Draw functions read only knobs, so equal knobs are equal pictures."""
-    plan = bayes_clock(bayes, strict=False).at_fps(fps)
+    plan = bayes_clock(bayes).at_fps(fps)
     for name, s in plan.spans.items():
         if not s.writes or s.end_s - s.start_s < 2.0 / fps:
             continue
@@ -311,11 +311,10 @@ def test_every_value_a_draw_function_reads_is_within_a_frame_of_the_continuous_o
             assert lo - 0.05 <= got <= hi + 0.05, (name, k)
 
 
-def test_the_narrated_clip_has_no_faults_but_the_caption_read_and_the_infos(bayes):
-    plan = bayes_clock(bayes, strict=False).at_fps(30)
-    errors = [f for f in plan.faults if f.severity == "error"]
-    assert [f.code for f in errors] == ["short-read"]
-    assert "cap_rule" in errors[0].message
+def test_the_narrated_clip_builds_strict_with_only_infos(bayes):
+    plan = bayes_clock(bayes, strict=True).at_fps(30)
+    assert {f.severity for f in plan.faults} <= {"info"}
+    assert "short-read" not in _codes(plan)
 
 
 def test_one_function_builds_the_silent_clip_too():
@@ -413,6 +412,69 @@ def test_a_cue_in_a_later_line_cannot_be_waited_on():
         tl.pulse("speckle", cue="indicate:speckle")
     with pytest.raises(ValueError, match="comes after the current line"):
         tl.cue("indicate:speckle")
+
+
+def _late_clock(over_s, **kwargs):
+    """A move on the word `star`, with the cursor `over_s` seconds past it."""
+    small = nr.Narration.load(SMALL, DATA)
+    tl = ep.Timeline(narration=small, **kwargs)
+    tl.line("open")
+    tl.hold(small.cue("open", "indicate", "star") + over_s)
+    tl.move("star", 0.3, cue="indicate:star")
+    tl.line("leak")
+    tl.pulse("speckle")
+    tl.ring("planet")
+    return tl
+
+
+def test_a_span_that_waits_for_the_cursor_is_info_under_max_late_s():
+    plan = _late_clock(0.3).at_fps(30)
+    late = [f for f in plan.faults if f.code == "late"]
+    assert len(late) == 1 and late[0].severity == "info"
+
+
+def test_a_span_that_waits_past_max_late_s_is_an_error_naming_span_word_and_seconds():
+    small = nr.Narration.load(SMALL, DATA)
+    word = small.beat("open").cues[0].word.text
+    with pytest.raises(
+        ValueError, match=r"move 'star' starts 1\.700 s after its cue word"
+    ) as err:
+        _late_clock(1.7).at_fps(30)
+    assert repr(word) in str(err.value) and "max_late_s" in str(err.value)
+    plan = _late_clock(1.7, strict=False).at_fps(30)
+    late = [f for f in plan.faults if f.code == "late"]
+    assert [f.severity for f in late] == ["error"]
+
+
+def test_max_late_s_is_a_knob_of_the_timeline():
+    plan = _late_clock(1.7, max_late_s=5.0).at_fps(30)
+    assert {f.severity for f in plan.faults if f.code == "late"} == {"info"}
+    with pytest.raises(ValueError, match="max_late_s"):
+        ep.Timeline(max_late_s=-1.0)
+
+
+LONG_CAPTION = " ".join(["words"] * 40)
+
+
+def test_a_caption_the_next_caption_replaces_needs_no_read_time_when_narrated():
+    small = nr.Narration.load(SMALL, DATA)
+    tl = ep.Timeline(narration=small, tempo=ep.Tempo())
+    tl.line("open")
+    tl.caption("first", LONG_CAPTION, cue="indicate:star")
+    tl.line("leak")
+    tl.caption("second", "the next one", leaves="never", cue="indicate:speckle")
+    tl.ring("planet")
+    plan = tl.at_fps(30)
+    assert "short-read" not in _codes(plan)
+    assert plan.spans["first.leave"].start_s < plan.spans["first"].start_s + 60
+
+
+def test_a_silent_caption_the_next_one_replaces_still_needs_its_read_time():
+    silent = ep.Timeline(tempo=ep.Tempo(), strict=False)
+    silent.caption("first", LONG_CAPTION, leaves="next")
+    silent.hold(0.1)
+    silent.caption("second", "the next one", leaves="never")
+    assert "short-read" in _codes(silent.at_fps(30))
 
 
 def test_a_cue_in_an_earlier_line_is_clamped_to_the_line_and_flagged():

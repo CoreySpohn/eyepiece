@@ -24,6 +24,7 @@ This module imports only the standard library, NumPy and `eyepiece._motion`.
 """
 
 import difflib
+import itertools
 import math
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
@@ -126,8 +127,8 @@ class Span:
     of `Plan.spans` carry them.
 
     Attributes:
-        name: Unique within the timeline (spans, lines and sections share one
-            namespace).
+        name: Unique among the timeline's span and knob names (lines and
+            sections have a namespace of their own).
         kind: One of ``hold``, ``enter``, ``leave``, ``text``, ``caption``,
             ``move``, ``run``, ``pulse``, ``ring``, ``line``.
         section: Name of the section or line it was declared in ("" if none).
@@ -290,6 +291,16 @@ class _Together:
         return False
 
 
+def _no_colon(name):
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"a name must be a non-empty string, got {name!r}")
+    if ":" in name:
+        raise ValueError(
+            f"the name {name!r} holds ':', which event names and cues use as a "
+            "separator; pick a name without it"
+        )
+
+
 def _numeric(value):
     return _is_number(value)
 
@@ -332,12 +343,19 @@ class Timeline:
             places the line's speech, and cue marks place the spans.
         strict: If True a failed check raises; otherwise it is recorded in
             `Plan.faults`.
+        max_late_s: The most seconds a cue-placed span may wait for the
+            cursor past its cue before ``late`` is an error rather than
+            info (a strict timeline raises, otherwise it is a fault in
+            `Plan.faults`).
 
     Raises:
-        ValueError: If a knob name is reserved.
+        ValueError: If a knob name is reserved or holds ``:``, or
+            `max_late_s` is negative.
     """
 
-    def __init__(self, knobs=None, *, tempo=None, narration=None, strict=True):
+    def __init__(
+        self, knobs=None, *, tempo=None, narration=None, strict=True, max_late_s=0.5
+    ):
         self._initial = dict(knobs or {})
         for name in self._initial:
             if name in _RESERVED:
@@ -345,6 +363,10 @@ class Timeline:
                     f"knob name {name!r} is reserved for frame fields "
                     f"{sorted(_RESERVED)}"
                 )
+            _no_colon(name)
+        if not float(max_late_s) >= 0.0:
+            raise ValueError(f"max_late_s must be at least 0, got {max_late_s!r}")
+        self._max_late = Fraction(float(max_late_s))
         self._tempo = tempo
         self._read_tempo = tempo if tempo is not None else Tempo()
         self._source = narration
@@ -353,6 +375,7 @@ class Timeline:
         self._writes = {}
         self._owner = {}
         self._names = set()
+        self._labels = set()
         self._sections = []
         self._open = None
         self._now = Fraction(0)
@@ -401,14 +424,23 @@ class Timeline:
         return name
 
     def _claim(self, name):
-        if not isinstance(name, str) or not name:
-            raise ValueError(f"a name must be a non-empty string, got {name!r}")
+        _no_colon(name)
         if name in self._names:
             raise ValueError(
-                f"the name {name!r} is already used; spans, lines and sections "
-                "share one namespace"
+                f"the span name {name!r} is already used; span and knob names "
+                "are unique (lines and sections have their own namespace)"
             )
         self._names.add(name)
+
+    def _claim_label(self, name):
+        """Claim a section or line name; only labels clash with labels."""
+        _no_colon(name)
+        if name in self._labels:
+            raise ValueError(
+                f"the section or line name {name!r} is already used; sections "
+                "and lines share a namespace of their own, apart from spans"
+            )
+        self._labels.add(name)
 
     def _secs(self, seconds, paced):
         seconds = float(seconds)
@@ -419,6 +451,7 @@ class Timeline:
         return Fraction(seconds)
 
     def _knob(self, name):
+        _no_colon(name)
         if name in _RESERVED:
             raise ValueError(f"{name!r} is reserved for the frame fields")
         self._known.setdefault(name, None)
@@ -449,13 +482,13 @@ class Timeline:
         last extending span (a caption read in silent mode included).
 
         Args:
-            name: The section's name, unique in the timeline's namespace.
+            name: The section's name, unique among sections and lines.
 
         Returns:
             The section, whose ``start`` and (once closed) ``end`` are `Time`.
         """
         self._close_open()
-        self._claim(name)
+        self._claim_label(name)
         self._open = _Section(self, name, self._now)
         self._sections.append(self._open)
         return self._open
@@ -475,7 +508,7 @@ class Timeline:
 
         Raises:
             ValueError: If the timeline has no narration, the line is not the
-                next one of the script, or the name is taken.
+                next one of the script, or the key holds ``:``.
         """
         if self._source is None:
             raise ValueError("line() needs a Timeline built with narration=")
@@ -488,7 +521,7 @@ class Timeline:
                 f"lines open in script order: the next is {want!r}, not {key!r}"
             )
         self._close_open()
-        self._claim(key)
+        self._claim_label(key)
         beat = self._source.place(key, float(self._now))
         sec = _Section(self, key, self._now, beat)
         self._open = sec
@@ -598,12 +631,22 @@ class Timeline:
         start = max(raw, sec._start)
         if not attention:
             start = max(start, base)
-        if start > raw + Fraction(1, 10**9) and not clamped:
+        late = start - raw
+        if late > Fraction(1, 10**9) and not clamped:
+            over = late > self._max_late
             self._fault(
                 "late",
-                f"{kind} {target!r} starts {float(start - raw):.3f} s after its cue",
+                f"{kind} {target!r} starts {float(late):.3f} s after its cue "
+                f"word {found.word.text!r}"
+                + (
+                    f", over the {float(self._max_late):g} s allowed (max_late_s); "
+                    "finish the earlier span sooner, place it with at=, or raise "
+                    "max_late_s"
+                    if over
+                    else ""
+                ),
                 (target,),
-                severity="info",
+                severity="error" if over else "info",
             )
         return start, not attention, float(cue_s), clamped, False
 
@@ -881,7 +924,10 @@ class Timeline:
         if not extends:
             self._tails.append(span._t1)
         need = cap["arrive_end"] + Fraction(cap["read_s"])
-        if start < need - Fraction(1, 10**6):
+        # Speech reads a caption in a narrated clip, so the next caption (or a
+        # clear) may take it down; the read time is a silent-clip rule.
+        spoken = self._source is not None and cap["policy"] == "next"
+        if start < need - Fraction(1, 10**6) and not spoken:
             self._fault(
                 "short-read",
                 f"caption {cap['name']!r} leaves {float(need - start):.2f} s before "
@@ -1099,6 +1145,17 @@ class Timeline:
     def stagger(self, verb, targets, *, each_s, **kwargs):
         """Call `verb` on each target, each one `each_s` seconds after the last.
 
+        Every call is placed with ``at=``, so none of them moves ``now``
+        by itself. When the verb extends its section (``enter``, ``leave``,
+        ``text``, ``move`` and the like), ``now`` then advances to the latest
+        end, so what follows is placed after the whole group, the way
+        sequential calls would be. A pulse or a ring does not extend, so
+        ``now`` stays put.
+
+        Staggered ``enter`` spans must not overlap: one subject enters at a
+        time. If `each_s` is shorter than an entry, the call raises; use
+        sequential calls, or an `each_s` at least as long as the entry.
+
         Args:
             verb: ``"pulse"``, ``"ring"``, ``"enter"``, ``"leave"`` or another
                 verb whose first argument names its subject.
@@ -1108,12 +1165,33 @@ class Timeline:
 
         Returns:
             The list of `Span`.
+
+        Raises:
+            ValueError: If staggered ``enter`` spans overlap in time.
         """
         base = self._now
         fn = getattr(self, verb)
-        return [
+        out = [
             fn(t, at=base + i * float(each_s), **kwargs) for i, t in enumerate(targets)
         ]
+        if verb == "enter":
+            for a, b in itertools.pairwise(out):
+                if b._t0 < a._t1 and b.name not in a.with_ and a.name not in b.with_:
+                    raise ValueError(
+                        f"staggered enters overlap: {a.name!r} lasts until "
+                        f"{float(a._t1):.3f} s but {b.name!r} starts at "
+                        f"{float(b._t0):.3f} s, and one subject enters at a "
+                        f"time; use each_s of at least {float(a._t1 - a._t0):.3f} "
+                        "s or place the enters one after another"
+                    )
+        ends = [s._t1 for s in out if s.extends]
+        if ends:
+            latest = max(ends)
+            if self._together:
+                self._together[-1][1] = max(self._together[-1][1], latest)
+            else:
+                self._now = max(self._now, latest)
+        return out
 
     def cue(self, spec):
         """When the mark ``kind:target`` is said: the word start, no lead.
@@ -1211,14 +1289,17 @@ class Timeline:
             spans[name] = replace(s, k0=k0, k1=k1, collapsed=raw <= k0)
         for name, s in list(spans.items()):
             if s.k1 > n_frames:
-                k1 = n_frames
-                spans[name] = replace(s, k0=min(s.k0, k1 - 1), k1=k1)
+                # Truncate at the clip end and keep the speed: the span keeps
+                # its length in frames, so its last frames are never drawn.
+                k0 = min(s.k0, n_frames - 1)
+                cut = k0 + s.n - n_frames
+                spans[name] = replace(s, k0=k0, k1=k0 + s.n)
                 info.append(
                     Fault(
                         "clamped-to-clip",
                         "info",
-                        f"{s.kind} {name!r} ends after the clip and was clamped "
-                        "to its last frame",
+                        f"{s.kind} {name!r} ends after the clip and was "
+                        f"truncated by {cut} frames at the clip end",
                         (name,),
                     )
                 )

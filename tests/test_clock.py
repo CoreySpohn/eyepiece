@@ -9,7 +9,14 @@ from hypothesis import strategies as st
 
 import eyepiece as ep
 from eyepiece import anim
+from eyepiece import narration as nr
 
+SMALL = nr.Script(
+    (
+        nr.Line("open", "The coronagraph blocks the {indicate:star}starlight."),
+        nr.Line("leak", "What leaks through is {indicate:speckle}speckle."),
+    )
+)
 TEMPO = ep.Tempo(factor=1.0)
 FPS = (24, 25, 30, 50, 60)
 
@@ -328,16 +335,40 @@ def test_a_section_end_is_unknown_while_it_is_open():
     assert sec.end == 1.0
 
 
-def test_spans_and_sections_share_one_namespace():
+def test_a_span_and_a_section_may_share_a_name_but_two_sections_may_not():
     tl = ep.Timeline()
     tl.section("same")
-    with pytest.raises(ValueError, match="already used"):
-        tl.enter("same")
+    tl.enter("same")
     with pytest.raises(ValueError, match="already used"):
         tl.section("same")
     tl.enter("other")
     with pytest.raises(ValueError, match="already used"):
         tl.hold(1.0, name="other")
+    assert "same" in tl.at_fps(10).spans
+
+
+def test_a_line_and_a_span_may_share_a_name_but_two_lines_may_not():
+    small = nr.Narration.estimated(SMALL)
+    tl = ep.Timeline(narration=small, strict=False)
+    tl.line("open")
+    tl.hold(0.5, name="open")
+    tl.line("leak")
+    with pytest.raises(ValueError, match="already used"):
+        tl.section("leak")
+    plan = tl.at_fps(30)
+    assert plan.events(what="line-start") and "open" in plan.spans
+
+
+def test_a_colon_in_any_user_given_name_is_refused():
+    with pytest.raises(ValueError, match="':'"):
+        ep.Timeline({"a:b": 0.0})
+    tl = ep.Timeline({"x": 0.0})
+    with pytest.raises(ValueError, match="':'"):
+        tl.section("a:b")
+    with pytest.raises(ValueError, match="':'"):
+        tl.enter("a:b")
+    with pytest.raises(ValueError, match="':'"):
+        tl.hold(1.0, name="a:b")
 
 
 def test_bad_arguments_are_refused_with_the_valid_choices():
@@ -362,15 +393,31 @@ def test_bad_arguments_are_refused_with_the_valid_choices():
 # Clip length
 
 
-def test_a_pulse_past_the_end_is_clamped_to_the_clip_and_recorded():
+def test_a_pulse_past_the_end_is_truncated_at_the_clip_and_recorded():
     tl = ep.Timeline()
     tl.hold(1.0)
     tl.pulse("p", at=0.5)
     plan = tl.at_fps(10)
     assert plan.n_frames == 10
-    assert plan.spans["pulse.p"].k1 == 10
+    span = plan.spans["pulse.p"]
+    assert (span.k0, span.n) == (5, 9)  # the speed is kept: 0.9 s is 9 frames
     assert _codes(plan) == ["clamped-to-clip"]
     assert plan.faults[0].severity == "info"
+    assert "truncated by 4 frames" in plan.faults[0].message
+    assert plan.value(9, "pulse.p") == pytest.approx(plan.progress(9, "pulse.p"))
+    assert plan.progress(9, "pulse.p") == pytest.approx(5 / 9)
+
+
+def test_a_truncated_pulse_runs_at_full_speed_not_compressed():
+    tl = ep.Timeline()
+    tl.hold(1.0)
+    tl.pulse("p", at=0.1)
+    full = tl.at_fps(30).spans["pulse.p"].n
+    tl2 = ep.Timeline()
+    tl2.hold(1.0)
+    tl2.pulse("p", at=0.5)
+    cut = tl2.at_fps(30).spans["pulse.p"]
+    assert cut.n == full == 27
 
 
 # ---------------------------------------------------------------------------
@@ -465,12 +512,40 @@ def test_together_starts_children_at_now_and_leaves_now_at_the_latest_end():
     assert tl.now == 3.0
 
 
-def test_stagger_places_each_target_each_s_after_the_last_without_moving_now():
+def test_stagger_chains_extending_verbs_and_leaves_now_after_the_group():
     tl = ep.Timeline()
     tl.hold(1.0)
     spans = tl.stagger("enter", ["a", "b", "c"], each_s=0.5, seconds=0.2)
     assert [float(s.start) for s in spans] == [1.0, 1.5, 2.0]
+    assert tl.now == pytest.approx(2.2)
+    after = tl.enter("d", 0.2)
+    assert float(after.start) == pytest.approx(2.2)
+    tl.at_fps(30)
+
+
+def test_stagger_of_a_pulse_does_not_move_now():
+    tl = ep.Timeline()
+    tl.hold(1.0)
+    spans = tl.stagger("pulse", ["a", "b"], each_s=0.3)
+    assert [float(s.start) for s in spans] == [1.0, 1.3]
     assert tl.now == 1.0
+
+
+def test_staggered_enters_that_overlap_raise_and_point_to_sequential_placement():
+    tl = ep.Timeline()
+    tl.hold(1.0)
+    with pytest.raises(ValueError, match="one subject enters at a time") as err:
+        tl.stagger("enter", ["a", "b"], each_s=0.1, seconds=0.5)
+    assert "each_s of at least 0.500" in str(err.value)
+
+
+def test_staggered_leaves_may_overlap():
+    tl = ep.Timeline({"a": 1.0, "b": 1.0})
+    tl.hold(1.0)
+    spans = tl.stagger("leave", ["a", "b"], each_s=0.1, seconds=0.5)
+    assert tl.now == pytest.approx(1.6)
+    assert len(spans) == 2
+    tl.at_fps(30)
 
 
 def test_a_section_ends_at_its_last_extending_span_not_at_a_pulse():
