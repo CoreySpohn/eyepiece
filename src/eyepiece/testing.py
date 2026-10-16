@@ -63,6 +63,7 @@ from typing import NamedTuple
 
 import numpy as np
 from matplotlib.axis import Axis
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_rgba
 from matplotlib.image import AxesImage
@@ -1317,15 +1318,18 @@ def motion_faults(
     samples = _sample_times(times, fps)
     if len(samples) < 3:
         raise ValueError("a motion check needs at least three samples")
-    old_dpi = fig.dpi
+    old_dpi, old_canvas = fig.dpi, fig.canvas
     if dpi is not None:
         fig.set_dpi(dpi)
+    if not hasattr(old_canvas, "buffer_rgba"):
+        FigureCanvasAgg(fig)  # a canvas that cannot hand back pixels
     try:
         trace = _Trace(samples)
         for k, t in enumerate(samples):
             at(t)
             trace.add(k, fig, _renderer(fig))
     finally:
+        fig.set_canvas(old_canvas)
         if dpi is not None:
             fig.set_dpi(old_dpi)
     return _analyze(

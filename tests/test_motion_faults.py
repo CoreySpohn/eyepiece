@@ -487,6 +487,22 @@ def test_one_frame_teleport_is_a_spike():
     assert "velocity" in next(f for f in found if f.kind == "spike").detail
 
 
+def test_a_figure_with_a_canvas_that_has_no_pixels_is_still_checked():
+    from matplotlib.backend_bases import FigureCanvasBase
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(4.0, 2.0), dpi=DPI)
+    FigureCanvasBase(fig)
+    block = _box(fig, 20, 80, 60, 40)
+
+    def at(t):
+        _move(block, 20 + 400 * _smooth(t / DURATION), 80)
+
+    found = ept.motion_faults(fig, at, SPAN)
+    assert _kinds(found) == ["outside"]
+    assert type(fig.canvas) is FigureCanvasBase
+
+
 # the call
 
 
