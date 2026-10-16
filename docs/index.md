@@ -234,6 +234,7 @@ about them. The API reference documents every signature.
 :caption: Tutorials
 
 tutorials/still
+tutorials/build-up
 ```
 
 ```{toctree}
@@ -241,6 +242,15 @@ tutorials/still
 :caption: How-to
 
 how-to/build-up
+how-to/bring-a-panel-in
+how-to/draw-a-line-on
+how-to/bind-a-move-to-a-knob
+how-to/declare-a-cast
+how-to/check-a-clip
+how-to/step-through-discrete-values
+how-to/keep-the-scale-fixed
+how-to/stills-from-the-encode
+how-to/write-a-viz-module
 ```
 
 ```{toctree}

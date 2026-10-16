@@ -54,6 +54,6 @@ labels and marks. To save the finished still, pass `result.fig` to `save_fig`:
 ep.save_fig(result.fig, "coronagraph-field")
 ```
 
-Continue with {doc}`building up a figure <../how-to/build-up>` to reveal a
+Continue with {doc}`Tutorial 2: a silent build-up <build-up>` to reveal a
 finished axes in stages, or browse the {doc}`image catalog <../gallery/images>`
 for other image displays.
