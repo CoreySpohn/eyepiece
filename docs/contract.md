@@ -588,7 +588,33 @@ identical; its reveal is by opacity or by letters in place, never by motion. A f
 turn it. `morph` is a figure-level ghost like a flight, visible only
 between its ends, whose geometry at the ends is the two paths resampled by
 arc length (and, for a closed pair, the second rolled and possibly reversed
-to lie on the first). `write` is a figure-level ghost of a text, visible only before ``u = 1``: it
+to lie on the first). `equation` lays mathtext out as glyph outlines, one figure-level patch per glyph or rule, in
+display pixels, with named groups (``{{name:...}}``, found by hiding the group with ``\phantom``
+and reading what disappears, and raising when the hidden group would move any other glyph); a group is an
+artist with the box of its glyphs, laid out where the equation is, so anchors, callouts,
+outlines, pulses and a `Stage` act on it unchanged. Its ``update(u, level=1.0)`` writes the
+terms on, left to right, and at ``u = 1`` the equation is whole; `level` is an opacity and never
+geometry. `transform` carries one equation into another, owns the visibility of both, rests at
+``u = 1`` (the second equation shown, the first hidden) and draws the first alone at ``u = 0``,
+each pixel-identical to that equation as placed. Matching is by glyph identity (font and
+glyph, never the character code): inside a tag both equations share (or a `key_map` pair), in
+left-to-right order, then across glyphs in no tag, and a tagged glyph never pairs outside its tag;
+equations that share no tag pair every glyph by order. `align` (default ``"auto"``) places the
+second equation so that the sideways shift most groups share is removed and those glyphs keep their place in the first, which moves the second
+equation's layout at every `u`, the rest state included. Matched glyphs move by group, never
+one by one: all the matched glyphs of one tag, or one run of neighbouring glyphs in no tag, share
+one eased progress, staggered left to right by the group's place in the first equation, so a word
+moves rigidly. A group arcs on an optional arc, up when it moves right and down when it moves left, scaled by its sideways travel
+(``min(1, travel / fontsize)``), so two groups that swap places pass each other and a group that does not travel sideways does not arc. A tag both
+equations have whose glyphs do not all match is a replacement: what is left of it in the first is
+carried as one box that moves and scales onto the box of what is left in the second, fading out
+while the second, drawn inside the moving box, fades in. Glyphs with no counterpart at all
+fade out in the first `fade` of the beat or fade in in the last, so when anything fades in
+the motion takes the first ``1 - fade``, and new text arrives after the motion has settled. A
+fraction bar stretches as a rectangle, each corner moving to its partner, so its ends stay square. A transform's narration cue is ``{move:name}``, whose time
+starts its ramp. Not supported: ``usetex``, several math spans in one string, escaped braces
+(they raise), and the size animation of ``\left ... \right``.
+`write` is a figure-level ghost of a text, visible only before ``u = 1``: it
 hides the real text until the end, where the text is shown with the
 visibility it had, so the rest state is the text as drawn. Its outlines are
 laid out as the text lays itself out, its stroke and fill take the text's
