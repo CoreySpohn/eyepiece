@@ -1988,7 +1988,8 @@ def collapse(
     ``u = 1``, where the caller draws its own bar; with `to`, it is visible
     from ``u > 0`` until ``carry = 1``, where the caller draws the landed
     bar. The rest state, when it is made, is the move finished: nothing
-    drawn.
+    drawn. The copy fades in over the first fifth of the gather and fades
+    out over the last fifth of the gather, or of the carry when `to` is given.
 
     Args:
         ax: The axes the cells are drawn in.
@@ -2068,6 +2069,11 @@ def collapse(
         if target is not None:
             blend = min(1.0, max(0.0, e))  # a color cannot overshoot
             shade = cells + blend * (target - cells)
+        opacity = _ease(min(1.0, state["u"] / 0.2), "smoothstep")
+        finish = state["u"] if landing is None else state["carry"]
+        opacity *= _ease(min(1.0, (1.0 - finish) / 0.2), "smoothstep")
+        shade = shade.copy()
+        shade[:, 3] *= opacity
         return place, shade
 
     rc = matplotlib.rcParams
@@ -2757,7 +2763,8 @@ def morph(
     autoscaling. It is visible only for ``0 < u < 1``: at ``u = 0`` and
     ``u = 1`` it draws nothing, so those frames are the frames without the
     move and the caller shows the first and the second path at their ends.
-    The rest state, when the move is made, is ``u = 1``.
+    The ghost fades in over the first fifth of the move and fades out over
+    the last fifth, continuously reaching its absent rest state at ``u = 1``.
 
     Args:
         a: The path to start from: a `Line2D` (a run is closed if its first
@@ -2833,7 +2840,8 @@ def morph(
     def update(u, level=1.0):
         u = _check_u(u)
         ghost._u = u
-        ghost._level = min(1.0, max(0.0, float(level)))
+        envelope = _ease(min(1.0, u / 0.2, (1.0 - u) / 0.2), "smoothstep")
+        ghost._level = min(1.0, max(0.0, float(level))) * envelope
         ghost.set_visible(0.0 < u < 1.0)
 
     update(1.0)

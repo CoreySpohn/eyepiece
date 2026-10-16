@@ -475,11 +475,16 @@ def follow_zoom(
     inset.patch.set_facecolor(_resolve_background(ax))
     # A halo in the panel's own background under every line, so the frame
     # reads on a dark image and on a light one alike.
-    halo = _resolve_background(ax)
+    halo = matplotlib.colors.to_rgba(_resolve_background(ax))
 
-    def haloed(artist, width):
+    def haloed(artist, width, alpha=1.0):
         artist.set_path_effects(
-            [pe.Stroke(linewidth=width + 2.4, foreground=halo), pe.Normal()]
+            [
+                pe.Stroke(
+                    linewidth=width + 2.4, foreground=(*halo[:3], halo[3] * alpha)
+                ),
+                pe.Normal(),
+            ]
         )
 
     for spine in inset.spines.values():
@@ -547,6 +552,8 @@ def follow_zoom(
         inset.patch.set_alpha(scaled(bases["face"]))
         for spine, base in zip(inset.spines.values(), bases["spines"], strict=True):
             spine.set_alpha(scaled(base))
+        for part in (box, *links, *inset.spines.values()):
+            haloed(part, part.get_linewidth(), a)
 
     update(1.0)
     return PlotResult(
