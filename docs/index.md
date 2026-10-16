@@ -242,7 +242,6 @@ tutorials/narrated
 :maxdepth: 2
 :caption: How-to
 
-how-to/build-up
 how-to/bring-a-panel-in
 how-to/draw-a-line-on
 how-to/bind-a-move-to-a-knob

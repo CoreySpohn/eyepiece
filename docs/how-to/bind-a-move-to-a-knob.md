@@ -41,7 +41,8 @@ plt.show()
 ```
 
 Place a silent pulse with `at=` and provide a hold long enough to contain it.
-Use `scale=` for a width bump on a line, or a size bump on a marker, and set
-any Stage levels before applying the pulse.
+Use `scale=` for a width bump on a line, or a size bump on a marker. Any knob
+reads the same way: `plan.value(k, name)` returns its value on frame `k`, and a
+move's `update` takes the raw value.
 See {doc}`the attention catalog <../gallery/motion-attention>` and
 {doc}`the clock catalog <../gallery/motion-clock>`.

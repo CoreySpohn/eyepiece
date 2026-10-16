@@ -38,8 +38,7 @@ plan = tl.at_fps(10)
 
 
 def draw(k):
-    frame = plan.value(k, "index")
-    index = int(plan.value(frame, "sample"))
+    index = int(plan.value(k, "sample"))
     marker.set_data([x[index]], [y[index]])
 
 
@@ -51,6 +50,5 @@ plt.show()
 Each `hold(seconds, to=...)` changes its value at the first frame and keeps it
 until the next write, so these steps are declared automatically to the clip
 checker.
-`index` is the reserved frame number, while `sample` is the discrete knob.
 See {doc}`the clock catalog <../gallery/motion-clock>` for timing and
 {doc}`the checks catalog <../gallery/motion-checks>` for step declarations.
