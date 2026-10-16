@@ -276,6 +276,7 @@ def _stepped_clip(*, jump=False):
     tl = ep.Timeline({"x": 40.0, "travel": 0.0}, tempo=ep.Tempo(factor=1.0))
     tl.run("traveling", 2.0, to={"travel": 8.0}, at=0.0)
     tl.move("slide", 0.2, at=0.3)
+    tl.move("late", 0.2, at=0.8)
     for x in (40.0, 100.0, 160.0, 220.0):
         tl.hold(0.5, to={"x": x})
     plan = tl.at_fps(10)
@@ -301,16 +302,18 @@ def test_discrete_hold_sweep_reports_only_the_unplanned_jump():
     assert report.motion[0].time == pytest.approx(0.8)
 
 
-@pytest.mark.parametrize("step", ["slide", 3])
-def test_explicit_steps_add_span_starts_or_frame_indices(step):
+@pytest.mark.parametrize(("step", "frame"), [("slide", 3), (3, 3), ("late", 8), (8, 8)])
+def test_explicit_steps_add_span_starts_or_frame_indices(step, frame):
     fig, draw, plan = _stepped_clip()
     extra = _marker(fig, y=30, color="black")
 
     def with_jump(k):
         draw(k)
-        extra.set_xdata([40 + (80 if k >= 3 else 0)])
+        extra.set_xdata([40 + (80 if k >= frame else 0)])
 
     assert ept.check_clip(fig, with_jump, plan, steps=[step]).ok
+    other = 8 if frame == 3 else 3
+    assert not ept.check_clip(fig, with_jump, plan, steps=[other]).ok
 
 
 def test_unknown_step_span_names_the_missing_span():
@@ -343,3 +346,15 @@ def test_step_frames_merge_two_knobs_and_include_initial_changes():
     tl.hold(0.2, to={"x": 2.0, "label": "fourth"})
     tl.move("rename", 0.2, to={"label": "last"})
     assert tl.at_fps(10).step_frames() == (0, 4, 6, 8)
+
+
+@pytest.mark.parametrize("bad", [-1, 10**6, 2.5, None])
+def test_a_step_outside_the_plan_is_refused(bad):
+    fig, draw, plan, _ = _clip()
+    with pytest.raises(ValueError, match="frame index"):
+        ept.check_clip(fig, draw, plan, steps=[bad])
+
+
+def test_a_bare_span_name_is_one_step():
+    fig, draw, plan = _stepped_clip()
+    assert ept.check_clip(fig, draw, plan, steps="slide").ok

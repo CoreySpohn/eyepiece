@@ -2149,12 +2149,23 @@ def check_clip(
         ValueError: If the venue is unknown or the plan has fewer than three
             frames, as required by `motion_faults`.
         KeyError: If a move or step names an unknown plan span.
+        ValueError: If a step is neither a span name nor a frame index in
+            the plan.
     """
     declared = _clip_moves(moves, plan)
     step_frames = set(plan.step_frames())
-    step_frames.update(
-        plan._span(step).k0 if isinstance(step, str) else step for step in steps or ()
-    )
+    if isinstance(steps, str):
+        steps = [steps]
+    for step in steps or ():
+        if isinstance(step, str):
+            step_frames.add(plan._span(step).k0)
+        elif isinstance(step, int) and 0 <= step < plan.n_frames:
+            step_frames.add(step)
+        else:
+            raise ValueError(
+                f"a step is a span name or a frame index in [0, {plan.n_frames}), "
+                f"got {step!r}"
+            )
     step_times = [k / plan.fps for k in sorted(step_frames)]
     if keys is None and motifs is not None:
         keys = motifs.meaning_keys()
