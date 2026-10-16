@@ -1,0 +1,71 @@
+{
+ "key": "3ca47b88165e046e",
+ "duration_s": 4.9,
+ "words": [
+  [
+   "This",
+   0.225,
+   0.4
+  ],
+  [
+   "square",
+   0.4,
+   0.775
+  ],
+  [
+   "holds",
+   0.775,
+   1.225
+  ],
+  [
+   "every",
+   1.225,
+   1.6125
+  ],
+  [
+   "possible",
+   1.6125,
+   2.125
+  ],
+  [
+   "world,",
+   2.125,
+   2.8
+  ],
+  [
+   "and",
+   2.9,
+   3.0125
+  ],
+  [
+   "its",
+   3.0125,
+   3.2125
+  ],
+  [
+   "area",
+   3.2125,
+   3.75
+  ],
+  [
+   "is",
+   3.75,
+   3.9375
+  ],
+  [
+   "one.",
+   3.9375,
+   4.625
+  ]
+ ],
+ "text": "This square holds every possible world, and its area is one.",
+ "audio": "3ca47b88165e046e.opus",
+ "rate": 24000,
+ "samples": 117600,
+ "voice": "bm_george",
+ "speed": 1.0,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

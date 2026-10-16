@@ -1,0 +1,76 @@
+{
+ "key": "bccbc898f0b3c1b8",
+ "duration_s": 5.35,
+ "words": [
+  [
+   "In",
+   0.25,
+   0.3375
+  ],
+  [
+   "the",
+   0.3375,
+   0.4375
+  ],
+  [
+   "finished",
+   0.4375,
+   0.85
+  ],
+  [
+   "bar,",
+   0.85,
+   1.4
+  ],
+  [
+   "the",
+   1.5,
+   1.625
+  ],
+  [
+   "water",
+   1.625,
+   1.925
+  ],
+  [
+   "part",
+   1.925,
+   2.25
+  ],
+  [
+   "has",
+   2.25,
+   2.425
+  ],
+  [
+   "a",
+   2.425,
+   2.5375
+  ],
+  [
+   "height",
+   2.5375,
+   3.1125
+  ],
+  [
+   "of",
+   3.1125,
+   3.2875
+  ],
+  [
+   "0.77.",
+   3.2875,
+   5.075
+  ]
+ ],
+ "text": "In the finished bar, the water part has a height of 0.77.",
+ "audio": "bccbc898f0b3c1b8.opus",
+ "rate": 24000,
+ "samples": 128400,
+ "voice": "bm_george",
+ "speed": 1.0,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

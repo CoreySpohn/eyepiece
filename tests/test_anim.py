@@ -970,6 +970,98 @@ def test_still_is_pixel_identical_to_the_encoded_frame(tmp_path):
     plt.close(fig)
 
 
+def test_a_still_at_an_exact_half_frame_rounds_up_like_every_other_time(tmp_path):
+    fig, line = _stills_figure()
+    still = tmp_path / "half.png"
+    # 0.125 s at 4 fps is frame 0.5: it rounds up to frame 1, not to even (0)
+    with record(fig, tmp_path / "m.html", fps=4, dpi=60, stills={still: 0.125}) as rec:
+        for k in range(3):
+            line.set_ydata([0, k + 1])
+            rec.frame()
+    frames = _html_frames(tmp_path / "m.html")
+    assert np.array_equal(_png(still), frames[1])
+    assert not np.array_equal(frames[0], frames[1])
+    plt.close(fig)
+
+
+def test_record_stills_round_half_frames_up_through_the_whole_path(tmp_path):
+    fig, line = _stills_figure()
+    # At 4 fps these times are 0.5, 1.5 and 14.5 frames, all exact in binary.
+    stills = {tmp_path / f"s{i}.png": t for i, t in enumerate((0.125, 0.375, 3.625))}
+    with record(fig, tmp_path / "m.html", fps=4, dpi=60, stills=stills) as rec:
+        for k in range(16):
+            line.set_ydata([0, (k % 5) + 1 + 0.01 * k])
+            rec.frame()
+    frames = _html_frames(tmp_path / "m.html")
+    for (path, _), want in zip(stills.items(), (1, 2, 15), strict=True):
+        assert np.array_equal(_png(path), frames[want]), path.name
+    plt.close(fig)
+
+
+def test_a_still_time_that_rounds_to_the_frame_count_is_never_written_with_a_hint(
+    tmp_path,
+):
+    fig, line = _stills_figure()
+    # 2.875 s at 4 fps is frame 11.5, which rounds up to 12, past the last of 12.
+    with pytest.raises(RuntimeError, match=r"never written.*\(span, 'last'\)"):
+        with record(
+            fig, tmp_path / "m.gif", fps=4, stills={tmp_path / "e.png": 2.875}
+        ) as rec:
+            for k in range(12):
+                line.set_ydata([0, k % 5 + 1])
+                rec.frame()
+    plt.close(fig)
+
+
+def _knob_plan():
+    tl = eyepiece.Timeline({"a": 0.0, "b": 0.0, "still": 3.0, "unread": 0.0})
+    tl.move("go", 1.0, to={"a": 1.0})
+    tl.move("go2", 1.0, to={"unread": 1.0})
+    tl.hold(0.5, name="end")
+    tl.pulse("target", at=0.2)
+    return tl.at_fps(4)
+
+
+def _record_plan(tmp_path, plan, read):
+    fig, line = _stills_figure()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with record(fig, tmp_path / "m.html", fps=4, dpi=40, plan=plan) as rec:
+            for k in range(plan.n_frames):
+                line.set_ydata([0, 1 + sum(plan.value(k, name) for name in read)])
+                rec.frame()
+    plt.close(fig)
+    return [str(w.message) for w in caught if w.category is RuntimeWarning]
+
+
+def test_record_warns_once_about_unread_and_constant_knobs(tmp_path):
+    plan = _knob_plan()
+    messages = _record_plan(tmp_path, plan, ("a", "b", "still"))
+    assert len(messages) == 1
+    assert "never read" in messages[0] and "'unread'" in messages[0]
+    assert "constant over the whole clip" in messages[0]
+    assert "'b'" in messages[0] and "'still'" in messages[0]
+    assert "'a'" not in messages[0].split("constant")[1]
+
+
+def test_pulse_and_ring_knobs_are_exempt_from_both_warnings(tmp_path):
+    plan = _knob_plan()
+    assert "pulse.target" in plan.knobs
+    messages = _record_plan(tmp_path, plan, ("a", "b", "still", "unread"))
+    assert all("pulse.target" not in m for m in messages)
+    plan2 = _knob_plan()
+    messages = _record_plan(tmp_path, plan2, ("a", "unread", "still", "b"))
+    assert not any("never read" in m for m in messages)
+
+
+def test_a_plan_whose_knobs_are_all_read_and_move_records_without_a_warning(tmp_path):
+    tl = eyepiece.Timeline({"a": 0.0, "c": 0.0})
+    tl.move("go", 1.0, to={"a": 1.0})
+    tl.move("go2", 1.0, to={"c": 2.0})
+    plan = tl.at_fps(4)
+    assert _record_plan(tmp_path, plan, ("a", "c")) == []
+
+
 def test_still_matches_an_mp4_frame_decoded_with_ffmpeg(tmp_path):
     if not HAS_FFMPEG:
         pytest.skip("needs ffmpeg")
@@ -1004,7 +1096,7 @@ def test_still_matches_an_mp4_frame_decoded_with_ffmpeg(tmp_path):
     plt.close(fig)
 
 
-def test_stills_by_beat_name_use_the_plan(tmp_path):
+def test_stills_by_span_name_use_the_plan(tmp_path):
     from eyepiece import Timeline
 
     tl = Timeline()
@@ -1023,9 +1115,11 @@ def test_stills_by_beat_name_use_the_plan(tmp_path):
             line.set_ydata([0, k + 1])
             rec.frame()
     frames = _html_frames(tmp_path / "b.html")
-    assert np.array_equal(_png(tmp_path / "open.png"), frames[plan.last("open")])
     assert np.array_equal(
-        _png(tmp_path / "close_start.png"), frames[plan.start("close")]
+        _png(tmp_path / "open.png"), frames[plan.frame_of("open", "last")]
+    )
+    assert np.array_equal(
+        _png(tmp_path / "close_start.png"), frames[plan.frame_of("close", "start")]
     )
     plt.close(fig)
 
@@ -1040,7 +1134,7 @@ def test_still_inputs_are_validated_before_anything_opens(tmp_path):
     out = tmp_path / "v.gif"
     bad = [
         ({tmp_path / "a.png": "a"}, None, 4, "needs plan"),
-        ({tmp_path / "a.png": "zzz"}, plan, 4, "no beat named"),
+        ({tmp_path / "a.png": "zzz"}, plan, 4, "no span named"),
         ({tmp_path / "a.png": ("a", "end")}, plan, 4, "start, mid or last"),
         ({tmp_path / "a.png": -1.0}, None, 4, "at least 0"),
         ({tmp_path / "a.png": "a"}, plan, 5, "fps"),

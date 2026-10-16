@@ -1,0 +1,76 @@
+{
+ "key": "e5b2fd0bf43d4ff8",
+ "duration_s": 4.35,
+ "words": [
+  [
+   "We",
+   0.225,
+   0.35
+  ],
+  [
+   "see",
+   0.35,
+   0.5375
+  ],
+  [
+   "the",
+   0.5375,
+   0.625
+  ],
+  [
+   "band,",
+   0.625,
+   1.25
+  ],
+  [
+   "so",
+   1.3875,
+   1.6375
+  ],
+  [
+   "every",
+   1.6375,
+   1.975
+  ],
+  [
+   "world",
+   1.975,
+   2.3
+  ],
+  [
+   "without",
+   2.3,
+   2.625
+  ],
+  [
+   "it",
+   2.625,
+   2.8375
+  ],
+  [
+   "is",
+   2.8375,
+   3.05
+  ],
+  [
+   "ruled",
+   3.05,
+   3.45
+  ],
+  [
+   "out.",
+   3.45,
+   4.075
+  ]
+ ],
+ "text": "We see the band, so every world without it is ruled out.",
+ "audio": "e5b2fd0bf43d4ff8.opus",
+ "rate": 24000,
+ "samples": 104400,
+ "voice": "bm_george",
+ "speed": 1.0,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}
