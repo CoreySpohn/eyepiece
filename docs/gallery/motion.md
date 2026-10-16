@@ -687,7 +687,7 @@ from matplotlib.transforms import IdentityTransform
 fig = plt.figure(figsize=(6.0, 2.4), dpi=100)
 fig.patch.set_facecolor("white")
 slider = Rectangle((30, 90), 40, 30, transform=IdentityTransform(), color="k")
-anchor = fig.text(0.05, 0.15, "reference label", fontsize=14)
+anchor = fig.text(0.05, 0.15, "reference label", fontsize=14, color="black")
 fig.add_artist(slider)
 
 
