@@ -175,3 +175,26 @@ print(ept.motif_margins(clip, mode="dark"))
 for fault in ept.motif_faults(clip, mode="dark"):
     print(fault.kind, fault.severity, fault.keys, fault.detail)
 ```
+
+## Checking the drawn cast
+
+The drawing kwargs attach the motif key as the artist's `gid`. Draw the cast
+through these helpers, then pass `motifs.meaning_keys()` to `meaning_faults` to
+check the colors that appear together. For a more specific artist identifier,
+pass `gid="planet:orbit"` to the helper; the motif key still matches as a prefix.
+
+```{code-cell} python
+import eyepiece.testing as ept
+
+hwostyle.use("dark")
+motifs = ep.MotifSet.default().only("star", "planet")
+fig, ax = plt.subplots(figsize=(4.6, 1.6), layout="constrained")
+for y, motif in enumerate(motifs.values()):
+    ax.plot([0.1, 0.9], [y, y], **motif.line_kw())
+    ax.plot([0.5], [y], **motif.marker_kw(size=12))
+    ax.text(0.95, y, motif.noun, va="center", **motif.label_kw())
+ax.set_xlim(0, 1.3)
+ax.set_ylim(-0.5, 1.5)
+ax.axis("off")
+print(ept.meaning_report(ept.meaning_faults(fig, keys=motifs.meaning_keys())))
+```
