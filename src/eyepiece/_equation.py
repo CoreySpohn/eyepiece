@@ -907,7 +907,7 @@ def transform(
     key_map=None,
     fade=0.4,
     align="auto",
-    replace="fade",
+    replace="morph",
 ):
     """Carry one equation into another, glyph by glyph.
 
@@ -934,7 +934,7 @@ def transform(
     a fade-transform, what is left of the tag in `eq_a` is carried as one box
     that moves and scales onto the box of what is left in `eq_b`, fading out
     while the new glyphs, drawn inside the moving box, fade in. With
-    ``replace="morph"`` the outlines change shape instead, as ManimCE's
+    ``replace="morph"``, the default, the outlines change shape instead, as ManimCE's
     `Transform` does: the glyphs left of the tag in each equation pair in
     reading order, the side with fewer gets stacked copies of its own glyphs
     (which start or end invisible), each pair is split into the same contours
@@ -990,10 +990,10 @@ def transform(
             sideways shift that the most groups share (binned at a quarter of
             a font size, the leftmost group on a tie), or None to leave both
             equations on their own anchors.
-        replace: How a replaced tag changes: ``"fade"`` (a box that carries
-            the old glyphs out as the new ones fade in) or ``"morph"`` (outline
-            into outline). Matched glyphs and glyphs with no counterpart are
-            the same either way.
+        replace: How a replaced tag changes: ``"morph"`` (outline into
+            outline, the default) or ``"fade"`` (a box that carries the old
+            glyphs out as the new ones fade in). Matched glyphs and glyphs
+            with no counterpart are the same either way.
 
     Returns:
         A `PlotResult` on `eq_a`'s axes with ``artists["glyphs"]`` (the glyphs

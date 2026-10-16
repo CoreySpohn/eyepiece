@@ -647,8 +647,8 @@ moves rigidly. A group arcs on an optional arc, up when it moves right and down 
 (``min(1, travel / fontsize)``), so two groups that swap places pass each other and a group that does not travel sideways does not arc. A tag both
 equations have whose glyphs do not all match is a replacement: what is left of it in the first is
 carried as one box that moves and scales onto the box of what is left in the second, fading out
-while the second, drawn inside the moving box, fades in. `replace="morph"` (default `"fade"`, the
-box) changes the outlines instead, aligned as ManimCE's `Transform` aligns paths: every segment is
+while the second, drawn inside the moving box, fades in. `replace="morph"` (the default; `"fade"` keeps
+the box) changes the outlines instead, aligned as ManimCE's `Transform` aligns paths: every segment is
 a cubic, the glyphs of each side pair in reading order and the side with fewer is padded with
 stacked copies of its own glyphs (which start or end invisible), each pair gets the same contours
 (a missing contour is a null contour at the last point of the last one, so a hole grows from or

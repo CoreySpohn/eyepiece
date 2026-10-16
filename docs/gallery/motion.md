@@ -701,8 +701,8 @@ the old glyphs turn into the outlines of the new ones, aligned as ManimCE's
 `Transform` aligns paths: glyph for glyph in reading order, the side with
 fewer glyphs gaining stacked copies of its own, a hole that one glyph lacks
 growing from a point, and every outline split until both have the same
-curves. The default, ``replace="fade"``, stays the box. Below, the same
-Bayes move twice, the default first and the morph second. The thirteen glyphs of
+curves. The morph is the default; ``replace="fade"`` keeps the box. Below, the same
+Bayes move twice, the fade first and the morph second. The thirteen glyphs of
 the numerator outnumber the four of ``0.24``, so several outlines gather on
 each new glyph and the middle of the move is crowded, as it is in Manim.
 

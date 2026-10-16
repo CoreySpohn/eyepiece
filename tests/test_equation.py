@@ -452,9 +452,9 @@ def test_savefig_at_200_dpi_matches_a_native_200_dpi_build():
     assert np.array_equal(_pixels(fig), _pixels(build(100)))  # savefig left dpi alone
 
 
-def _aligned_pair():
+def _aligned_pair(**kwargs):
     fig, a, b = _pair(BAYES_A, BAYES_B)
-    return fig, a, b, ep.transform(a, b)
+    return fig, a, b, ep.transform(a, b, **kwargs)
 
 
 def test_aligned_end_states_are_each_equation_as_placed():
@@ -553,7 +553,7 @@ def test_a_group_that_does_not_travel_does_not_rise():
 
 
 def test_replaced_terms_cross_fade_inside_a_moving_box():
-    fig, a, b, move = _aligned_pair()
+    fig, a, b, move = _aligned_pair(replace="fade")
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
