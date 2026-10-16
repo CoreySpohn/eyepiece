@@ -697,3 +697,35 @@ def test_the_bar_stays_an_axis_aligned_rectangle_through_the_move():
     ept.assert_motion(
         fig, at, ept.Span(0.0, 2.0), fps=30, rectilinear=bars, kinds=["shape-class"]
     )
+
+
+def test_a_transform_result_carries_its_rectilinear_bar_into_the_check():
+    """The result goes in as the move; its contract names the bar."""
+    fig, move = _left_anchored_bayes()
+    assert any(g.piece.is_rule for g in move.contract.rectilinear)
+
+    def at(t):
+        move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
+
+    found = ept.motion_faults(
+        fig, at, ept.Span(0.0, 2.0), fps=30, moves=[move], kinds=["shape-class"]
+    )
+    assert found == []
+    # The same read finds bars that lean: tip a corner after each draw.
+    for bar in move.contract.rectilinear:
+        bar.draw = _leaning(bar)
+    found = ept.motion_faults(
+        fig, at, ept.Span(0.0, 2.0), fps=30, moves=[move], kinds=["shape-class"]
+    )
+    assert found
+    assert {f.kind for f in found} == {"shape-class"}
+
+
+def _leaning(bar):
+    draw = bar.draw
+
+    def tipped(renderer):
+        draw(renderer)
+        bar.get_path().vertices[1, 1] += 5.0
+
+    return tipped
