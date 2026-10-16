@@ -89,8 +89,10 @@ def _clip(name):
 
         def at(t):
             u = t / 2
-            cells.set_visible(u == 0)
-            landed.set_visible(u == 1)
+            # The caller's cells stay drawn under the copy, which fades in and out
+            # over them; swapping in the landed bar is the caller's own beat.
+            cells.set_visible(True)
+            landed.set_visible(False)
             result.update(u)
 
         return fig, result, at
