@@ -19,8 +19,8 @@ def _close_figures():
     plt.close("all")
 
 
-def _gallery_cell(marker):
-    page = Path(__file__).resolve().parents[1] / "docs/gallery/motion.md"
+def _gallery_cell(catalog, marker):
+    page = Path(__file__).resolve().parents[1] / f"docs/gallery/{catalog}.md"
     cells = re.findall(r"```\{code-cell\} python\n(.*?)```", page.read_text(), re.S)
     return next(code for code in cells if marker in code)
 
@@ -28,7 +28,7 @@ def _gallery_cell(marker):
 def test_collapse_copy_is_continuous():
     hwostyle.use("dark")
     ns = {"np": np, "plt": plt, "ep": ep}
-    exec(_gallery_cell("gather = ep.collapse("), ns)
+    exec(_gallery_cell("motion-staging", "gather = ep.collapse("), ns)
     ept.assert_motion(ns["fig"], lambda t: ns["gather"].update(t / 2), ept.Span(0, 2))
     ept.assert_motion(
         ns["fig"], lambda t: ns["gather"].update(1, carry=t / 2), ept.Span(0, 2)
@@ -75,7 +75,7 @@ def test_follow_zoom_halos_fade_continuously():
 def test_gallery_emphasis_labels_stay_inside_frame():
     hwostyle.use("dark")
     ns = {"np": np, "plt": plt, "ep": ep}
-    exec(_gallery_cell("ring = ep.circumscribe(orbiter"), ns)
+    exec(_gallery_cell("motion-attention", "ring = ep.circumscribe(orbiter"), ns)
     fig = ns["fig"]
     ept.assert_motion(fig, lambda t: ns["pulse"].update(t / 2), ept.Span(0, 2))
 
@@ -93,7 +93,7 @@ def test_gallery_quad_image_unroll_settles_continuously():
         np.exp(1j * (np.arctan2(quads[..., 1], quads[..., 0]) - center_angle))
     )
     ns = {"np": np, "qr": np.hypot(quads[..., 0], quads[..., 1]), "qt": qt}
-    tree = ast.parse(_gallery_cell("def unroll(t):"))
+    tree = ast.parse(_gallery_cell("motion-equations", "def unroll(t):"))
     function = next(node for node in tree.body if isinstance(node, ast.FunctionDef))
     exec(
         compile(ast.Module(body=[function], type_ignores=[]), "gallery-unroll", "exec"),

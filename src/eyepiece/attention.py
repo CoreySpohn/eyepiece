@@ -1559,6 +1559,8 @@ class Stage:
     A stage owns the colors and opacity of the artists it holds: make it
     after they take their final colors, and do not also fade them with
     `fade` or by hand. Data may change freely between frames.
+    Keep artists recolored by a draw function on every frame, such as bars,
+    out of Stage groups, because the stage overwrites their colors.
 
     Args:
         groups: Mapping of group name to an artist, an Axes, or an iterable
@@ -1863,7 +1865,7 @@ class _AxisBuild:
         self.label.clip(self._label_clip)
 
 
-def build_axes(ax, *, axis="both", label=True, spine_end=0.7):
+def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
     """Build an axes the way a teacher draws one: line, ticks, numbers, name.
 
     An explanation that introduces a quantity draws its axis in front of
@@ -1886,6 +1888,9 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7):
             throughout.
         spine_end: Fraction of each axis's progress the spine, ticks, and
             numbers take; the label writes on over the rest.
+        title: Fade the center, left, and right axes titles in with the last
+            axis label. False leaves the titles as made throughout. True
+            uses the final label stage even when `label` is False.
 
     Returns:
         A `PlotResult` on `ax` with ``update(u)``, `u` from 0 (nothing of
@@ -1919,12 +1924,24 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7):
         )
         for w in which
     ]
+    titles = (
+        [_BuildPart(text) for text in (ax.title, ax._left_title, ax._right_title)]
+        if title
+        else []
+    )
 
     def update(u):
         u = _check_u(u)
         n = len(parts)
         for i, part in enumerate(parts):
             part.update(min(1.0, max(0.0, n * u - i)))
+        last = max(0.0, n * u - (n - 1))
+        reveal = _ease(max(0.0, (last - spine_end) / (1.0 - spine_end)))
+        for text in titles:
+            if u >= 1.0:
+                text.restore()
+            else:
+                text.fade(reveal)
 
     return PlotResult(
         ax=ax,

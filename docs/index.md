@@ -231,20 +231,23 @@ about them. The API reference documents every signature.
 
 ```{toctree}
 :maxdepth: 2
-:caption: Guides
+:caption: Tutorials
 
-contract
-evidence
-prepared-views
-manim
-narration
-viz-convention
+tutorials/still
 ```
 
 ```{toctree}
 :maxdepth: 2
-:caption: Gallery
+:caption: How-to
 
+how-to/build-up
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Reference
+
+autoapi/index
 gallery/images
 gallery/stats
 gallery/intervals
@@ -259,6 +262,18 @@ gallery/motion
 gallery/one-scene-n-views
 gallery/prepared
 gallery/motifs
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Explanation
+
+contract
+evidence
+prepared-views
+manim
+narration
+viz-convention
 ```
 
 ```{toctree}
