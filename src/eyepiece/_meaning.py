@@ -4,7 +4,7 @@ A viewer remembers a color across a clip. A cyan outline that marks a library
 badge in one clip and an Earth twin in the next has taught two meanings to one
 hue, and no per-frame check sees it. `meaning_faults` poses the figure at
 sample times, reads which meaning key each drawn artist carries, and reports
-four kinds of fault:
+these kinds of finding:
 
 - ``"same-frame"``: two different keys, not in a sharing set, drawn on one
   frame in colors closer than ``fault_de`` (a warning up to ``warn_de``),
@@ -15,8 +15,13 @@ four kinds of fault:
   key. Reported with each key's first and last visible time and the gap
   between them. Only a declared ``rebind`` time releases a hue.
 - ``"cue-form"``: a cue key drawn as a line, marker or text rather than a ring,
-  band or underlay, or a cue hue that another key of the clip also uses.
+  band or underlay, or a cue drawn in any hue (a cue is drawn in the text
+  color and spends none).
 - ``"unkeyed"``: a visible colored artist that carries no key.
+- ``"dimmed"``: an advisory. Hue memory is clustered on the colors as drawn
+  before opacity; a pair of keys that fall in one cluster only once the
+  opacity of both is applied (two dimmed groups sink toward the background
+  together) is reported here and not as a ``"rebound"``.
 
 A key is attached to an artist by its ``gid``: the ``keys`` mapping gives a
 ``gid`` prefix and the key it stands for, and the longest matching prefix wins.
@@ -67,7 +72,11 @@ __all__ = [
     "meaning_report",
 ]
 
-MEANING_KINDS = ("same-frame", "rebound", "cue-form", "unkeyed")
+MEANING_KINDS = ("same-frame", "rebound", "cue-form", "unkeyed", "dimmed")
+
+_HARD_FLOOR = (
+    5.0  # CAM02-UCS distance under which a second channel does not save a pair
+)
 
 _SHOWN = 0.05  # opacity below which an artist counts as not drawn (as in testing)
 _INK_FLOOR = 4.0  # smallest drawn extent, in square pixels, that counts as ink
@@ -278,7 +287,6 @@ def _parts_of(artist, gid, key, fig, renderer, backgrounds, owner=None):
     extra = []
     if isinstance(artist, Line2D):
         alpha = artist.get_alpha()
-        alpha = 1.0 if alpha is None else float(alpha)
         marker = artist.get_marker()
         has_marker = marker not in (None, "None", "none", "", " ")
         style = artist.get_linestyle()
@@ -286,8 +294,12 @@ def _parts_of(artist, gid, key, fig, renderer, backgrounds, owner=None):
         if not has_line and not has_marker:
             return []
         rgba = to_rgba(artist.get_color())
-        rgba = (*rgba[:3], rgba[3] * alpha)
-        pad = max(artist.get_linewidth() if has_line else 0.0, artist.get_markersize())
+        if alpha is not None:
+            rgba = (*rgba[:3], float(alpha))  # an artist alpha replaces the color's
+        pad = max(
+            artist.get_linewidth() if has_line else 0.0,
+            artist.get_markersize() if has_marker else 0.0,
+        )
         form = "line" if has_line else "marker"
         sig = (marker if has_marker else None, style if has_line else None, None)
         raw.append((rgba, form, False, sig, pad))
@@ -429,7 +441,7 @@ def _same_frame(frames, together, fault_de, warn_de):
                 for b in by_key[k2].values():
                     de = _de(a.eff, b.eff)
                     level = _level(de, fault_de, warn_de)
-                    if a.sig != b.sig:
+                    if a.sig != b.sig and de >= _HARD_FLOOR:
                         level += 1
                     if level < 2 and (worst is None or (level, de) < worst[:2]):
                         worst = (level, de, a, b)
@@ -471,7 +483,8 @@ def _epochs_by_time(frames, rebind):
     return [sum(1 for c in cuts if _tnum(t) >= c) for t, _ in frames]
 
 
-def _rebound(frames, together, epochs, fault_de, strict):
+def _rebound_pairs(frames, together, epochs, fault_de, field):
+    """Key pairs that share a hue cluster, clustering on the part field `field`."""
     # hue clusters, found greedily over every non-neutral color of the clip
     leaders = []
     seen = {}
@@ -479,21 +492,23 @@ def _rebound(frames, together, epochs, fault_de, strict):
         for p in parts:
             if p.key is None or _neutral(p.base):
                 continue
-            if p.eff in seen:
+            color = getattr(p, field)
+            if color in seen:
                 continue
             for i, lead in enumerate(leaders):
-                if _de(p.eff, lead, vision=0) < fault_de:
-                    seen[p.eff] = i
+                if _de(color, lead, vision=0) < fault_de:
+                    seen[color] = i
                     break
             else:
-                leaders.append(p.eff)
-                seen[p.eff] = len(leaders) - 1
+                leaders.append(color)
+                seen[color] = len(leaders) - 1
     uses = {}  # (epoch, cluster) -> key -> list of (frame index, time)
     for i, (t, parts) in enumerate(frames):
         for p in parts:
-            if p.key is None or p.eff not in seen:
+            color = getattr(p, field)
+            if p.key is None or color not in seen:
                 continue
-            slot = uses.setdefault((epochs[i], seen[p.eff]), {})
+            slot = uses.setdefault((epochs[i], seen[color]), {})
             slot.setdefault(p.key, []).append((i, t))
     out = {}
     for (_, _cluster), by_key in uses.items():
@@ -506,16 +521,48 @@ def _rebound(frames, together, epochs, fault_de, strict):
             shared = together(k1, k2)
             if not shared and f1 & f2:
                 continue  # on one frame together: same-frame reports it
-            rec = out.setdefault((k1, k2), {"times": [], "detail": None})
+            rec = out.setdefault(
+                (k1, k2), {"times": [], "detail": None, "shared": shared}
+            )
             rec["times"] += sorted(set(t1) | set(t2))
             if rec["detail"] is None:
                 rec["detail"] = _rebound_detail(k1, k2, t1, t2, shared)
-    severity = "fault" if strict else "warning"
+    return out
+
+
+def _rebound(frames, together, epochs, fault_de, strict):
+    """One hue serving two keys, clustered on the colors before opacity.
+
+    A declared never-together pair seen in one clip is always a fault.
+    """
+    out = _rebound_pairs(frames, together, epochs, fault_de, "base")
     return [
         MeaningFault(
-            "rebound", severity, pair, tuple(sorted(set(rec["times"]))), rec["detail"]
+            "rebound",
+            "fault" if strict or rec["shared"] else "warning",
+            pair,
+            tuple(sorted(set(rec["times"]))),
+            rec["detail"],
         )
         for pair, rec in out.items()
+    ]
+
+
+def _dimmed(frames, together, epochs, fault_de):
+    """Pairs that share a hue only after opacity is applied: advisory."""
+    base = _rebound_pairs(frames, together, epochs, fault_de, "base")
+    eff = _rebound_pairs(frames, together, epochs, fault_de, "eff")
+    return [
+        MeaningFault(
+            "dimmed",
+            "advisory",
+            pair,
+            tuple(sorted(set(rec["times"]))),
+            f"{pair[0]!r} and {pair[1]!r} fall in one hue only once both are "
+            f"dimmed toward the background: {rec['detail']}",
+        )
+        for pair, rec in eff.items()
+        if pair not in base
     ]
 
 
@@ -542,7 +589,7 @@ def _rebound_detail(k1, k2, t1, t2, shared):
     )
 
 
-def _cue_form(frames, cue_keys, fault_de):
+def _cue_form(frames, cue_keys):
     cues = set(cue_keys)
     if not cues:
         return []
@@ -552,7 +599,9 @@ def _cue_form(frames, cue_keys, fault_de):
             if p.key not in cues:
                 continue
             reason = None
-            if p.form in ("line", "marker", "text"):
+            if not _neutral(p.base):
+                reason = "drawn in a hue (a cue is drawn in the text color)"
+            elif p.form in ("line", "marker", "text"):
                 reason = f"drawn as a {p.form}"
             elif p.form in ("patch", "collection") and p.filled and p.alpha >= 1.0:
                 others = [
@@ -577,35 +626,6 @@ def _cue_form(frames, cue_keys, fault_de):
         )
         for (key, reason), (times, artist) in bad.items()
     ]
-    cue_colors, other_colors = {}, {}
-    for t, parts in frames:
-        for p in parts:
-            if p.key is None or _neutral(p.base):
-                continue
-            target = cue_colors if p.key in cues else other_colors
-            target.setdefault(p.key, {}).setdefault(p.base, []).append(t)
-    for ck, cc in cue_colors.items():
-        for ok, oc in other_colors.items():
-            hit = [
-                (_de(a, b, vision=0), a, b)
-                for a in cc
-                for b in oc
-                if _de(a, b, vision=0) < fault_de
-            ]
-            if hit:
-                de = min(hit)[0]
-                times = sorted({t for color in cc for t in cc[color]})
-                out.append(
-                    MeaningFault(
-                        "cue-form",
-                        "fault",
-                        (ck, ok),
-                        tuple(times),
-                        f"cue {ck!r} takes the hue of {ok!r} "
-                        f"({de:.1f} dE); the cue must not use a hue a key uses",
-                        de,
-                    )
-                )
     return out
 
 
@@ -672,9 +692,11 @@ def _analyze(
     if "rebound" in kinds:
         found += _rebound(frames, together, epochs, fault_de, strict)
     if "cue-form" in kinds:
-        found += _cue_form(frames, cue_keys, fault_de)
+        found += _cue_form(frames, cue_keys)
     if "unkeyed" in kinds:
         found += _unkeyed(frames, strict)
+    if "dimmed" in kinds:
+        found += _dimmed(frames, together, epochs, fault_de)
     found = [replace(f, times=tuple(dict.fromkeys(f.times))) for f in found]
     return _order(_apply_waivers(found, waive))
 
@@ -710,17 +732,19 @@ def meaning_faults(
             carries. The longest matching prefix wins.
         sharing: Iterable of key groups that may share a hue because they are
             never in the same clip. A group is exempt from ``"same-frame"``; if
-            two of its keys do appear in the clip, ``"rebound"`` reports it.
+            two of its keys do appear in the clip, ``"rebound"`` reports a
+            fault.
         cue_keys: Keys that are cues. A cue must be a ring, band or underlay.
         waive: Mapping ``"<kind>:<key>"`` or ``"<kind>:<key>+<key>"`` to a
             reason (who, when). A waived finding stays in the result with its
             reason in `MeaningFault.waived`.
-        rebind: Times at which hue memory is released, such as a scene cut. A
-            hue may mean a new thing after one.
+        rebind: Times, on the clock of `times`, at which hue memory is
+            released, such as a scene cut. A hue may mean a new thing after one.
         fault_de: CAM02-UCS distance under which two colors look alike.
         warn_de: Distance under which two colors are close enough to warn.
         strict: True makes ``"unkeyed"`` artists and ``"rebound"`` hues faults;
-            otherwise they are advisory and warning.
+            otherwise they are advisory and warning. A ``sharing`` pair seen
+            in one clip is a fault either way.
 
     Returns:
         A list of `MeaningFault`, ordered by kind, then severity, then time.
@@ -773,20 +797,22 @@ def meaning_faults_chain(
             with no `at` is one still of zero length.
         sharing: As for `meaning_faults`.
         waive: As for `meaning_faults`.
-        rebind: Indices of clips that open a new hue memory: a hue may mean a
-            new thing from the start of each of these clips (a scene cut).
+        rebind: Times on the chain's clock (the unit of `meaning_faults`)
+            that release hue memory. A time at a clip boundary releases it for
+            the clip that starts there.
         fault_de: As for `meaning_faults`.
         warn_de: As for `meaning_faults`.
         strict: As for `meaning_faults`.
 
     Returns:
-        A list of ``"rebound"`` `MeaningFault`, with times on the chain's clock.
+        A list of ``"rebound"`` and ``"dimmed"`` `MeaningFault`, with times on
+        the chain's clock.
     """
     _vision()
     merged, epochs = [], []
     start = 0.0
     cuts = sorted(set(rebind))
-    for index, (fig, at, times, keys) in enumerate(clips):
+    for fig, at, times, keys in clips:
         frames = _collect(fig, at, times, keys)
         stamps = [t for t, _ in frames if t is not None]
         t0 = min(stamps) if stamps else 0.0
@@ -794,11 +820,12 @@ def meaning_faults_chain(
         merged += [
             (start + ((t - t0) if t is not None else 0.0), parts) for t, parts in frames
         ]
-        epochs += [sum(1 for c in cuts if index >= c)] * len(frames)
+        for t, _ in merged[len(merged) - len(frames) :]:
+            epochs.append(sum(1 for c in cuts if t > c or (t >= c and start >= c)))
         start += length
     return _analyze(
         merged,
-        ("rebound",),
+        ("rebound", "dimmed"),
         sharing=sharing,
         cue_keys=(),
         waive=waive,
@@ -822,13 +849,19 @@ def meaning_report(faults):
     """
     faults = list(faults)
     active = [f for f in faults if f.waived is None and f.severity != "advisory"]
+    waived = sum(f.waived is not None for f in faults)
     lines = []
     if active:
         n = sum(f.severity == "fault" for f in active)
-        lines.append(f"{len(active)} meaning finding(s), {n} fault(s):")
+        tail = f", {waived} waived" if waived else ""
+        lines.append(f"{len(active)} meaning finding(s), {n} fault(s){tail}:")
     else:
+        head = (
+            "no unwaived tier 1 or 2 findings" if waived else "no tier 1 or 2 findings"
+        )
+        tail = f"; {waived} waived, listed below" if waived else ""
         lines.append(
-            "no tier 1 or 2 findings (whether the keys are the right meanings "
+            f"{head}{tail} (whether the keys are the right meanings "
             "is a tier 3 judgment for the reviewer)"
         )
     lines += [f"  {f}" for f in faults]
