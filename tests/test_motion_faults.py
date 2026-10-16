@@ -144,6 +144,60 @@ def test_jump_in_the_middle_of_a_move():
     assert found[0].value > 4.0
 
 
+@pytest.mark.parametrize("fade", [False, True])
+def test_declared_steps_suppress_only_the_named_jump(fade):
+    fig = _figure()
+    box = _box(fig, 20, 80, 60, 40)
+
+    def at(t):
+        k = round(t * 30.0)
+        offset = (60 if k >= 20 else 0) + (60 if k >= 40 else 0)
+        _move(box, 20 + offset, 80)
+        box.set_alpha(0.2 + 0.005 * k if fade else 1.0)
+
+    assert [f.time for f in ept.motion_faults(fig, at, SPAN)] == pytest.approx(
+        [20 / 30, 40 / 30]
+    )
+    found = ept.motion_faults(fig, at, SPAN, steps=[20 / 30 + 5e-10])
+    assert [f.kind for f in found] == ["jump"]
+    assert found[0].time == pytest.approx(40 / 30)
+
+
+@pytest.mark.parametrize("fade", [False, True])
+@pytest.mark.parametrize("offset", [-1, 1])
+def test_declared_step_does_not_suppress_a_jump_one_frame_away(fade, offset):
+    fig = _figure()
+    box = _box(fig, 20, 80, 60, 40)
+
+    def at(t):
+        k = round(t * 30.0)
+        _move(box, 20 + (60 if k >= 30 else 0), 80)
+        box.set_alpha(0.2 + 0.005 * k if fade else 1.0)
+
+    found = ept.motion_faults(fig, at, SPAN, steps=[(30 + offset) / 30])
+    assert [f.kind for f in found] == ["jump"]
+    assert found[0].time == pytest.approx(1.0)
+
+
+def test_declared_steps_suppress_the_rest_entry_only_at_its_destination():
+    fig, at = _ramp_clip(final_step=2.5)
+    assert ept.motion_faults(fig, at, SPAN, steps=[2.0]) == []
+    found = ept.motion_faults(fig, at, SPAN, steps=[59 / 30])
+    assert [f.kind for f in found] == ["jump"]
+    assert found[0].time == pytest.approx(2.0)
+
+
+def test_declared_steps_leave_other_motion_faults_unchanged():
+    fig = _figure()
+    box = _box(fig, 20, 80, 60, 40)
+
+    def at(t):
+        _move(box, 380 if t >= 1.0 else 20, 80)
+
+    found = ept.motion_faults(fig, at, SPAN, rest=[box], steps=[1.0])
+    assert _kinds(found) == ["drift", "outside"]
+
+
 def test_eased_travel_has_no_jump():
     fig = _figure()
     block = _box(fig, 20, 80, 60, 40)
