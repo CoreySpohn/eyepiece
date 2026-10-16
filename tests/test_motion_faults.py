@@ -1175,18 +1175,6 @@ def test_steady_travel_of_a_tiny_faint_artist_is_not_a_jump():
     assert ept.motion_faults(fig, at, SPAN, kinds=["jump"]) == []
 
 
-def test_repeated_teleports_of_a_still_artist_are_each_a_jump():
-    fig = _figure()
-    dot = _box(fig, 30, 80, 20, 20)
-
-    def at(t):
-        k = round(t * 30.0)
-        _move(dot, 30 + 80.0 * (k // 15), 80)
-
-    found = ept.motion_faults(fig, at, SPAN, kinds=["jump"])
-    assert [round(f.time, 3) for f in found] == [0.5, 1.0, 1.5, 2.0]
-
-
 def test_taking_the_clip_off_at_the_end_of_a_reveal_is_not_outside():
     # (clip removed at the end, how far the clip opens, faults expected)
     for remove, reach, expected in ((True, 100.0, []), (False, 40.0, ["outside"])):

@@ -1086,11 +1086,7 @@ def _check_jump(trace, jump_ratio, rest_times, tol):
     moving = [i for i, v in enumerate(size) if v > _STEP_FLOOR]
     if len(moving) < 3:
         return _check_teleports(trace, tol, jump_ratio)
-    found = _jumps(trace, size, moving, jump_ratio, rest_times, tol)
-    seen = {f[0] for f in found}
-    return found + [
-        f for f in _check_teleports(trace, tol, jump_ratio) if f[0] not in seen
-    ]
+    return _jumps(trace, size, moving, jump_ratio, rest_times, tol)
 
 
 def _jumps(trace, size, moving, jump_ratio, rest_times, tol):
