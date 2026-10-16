@@ -179,6 +179,18 @@ def test_declared_step_does_not_suppress_a_jump_one_frame_away(fade, offset):
     assert found[0].time == pytest.approx(1.0)
 
 
+def test_a_declared_time_must_match_the_jump_sample_closely():
+    fig = _figure()
+    box = _box(fig, 20, 80, 60, 40)
+
+    def at(t):
+        _move(box, 20 + (60 if round(t * 30.0) >= 30 else 0), 80)
+
+    found = ept.motion_faults(fig, at, SPAN, steps=[1.0 + 1e-6])
+    assert [f.kind for f in found] == ["jump"]
+    assert ept.motion_faults(fig, at, SPAN, steps=[1.0 + 1e-10]) == []
+
+
 def test_declared_steps_suppress_the_rest_entry_only_at_its_destination():
     fig, at = _ramp_clip(final_step=2.5)
     assert ept.motion_faults(fig, at, SPAN, steps=[2.0]) == []
