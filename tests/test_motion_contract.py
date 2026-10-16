@@ -53,6 +53,9 @@ def _clip(name):
 
     if name == "write":
         result = ep.write(ax.text(0.3, 0.5, "motion", fontsize=22))
+    elif name == "draw_on":
+        (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
+        result = ep.draw_on(line)
     elif name == "morph":
         (a,) = ax.plot([0.2, 0.4, 0.5], [0.3, 0.6, 0.3])
         (b,) = ax.plot([0.3, 0.5, 0.7], [0.3, 0.7, 0.3])
@@ -147,6 +150,7 @@ def _members(contract):
     "name",
     [
         "write",
+        "draw_on",
         "morph",
         "flight",
         "collapse",

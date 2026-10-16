@@ -445,6 +445,28 @@ outside the axes, and a blitting loop does not repaint the moves. A
 `crossfade` label must keep the opacity it lands at: the flight hides it
 until the end of the move and restores it there.
 
+### Draw a curve on
+
+`draw_on` reveals one line or a list of lines along their paths. Each
+`update(u)` draws the first fraction of the current display-space arc
+length, so log axes and data replaced with `set_data` keep working.
+`update(u, level=0.35)` dims the line without changing its revealed length.
+Nothing is drawn at zero; at one the original line draws with its exact
+markers and dashes. During the reveal, markers include the cut tip and
+dashes start at the beginning of each connected run.
+
+```{code-cell} python
+fig, panels = plt.subplots(1, 3, figsize=(8.0, 2.4), layout="constrained")
+x = np.geomspace(1, 100, 120)
+for ax, progress in zip(panels, (0.0, 0.5, 1.0), strict=True):
+    (curve,) = ax.plot(x, np.sin(np.log(x)), lw=2)
+    ax.set(xscale="log", xlim=(1, 100), ylim=(-1.2, 1.2),
+           xlabel="x", title=f"progress {progress:.1f}")
+    reveal = ep.draw_on(curve)
+    reveal.update(progress)
+plt.show()
+```
+
 ## Staging: build an axis, dim what was read, gather a row
 
 An explanation that opens on a full figure leaves the viewer to find the

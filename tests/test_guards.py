@@ -165,6 +165,7 @@ _EXPECTED_ALL = [
     "cov_ellipse",
     "curve_insets",
     "display_limits",
+    "draw_on",
     "ease",
     "equation",
     "extent_arcsec",

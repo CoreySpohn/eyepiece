@@ -2329,6 +2329,115 @@ def _cut(vertices, fraction):
     return np.vstack([vertices[: k + 1], tip])
 
 
+class _DrawOn(Line2D):
+    """A line's current path, cut in display space when it is drawn."""
+
+    def __init__(self, source):
+        super().__init__([], [])
+        self._source = source
+        self._fraction = 1.0
+        self.set_zorder(source.get_zorder())
+        self.set_in_layout(False)
+        self.set_visible(False)
+
+    def draw(self, renderer):
+        """Read the current data and transform, then draw the path's prefix."""
+        if not self.get_visible() or self._fraction <= 0.0:
+            return
+        source = self._source
+        path = source.get_transform().transform_path(source.get_path())
+        parts = [points for points, _ in _line_parts(path.vertices, False)]
+        lengths = [np.hypot(*np.diff(p, axis=0).T).sum() for p in parts]
+        reach = self._fraction * sum(lengths)
+        shown = []
+        for points, length in zip(parts, lengths, strict=True):
+            if shown:
+                shown.append(np.full((1, 2), np.nan))
+            shown.append(_cut(points, min(1.0, reach / length) if length else 1.0))
+            reach -= length
+            if reach <= 0.0:
+                break
+        self.update_from(source)
+        self.set_visible(True)  # update_from copied the hidden source's flag
+        self.set_transform(IdentityTransform())
+        self.set_drawstyle("default")
+        self.set_antialiased(source.get_antialiased())
+        self.set_markevery(source.get_markevery())
+        self.set_snap(source.get_snap())
+        self.set_label("_nolegend_")
+        vertices = np.vstack(shown) if shown else np.empty((0, 2))
+        self.set_data(vertices[:, 0], vertices[:, 1])
+        super().draw(renderer)
+
+
+def draw_on(lines, *, ease="linear") -> PlotResult:
+    """Reveal lines along their current paths at a steady display-space speed.
+
+    ``update(u, level=1.0)`` draws the first eased fraction of each path's
+    arc length in display pixels. Data and transforms are read when the
+    figure is drawn, so ``set_data``, new limits, layout changes, and log
+    axes all work between frames. NaN gaps contribute no length.
+
+    A temporary line draws the cut path while the source is hidden. Its
+    markers sit at the retained vertices, including the cut tip, and its
+    dashes start at the beginning of each connected run. The source data,
+    transform, and drawing method are never replaced. At ``u = 0`` nothing
+    is drawn; at ``u = 1``, the rest state, the source draws normally, with
+    exactly its original markers and dashes. With the default level this
+    frame is pixel-identical to the frame without the move. ``level`` only
+    multiplies the original opacity and never changes the cut length.
+
+    Args:
+        lines: One `Line2D` or an iterable of lines attached to axes.
+        ease: An easing kind for `eyepiece.ease`, or a callable mapping
+            progress to eased progress. The path fraction is clipped to
+            [0, 1]; monotone easing gives a monotone reveal.
+
+    Returns:
+        A `PlotResult` on the first line's axes, with the source lines and
+        their temporary copies in ``artists["lines"]``, and ``update``.
+        Progress and level are clipped to [0, 1].
+
+    Raises:
+        TypeError: If an item is not a `Line2D`.
+        ValueError: If there are no lines, a line has no axes, or a line
+            uses a drawstyle other than ``"default"``, whose stepped path
+            the reveal cannot follow.
+    """
+    items = [lines] if isinstance(lines, Line2D) else list(lines)
+    if not items:
+        raise ValueError("draw_on needs at least one line")
+    for line in items:
+        if not isinstance(line, Line2D):
+            raise TypeError(f"draw_on needs a Line2D, got {type(line).__name__}")
+        if line.axes is None:
+            raise ValueError("draw_on needs lines attached to axes")
+        if line.get_drawstyle() != "default":
+            raise ValueError("draw_on does not support stepped drawstyles")
+    copies = [_DrawOn(line) for line in items]
+    states = [(line.get_visible(), line.get_alpha()) for line in items]
+    for line, copy in zip(items, copies, strict=True):
+        line.axes.add_artist(copy)
+
+    def update(u, level=1.0):
+        u, level = _check_u(u), _check_u(level)
+        fraction = u if u in (0.0, 1.0) else _check_u(_ease(u, ease))
+        for line, copy, (visible, alpha) in zip(items, copies, states, strict=True):
+            base = 1.0 if alpha is None else alpha
+            line.set_alpha(alpha if level == 1.0 else level * base)
+            line.set_visible(visible and u >= 1.0)
+            copy._fraction = fraction
+            copy.set_zorder(line.get_zorder())
+            copy.set_visible(visible and 0.0 < fraction and u < 1.0)
+
+    return PlotResult(
+        ax=items[0].axes,
+        artists={"lines": [*items, *copies]},
+        update=update,
+        contract=MotionContract(moves=tuple(copies)),
+    )
+
+
 class _Outline(Line2D):
     """A closed outline around a target's box that draws on around its perimeter."""
 
