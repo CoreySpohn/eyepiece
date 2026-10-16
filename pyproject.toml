@@ -23,7 +23,7 @@ hwo = ["hwoutils"]
 # mp4 export; supplies the ffmpeg binary when none is on PATH.
 video = ["imageio-ffmpeg"]
 docs = ["sphinx", "myst-nb", "sphinx-book-theme", "sphinx-autoapi", "sphinx_autodoc_typehints", "ipython", "imageio-ffmpeg"]
-test = ["pytest", "pytest-cov", "imageio-ffmpeg", "colorspacious"]
+test = ["pytest", "pytest-cov", "imageio-ffmpeg", "hypothesis", "colorspacious"]
 # Pillow 13 removes the Image.fromarray mode argument that manim 0.21 uses for
 # every image mobject, so both Manim extras cap it until manim adapts.
 manim = ["manim>=0.21,<0.22", "pillow<13"]

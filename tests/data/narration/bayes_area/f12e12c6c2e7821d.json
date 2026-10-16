@@ -1,0 +1,61 @@
+{
+ "key": "f12e12c6c2e7821d",
+ "duration_s": 4.225,
+ "words": [
+  [
+   "Water",
+   0.25,
+   0.55
+  ],
+  [
+   "worlds",
+   0.55,
+   1.0875
+  ],
+  [
+   "fill",
+   1.0875,
+   1.475
+  ],
+  [
+   "the",
+   1.475,
+   1.6
+  ],
+  [
+   "left",
+   1.6,
+   1.8875
+  ],
+  [
+   "0.3",
+   1.8875,
+   2.9875
+  ],
+  [
+   "of",
+   2.9875,
+   3.0625
+  ],
+  [
+   "the",
+   3.0625,
+   3.1875
+  ],
+  [
+   "square.",
+   3.1875,
+   3.975
+  ]
+ ],
+ "text": "Water worlds fill the left 0.3 of the square.",
+ "audio": "f12e12c6c2e7821d.opus",
+ "rate": 24000,
+ "samples": 101400,
+ "voice": "bm_george",
+ "speed": 1.0,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

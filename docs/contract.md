@@ -507,8 +507,8 @@ interpolates between samples or reevaluates a simulation.
 
 A `Timeline` interpolates how a figure is shown, never what was simulated. Its
 knobs are presentation quantities: a title, an angle a construction has turned
-through, the width of a camera's view, the progress of a morph. A ramp may
-move them smoothly between holds, and the frames it produces drive a draw
+through, the width of a camera's view, the progress of a morph. A move may
+change them smoothly between holds, and the frames it produces drive a draw
 function or a camera. It never interpolates between the samples of a
 `Sequence` or stands in for a physical time, so the two clocks stay apart: the
 `Sequence` says what was measured when, and the timeline says when the viewer
@@ -516,16 +516,66 @@ sees it. A camera's moving limits are declared to `record` with
 `free_limits=`, which exempts only those limits from the drift check and
 still checks that axes' color scale.
 
+### One clock places everything timed
+
+The named span is the only timed primitive: a hold, a subject entering or
+leaving, a move, a caption, a pulse, a ring, a line of narration and a
+section are all spans of one `Timeline`, and the knobs a span writes are all a
+draw function reads, through `Plan.value(k, knob)`. A draw function never sees
+time. Times are exact sums, so `Time` handles place one span after another
+without drift. One rule turns seconds into frames everywhere: a span from `s`
+to `e` seconds covers frames `k0 = frame_count(s)` up to
+`k1 = max(k0 + 1, frame_count(e))`, its progress on frame `k` is
+`ease((k - k0 + 1) / n)` and exactly 1 from `k1` on, and a time that falls on
+half a frame rounds up. Two spans that write one knob on the same frame raise.
+The other checks are faults (text arriving over motion, a caption leaving
+before it is read, a span that rounds to no frames); a strict timeline raises
+them and any other records them in `Plan.faults`, with information-level
+entries for what the clock did on its own (a skipped pulse, a span truncated
+at the end of the clip).
+
+Names live in two places. Span and knob names share one namespace, and a
+repeat raises. Sections and lines share a second one, so a span may carry the
+name of the line it sits in (the `square` line may hold the `square` entry),
+but two sections or lines may not share a name. No user-given name may hold
+`:`, because event names and cue marks use it as a separator.
+
+A span truncated at the end of the clip keeps its speed: it plays the frames
+it has and the rest are never drawn, and the information-level fault says by
+how many frames. A span that a cue places can start later than its word when
+the cursor is still busy; the wait is an information-level `late` fault up to
+`Timeline(max_late_s=0.5)` seconds and an error beyond it, which a strict
+timeline raises, naming the span, the cue word and the seconds. In a narrated
+clip speech reads the captions, so a caption that the next caption replaces
+leaves without a read-time check; a silent clip keeps it.
+
+Narration is placement only. `Narration.place` lays one line on the clock and
+is pure, a cue is the start of its word with no lead, and the lead of each
+kind of move (a subject arrives 0.1 s ahead of its word, a pulse is centered
+on it, a ring starts on it) belongs to the clock, applied once. A line lasts
+until its speech and padding end or its last extending span ends plus 0.6 s,
+solved in one pass as the spans are placed; `Timeline.narration` returns the
+`Narration` with those starts and ends for `audio_track`, `mux` and the
+captions. The same function builds the silent clip: a pulse or ring placed
+only by a cue is skipped and recorded rather than placed at a guess.
+
 ### Stills come from the encode
 
 `record(stills=...)` writes chosen frames as PNGs while the sinks encode, from
 the figure exactly as the sinks grabbed it at that frame, so a still is the
-same pixels as that frame and costs no second pass. A time is rounded to the
-nearest frame, a beat name resolves through the `Plan` to the beat's settled
+same pixels as that frame and costs no second pass. A time is converted to a
+frame by the same rule as every span boundary (`frame_count`, half a frame
+rounds up), a span name resolves through the `Plan` to the span's settled
 last frame, and a request the recording never reaches is an error rather than
 a missing file. `on_rescale` is one of `"warn"`, `"raise"` and `"ignore"`;
 `"raise"` raises `ScaleDriftError` and removes every output the call began, so
-a failed run leaves nothing that could pass for a finished one.
+a failed run leaves nothing that could pass for a finished one. The last
+frame of a span is `(span, "last")`, never `span.end`: the end time is the
+first instant after the span, and a time that rounds to the clip's frame count
+is past the last frame and is the "never written" error. A recording given its
+`plan` also warns once, as it closes, about every knob the draw function never
+read and every knob that never changes (the always-present `pulse.*` and
+`ring.*` knobs excepted), because a clip about motion needs a knob that moves.
 
 ### Attention moves sit on the figure
 
@@ -621,6 +671,40 @@ of its own color. It does not repeat `audit`, which owns the connectors, and
 a label with an opaque backing box is not reported over marks. The result is
 deterministic and the figure keeps its dpi. `assert_readable` raises
 `ReadabilityError` with the report.
+
+`motion_faults(fig, at, times, moves=..., rest=..., groups=...)` is the same
+check for the path between two states rather than the states themselves.
+Given a `Span(start, stop)` it poses the figure at every frame of the venue's
+frame rate (30 per second for each venue; `fps=` overrides), always ending
+exactly on `stop`, draws it, and traces every visible artist, equation glyph
+paths and collections included, with the rendered frame when a pixel check is
+asked for. It returns `MotionFault` records, sorted by time, of seven kinds.
+`jump` is a frame step far above the typical one and not echoed by its
+neighbours, a step into the rest state (the end of a declared move, else the
+last step that changes anything) that is both above half the ratio and twice
+the step before it, or, for a clip too still to have a typical step, one
+artist that moves a large share of its size in one frame. `dead` is a declared
+move whose region never changes, or whose artists are never visible. `drift`
+is an artist listed in `rest` whose box or ink centroid moves by more than
+`tol_px`. `tear` is a `groups` set whose members, by their ink centroids,
+change their spacing, so a stagger or a drift of one member shows and a rigid
+rotation does not; a group declared with `scales=True` may scale as a whole.
+`overlap` is two artists, text or declared in `moves`, whose visible parts
+cover each other beyond a tolerance while both travel (judged over a tenth of
+a second, so the answer does not depend on the frame rate) and are not listed
+in `may_overlap`. `outside` is any traced artist, a glyph path included, past
+the frame, and any text or declared artist cut by its clip box or clipped away
+entirely; a clip box that only widens, and ends by uncovering the artist, is a
+reveal and not a cut. `spike` is a hop off the path, or a one-frame excursion,
+or a kink in speed (measured over elapsed time) on an artist that keeps its
+shape; it is off unless `spikes=True` or `kinds` names it, because a small hop
+is sometimes the intended motion. A move is a dict, or any object whose
+`contract` is a dict or has the same fields, with the keys `name`, `span`,
+`artists`, `rest`, `groups` and `may_overlap`; a move's `rest`, `groups` and
+`may_overlap` hold only over its `span`. The call restores the figure's dpi and
+canvas and is deterministic. It costs the draw time of each frame plus a
+little; the frames are kept only for `jump` and `dead`. `assert_motion` raises
+`MotionError` with the report.
 
 `caption_line(fig, at=pose, times=...)` uses the same extents to place
 captions: it returns the WebVTT `line:` percentage of the lowest strip, two

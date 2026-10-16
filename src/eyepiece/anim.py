@@ -90,6 +90,7 @@ from eyepiece._ffmpeg import (
     resolve_ffmpeg,
     with_caller_pixels,
 )
+from eyepiece._motion import frame_count
 
 PRESETS = {
     "talk": {"fps": 30, "dpi": 120},
@@ -565,13 +566,18 @@ def record(
             checked, which `on_rescale="ignore"` would not do.
         stills: PNG files to write from chosen frames during the same
             encode, as a mapping from path to when. A number is a time in
-            seconds, mapped to the frame at ``round(t * fps)``; a beat name
-            (needs `plan`) is that beat's last frame, its settled state; a
-            ``(beat, where)`` pair picks ``"start"``, ``"mid"`` or ``"last"``.
+            seconds, mapped to the frame at ``frame_count(t, fps)``; a span
+            name (needs `plan`) is that span's last frame, its settled state; a
+            ``(span, where)`` pair picks ``"start"``, ``"mid"`` or ``"last"``.
             A still is the figure as the sinks grabbed it at that frame, with
             no second pass over the frames. Parent directories are created.
-        plan: The `Plan` the frames were laid out by, to name stills by beat.
-            Its fps must equal `fps`.
+        plan: The `Plan` the frames were laid out by, to name stills by span.
+            Its fps must equal `fps`. With a plan, the recording also warns
+            once, when the block exits, with a `RuntimeWarning` listing every
+            knob the draw function never read (through `Plan.value`,
+            `Plan.frames` or `Plan.progress`) and every knob that never
+            changes over the clip: a clip whose concept is motion needs a knob
+            that moves. The ``pulse.*`` and ``ring.*`` knobs are exempt.
         stills_dpi: Dpi of the stills; None uses the first sink's dpi, which
             makes a still pixel-identical to that sink's frame.
         allow_rescale: Deprecated; `True` means ``on_rescale="ignore"``. It
@@ -584,8 +590,8 @@ def record(
     Raises:
         ValueError: If a path has an unsupported suffix, an axes in
             `free_limits` is not on `fig`, `on_rescale` is not one of the
-            three values, or a still names a beat without a `plan`, an
-            unknown beat, or a negative time.
+            three values, or a still names a span without a `plan`, an
+            unknown span, or a negative time.
         ScaleDriftError: If a scale drifted and `on_rescale` is "raise".
         RuntimeError: If an mp4 sink is requested and no ffmpeg is found,
             or if the block exits without ever grabbing a frame, or before
@@ -593,6 +599,8 @@ def record(
     """
     on_rescale = _resolve_on_rescale(on_rescale, allow_rescale)
     still_frames = _resolve_stills(stills, plan, fps)
+    if plan is not None:
+        plan._read.clear()
     free = set()
     if isinstance(free_limits, Axes):
         free_limits = [free_limits]
@@ -650,12 +658,33 @@ def record(
             yield recorder
             _check_frames(counter, paths)
             _check_stills_reached(still_frames, counter["frames"])
+            _warn_unused_knobs(plan)
     except ScaleDriftError:
         # The sinks have closed by now; a half-written movie must not pass
         # for a finished one.
         for path in [*paths, *(recorder.stills_written if recorder else ())]:
             Path(path).unlink(missing_ok=True)
         raise
+
+
+def _warn_unused_knobs(plan):
+    """One warning listing the knobs the draw function never read or that never move."""
+    if plan is None:
+        return
+    unread, constant = plan.unused_knobs()
+    parts = []
+    if unread:
+        parts.append(f"never read by the draw function: {list(unread)}")
+    if constant:
+        parts.append(f"constant over the whole clip: {list(constant)}")
+    if parts:
+        warnings.warn(
+            "the plan has knobs that "
+            + "; ".join(parts)
+            + " (a knob that never changes cannot show motion)",
+            RuntimeWarning,
+            stacklevel=3,
+        )
 
 
 def _resolve_on_rescale(on_rescale, allow_rescale):
@@ -690,21 +719,20 @@ def _resolve_stills(stills, plan, fps):
 
 
 def _still_frame(when, plan, fps):
-    """Frame index for one `stills` entry: seconds, a beat name, or (beat, where)."""
+    """Frame index for one `stills` entry: seconds, a span name, or (span, where)."""
     if isinstance(when, str) or isinstance(when, tuple):
-        beat, where = (when, "last") if isinstance(when, str) else when
+        span, where = (when, "last") if isinstance(when, str) else when
         if plan is None:
-            raise ValueError(f"a still at beat {beat!r} needs plan=")
-        pick = {"start": plan.start, "mid": plan.mid, "last": plan.last}.get(where)
-        if pick is None:
+            raise ValueError(f"a still at span {span!r} needs plan=")
+        if where not in ("start", "mid", "last"):
             raise ValueError(f"a still's where is start, mid or last, got {where!r}")
         try:
-            return pick(beat)
+            return plan.frame_of(span, where)
         except KeyError:
-            raise ValueError(f"the plan has no beat named {beat!r}") from None
+            raise ValueError(f"the plan has no span named {span!r}") from None
     if when < 0:
         raise ValueError(f"a still's time must be at least 0 s, got {when}")
-    return round(when * fps)
+    return frame_count(when, fps)
 
 
 def _check_stills_reached(still_frames, grabbed):
@@ -713,7 +741,9 @@ def _check_stills_reached(still_frames, grabbed):
     if late:
         raise RuntimeError(
             f"the recording grabbed {grabbed} frames, so the stills at frame "
-            f"{late[0]} and later were never written"
+            f"{late[0]} and later were never written; a time that rounds to the "
+            "clip's frame count is past the last frame, and the settled state of "
+            "a span is the still (span, 'last'), not its end time"
         )
 
 
@@ -978,7 +1008,7 @@ class Animation:
             fps: Playback rate override; None keeps the animation's own.
             stills: PNGs to write from chosen frames during this render; see
                 `record`.
-            plan: The `Plan` the frames follow, to name stills by beat.
+            plan: The `Plan` the frames follow, to name stills by span.
             on_rescale: "warn", "raise" or "ignore"; see `record`.
             stills_dpi: Dpi of the stills; None uses the first sink's.
 
@@ -1038,7 +1068,7 @@ class Animation:
             fps: Playback rate override; None keeps the animation's own.
             stills: PNGs to write from chosen frames during this render; see
                 `record`.
-            plan: The `Plan` the frames follow, to name stills by beat.
+            plan: The `Plan` the frames follow, to name stills by span.
             on_rescale: "warn", "raise" or "ignore"; see `record`.
             stills_dpi: Dpi of the stills; None uses the player's dpi.
 

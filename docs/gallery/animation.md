@@ -189,12 +189,13 @@ chain has to include the crop in it.
 ## Stills from the same encode
 
 A talk or a page often needs one frame of an animation as a picture: the
-settled end of a beat, or the figure at a chosen second. `stills=` writes
+settled end of a span, or the figure at a chosen second. `stills=` writes
 those PNGs during the encode itself, from the state the sinks just grabbed, so
 there is no second pass over the frames and a still is pixel-identical to that
-frame of the first sink. A number is a time in seconds, a beat name is that
-beat's settled last frame, and `("beat", "mid")` picks the start, middle or
-last frame. Beat names need the `Plan` the frames were laid out by.
+frame of the first sink. A number is a time in seconds, rounded to a frame by the same rule as every
+span boundary (half a frame rounds up), a span name is that span's settled
+last frame, and `("span", "mid")` picks the start, middle or last frame. Span
+names need the `Plan` the frames were laid out by.
 
 ```{code-cell} python
 tl = ep.Timeline()
@@ -211,7 +212,7 @@ with tempfile.TemporaryDirectory() as tmp_dir:
     tmp = Path(tmp_dir)
     stills = {tmp / "open.png": "open", tmp / "at_1s.png": 0.75}
     with ep.record(
-        fig, tmp / "beats.html", fps=4, dpi=80, plan=plan, stills=stills
+        fig, tmp / "spans.html", fps=4, dpi=80, plan=plan, stills=stills
     ) as rec:
         for k in range(plan.n_frames):
             line.set_ydata([0, k + 1])

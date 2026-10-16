@@ -1,13 +1,18 @@
 """Presentation timing and camera geometry: timeline, easing, zoom path, quads."""
 
+import itertools
+import json
 import math
 import subprocess
 import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 import eyepiece as ep
+
+DATA = Path(__file__).parent / "data"
 
 # ---------------------------------------------------------------------------
 # frame_count, ease, stagger
@@ -25,7 +30,7 @@ def test_frame_count_rounds_exact_halves_up_despite_float_noise():
     assert ep.frame_count(0.9, 25) == 23
 
 
-def test_beat_boundaries_follow_the_exact_cumulative_time():
+def test_span_boundaries_follow_the_exact_cumulative_time():
     tl = ep.Timeline()
     for _ in range(3):
         tl.hold(0.3)
@@ -79,62 +84,63 @@ def test_stagger_rejects_spans_outside_the_beat(span):
 
 
 # ---------------------------------------------------------------------------
-# Timeline and Plan
+# Timeline and Plan: the sequential subset of the clock
 
 
 def _simple():
     tl = ep.Timeline(knobs={"text": "intro", "theta": 0.0})
     tl.hold(1.0, name="intro")
-    tl.hold(0.5, name="cue", set={"text": "move"})
-    tl.ramp(1.0, name="move", to={"theta": 2.0}, ease="linear")
+    tl.hold(0.5, name="cue", to={"text": "move"})
+    tl.move("move", 1.0, to={"theta": 2.0}, ease="linear")
     tl.hold(1.0, name="end")
     return tl
 
 
-def test_beats_resolve_from_cumulative_seconds_at_any_fps():
+def test_spans_resolve_from_cumulative_seconds_at_any_fps():
     tl = _simple()
     assert tl.seconds == pytest.approx(3.5)
     for fps in (24, 30):
         plan = tl.at_fps(fps)
         assert plan.n_frames == ep.frame_count(3.5, fps)
-        stops = [b.stop for b in plan.beats]
-        assert stops == [ep.frame_count(t, fps) for t in (1.0, 1.5, 2.5, 3.5)]
-        assert plan.beats[0].start == 0
-        assert all(
-            a.stop == b.start for a, b in zip(plan.beats, plan.beats[1:], strict=False)
-        )
+        spans = list(plan.spans.values())
+        assert [s.k1 for s in spans] == [
+            ep.frame_count(t, fps) for t in (1.0, 1.5, 2.5, 3.5)
+        ]
+        assert spans[0].k0 == 0
+        assert all(a.k1 == b.k0 for a, b in itertools.pairwise(spans))
 
 
-def test_ramp_reaches_its_target_on_its_last_frame():
+def test_a_move_reaches_its_target_on_its_last_frame():
     plan = _simple().at_fps(10)
-    move = next(b for b in plan.beats if b.name == "move")
-    assert (move.start, move.stop) == (15, 25)
-    first = plan.frames[move.start]
-    assert first["theta"] == pytest.approx(0.2)  # (i + 1) / n: already moving
-    assert plan.frames[move.stop - 1]["theta"] == pytest.approx(2.0)
-    assert plan.frames[move.start - 1]["theta"] == 0.0
-    assert plan.frames[-1]["theta"] == 2.0  # carried through the next hold
+    move = plan.spans["move"]
+    assert (move.k0, move.k1) == (15, 25)
+    assert plan.value(move.k0, "theta") == pytest.approx(0.2)  # (i + 1) / n
+    assert plan.value(move.k1 - 1, "theta") == pytest.approx(2.0)
+    assert plan.value(move.k0 - 1, "theta") == 0.0
+    assert plan.value(plan.n_frames - 1, "theta") == 2.0  # carried through the hold
 
 
-def test_set_applies_at_the_holds_start():
+def test_a_hold_steps_its_knobs_when_it_starts():
     plan = _simple().at_fps(10)
-    assert plan.frames[9]["text"] == "intro"
-    assert plan.frames[10]["text"] == "move"
-    assert plan.frames[-1]["text"] == "move"
+    assert plan.value(9, "text") == "intro"
+    assert plan.value(10, "text") == "move"
+    assert plan.value(plan.n_frames - 1, "text") == "move"
 
 
-def test_frames_carry_reserved_fields_and_are_independent_dicts():
+def test_frames_carry_index_time_and_section_and_are_independent_dicts():
     plan = _simple().at_fps(10)
     f = plan.frames[17]
-    assert f["beat"] == "move"
+    assert set(f) == {"text", "theta", "index", "t", "section"}
     assert f["index"] == 17
     assert f["t"] == pytest.approx(1.7)
-    assert f["u"] == pytest.approx(0.3)
+    assert f["theta"] == pytest.approx(0.6)
     plan.frames[0]["text"] = "changed"
     assert plan.frames[1]["text"] == "intro"
+    assert len(plan.frames) == plan.n_frames
+    assert plan.frames[-1]["index"] == plan.n_frames - 1
 
 
-def test_progress_reads_one_clock_per_beat():
+def test_progress_reads_one_clock_per_span():
     plan = _simple().at_fps(10)
     assert plan.progress(0, "move") == 0.0
     assert plan.progress(14, "move") == 0.0
@@ -143,95 +149,102 @@ def test_progress_reads_one_clock_per_beat():
     assert plan.progress(30, "move") == 1.0
 
 
-def test_progress_eased_and_raw_differ_for_a_curved_ramp():
+def test_progress_eased_and_raw_differ_for_a_curved_move():
     tl = ep.Timeline(knobs={"x": 0.0})
-    tl.hold(1.0).ramp(1.0, name="go", to={"x": 1.0}, ease="smoothstep")
+    tl.hold(1.0)
+    tl.move("go", 1.0, to={"x": 1.0}, ease="smoothstep")
     plan = tl.at_fps(10)
-    k = plan.start("go") + 2
-    raw = plan.progress(k, "go", eased=False)
-    assert raw == pytest.approx(0.3)
+    k = plan.spans["go"].k0 + 2
+    assert plan.progress(k, "go", eased=False) == pytest.approx(0.3)
     assert plan.progress(k, "go") == pytest.approx(ep.ease(0.3, "smoothstep"))
-    assert plan.frames[k]["x"] == pytest.approx(ep.ease(0.3, "smoothstep"))
+    assert plan.value(k, "x") == pytest.approx(ep.ease(0.3, "smoothstep"))
 
 
-def test_ramp_accepts_a_callable_easing():
+def test_a_move_accepts_a_callable_easing():
     tl = ep.Timeline(knobs={"x": 0.0})
-    tl.hold(1.0).ramp(1.0, name="go", to={"x": 1.0}, ease=lambda u: u * u)
+    tl.hold(1.0)
+    tl.move("go", 1.0, to={"x": 1.0}, ease=lambda u: u * u)
     plan = tl.at_fps(10)
-    assert plan.frames[plan.start("go") + 4]["x"] == pytest.approx(0.25)
+    assert plan.value(plan.spans["go"].k0 + 4, "x") == pytest.approx(0.25)
 
 
-def test_log_space_ramp_interpolates_geometrically():
+def test_log_space_move_interpolates_geometrically():
     tl = ep.Timeline(knobs={"w": 64.0})
-    tl.hold(1.0).ramp(1.0, name="zoom", to={"w": 4.0}, ease="linear", space="log")
+    tl.hold(1.0)
+    tl.move("zoom", 1.0, to={"w": 4.0}, ease="linear", space="log")
     plan = tl.at_fps(4)
-    widths = [plan.frames[k]["w"] for k in range(plan.start("zoom"), plan.n_frames)]
-    assert widths == pytest.approx([32.0, 16.0, 8.0, 4.0])
+    ks = range(plan.spans["zoom"].k0, plan.n_frames)
+    assert [plan.value(k, "w") for k in ks] == pytest.approx([32.0, 16.0, 8.0, 4.0])
 
 
 def test_read_holds_for_the_tempo_reading_time():
     tl = ep.Timeline(knobs={"text": ""})
     tl.hold(1.0)
-    tl.read("one two three", name="short", set={"text": "a"})
+    tl.read("one two three", name="short", to={"text": "a"})
     tl.read(" ".join(["w"] * 20), name="long", tempo=ep.Tempo(factor=2.0))
-    plan = tl.at_fps(100)
-    short = next(b for b in plan.beats if b.name == "short")
-    long_ = next(b for b in plan.beats if b.name == "long")
-    assert short.seconds == pytest.approx(ep.Tempo().read_s("one two three"))
-    assert long_.seconds == pytest.approx(2.0 * (0.75 + 0.3 * 20))
+    spans = tl.at_fps(100).spans
+    assert spans["short"].end_s - spans["short"].start_s == pytest.approx(
+        ep.Tempo().read_s("one two three")
+    )
+    assert spans["long"].end_s - spans["long"].start_s == pytest.approx(
+        2.0 * (0.75 + 0.3 * 20)
+    )
 
 
-def test_beat_lookups():
+def test_span_lookups_name_the_frame_of_a_span():
     plan = _simple().at_fps(10)
-    assert plan.beat_at(16).name == "move"
-    assert plan.start("move") == 15
-    assert plan.last("move") == 24
-    assert plan.mid("move") == 19  # progress 0.5 of a 10-frame ramp
-    assert plan.find({"text": "move"}) == 10
-    assert plan.find({"text": "move"}, last=True) == plan.n_frames - 1
-    assert plan.nearest("theta", 1.0) == 19
+    assert plan.frame_of("move", "start") == 15
+    assert plan.frame_of("move", "last") == 24
+    assert plan.frame_of("move", "mid") == 19  # progress 0.5 of a 10-frame move
     with pytest.raises(KeyError, match="nope"):
-        plan.start("nope")
-    with pytest.raises(ValueError, match="no frame"):
-        plan.find({"text": "absent"})
+        plan.frame_of("nope", "start")
+    with pytest.raises(ValueError, match="start, mid or last"):
+        plan.frame_of("move", "end")
     with pytest.raises(IndexError):
-        plan.beat_at(plan.n_frames)
+        plan.value(plan.n_frames, "theta")
 
 
-def test_a_beat_that_rounds_to_no_frames_raises_naming_it():
+def test_a_span_that_rounds_to_no_frames_raises_naming_it():
     tl = ep.Timeline(knobs={"x": 0.0})
-    tl.hold(1.0).hold(0.01, name="blink").hold(1.0)
+    tl.hold(1.0)
+    tl.hold(0.01, name="blink")
+    tl.hold(1.0)
     tl.at_fps(200)  # two frames there
     with pytest.raises(ValueError, match="blink"):
         tl.at_fps(10)
 
 
 def test_undeclared_and_reserved_knob_names_raise():
-    with pytest.raises(ValueError, match="reserved"):
-        ep.Timeline(knobs={"beat": 1})
-    tl = ep.Timeline(knobs={"x": 0.0})
+    for name in ("index", "t", "section"):
+        with pytest.raises(ValueError, match="reserved"):
+            ep.Timeline(knobs={name: 1})
+    tl = ep.Timeline(knobs={"x": 0.0, "radius": 1.0})
     tl.hold(1.0)
+    with pytest.raises(ValueError, match=r"radus.*radius"):
+        tl.move("m", 1.0, to={"radus": 3.0})
     with pytest.raises(ValueError, match="radus"):
-        tl.ramp(1.0, to={"radus": 3.0})
-    with pytest.raises(ValueError, match="radus"):
-        tl.hold(1.0, set={"radus": 3.0})
+        tl.hold(1.0, to={"radus": 3.0})
 
 
-def test_ramps_on_non_numeric_knobs_or_across_zero_in_log_raise():
+def test_moves_of_non_numeric_knobs_step_and_log_needs_positive_ends():
     tl = ep.Timeline(knobs={"text": "a", "x": 0.0, "w": 1.0})
     tl.hold(1.0)
-    with pytest.raises(ValueError, match="numeric"):
-        tl.ramp(1.0, to={"text": "b"})
-    with pytest.raises(ValueError, match="positive"):
-        tl.ramp(1.0, to={"x": 2.0}, space="log")
-    with pytest.raises(ValueError, match="positive"):
-        tl.ramp(1.0, to={"w": -2.0}, space="log")
+    tl.move("step", 1.0, to={"text": "b"})
+    plan = tl.at_fps(10)
+    assert plan.value(plan.spans["step"].k0, "text") == "b"
+    tl2 = ep.Timeline(knobs={"x": 0.0, "w": 1.0})
+    tl2.hold(1.0)
+    tl2.move("a", 1.0, to={"x": 2.0}, space="log")
+    with pytest.raises(ValueError, match=r"'x'.*positive"):
+        tl2.at_fps(10)
+    tl3 = ep.Timeline(knobs={"w": 1.0})
+    tl3.move("a", 1.0, to={"w": -2.0}, space="log")
+    with pytest.raises(ValueError, match=r"'w'.*positive"):
+        tl3.at_fps(10)
 
 
-def test_a_timeline_cannot_open_with_a_ramp_and_names_are_unique():
+def test_names_are_unique_and_seconds_positive():
     tl = ep.Timeline(knobs={"x": 0.0})
-    with pytest.raises(ValueError, match="hold"):
-        tl.ramp(1.0, to={"x": 1.0})
     tl.hold(1.0, name="a")
     with pytest.raises(ValueError, match="already"):
         tl.hold(1.0, name="a")
@@ -239,11 +252,32 @@ def test_a_timeline_cannot_open_with_a_ramp_and_names_are_unique():
         tl.hold(0.0)
 
 
-def test_unnamed_beats_get_distinct_names():
+def _golden_timeline():
+    tl = ep.Timeline(knobs={"title": "intro", "theta": 0.0, "w": 64.0, "n": 3})
+    tl.hold(1.0, name="a")
+    tl.hold(0.5, name="b", to={"title": "turn"})
+    tl.move("turn", 1.3, to={"theta": 2.0}, ease="smoothstep")
+    tl.hold(0.37, name="c", to={"n": 4})
+    tl.move("zoom", 0.9, to={"w": 4.0}, ease="smootherstep", space="log")
+    tl.move("back", 0.61, to={"theta": 0.5}, ease="cosine")
+    tl.hold(0.8, name="end", to={"title": "end"})
+    return tl
+
+
+@pytest.mark.parametrize("fps", [24, 30])
+def test_a_sequential_timeline_reproduces_the_frames_the_old_beats_gave(fps):
+    """The golden file holds the frames the holds-and-ramps Timeline produced."""
+    golden = json.loads((DATA / "sequential_frames.json").read_text())[str(fps)]
+    plan = _golden_timeline().at_fps(fps)
+    frames = [{k: v for k, v in f.items() if k != "section"} for f in plan.frames]
+    assert frames == golden
+
+
+def test_unnamed_spans_get_distinct_names():
     tl = ep.Timeline()
-    tl.hold(1.0).hold(1.0)
-    names = [b.name for b in tl.at_fps(10).beats]
-    assert len(set(names)) == 2
+    tl.hold(1.0)
+    tl.hold(1.0)
+    assert len(set(tl.at_fps(10).spans)) == 2
 
 
 # ---------------------------------------------------------------------------
@@ -407,13 +441,11 @@ def test_a_strength_must_be_positive_and_finite(strength):
 
 
 @pytest.mark.parametrize("kind", OVERSHOOT_KINDS)
-def test_a_ramp_accepts_an_overshoot_ease_and_still_lands_on_its_target(kind):
-    plan = (
-        ep.Timeline(knobs={"x": 0.0})
-        .hold(0.1)
-        .ramp(1.0, name="go", to={"x": 2.0}, ease=kind)
-        .at_fps(24)
-    )
+def test_a_move_accepts_an_overshoot_ease_and_still_lands_on_its_target(kind):
+    tl = ep.Timeline(knobs={"x": 0.0})
+    tl.hold(0.1)
+    tl.move("go", 1.0, to={"x": 2.0}, ease=kind)
+    plan = tl.at_fps(24)
     xs = [f["x"] for f in plan.frames]
     assert xs[-1] == 2.0
     assert (max(xs) > 2.0) if kind == "back_out" else (min(xs) < 0.0)
