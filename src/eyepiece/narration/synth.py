@@ -1,4 +1,4 @@
-r"""Synthesize a narration script with Kokoro, and cache it beside the clip.
+r"""Synthesize or estimate a Python or JSON narration script.
 
 This is the only module of the package that needs the ``narration`` extra
 (``pip install eyepiece[narration]``: Kokoro and soundfile), and it imports
@@ -10,7 +10,9 @@ Kokoro version the script names (`KOKORO_VERSION`)::
         --python 3.12 --with kokoro==0.9.4 --with soundfile --with numpy \
         python -m eyepiece.narration.synth script.py cache_dir
 
-``script.py`` defines ``SCRIPT``, a `Script`. For each line it writes two
+``script.py`` defines ``SCRIPT``, a `Script`. A ``script.json`` exported by
+``Script.to_json(path)`` works in its place and needs none of the defining
+module's imports. For each line synthesis writes two
 files into ``cache_dir`` named by the line's cache key: ``<key>.opus`` (Ogg
 Opus, or ``<key>.flac`` when the installed libsndfile cannot write Opus) and
 ``<key>.json`` (word times, length, sample count, voice and versions). Both
@@ -22,6 +24,11 @@ its audio is an error, since speaking it again could move the cue times;
 ``--respeak`` says that is intended. ``--force`` speaks every line again,
 ``--prune`` deletes cache files that no line of the script uses, and
 ``--list`` prints what the cache holds.
+
+``python -m eyepiece.narration.synth script.json --estimate`` checks speech
+wording and prints estimated speech seconds per line and their total,
+excluding padding and animation holds. It needs no cache directory or
+Kokoro import and also accepts ``script.py``.
 """
 
 import argparse
@@ -36,9 +43,9 @@ from pathlib import Path
 import numpy as np
 
 from ._align import align
-from ._script import KOKORO_VERSION
+from ._script import KOKORO_VERSION, Script
 from ._speech import SpeechTextError, check_script_speech
-from ._timeline import MissingAudioError, Spoken, Word
+from ._timeline import MissingAudioError, Spoken, Word, estimate
 
 SAMPLE_RATE = 24000
 _CACHE_FILE = re.compile(r"^(?P<key>[0-9a-f]{16})\.(json|opus|flac|wav)$")
@@ -240,6 +247,8 @@ def list_cache(script, cache_dir):
 
 
 def _load_script(path):
+    if Path(path).suffix.lower() == ".json":
+        return Script.from_json(path)
     spec = importlib.util.spec_from_file_location("narration_script", path)
     module = importlib.util.module_from_spec(spec)
     sys.modules["narration_script"] = module
@@ -250,8 +259,12 @@ def _load_script(path):
 def main(argv=None):
     """Command line; see the module docstring."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("script", help="a .py file that defines SCRIPT")
-    parser.add_argument("cache_dir")
+    parser.add_argument(
+        "script", help="a .py file defining SCRIPT or a Script JSON file"
+    )
+    parser.add_argument(
+        "cache_dir", nargs="?", help="required unless --estimate is set"
+    )
     parser.add_argument("--force", action="store_true", help="speak every line again")
     parser.add_argument(
         "--respeak",
@@ -260,8 +273,27 @@ def main(argv=None):
     )
     parser.add_argument("--prune", action="store_true", help="delete unused files")
     parser.add_argument("--list", action="store_true", help="print the cache and stop")
+    parser.add_argument(
+        "--estimate",
+        action="store_true",
+        help="check speech and print estimated seconds without Kokoro or a cache",
+    )
     args = parser.parse_args(argv)
+    if args.cache_dir is None and not args.estimate:
+        parser.error("cache_dir is required unless --estimate is set")
     script = _load_script(args.script)
+    if args.estimate:
+        try:
+            check_script_speech(script)
+        except SpeechTextError as err:
+            parser.error(str(err))
+        total = 0.0
+        for line in script.lines:
+            seconds = estimate(line).duration_s
+            print(f"{line.key}  {seconds:.3f} s")
+            total += seconds
+        print(f"total  {total:.3f} s")
+        return
     if args.list:
         for key, line, text, has_audio in list_cache(script, args.cache_dir):
             audio = "audio" if has_audio else "NO AUDIO"

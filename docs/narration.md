@@ -101,6 +101,35 @@ with an `ImportError` that names it. Misaki, the phonemizer Kokoro uses, may
 download a small language model on the first run and may need espeak-ng for
 words outside its dictionary.
 
+## JSON scripts and timing estimates
+
+A script module can import the packages it needs in the project environment,
+then export a JSON script for the isolated speech environment:
+
+```python
+SCRIPT.to_json("script.json")
+restored = nr.Script.from_json("script.json")
+assert restored.cache_keys() == SCRIPT.cache_keys()
+```
+
+The JSON preserves line keys, marked text, display text, padding and all
+script settings. Spoken text and cues are rebuilt from the marked text.
+The synthesis command accepts `script.json` wherever it accepts `script.py`,
+so loading the JSON needs none of the script module imports:
+
+```bash
+python -m eyepiece.narration.synth script.json cache_dir
+python -m eyepiece.narration.synth script.json --estimate
+```
+
+`--estimate` accepts either format, checks every spoken line with
+`check_script_speech`, and prints estimated speech seconds per line and a
+total. It does not import Kokoro or need a cache directory. The total sums
+speech durations only, excluding line padding and animation holds. Numbers
+are estimated from their spoken words: `0.943` is "zero point nine four
+three" and `12` is "twelve". These rough estimates support planning; cached
+word times remain the source for a finished render.
+
 ## Laying it out
 
 `Narration.load` reads the cache and places the lines one after another. A
@@ -207,7 +236,10 @@ Pr(H|E).")`). The cue marks, the cache key and the cue times belong to the
 spoken text. When the display text has as many sentences as the speech, each
 sentence keeps the span of its spoken sentence. Otherwise the whole line is
 one run over the line's speech, and a split inside it is timed by character
-count, not by the words.
+count, not by the words. The display text of a line should have the same
+number of sentences as its spoken text. When the counts differ, `captions`
+emits one `UserWarning` naming that line per call because the caption timing
+can drift within the line.
 
 Captions sit at the bottom of the picture unless a cue says otherwise. Where
 the figure has text there, `eyepiece.testing.caption_line(fig, at=pose,

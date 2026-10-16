@@ -18,12 +18,57 @@ This module imports only the standard library.
 """
 
 import json
+import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
-_LETTERS_PER_S = 14.0
+# A rough English speaking rate, checked against the cached narration fixture.
+_LETTERS_PER_S = 12.0
 _PAUSE_S = 0.25
+_NUMBER = re.compile(r"(?<!\w)[+-]?(?:\d+\.\d+|\.\d+|\d+)(?!\w)")
+_SMALL = (
+    "zero one two three four five six seven eight nine ten eleven twelve "
+    "thirteen fourteen fifteen sixteen seventeen eighteen nineteen"
+).split()
+_TENS = "zero ten twenty thirty forty fifty sixty seventy eighty ninety".split()
+
+
+def _integer_words(number):
+    """Spell a nonnegative integer for the English speech estimate."""
+    if number < 20:
+        return _SMALL[number]
+    if number < 100:
+        tens, rest = divmod(number, 10)
+        return _TENS[tens] + (" " + _SMALL[rest] if rest else "")
+    for scale, name in (
+        (10**12, "trillion"),
+        (10**9, "billion"),
+        (10**6, "million"),
+        (1000, "thousand"),
+        (100, "hundred"),
+    ):
+        if number >= scale:
+            count, rest = divmod(number, scale)
+            text = f"{_integer_words(count)} {name}"
+            if rest:
+                join = " and " if rest < 100 else " "
+                text += join + _integer_words(rest)
+            return text
+
+
+def _number_words(match):
+    """Spell decimals digit by digit after the point, and integers as words."""
+    number = match[0]
+    sign = ""
+    if number.startswith(("+", "-")):
+        sign = "minus " if number[0] == "-" else "plus "
+        number = number[1:]
+    whole, point, fraction = number.partition(".")
+    text = sign + _integer_words(int(whole or "0"))
+    if point:
+        text += " point " + " ".join(_SMALL[int(digit)] for digit in fraction)
+    return text
 
 
 class MissingSynthesisError(FileNotFoundError):
@@ -102,13 +147,16 @@ def estimate(line):
     """A rough `Spoken` for a line that has not been synthesized.
 
     Words last in proportion to their letters, with a short pause after
-    sentence and clause punctuation. It stands in for the cache in tests and
-    in a first layout, never in a published render.
+    sentence and clause punctuation. Numbers contribute the letters of
+    their English spoken words: 12 is "twelve", and 0.943 is "zero point
+    nine four three". Each written token keeps one timing entry, so cue
+    indices stay unchanged. It stands in for the cache in tests and in a
+    first layout, never in a published render.
     """
     t = 0.0
     words = []
     for text in line.words:
-        letters = sum(ch.isalnum() for ch in text)
+        letters = sum(ch.isalnum() for ch in _NUMBER.sub(_number_words, text))
         end = t + max(1, letters) / _LETTERS_PER_S
         words.append(Word(text, t, end))
         t = end + (_PAUSE_S if text[-1] in ".?!,;" else 0.0)

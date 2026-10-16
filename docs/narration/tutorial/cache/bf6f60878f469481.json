@@ -1,0 +1,61 @@
+{
+ "key": "bf6f60878f469481",
+ "duration_s": 5.15,
+ "words": [
+  [
+   "The",
+   0.275,
+   0.375
+  ],
+  [
+   "marker",
+   0.375,
+   1.025
+  ],
+  [
+   "picks",
+   1.025,
+   1.35
+  ],
+  [
+   "out",
+   1.35,
+   1.6375
+  ],
+  [
+   "one",
+   1.6375,
+   1.9625
+  ],
+  [
+   "separation",
+   1.9625,
+   3.1125
+  ],
+  [
+   "along",
+   3.1125,
+   3.55
+  ],
+  [
+   "that",
+   3.55,
+   3.8375
+  ],
+  [
+   "profile.",
+   3.8375,
+   4.85
+  ]
+ ],
+ "text": "The marker picks out one separation along that profile.",
+ "audio": "bf6f60878f469481.opus",
+ "rate": 24000,
+ "samples": 123600,
+ "voice": "bm_george",
+ "speed": 0.85,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

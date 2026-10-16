@@ -1,0 +1,81 @@
+{
+ "key": "ce5c027c2b2f40f7",
+ "duration_s": 5.725,
+ "words": [
+  [
+   "Then",
+   0.3,
+   0.525
+  ],
+  [
+   "the",
+   0.525,
+   0.6625
+  ],
+  [
+   "row",
+   0.6625,
+   0.9875
+  ],
+  [
+   "profile",
+   0.9875,
+   1.5875
+  ],
+  [
+   "is",
+   1.5875,
+   1.775
+  ],
+  [
+   "drawn",
+   1.775,
+   2.225
+  ],
+  [
+   "across",
+   2.225,
+   2.575
+  ],
+  [
+   "the",
+   2.575,
+   2.7375
+  ],
+  [
+   "image,",
+   2.7375,
+   3.45
+  ],
+  [
+   "from",
+   3.575,
+   3.8375
+  ],
+  [
+   "left",
+   3.8375,
+   4.4
+  ],
+  [
+   "to",
+   4.4,
+   4.5875
+  ],
+  [
+   "right.",
+   4.5875,
+   5.4
+  ]
+ ],
+ "text": "Then the row profile is drawn across the image, from left to right.",
+ "audio": "ce5c027c2b2f40f7.opus",
+ "rate": 24000,
+ "samples": 137400,
+ "voice": "bm_george",
+ "speed": 0.85,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

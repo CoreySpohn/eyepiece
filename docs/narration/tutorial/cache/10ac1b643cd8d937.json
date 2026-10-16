@@ -1,0 +1,91 @@
+{
+ "key": "10ac1b643cd8d937",
+ "duration_s": 7.25,
+ "words": [
+  [
+   "Next",
+   0.3,
+   0.65
+  ],
+  [
+   "comes",
+   0.65,
+   1.025
+  ],
+  [
+   "the",
+   1.025,
+   1.1875
+  ],
+  [
+   "field,",
+   1.1875,
+   2.075
+  ],
+  [
+   "a",
+   2.2125,
+   2.3375
+  ],
+  [
+   "synthetic",
+   2.3375,
+   2.95
+  ],
+  [
+   "coronagraph",
+   2.95,
+   3.7625
+  ],
+  [
+   "image",
+   3.7625,
+   4.525
+  ],
+  [
+   "with",
+   4.525,
+   4.7125
+  ],
+  [
+   "a",
+   4.7125,
+   4.825
+  ],
+  [
+   "dark",
+   4.825,
+   5.225
+  ],
+  [
+   "hole",
+   5.225,
+   5.7125
+  ],
+  [
+   "at",
+   5.7125,
+   5.85
+  ],
+  [
+   "its",
+   5.85,
+   6.0375
+  ],
+  [
+   "center.",
+   6.0375,
+   6.925
+  ]
+ ],
+ "text": "Next comes the field, a synthetic coronagraph image with a dark hole at its center.",
+ "audio": "10ac1b643cd8d937.opus",
+ "rate": 24000,
+ "samples": 174000,
+ "voice": "bm_george",
+ "speed": 0.85,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

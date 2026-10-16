@@ -1,0 +1,111 @@
+{
+ "key": "912459fda153d88b",
+ "duration_s": 9.35,
+ "words": [
+  [
+   "A",
+   0.3,
+   0.375
+  ],
+  [
+   "coronagraph",
+   0.375,
+   1.1875
+  ],
+  [
+   "image",
+   1.1875,
+   1.9625
+  ],
+  [
+   "is",
+   1.9625,
+   2.2
+  ],
+  [
+   "easier",
+   2.2,
+   2.625
+  ],
+  [
+   "to",
+   2.625,
+   2.7625
+  ],
+  [
+   "read",
+   2.7625,
+   3.275
+  ],
+  [
+   "when",
+   3.275,
+   3.4125
+  ],
+  [
+   "it",
+   3.4125,
+   3.525
+  ],
+  [
+   "arrives",
+   3.525,
+   4.15
+  ],
+  [
+   "in",
+   4.15,
+   4.325
+  ],
+  [
+   "stages.",
+   4.325,
+   5.45
+  ],
+  [
+   "First",
+   5.6,
+   5.975
+  ],
+  [
+   "the",
+   5.975,
+   6.15
+  ],
+  [
+   "axes",
+   6.15,
+   7.125
+  ],
+  [
+   "and",
+   7.125,
+   7.3
+  ],
+  [
+   "their",
+   7.3,
+   7.5
+  ],
+  [
+   "labels",
+   7.5,
+   8.1125
+  ],
+  [
+   "appear.",
+   8.1125,
+   9.05
+  ]
+ ],
+ "text": "A coronagraph image is easier to read when it arrives in stages. First the axes and their labels appear.",
+ "audio": "912459fda153d88b.opus",
+ "rate": 24000,
+ "samples": 224400,
+ "voice": "bm_george",
+ "speed": 0.85,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

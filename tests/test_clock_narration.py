@@ -8,8 +8,11 @@ agree on every line start and end. Nothing needs a speech model.
 
 import json
 import shutil
+import subprocess
+import sys
 import tempfile
 import wave
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -162,6 +165,51 @@ def bayes_clock(narration=None, strict=True):
 @pytest.fixture(scope="module")
 def bayes():
     return nr.Narration.load(BAYES, CACHE)
+
+
+@pytest.mark.parametrize("suffix", [".py", ".json"])
+def test_estimate_cli_needs_no_kokoro_or_cache_and_tracks_cached_speech(
+    tmp_path, bayes, suffix
+):
+    record = asdict(BAYES)
+    for line in record["lines"]:
+        del line["spoken"], line["cues"]
+    payload = json.dumps(record)
+    path = tmp_path / f"script{suffix}"
+    if suffix == ".json":
+        path.write_text(payload)
+    else:
+        path.write_text(
+            "import json\nfrom eyepiece.narration import Line, Script\n"
+            f"record = json.loads({payload!r})\n"
+            "record['lines'] = tuple(Line(**line) for line in record['lines'])\n"
+            "SCRIPT = Script(**record)\n"
+        )
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.modules['kokoro'] = None; "
+            "from eyepiece.narration.synth import main; main(sys.argv[1:])",
+            str(path),
+            "--estimate",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    rows = [row.split() for row in done.stdout.splitlines()]
+    assert [row[0] for row in rows] == [line.key for line in BAYES.lines] + ["total"]
+    durations = [float(row[1]) for row in rows]
+    assert all(row[2] == "s" for row in rows)
+    assert durations[-1] == pytest.approx(sum(durations[:-1]), abs=0.01)
+    for line, seconds in zip(BAYES.lines, durations[:-1], strict=True):
+        assert seconds == pytest.approx(nr.estimate(line).duration_s, abs=0.001)
+    # Total means speech audio only: sum the cached line durations, excluding
+    # padding and motion holds, which are not part of the speech estimate.
+    cached_speech_s = sum(timing.duration_s for timing in bayes.spoken.values())
+    assert durations[-1] == pytest.approx(cached_speech_s, rel=0.1)
 
 
 # ---------------------------------------------------------------------------

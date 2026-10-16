@@ -235,6 +235,7 @@ about them. The API reference documents every signature.
 
 tutorials/still
 tutorials/build-up
+tutorials/narrated
 ```
 
 ```{toctree}
@@ -250,6 +251,10 @@ how-to/step-through-discrete-values
 how-to/keep-the-scale-fixed
 how-to/stills-from-the-encode
 how-to/write-a-viz-module
+how-to/burn-captions-into-a-band
+how-to/estimate-length-before-speaking
+how-to/speak-a-script
+how-to/write-numbers-for-speech
 ```
 
 ```{toctree}
