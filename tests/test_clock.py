@@ -784,3 +784,19 @@ def test_property_a_still_at_a_start_time_lands_on_the_start_event_frame(
     plan = tl.at_fps(fps)
     for e in plan.events(what="start"):
         assert anim._still_frame(e.t_s, plan, fps) == e.frame
+
+
+def test_unused_knobs_counts_value_frames_and_progress_reads_and_skips_pulse_knobs():
+    tl = ep.Timeline({"a": 0.0, "b": 0.0, "c": 0.0, "d": 1.0})
+    tl.move("go", 1.0, to={"a": 1.0, "b": 2.0})
+    tl.move("go2", 1.0, to={"c": 1.0})
+    tl.pulse("t", at=0.1)
+    plan = tl.at_fps(10)
+    unread, constant = plan.unused_knobs()
+    assert unread == ("a", "b", "c", "d") and constant == ("d",)
+    plan.value(0, "a")
+    _ = plan.frames[0]["b"]
+    plan.progress(0, "go2")
+    unread, constant = plan.unused_knobs()
+    assert unread == ("d",) and constant == ("d",)
+    assert not any(k.startswith("pulse.") for k in (*unread, *constant))

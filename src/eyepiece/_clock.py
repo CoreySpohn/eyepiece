@@ -301,6 +301,13 @@ def _no_colon(name):
         )
 
 
+def _same(a, b):
+    try:
+        return bool(a == b)
+    except (TypeError, ValueError):
+        return a is b
+
+
 def _numeric(value):
     return _is_number(value)
 
@@ -1428,6 +1435,34 @@ class Timeline:
         return out
 
 
+class _FrameDict(dict):
+    """A frame's dict that records which knobs a draw function reads."""
+
+    def __init__(self, data, read):
+        super().__init__(data)
+        self._read = read
+
+    def __getitem__(self, key):
+        self._read.add(key)
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        self._read.add(key)
+        return super().get(key, default)
+
+    def __iter__(self):
+        self._read.update(super().keys())
+        return super().__iter__()
+
+    def items(self):
+        self._read.update(super().keys())
+        return super().items()
+
+    def values(self):
+        self._read.update(super().keys())
+        return super().values()
+
+
 class _Frames:
     """The frames of a plan as dicts built on demand, each a fresh copy."""
 
@@ -1474,6 +1509,7 @@ class Plan:
         self._knobs = knobs
         self._sections = sections
         self._events = None
+        self._read = set()
         self.frames = _Frames(self)
         labels = [""] * n_frames
         for name, _key, _a, _b, k0, k1 in sections:
@@ -1494,7 +1530,27 @@ class Plan:
     def _frame(self, k):
         out = {name: vals[k] for name, vals in self._knobs.items()}
         out.update(index=k, t=k / self.fps, section=self._labels[k])
-        return out
+        return _FrameDict(out, self._read)
+
+    def unused_knobs(self):
+        """Knobs a draw function has not read, and knobs that never change.
+
+        Reads are those made through `value`, `frames` and `progress` since
+        the plan was built (or since `record` began). The ``pulse.*`` and
+        ``ring.*`` knobs are left out of both lists: every pulse or ring
+        target has one, and in a silent clip they stay at 0 by design.
+
+        Returns:
+            A pair of sorted tuples, ``(unread, constant)``.
+        """
+        keep = [k for k in self._knobs if not k.startswith(("pulse.", "ring."))]
+        unread = tuple(sorted(k for k in keep if k not in self._read))
+        constant = []
+        for k in keep:
+            first = self._knobs[k][0]
+            if all(_same(v, first) for v in self._knobs[k]):
+                constant.append(k)
+        return unread, tuple(sorted(constant))
 
     def value(self, k, knob):
         """The value of `knob` on frame `k`.
@@ -1503,6 +1559,7 @@ class Plan:
             KeyError: If the knob is unknown, naming near matches.
             IndexError: If `k` is outside the plan.
         """
+        self._read.add(knob)
         try:
             vals = self._knobs[knob]
         except KeyError:
@@ -1533,6 +1590,7 @@ class Plan:
             A float in [0, 1].
         """
         s = self._span(span)
+        self._read.update(s.writes)
         if k < s.k0:
             return 0.0
         if k >= s.k1:
