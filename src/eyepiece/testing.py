@@ -91,6 +91,7 @@ from eyepiece._motif_checks import (
     motif_faults,
     motif_margins,
 )
+from eyepiece._motion import frame_count
 from eyepiece.attention import _data_colors, _default_avoid, _renderer
 
 __all__ = [
@@ -100,6 +101,8 @@ __all__ = [
     "MOTION_KINDS",
     "VENUES",
     "VENUE_FPS",
+    "ClipError",
+    "ClipReport",
     "MeaningError",
     "MeaningFault",
     "MotifError",
@@ -111,12 +114,14 @@ __all__ = [
     "Span",
     "SpeechRate",
     "SpeechRateError",
+    "assert_clip",
     "assert_meaning",
     "assert_motifs",
     "assert_motion",
     "assert_readable",
     "assert_speech_rate",
     "caption_line",
+    "check_clip",
     "meaning_faults",
     "meaning_faults_chain",
     "meaning_report",
@@ -1989,3 +1994,193 @@ def assert_speech_rate(narration, **kwargs):
     if result.fast:
         raise SpeechRateError(result)
     return result
+
+
+@dataclass(frozen=True)
+class ClipReport:
+    """Findings from checking a plan-driven clip.
+
+    Attributes:
+        readability: `ReadabilityFault` list, keeping the first occurrence
+            of each kind for each artist or artist pair across review frames.
+        meaning: `MeaningFault` list, empty when no meaning keys were supplied.
+            Warnings and advisories count as findings too.
+        motion: `MotionFault` list from sampling every frame.
+        plan_faults: The plan's `eyepiece.Fault` list, including info findings.
+        unread_knobs: List of knob names never read by the draw function.
+            Constant knobs that were read do not count as unread.
+        speech: List of ``(line_key, wpm)`` pairs above the speech ceiling.
+    """
+
+    readability: list
+    meaning: list
+    motion: list
+    plan_faults: list
+    unread_knobs: list
+    speech: list
+
+    @property
+    def faults(self):
+        """A flat list of unique ``(kind, detail)`` pairs from all checks.
+
+        Visual findings use their own kind, plan findings use their code,
+        and the remaining kinds are ``"unread-knob"`` and ``"speech-rate"``.
+        """
+        entries = [
+            (f.kind, f.detail) for f in (*self.readability, *self.meaning, *self.motion)
+        ]
+        entries += [(f.code, f.message) for f in self.plan_faults]
+        entries += [("unread-knob", name) for name in self.unread_knobs]
+        entries += [
+            ("speech-rate", f"{key}: {wpm:g} words/min") for key, wpm in self.speech
+        ]
+        return list(dict.fromkeys(entries))
+
+    @property
+    def ok(self):
+        """Whether every check returned no findings."""
+        return not self.faults
+
+    def __str__(self):
+        """Summarize the clip, naming every finding by kind."""
+        found = self.faults
+        if not found:
+            return "clip is clean"
+        lines = [f"{len(found)} clip fault(s):"]
+        lines += [f"  {kind}: {detail}" for kind, detail in found]
+        return "\n".join(lines)
+
+
+class ClipError(AssertionError):
+    """A plan-driven clip has findings.
+
+    Attributes:
+        report: The `ClipReport`.
+        faults: Its flat list of ``(kind, detail)`` pairs.
+    """
+
+    def __init__(self, report):
+        """Build the assertion message from the report."""
+        self.report = report
+        self.faults = report.faults
+        super().__init__(str(report))
+
+
+def _clip_moves(moves, plan):
+    """Translate artist-to-span mappings and named spans in move dicts."""
+
+    def span(value):
+        if isinstance(value, str):
+            resolved = plan._span(value)
+            return Span(float(resolved.start_s), float(resolved.end_s))
+        return value
+
+    if isinstance(moves, dict):
+        return [
+            {"name": str(value), "artists": [artist], "span": span(value)}
+            for artist, value in moves.items()
+        ]
+    return [
+        {**move, "span": span(move["span"])}
+        if isinstance(move, dict) and "span" in move
+        else move
+        for move in moves or ()
+    ]
+
+
+def check_clip(
+    fig, draw, plan, *, venue="video", keys=None, motifs=None, moves=None
+) -> ClipReport:
+    """Re-render a plan-driven clip and collect its checks without writing files.
+
+    The draw signature is ``draw(k)``, with just the integer frame index,
+    as in a caller-owned loop around `eyepiece.record` with a plan. The
+    figure and plan are captured by the callable. This differs from
+    `eyepiece.animate`, whose callable is ``draw(fig, ctx)``.
+
+    Frame k is posed at k / plan.fps, up to plan.n_frames - 1, with no extra
+    endpoint frame. Readability and meaning use `plan.review_frames`, which
+    includes cue frames and their preceding frames. Motion uses every frame.
+    Draw must set a frame's state from its index, since checks revisit frames.
+    The figure ends on the last frame. Knob reads start clean and the prior
+    read record is restored even if drawing or a check raises.
+
+    Args:
+        fig: The figure of the clip.
+        draw: Callable ``draw(k)`` that poses the figure at frame index k.
+        plan: A `eyepiece.Plan`, resolved at the clip's frame rate.
+        venue: Readability venue, a key of `VENUES`.
+        keys: Meaning gid-prefix mapping. An explicit mapping, even an empty
+            one, overrides `motifs`. With neither, meaning checks are skipped.
+        motifs: A `eyepiece.MotifSet` supplying `meaning_keys()`.
+        moves: Mapping from artists to plan span names or testing `Span`
+            values, or an iterable of declarations accepted by `motion_faults`.
+            A declaration dict's ``span`` may also be a plan span name.
+
+    Returns:
+        A frozen `ClipReport` with the findings from each check.
+
+    Raises:
+        ValueError: If the venue is unknown or the plan has fewer than three
+            frames, as required by `motion_faults`.
+        KeyError: If a move names an unknown plan span.
+    """
+    declared = _clip_moves(moves, plan)
+    if keys is None and motifs is not None:
+        keys = motifs.meaning_keys()
+    review_times = [k / plan.fps for k in plan.review_frames()]
+    times = [k / plan.fps for k in range(plan.n_frames)]
+
+    def at(t):
+        draw(frame_count(t, plan.fps))
+
+    saved_reads = set(plan._read)
+    plan._read.clear()
+    try:
+        readability = readability_faults(fig, at=at, times=review_times, venue=venue)
+        # A persistent collision is one finding, rather than one per still.
+        seen = set()
+        unique = []
+        for fault in readability:
+            ident = (fault.kind, fault.artist, fault.other)
+            if ident not in seen:
+                seen.add(ident)
+                unique.append(fault)
+        meaning = (
+            meaning_faults(fig, at=at, times=review_times, keys=keys)
+            if keys is not None
+            else []
+        )
+        motion = motion_faults(fig, at=at, times=times, moves=declared, fps=plan.fps)
+        unread, _ = plan.unused_knobs()
+        speech = (
+            [] if plan.narration is None else list(speech_rate(plan.narration).fast)
+        )
+        return ClipReport(
+            unique, meaning, motion, list(plan.faults), list(unread), speech
+        )
+    finally:
+        plan._read.clear()
+        plan._read.update(saved_reads)
+
+
+def assert_clip(fig, draw, plan, **kwargs) -> ClipReport:
+    """Check a plan-driven clip, raising `ClipError` for any finding.
+
+    Args:
+        fig: The figure of the clip.
+        draw: Callable ``draw(k)`` taking the integer frame index.
+        plan: A `eyepiece.Plan`.
+        **kwargs: Passed to `check_clip`.
+
+    Returns:
+        The `ClipReport` when the clip is clean.
+
+    Raises:
+        ClipError: If any check has findings. Its message names every kind
+            and its `report` attribute holds the complete `ClipReport`.
+    """
+    report = check_clip(fig, draw, plan, **kwargs)
+    if not report.ok:
+        raise ClipError(report)
+    return report

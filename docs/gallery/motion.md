@@ -939,6 +939,47 @@ The report names each fault by kind, time and artist. `assert_motion` raises
 artists, its `rest` set, its `groups` and the pairs that `may_overlap` to
 let the check separate a deliberate motion from a defect.
 
+## Check a whole clip
+
+`check_clip` combines readability, meaning, motion, plan, unread-knob and
+speech-rate checks in one `ClipReport`. Readability and meaning sample the
+plan's review frames, including cues; motion samples every frame. The draw
+callable takes a frame index and sets the figure from the plan, just as in
+a recording loop. Checking does not write any files.
+
+```{code-cell} python
+import matplotlib.pyplot as plt
+import eyepiece as ep
+import eyepiece.testing as ept
+from matplotlib.lines import Line2D
+from matplotlib.transforms import IdentityTransform
+
+fig = plt.figure(figsize=(4.0, 2.0), dpi=100)
+dot = Line2D([40], [80], marker="o", color="black", linestyle="none",
+             transform=IdentityTransform())
+fig.add_artist(dot)
+timeline = ep.Timeline({"x": 40.0})
+timeline.hold(0.3)
+timeline.run("slide", 0.8, to={"x": 48.0})
+timeline.hold(0.3)
+plan = timeline.at_fps(10)
+
+
+def draw(k):
+    dot.set_xdata([plan.value(k, "x")])
+
+
+report = ept.assert_clip(fig, draw, plan, moves={dot: "slide"})
+print(report)
+plt.show()
+```
+
+Use `check_clip` to inspect `report.faults`, a list of `(kind, detail)` pairs.
+`assert_clip` returns the report when clean and raises `ClipError` naming every
+finding otherwise. Pass `motifs=motifs` to check the meanings attached by
+`Motif.line_kw()`, or pass an explicit `keys` mapping. With neither argument,
+the meaning check is skipped.
+
 ## Caption placement and wrapping
 
 A caption at the player's default position, the bottom of the picture, lands
