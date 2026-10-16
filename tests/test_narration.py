@@ -868,6 +868,49 @@ def _even(n, total):
     return [(i * total / n, (i + 1) * total / n) for i in range(n)]
 
 
+def test_caption_at_includes_starts_and_excludes_ends_and_gaps():
+    tl = _one_line_narration("First. Second.", [(1.0, 1.5), (3.0, 3.5)])
+    cues = nr.captions(tl, min_s=0.0)
+    first, second = cues
+    assert "caption_at" in nr.__all__
+    assert nr.caption_at(cues, first[0]) == first[2]
+    assert nr.caption_at(cues, first[0] - 1e-6) == ""
+    assert nr.caption_at(cues, first[1] - 1e-6) == first[2]
+    assert nr.caption_at(cues, first[1]) == ""
+    assert nr.caption_at(cues, (first[1] + second[0]) / 2) == ""
+    assert nr.caption_at(cues, second[0] - 1e-6) == ""
+    assert nr.caption_at(cues, second[0]) == second[2]
+    assert nr.caption_at(cues, second[1]) == ""
+    assert nr.caption_at(cues, 0.0) == ""
+    assert nr.caption_at(cues, second[1] + 1.0) == ""
+    assert nr.caption_at([], 0.0) == ""
+
+
+@pytest.mark.parametrize("max_lines", [1, 2])
+def test_caption_breaks_keep_operators_with_their_operands(max_lines):
+    text = "Compute a / b - 1; cap +/-1% applies."
+    tl = _one_line_narration(text, _even(len(text.split()), 6.0))
+    cues = nr.captions(tl, max_chars=14, max_lines=max_lines)
+    assert " ".join(t.replace("\n", " ") for _, _, t in cues) == text
+    for _, _, cue in cues:
+        for line in cue.splitlines():
+            assert not line.startswith(("/", "-", "+/-"))
+            assert any(c.isalnum() for c in line.split()[0])
+            assert any(c.isalnum() for c in line.split()[-1])
+
+
+@pytest.mark.parametrize("max_lines", [1, 2])
+def test_caption_breaks_keep_parenthetical_text_together(max_lines):
+    text = "The measured curve (secant d^6.1; shown at 4.4) applies."
+    tl = _one_line_narration(text, _even(len(text.split()), 6.0))
+    cues = nr.captions(tl, max_chars=32, max_lines=max_lines)
+    assert " ".join(t.replace("\n", " ") for _, _, t in cues) == text
+    for _, _, cue in cues:
+        assert cue.count("(") == cue.count(")")
+        for line in cue.splitlines():
+            assert line.count("(") == line.count(")")
+
+
 def test_the_79_character_line_becomes_two_lines_within_the_limits():
     words = D51.split()
     tl = _one_line_narration(D51, _even(len(words), 5.0))
