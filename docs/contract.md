@@ -567,6 +567,30 @@ a label with an opaque backing box is not reported over marks. The result is
 deterministic and the figure keeps its dpi. `assert_readable` raises
 `ReadabilityError` with the report.
 
+`motion_faults(fig, at, times, moves=..., rest=..., groups=...)` is the same
+check for the path between two states rather than the states themselves.
+Given a `Span(start, stop)` it poses the figure at every frame of the venue's
+frame rate (30 per second for each venue; `fps=` overrides), draws it, and
+traces every visible artist, equation glyph paths included, along with the
+rendered frame. It returns `MotionFault` records, sorted by time, of seven
+kinds. `jump` is a frame step far above the typical one and not echoed by its
+neighbours, or a step into the rest state larger than the one before it.
+`dead` is a declared move whose region never changes. `drift` is an artist
+listed in `rest` that moves by more than `tol_px`. `tear` is a `groups` set
+whose members change their spacing, so a stagger or a drift of one member
+shows; a group declared with `scales=True` may scale as a whole. `overlap` is
+two moving artists, text or declared in `moves`, that cover each other beyond
+a tolerance and are not listed in `may_overlap`. `outside` is any traced
+artist, a glyph path included, past the frame, and any text or declared artist
+cut by a fixed clip box (a growing reveal mask is not a cut). `spike` is a hop
+off the path or a one-frame kink in speed on an artist that hardly travels. It
+is off unless `spikes=True` or `kinds` names it, because a small hop is
+sometimes the intended motion. A move is a dict, or any object with a
+`contract` dict, with the keys `name`, `span`, `artists`, `rest`, `groups` and
+`may_overlap`. The call restores the figure's dpi, is deterministic, and takes
+about 50 ms per frame at 80 dpi, so a two-second clip checks in a few seconds.
+`assert_motion` raises `MotionError` with the report.
+
 `caption_line(fig, at=pose, times=...)` uses the same extents to place
 captions: it returns the WebVTT `line:` percentage of the lowest strip, two
 caption lines tall, that no visible text of the figure touches at any sampled

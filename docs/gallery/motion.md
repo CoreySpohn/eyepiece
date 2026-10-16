@@ -670,6 +670,43 @@ for fault in ept.readability_faults(fig):
 Pass `at` and `times` to sample a clip at its beat ends. `assert_readable`
 raises `ReadabilityError` with the same report, for a test suite.
 
+## Motion check
+
+`readability_faults` looks at states. `eyepiece.testing.motion_faults` looks at
+the path between them: it poses the clip at every frame of a span and reports
+what a viewer would see as a snap, a stall, a drifting label, a torn row or a
+term that leaves the frame. Here a slider eases toward its rest position, but
+its last frame lands 60 pixels past the end of the ease, and a second label
+that should stay put creeps by 3 pixels.
+
+```{code-cell} python
+import eyepiece.testing as ept
+from matplotlib.patches import Rectangle
+from matplotlib.transforms import IdentityTransform
+
+fig = plt.figure(figsize=(6.0, 2.4), dpi=100)
+fig.patch.set_facecolor("white")
+slider = Rectangle((30, 90), 40, 30, transform=IdentityTransform(), color="k")
+anchor = fig.text(0.05, 0.15, "reference label", fontsize=14)
+fig.add_artist(slider)
+
+
+def at(t):
+    u = min(1.0, t / 2.0)
+    u = u * u * (3.0 - 2.0 * u)
+    slider.set_x(30 + 400 * u + (60.0 if t >= 2.0 else 0.0))
+    anchor.set_x(0.05 + 0.005 * u)
+
+
+for fault in ept.motion_faults(fig, at, ept.Span(0.0, 2.0), rest=[anchor]):
+    print(fault)
+```
+
+The report names each fault by kind, time and artist. `assert_motion` raises
+`MotionError` with the same report, for a test suite. Declare a move's
+artists, its `rest` set, its `groups` and the pairs that `may_overlap` to
+let the check separate a deliberate motion from a defect.
+
 ## Caption placement and wrapping
 
 A caption at the player's default position, the bottom of the picture, lands
