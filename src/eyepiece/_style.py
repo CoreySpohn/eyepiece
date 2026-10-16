@@ -17,7 +17,9 @@ from matplotlib.colors import to_hex, to_rgb, to_rgba
 _LIGHT_CMAPS = None
 _LIGHT_PALETTE = None
 _LIGHT_ROLES = None
-_CMAP_FALLBACKS = {"statistic": "PuOr"}
+# Stand-ins for roles an older hwostyle lacks; "pupil" is pale to dark like
+# the role it replaces on a light page.
+_CMAP_FALLBACKS = {"statistic": "PuOr", "pupil": "Oranges"}
 # Palette slot standing in for a role when the installed hwostyle lacks it;
 # slots follow the canonical cyan, pink, yellow, green, red, purple order.
 _ROLE_FALLBACKS = {
@@ -92,8 +94,9 @@ def cmap(name, override=None):
     Args:
         name: Semantic name defined by hwostyle.
         override: A matplotlib Colormap, registered cmap name, or semantic
-            role; wins when not None. Missing "statistic" uses PuOr until
-            hwostyle provides that role.
+            role; wins when not None. A missing "statistic" or "pupil" role
+            (an hwostyle older than the role) falls back to PuOr or
+            Oranges.
 
     Returns:
         A matplotlib Colormap instance.

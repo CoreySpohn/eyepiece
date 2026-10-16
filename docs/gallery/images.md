@@ -263,7 +263,7 @@ under `text`.
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
 pupil_image = (r <= 10.0) * (1.0 + 0.2 * np.cos(x))
-ax.imshow(pupil_image, extent=EXTENT, origin="lower", cmap="magma",
+ax.imshow(pupil_image, extent=EXTENT, origin="lower", cmap=hwostyle.cmaps.pupil,
           interpolation="nearest")
 ep.overlay_circle(ax, (0.0, 0.0), 10.0, ls="-", label="rim", label_angle=40.0)
 stop = ep.overlay_circle(ax, (0.0, 0.0), 8.0, label="stop", label_angle=-135.0)

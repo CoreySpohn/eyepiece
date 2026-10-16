@@ -1059,7 +1059,7 @@ rings = np.cos(3.0 * np.hypot(xx, yy)) * np.exp(-0.15 * np.hypot(xx, yy) ** 2)
 field = rings + 0.15 * rng.standard_normal(rings.shape)
 
 fig, ax = plt.subplots(figsize=(8.0, 4.4), dpi=100)
-ax.imshow(field, extent=(-6, 6, -4, 4), cmap="magma", vmin=-0.6, vmax=1.0)
+ax.imshow(field, extent=(-6, 6, -4, 4), cmap=hwostyle.cmaps.residual, vmin=-0.6, vmax=1.0)
 ax.set(xlim=(-6, 6), ylim=(-4, 4), xticks=[], yticks=[])
 ax.set_title("A planet crossing the speckle field", fontsize=16)
 (planet,) = ax.plot([], [], "o", ms=5, mfc="none", mec="white", mew=1.2)

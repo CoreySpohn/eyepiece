@@ -217,7 +217,7 @@ def corner(
 
     hist_color = _style.color(0, color)
     truth_color = _style.color(1)
-    cmap = _style.cmap("intensity")
+    cmap = _style.cmap("probability")
 
     _, fig, axes = _corner_axes(n, axes)
     _hide_upper(axes, n)
