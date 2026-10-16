@@ -61,4 +61,4 @@ print(line.spoken)
 
 `display=` keeps compact notation in captions while `spoken` supplies the
 voice. Keep the same sentence count in both versions to preserve caption
-timing within the line. See {doc}`../narration` for supported units.
+timing within the line. See {doc}`../explanation/narration-design` for supported units.

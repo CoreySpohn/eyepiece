@@ -1,14 +1,18 @@
-# Narration
+# Narration design
 
 `eyepiece.narration` gives a clip a voice. A script of lines is spoken once,
-the word times and the audio are kept beside the clip, and every later render
-reads them without a speech model. A cue mark in the text fires an attention
-move on the word that names its subject, and the length of each line sets the
+the word times are kept as JSON beside the script, and every later layout
+reads them without a speech model. Audio is regenerated for a voiced render.
+A cue mark in the text fires an attention move on the word that names its
+subject, and the length of each line sets the
 length of the part of the clip that shows it.
 
-The code on this page is shown rather than executed. The
-{doc}`motion checks catalog <gallery/motion-checks>` includes a runnable
-example of number wording for speech.
+This page explains the timing and ownership choices. See
+{doc}`../how-to/speak-a-script` for synthesis and rendering,
+{doc}`../how-to/estimate-length-before-speaking` for draft timing,
+{doc}`../how-to/write-numbers-for-speech` for number wording, and
+{doc}`../how-to/burn-captions-into-a-band` for caption placement. The script
+example below is shown rather than executed.
 
 ## The script
 
@@ -74,16 +78,16 @@ The synthesis CLI reports the same error without a traceback.
 
 ## Speaking it
 
-Kokoro pulls in torch, so the synthesis runs in an environment of its own and
-writes a cache that belongs in the repository:
+Kokoro pulls in torch, so synthesis runs in an environment of its own. The
+script and timing JSON belong in version control; generated audio stays out.
+JSON is small, reviewable, and enough to lay out a silent clip or build the
+documentation without a speech engine. A voiced render regenerates audio and
+its matching timing JSON, then reviews the new word times, since another
+synthesis can shift the cues. See {doc}`../how-to/speak-a-script` for that
+procedure.
 
-```bash
-PYTHONPATH=<eyepiece>/src uv run --no-project --python 3.12 \
-    --with kokoro==0.9.4 --with soundfile --with numpy \
-    python -m eyepiece.narration.synth script.py cache_dir
-```
-
-`script.py` defines `SCRIPT`. For each line the command writes `<key>.opus`
+The cache pairs each line's timing JSON with its local audio by a hash key.
+`script.py` defines `SCRIPT`. For each line the synthesis command writes `<key>.opus`
 (Ogg Opus, or FLAC when the installed libsndfile cannot write Opus) and
 `<key>.json` into `cache_dir`, where the key hashes the spoken text, the
 voice, the speed, the language, the engine and its version, and the model.
@@ -91,7 +95,7 @@ Marks are not part of the key, so moving a cue never speaks a line again, and
 changing a word speaks only that line.
 
 A line whose JSON and audio are both present is never spoken again, so the
-committed pair stays the pair the cue times were measured on. A JSON whose
+local pair stays the pair the cue times were measured on. A JSON whose
 audio is missing is an error, since speaking it again can move its cues;
 `--respeak` says that is intended. `--force` speaks every line again,
 `--prune` deletes files that no line uses, and `--list` prints the cache.
@@ -104,23 +108,13 @@ words outside its dictionary.
 ## JSON scripts and timing estimates
 
 A script module can import the packages it needs in the project environment,
-then export a JSON script for the isolated speech environment:
-
-```python
-SCRIPT.to_json("script.json")
-restored = nr.Script.from_json("script.json")
-assert restored.cache_keys() == SCRIPT.cache_keys()
-```
+then export a JSON script for the isolated speech environment with
+`Script.to_json`. `Script.from_json` restores it with the same cache keys.
 
 The JSON preserves line keys, marked text, display text, padding and all
 script settings. Spoken text and cues are rebuilt from the marked text.
 The synthesis command accepts `script.json` wherever it accepts `script.py`,
-so loading the JSON needs none of the script module imports:
-
-```bash
-python -m eyepiece.narration.synth script.json cache_dir
-python -m eyepiece.narration.synth script.json --estimate
-```
+so loading the JSON needs none of the script module imports.
 
 `--estimate` accepts either format, checks every spoken line with
 `check_script_speech`, and prints estimated speech seconds per line and a
@@ -130,7 +124,12 @@ are estimated from their spoken words: `0.943` is "zero point nine four
 three" and `12` is "twelve". These rough estimates support planning; cached
 word times remain the source for a finished render.
 
-## Laying it out
+## Why the clip follows the speech
+
+A viewer needs time to hear the line and see the move it names. The clip
+therefore follows measured speech and extends a line for a move that needs
+longer to settle. Changing the frame rate changes the sampling of that
+schedule, while the cached word times keep cues tied to the same words.
 
 `Narration.load` reads the cache and places the lines one after another. A
 `Narration` is placement only: it knows where each line and each word falls on
@@ -138,8 +137,7 @@ the clip's clock and nothing about what the clip does with them.
 `Narration.place(key, start_s, end_s=None)` lays one line on the clock, purely;
 a cue is the start of its word, with no lead.
 
-The clip places its moves on the words through `eyepiece.Timeline`. Open each
-line with `line(key)`, in script order, and write the verbs of that line. A
+The clip places its moves on the words through `eyepiece.Timeline`. A
 verb with no `at=` starts on its mark: `enter`, `text` and `caption` on
 `show:<name>` a tenth of a second ahead of the word, `pulse` on
 `indicate:<name>` centered on the word, `ring` on `circumscribe:<name>`
@@ -161,24 +159,8 @@ minor release and warn with a `DeprecationWarning`: the value is a duration
 from the start of each line, and `ends=` (an absolute end time) or a
 `Timeline` replaces it.
 
-```python
-import eyepiece as ep
-
-narration = nr.Narration.load(SCRIPT, "narration/clip")
-tl = ep.Timeline(narration=narration, tempo=ep.Tempo())
-tl.line("open")
-tl.pulse("star")
-tl.line("leak")
-tl.pulse("speckle")
-tl.ring("planet")
-plan = tl.at_fps(30)
-
-for k, frame in enumerate(plan.frames):
-    ...  # draw the frame as for any Plan
-
-cue = plan.events(what="cue")[0]  # name, t_s and the frame that shows it
-solved = tl.narration  # the narration with each line's solved start and end
-```
+See {doc}`../tutorials/narrated` for a clip that places these spans and
+{doc}`../how-to/bind-a-move-to-a-knob` for the draw function.
 
 `Timeline.narration` rebuilds the `Narration` with those starts and ends, and
 that object is the one `audio_track`, `mux` and the captions take. A line must
@@ -194,12 +176,6 @@ is eased and overlapped with the speech, for example with
 `Stage.weigh(levels, ease="smoothstep")`.
 
 ## Audio and captions
-
-```python
-track = nr.audio_track(narration, "narration/clip", "track.wav")
-nr.mux("silent.mp4", track, "narrated.mp4")
-vtt, srt = nr.write_captions(narration, "narrated")
-```
 
 `audio_track` places each line's audio at its speech start and refuses a file
 whose length differs from the duration its JSON records, which means the

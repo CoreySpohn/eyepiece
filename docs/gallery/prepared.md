@@ -17,7 +17,7 @@ and a movie. The science happens once, in the preparation block; the three
 outputs only choose which samples to show and how. The data are synthetic: a
 speckle field that decorrelates as its phases drift, a faint companion, an
 occulted core marked invalid, one dead pixel, and irregular timestamps. The
-{doc}`prepared views guide <../prepared-views>` explains the records used
+{doc}`prepared views guide <../explanation/prepared-views>` explains the records used
 here.
 
 ```{code-cell} python
@@ -201,4 +201,4 @@ HTML(movie.jshtml(dpi=100))
 ```
 
 The same sequence plays in a talk through `eyepiece.manim.animate`, with the
-same cast and a talk profile; see {doc}`../manim`.
+same cast and a talk profile; see {doc}`../explanation/rendering-in-manim`.

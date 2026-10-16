@@ -15,18 +15,18 @@ notebook, a figure script, or another library's plotting module.
 
 The same arrays can also be written down once as a prepared view: plain
 records of images, curves, tracks, and their marks, with units, masks,
-display scales, and stable IDs. The {doc}`prepared views <prepared-views>`
+display scales, and stable IDs. The {doc}`prepared views <explanation/prepared-views>`
 guide renders one preparation as a paper still, a strip of epochs, and a
-Matplotlib movie through `eyepiece.mpl`, and {doc}`Manim and slides <manim>`
-plays the same preparation as native Manim objects in a talk through
+Matplotlib movie through `eyepiece.mpl`, and
+{doc}`Rendering in Manim <explanation/rendering-in-manim>` plays the same preparation as native Manim objects in a talk through
 `eyepiece.manim`.
 
 Because the same behavior holds for every function, the rules are worth
 reading once rather than rediscovering per call. The
-{doc}`contract <contract>` page states them, and
+{doc}`contract <explanation/contract>` page states them, and
 {doc}`viz-convention <viz-convention>` describes how a simulation library
 ships plotting for its own types on top of these primitives.
-{doc}`evidence <evidence>` is the reasoning underneath both: proportionality,
+{doc}`evidence <explanation/evidence>` is the reasoning underneath both: proportionality,
 data ink, layering by value, small multiples, labels on the data, and showing
 mechanism rather than outcome.
 
@@ -221,13 +221,17 @@ Prepared views live in their own namespaces rather than at the top level:
 
 ## Where to go next
 
-Read {doc}`contract <contract>` to predict what any primitive will do with
-the arguments you hand it and what you get back. Read
-{doc}`prepared views <prepared-views>` to prepare a scene once for figures,
-movies, and talks, and {doc}`Manim and slides <manim>` to present one. Read
+Read {doc}`contract <explanation/contract>` to predict what any primitive will
+do with the arguments you hand it and what you get back. Read
+{doc}`prepared views <explanation/prepared-views>` to prepare a scene once for figures,
+movies, and talks, and
+{doc}`Rendering in Manim <explanation/rendering-in-manim>` to present one. Read
 {doc}`viz-convention <viz-convention>` if you maintain a simulation library
 and want its own types to plot themselves without eyepiece ever learning
-about them. The API reference documents every signature.
+about them. Read {doc}`the clock <explanation/clock>` for timing and motion rules,
+{doc}`narration design <explanation/narration-design>` for speech and cues, and
+{doc}`Eyepiece and Manim <explanation/eyepiece-and-manim>` for the motion
+comparison. The API reference documents every signature.
 
 ```{toctree}
 :maxdepth: 2
@@ -283,11 +287,13 @@ gallery/motifs
 :maxdepth: 2
 :caption: Explanation
 
-contract
-evidence
-prepared-views
-manim
-narration
+explanation/contract
+explanation/clock
+explanation/evidence
+explanation/narration-design
+explanation/prepared-views
+explanation/eyepiece-and-manim
+explanation/rendering-in-manim
 viz-convention
 ```
 
