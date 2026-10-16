@@ -52,6 +52,7 @@ _FIELDS = (
     "fill_alpha",
     "fill_alpha_dark",
     "on_image",
+    "label_color",
 )
 
 # Stand-ins when hwostyle lacks `motifs`: a row-for-row copy of its table.
@@ -68,7 +69,12 @@ _FALLBACK_RANKS = {
     "text": 1.0,
     "truth": None,
 }
-_FALLBACK_SHARING = (("disk", "prior"), ("local_zodi", "reference"))
+_FALLBACK_SHARING = (
+    ("disk", "prior"),
+    ("local_zodi", "reference"),
+    ("local_zodi", "alert"),
+    ("local_zodi", "posterior"),
+)
 _FALLBACK_EXCLUSIONS = (("pupil", "probability"), ("pupil", "statistic"))
 _FALLBACK_ROWS = (
     {
@@ -103,6 +109,7 @@ _FALLBACK_ROWS = (
         "linewidth": 0.8,
         "fill_alpha": 0.12,
         "fill_alpha_dark": 0.22,
+        "label_color": "disk",
     },
     {
         "key": "local_zodi",
@@ -112,6 +119,7 @@ _FALLBACK_ROWS = (
         "linewidth": 0.8,
         "fill_alpha": 0.10,
         "fill_alpha_dark": 0.18,
+        "label_color": "zodi",
     },
     {
         "key": "aperture",
@@ -187,7 +195,7 @@ _FALLBACK_ROWS = (
     },
     {"key": "model", "noun": "model", "role": "model"},
     {"key": "truth", "noun": "true value", "role": "truth", "linestyle": "--"},
-    {"key": "prior", "noun": "prior", "role": "prior"},
+    {"key": "prior", "noun": "prior", "role": "prior", "label_color": "prior"},
     {"key": "posterior", "noun": "posterior", "role": "posterior", "linewidth": 1.6},
     {
         "key": "threshold",
@@ -219,6 +227,35 @@ _FALLBACK_ROWS = (
         "linestyle": "none",
     },
     {"key": "cue", "noun": "cue", "role": "text", "linewidth": 2.0, "fill_alpha": 0.25},
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class AcceptedPair:
+    """Two co-occurring hues left under 10 dE on purpose.
+
+    Attributes:
+        a: Role name of the first hue.
+        b: Role name of the second hue.
+        modes: Modes in which the pair is accepted.
+        channels: Motif fields (``marker``, ``linestyle``, ``hatch``,
+            ``arrowstyle``, ``fontstyle``) that must differ between the two
+            motifs for the pair to be accepted.
+        de: Measured CAM02-UCS distance of the pair.
+    """
+
+    a: str
+    b: str
+    modes: tuple
+    channels: tuple
+    de: float
+
+
+# Row-for-row copy of hwostyle's ``ACCEPTED_PAIRS``, kept equal by the parity test.
+_FALLBACK_ACCEPTED = (
+    AcceptedPair("reference", "alert", ("dark",), ("linestyle", "marker"), 7.3),
+    AcceptedPair("reference", "negative", ("paper",), ("marker",), 6.6),
+    AcceptedPair("disk", "positive", ("paper",), ("marker",), 7.7),
 )
 
 
@@ -257,6 +294,25 @@ def _neutral_in(level, mode):
     back = to_rgba(rc["axes.facecolor"])[:3]
     front = to_rgba(rc["text.color"])[:3]
     return to_hex(tuple(b + (f - b) * level for b, f in zip(back, front, strict=True)))
+
+
+def _label_in(role, mark, mode):
+    """Label ink of a role in a mode, or `mark` when there is none."""
+    if role is None:
+        return mark
+    if mode is None:
+        roles = getattr(hwostyle, "roles", None) if hwostyle.current_mode() else None
+    else:
+        from hwostyle.palettes import Roles
+
+        roles = Roles(mode)
+    ink = getattr(roles, "label_ink", None)
+    if ink is None:
+        return mark
+    try:
+        return to_hex(ink(role))
+    except KeyError:
+        return mark
 
 
 def resolve_role(role, mode=None):
@@ -310,6 +366,9 @@ class Motif:
             to use `fill_alpha`.
         on_image: ``(glyph, ink)`` drawn over an image in place of the hue,
             where the hue would collide with the map: a marker and a rank.
+        label_color: A role whose label ink colors this motif's text, for a
+            hue whose mark is too faint to read as words; None labels in the
+            mark color.
     """
 
     key: str
@@ -324,6 +383,7 @@ class Motif:
     fill_alpha: float = 0.0
     fill_alpha_dark: float | None = None
     on_image: tuple | None = None
+    label_color: str | None = None
 
     def __post_init__(self):
         """Refuse a hex role: a motif stores a role name, never a color."""
@@ -340,6 +400,19 @@ class Motif:
     def resolve(self, mode=None):
         """The color in a named mode, or in the active mode when None."""
         return resolve_role(self.role, mode)
+
+    def resolve_label(self, mode=None):
+        """Text color for this motif's label in a mode (the active one when None).
+
+        Returns the label ink of ``label_color`` when hwostyle has one for this
+        mode and palette family, else the mark color.
+        """
+        return _label_in(self.label_color, self.resolve(mode), mode)
+
+    @property
+    def label(self):
+        """The label text color in the active mode, resolved now."""
+        return self.resolve_label()
 
     @property
     def is_hue(self):
@@ -387,6 +460,13 @@ class Motif:
     def line_kw(self):
         """Keyword arguments for ``ax.plot`` of this motif as a line."""
         return {"color": self.color, "ls": self.linestyle, "lw": self.linewidth}
+
+    def label_kw(self):
+        """Keyword arguments for ``ax.text`` of this motif's label."""
+        kw = {"color": self.label}
+        if self.fontstyle:
+            kw["fontstyle"] = self.fontstyle
+        return kw
 
     def marker_kw(self, size=None):
         """Keyword arguments for ``ax.plot`` of this motif as a point.
@@ -459,12 +539,15 @@ class MotifSet(Mapping):
             appear in the same clip.
         exclusions: Pairs that share a map family and never share a figure.
         hue_budget: Most hue motifs one figure spends.
+        accepted: `AcceptedPair` records: co-occurring hues left under 10 dE
+            that a checker accepts when their motifs differ in the listed
+            channels.
 
     Raises:
         ValueError: If two motifs have the same key.
     """
 
-    def __init__(self, motifs, *, sharing=(), exclusions=(), hue_budget=4):
+    def __init__(self, motifs, *, sharing=(), exclusions=(), hue_budget=4, accepted=()):
         """Hold the motifs in the order given."""
         items = motifs.values() if isinstance(motifs, Mapping) else motifs
         table = {}
@@ -476,6 +559,7 @@ class MotifSet(Mapping):
         self.sharing = tuple(tuple(pair) for pair in sharing)
         self.exclusions = tuple(tuple(pair) for pair in exclusions)
         self.hue_budget = int(hue_budget)
+        self.accepted = tuple(accepted)
 
     @classmethod
     def default(cls):
@@ -493,12 +577,17 @@ class MotifSet(Mapping):
                 rows,
                 sharing=_FALLBACK_SHARING,
                 exclusions=_FALLBACK_EXCLUSIONS,
+                accepted=_FALLBACK_ACCEPTED,
             )
         return cls(
             [_motif_from_row(row) for row in table.MOTIFS.values()],
             sharing=table.SHARING_SETS,
             exclusions=table.EXCLUSION_PAIRS,
             hue_budget=table.HUE_BUDGET,
+            accepted=[
+                AcceptedPair(r.a, r.b, tuple(r.modes), tuple(r.channels), r.de)
+                for r in getattr(table, "ACCEPTED_PAIRS", ())
+            ],
         )
 
     def __getitem__(self, key):
@@ -524,6 +613,7 @@ class MotifSet(Mapping):
             sharing=self.sharing,
             exclusions=self.exclusions,
             hue_budget=self.hue_budget,
+            accepted=self.accepted,
         )
 
     def only(self, *keys):
@@ -559,10 +649,30 @@ class MotifSet(Mapping):
         pair = {a, b}
         return any(pair == set(p) for p in (*self.sharing, *self.exclusions))
 
+    def accepts(self, a, b, mode):
+        """Whether the motifs at keys `a` and `b` form an accepted pair in `mode`.
+
+        A pair is accepted when its roles are listed for the mode and the two
+        motifs differ in every channel the record requires.
+        """
+        ma, mb = self[a], self[b]
+        for rec in self.accepted:
+            if mode not in rec.modes:
+                continue
+            if (ma.role, mb.role) == (rec.a, rec.b):
+                pair = (ma, mb)
+            elif (ma.role, mb.role) == (rec.b, rec.a):
+                pair = (mb, ma)
+            else:
+                continue
+            if all(getattr(pair[0], f) != getattr(pair[1], f) for f in rec.channels):
+                return True
+        return False
+
     @property
     def dim(self):
         """Contrast a dimmed motif keeps in the active mode."""
         return _style.dim_level()
 
 
-__all__ = ["Motif", "MotifSet", "is_hue_role", "resolve_role"]
+__all__ = ["AcceptedPair", "Motif", "MotifSet", "is_hue_role", "resolve_role"]

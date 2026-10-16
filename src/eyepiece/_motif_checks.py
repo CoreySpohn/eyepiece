@@ -15,6 +15,11 @@ mode and reports, as `MotifFault` records:
 - ``"cue"``: the cue is not a form in the text color, or a hue in the set
   matches the cue's color.
 
+A ``cvd`` finding is dropped for a pair the set lists as accepted
+(``MotifSet.accepted``, from hwostyle's ``ACCEPTED_PAIRS``) when the two motifs
+differ in every channel the record requires; without those channels the
+finding stands.
+
 The checks apply to the subset a figure or clip draws with
 (`MotifSet.only`), not to the whole default table. `motif_margins` returns the
 numbers behind the findings.
@@ -243,6 +248,8 @@ def _cvd_faults(motifs, mode, fault_de, warn_de):
         if motifs.never_together(ka, kb):
             continue
         de = _worst(ca, cb)
+        if de < fault_de and motifs.accepts(ka, kb, _mode_name(mode)):
+            continue
         second = motifs[ka].signature() != motifs[kb].signature()
         if de < _HARD_FLOOR:
             severity = "fault"

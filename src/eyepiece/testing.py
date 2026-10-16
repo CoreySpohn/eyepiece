@@ -33,8 +33,9 @@ between: a final frame that jumps, a glyph that drifts, a word that tears
 apart mid-move, two moving labels that cross, a label that leaves the frame.
 It samples the clip at every frame, traces the window extent of every visible
 text, patch, collection and line (glyphs drawn as paths included), keeps the
-rendered frames, and reports seven kinds of fault: ``"jump"``, ``"dead"``,
-``"drift"``, ``"tear"``, ``"overlap"``, ``"outside"`` and ``"spike"``.
+rendered frames, and reports eight kinds of fault: ``"jump"``, ``"dead"``,
+``"drift"``, ``"tear"``, ``"overlap"``, ``"outside"``, ``"spike"`` and
+``"shape-class"``.
 `assert_motion` raises `MotionError` naming every fault.
 
 `speech_rate` is the check on the voice rather than the picture: it reads the
@@ -665,7 +666,16 @@ def caption_line(
 
 # Motion faults: the path between two states.
 
-MOTION_KINDS = ("jump", "dead", "drift", "tear", "overlap", "outside", "spike")
+MOTION_KINDS = (
+    "jump",
+    "dead",
+    "drift",
+    "tear",
+    "overlap",
+    "outside",
+    "spike",
+    "shape-class",
+)
 
 # Frames per second a clip is sampled at when `times` is a `Span`.
 VENUE_FPS = {"video": 30.0, "phone": 30.0, "print": 30.0}
@@ -974,6 +984,15 @@ class _Trace:
         self.size = (0.0, 0.0)
         self.ticks = set()  # tick labels, which trade places as limits move
         self.tick_text = {}  # tick label -> {sample index: its string}
+        self.shapes = {}  # artist -> {sample index: its outlines, display pixels}
+
+    def add_shapes(self, k, artists):
+        """Record the drawn outline of each visible artist in `artists`."""
+        for artist in artists:
+            if artist.get_visible() and artist.get_alpha() != 0:
+                outline = _display_outline(artist)
+                if outline:
+                    self.shapes.setdefault(artist, {})[k] = outline
 
     def add(self, k, fig, renderer, extra=()):
         fig.canvas.draw()
@@ -1293,6 +1312,111 @@ def _check_tear(trace, groups, tol):
     return found
 
 
+def _display_outline(artist):
+    """The drawn outline of a patch or line as closed runs of display pixels."""
+    from matplotlib.path import Path
+
+    if isinstance(artist, (Patch, Line2D)):
+        path = artist.get_path()
+        move = artist.get_transform()  # a patch's already holds its own
+    else:
+        raise TypeError(
+            f"{type(artist).__name__} cannot be declared rectilinear; "
+            "give a patch or a line"
+        )
+    runs, run = [], []
+    for vertices, code in path.iter_segments(transform=move, simplify=False):
+        if code == Path.CLOSEPOLY:
+            if run:
+                runs.append(np.array(run))
+            run = []
+            continue
+        if code == Path.MOVETO and run:
+            runs.append(np.array(run))
+            run = []
+        run.append(vertices[-2:])
+    if run:
+        runs.append(np.array(run))
+    return [r for r in runs if len(r) >= 2]
+
+
+_SHAPE_EPS = 1e-3  # pixels; repeats and collinear points, far below any tolerance
+
+
+def _corners(run):
+    """The corners of a run, dropping repeated and collinear points."""
+    run = np.asarray(run, dtype=float)
+    keep = [run[0]]
+    for point in run[1:]:
+        if np.abs(point - keep[-1]).max() > _SHAPE_EPS:
+            keep.append(point)
+    if len(keep) > 1 and np.abs(keep[0] - keep[-1]).max() <= _SHAPE_EPS:
+        keep.pop()
+    out = []
+    n = len(keep)
+    for i in range(n):
+        before, here, after = keep[i - 1], keep[i], keep[(i + 1) % n]
+        # A point on the straight line between its neighbours is not a corner.
+        cross = abs(
+            (here[0] - before[0]) * (after[1] - here[1])
+            - (here[1] - before[1]) * (after[0] - here[0])
+        )
+        reach = max(np.hypot(*(after - before)), 1e-9)
+        if cross / reach > _SHAPE_EPS:
+            out.append(here)
+    return out, keep
+
+
+def _slant(run):
+    """Largest pixel offset of a run from an axis-aligned rectangle.
+
+    A run with no corner at all is a straight segment, a rectangle with no
+    thickness: it is off axis by the smaller of its two extents.
+    """
+    corners, points = _corners(run)
+    if not corners:
+        span = np.ptp(np.asarray(points), axis=0)
+        return float(min(span))
+    if len(corners) != 4:
+        return float("inf")
+    worst = 0.0
+    for i in range(4):
+        a, b = corners[i], corners[(i + 1) % 4]
+        worst = max(worst, min(abs(a[0] - b[0]), abs(a[1] - b[1])))
+    return worst
+
+
+def _check_shape_class(trace, pieces, tol):
+    found = []
+    for artist, lo, hi in pieces:
+        samples = trace.shapes.get(artist, {})
+        ks = [k for k in sorted(samples) if lo <= trace.times[k] <= hi]
+        if not ks:
+            raise ValueError(
+                f"the rectilinear artist {artist!r} is not visible at any sample"
+            )
+        worst, first = 0.0, None
+        for k in ks:
+            off = max(_slant(run) for run in samples[k])
+            if off > tol and first is None:
+                first = k
+            worst = max(worst, off)
+        if first is not None:
+            pts = np.vstack(samples[first])
+            box = (*pts.min(axis=0), *pts.max(axis=0))
+            size = (
+                "is no longer a rectangle"
+                if worst == float("inf")
+                else f"slants by up to {worst:.1f} px"
+            )
+            detail = (
+                f"{trace.label(artist)} should stay an axis-aligned rectangle "
+                f"and {size}"
+            )
+            found.append((first, "shape-class", artist, None, box, detail, worst))
+    return found
+
+
 def _check_overlap(trace, candidates, allowed, tol, move_tol):
     found = []
     runs = {}
@@ -1522,6 +1646,7 @@ def motion_faults(
     rest=(),
     groups=(),
     may_overlap=(),
+    rectilinear=(),
     tol_px=0.5,
     jump_ratio=4.0,
     overlap_tol=2.0,
@@ -1572,6 +1697,13 @@ def motion_faults(
       `frame_tol` pixels. A clip box that only widens, and ends uncovering
       the artist, is a reveal, not a cut. An artist clipped to its axes may
       leave the axes: that is the clip working, and only text is reported.
+    - ``"shape-class"``: a patch or line declared ``rectilinear`` (a fraction
+      bar, a rule, a box) whose drawn outline stops being an axis-aligned
+      rectangle: a corner count other than four, or a side slanted by more
+      than `tol_px`. A rotated rectangle is not axis-aligned and is reported. A
+      straight line is a rectangle with no thickness: it passes while it is
+      horizontal or vertical and is reported when it tilts by more than
+      `tol_px`.
     - ``"spike"``: an artist that hops off its straight path by more than
       `spike_px` while travelling less than it hops, that makes a one-frame
       excursion, or that changes velocity (position over elapsed time) by
@@ -1594,6 +1726,9 @@ def motion_faults(
         groups: Groups that move rigidly: each a list of artists, or a dict
             ``{"artists": [...], "scales": True}`` for a group that scales.
         may_overlap: Pairs of artists allowed to overlap while moving.
+        rectilinear: Patches or lines (a fraction bar, a rule, a box) that must
+            stay axis-aligned rectangles; a declared move's ``rectilinear``
+            holds over its span.
         tol_px: Motion, in pixels, that is not reported.
         jump_ratio: Largest step, as a multiple of the median step.
         overlap_tol: Largest overlap, in pixels, that is not reported.
@@ -1653,9 +1788,15 @@ def motion_faults(
             )
             if isinstance(a, AxesImage)
         ]
+        shaped = [
+            *rectilinear,
+            *(a for move in moves or () for a in _declared(move, "rectilinear") or ()),
+        ]
         for k, t in enumerate(samples):
             at(t)
             trace.add(k, fig, _renderer(fig), extra)
+            if "shape-class" in kinds:
+                trace.add_shapes(k, shaped)
     finally:
         fig.set_canvas(old_canvas)
         if dpi is not None:
@@ -1667,6 +1808,7 @@ def motion_faults(
         rest=rest,
         groups=groups,
         may_overlap=may_overlap,
+        rectilinear=rectilinear,
         tol_px=tol_px,
         jump_ratio=jump_ratio,
         overlap_tol=overlap_tol,
@@ -1683,6 +1825,7 @@ def _analyze(
     rest,
     groups,
     may_overlap,
+    rectilinear,
     tol_px,
     jump_ratio,
     overlap_tol,
@@ -1695,6 +1838,7 @@ def _analyze(
     rests = [(a, *everywhere) for a in rest]
     group_list = [(g, *everywhere) for g in groups]
     allowed = [(frozenset(p), *everywhere) for p in may_overlap]
+    pieces = [(a, *everywhere) for a in rectilinear]
     declared = set()
     rest_times = []
     for move in moves:
@@ -1704,6 +1848,7 @@ def _analyze(
             rest_times.append(hi)
         rests += [(a, lo, hi) for a in _declared(move, "rest") or ()]
         group_list += [(g, lo, hi) for g in _declared(move, "groups") or ()]
+        pieces += [(a, lo, hi) for a in _declared(move, "rectilinear") or ()]
         declared |= set(_declared(move, "artists") or ())
         allowed += [
             (frozenset(p), lo, hi) for p in _declared(move, "may_overlap") or ()
@@ -1724,6 +1869,8 @@ def _analyze(
         found += _check_outside(trace, texts | declared, frame_tol)
     if "spike" in kinds:
         found += _check_spike(trace, spike_px)
+    if "shape-class" in kinds:
+        found += _check_shape_class(trace, pieces, tol_px)
     order = {kind: i for i, kind in enumerate(MOTION_KINDS)}
     found.sort(key=lambda f: (f[0], order[f[1]]))
     return [
