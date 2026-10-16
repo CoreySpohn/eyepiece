@@ -642,6 +642,7 @@ VENUE_FPS = {"video": 30.0, "phone": 30.0, "print": 30.0}
 _STEP_FLOOR = 0.01  # mean pixel change (of 255) under which a step is a hold
 _PAIR_ISOLATION = 2.0  # a jump must also exceed its neighbouring steps by this
 _REST_STEP_RATIO = 0.5  # share of `jump_ratio` that flags a step into rest
+_OVERLAP_INK = 0.3  # overlap is a fault once both artists are this opaque
 _HOP_RATIO = 0.5  # a hop reaches this fraction of the way out, relative to net travel
 _KINK_RATIO = 6.0  # a kink is this many median speeds in one frame
 _KINK_FLOOR_PX = 4.0
@@ -708,14 +709,14 @@ class MotionError(AssertionError):
         super().__init__("\n".join(lines))
 
 
-def _paints(artist):
-    """True when the artist would put visible ink on the canvas."""
+def _ink(artist):
+    """Opacity of the strongest ink the artist paints, 0 when it paints none."""
     base = artist.get_alpha()
     base = 1.0 if base is None else float(base)
     if isinstance(artist, Text):
-        return bool(artist.get_text().strip()) and (
-            base * to_rgba(artist.get_color())[3] >= _SHOWN
-        )
+        if not artist.get_text().strip():
+            return 0.0
+        return base * to_rgba(artist.get_color())[3]
     if isinstance(artist, Patch):
         face = base * to_rgba(artist.get_facecolor())[3] if artist.get_fill() else 0.0
         edge = (
@@ -723,17 +724,18 @@ def _paints(artist):
             if artist.get_linewidth() > 0.0
             else 0.0
         )
-        return max(face, edge) >= _SHOWN
+        return max(face, edge)
     if isinstance(artist, Line2D):
         drawn = artist.get_linestyle() not in ("None", "none", "", " ")
         drawn = drawn or artist.get_marker() not in (None, "None", "none", "", " ")
-        return drawn and base * to_rgba(artist.get_color())[3] >= _SHOWN
+        return base * to_rgba(artist.get_color())[3] if drawn else 0.0
     if isinstance(artist, Collection):
+        top = 0.0
         for colors in (artist.get_facecolor(), artist.get_edgecolor()):
-            if len(colors) and base * float(np.max(np.asarray(colors)[:, 3])) >= _SHOWN:
-                return True
-        return False
-    return False
+            if len(colors):
+                top = max(top, float(np.max(np.asarray(colors)[:, 3])))
+        return base * top
+    return 0.0
 
 
 def _traced(fig):
@@ -742,7 +744,9 @@ def _traced(fig):
     for artist in _walk(fig):
         if id(artist) in skip or isinstance(artist, Spine):
             continue
-        if isinstance(artist, (Text, Patch, Collection, Line2D)) and _paints(artist):
+        if isinstance(artist, (Text, Patch, Collection, Line2D)) and (
+            _ink(artist) >= _SHOWN
+        ):
             yield artist
 
 
@@ -760,7 +764,8 @@ def _trace_box(artist, renderer):
     clip = artist.get_clip_box() if artist.get_clip_on() else None
     if clip is not None and not _finite(clip):
         clip = None
-    return _tuple(box), (None if clip is None else _tuple(clip))
+    clip = None if clip is None else _tuple(clip)
+    return _tuple(box), clip, _ink(artist)
 
 
 def _declared(move, key, default=None):
@@ -805,11 +810,17 @@ class _Trace:
         self.boxes = {}  # artist -> {sample index: (box, clip)}
         self.order = []  # artists in order of first appearance
         self.size = (0.0, 0.0)
+        self.ticks = set()  # tick labels, which trade places as limits move
 
     def add(self, k, fig, renderer):
         fig.canvas.draw()
         self.frames.append(np.asarray(fig.canvas.buffer_rgba())[..., :3].copy())
         self.size = (float(fig.bbox.width), float(fig.bbox.height))
+        for ax in fig.axes:
+            for axis in (ax.xaxis, ax.yaxis):
+                self.ticks.add(axis.offsetText)
+                for tick in axis.get_major_ticks() + axis.get_minor_ticks():
+                    self.ticks.update((tick.label1, tick.label2))
         for artist in _traced(fig):
             got = _trace_box(artist, renderer)
             if got is None:
@@ -849,35 +860,39 @@ class _Trace:
 
 
 def _steps(frames):
-    """Mean absolute pixel change between consecutive frames, and its region."""
+    """Mean absolute pixel change between consecutive frames."""
     out = []
-    for before, after in itertools.pairwise(frames):
-        diff = np.abs(after.astype(np.int16) - before.astype(np.int16)).max(axis=2)
-        rows, cols = np.nonzero(diff)
-        region = (
-            None
-            if not len(rows)
-            else (
-                float(cols.min()),
-                float(diff.shape[0] - 1 - rows.max()),
-                float(cols.max() + 1),
-                float(diff.shape[0] - rows.min()),
-            )
-        )
-        out.append((float(np.abs(after.astype(np.int16) - before).mean()), region))
+    before = frames[0].astype(np.int16)
+    for frame in frames[1:]:
+        after = frame.astype(np.int16)
+        out.append(float(np.abs(after - before).mean()))
+        before = after
     return out
 
 
+def _changed(before, after):
+    """Box, in output pixels from the lower left, of what changed between frames."""
+    diff = np.abs(after.astype(np.int16) - before.astype(np.int16)).max(axis=2)
+    rows, cols = np.nonzero(diff)
+    if not len(rows):
+        return None
+    return (
+        float(cols.min()),
+        float(diff.shape[0] - 1 - rows.max()),
+        float(cols.max() + 1),
+        float(diff.shape[0] - rows.min()),
+    )
+
+
 def _check_jump(trace, jump_ratio):
-    steps = _steps(trace.frames)
-    size = [v for v, _ in steps]
+    size = _steps(trace.frames)
     moving = [v for v in size if v > _STEP_FLOOR]
     if len(moving) < 3:
         return []
     median = float(np.median(moving))
     found = []
     last = len(size) - 1
-    for i, (value, region) in enumerate(steps):
+    for i, value in enumerate(size):
         into_rest = (
             i == last
             and i > 0
@@ -895,7 +910,8 @@ def _check_jump(trace, jump_ratio):
             f"the picture changes {value:.2f} levels {where}, "
             f"{value / median:.1f} times the median step of {median:.2f}"
         )
-        box = region or (0.0, 0.0, *trace.size)
+        box = _changed(trace.frames[i], trace.frames[i + 1])
+        box = box or (0.0, 0.0, *trace.size)
         found.append((i + 1, "jump", None, None, box, detail, value / median))
     return found
 
@@ -1026,7 +1042,13 @@ def _check_overlap(trace, candidates, allowed, tol, move_tol):
     runs = {}
     cand = [a for a in trace.order if a in candidates]
     for k in range(len(trace.times)):
-        here = [a for a in cand if k in trace.boxes[a] and trace.moving(a, k, move_tol)]
+        here = [
+            a
+            for a in cand
+            if k in trace.boxes[a]
+            and trace.boxes[a][k][2] >= _OVERLAP_INK
+            and trace.moving(a, k, move_tol)
+        ]
         for i, a in enumerate(here):
             for b in here[i + 1 :]:
                 if frozenset((a, b)) in allowed:
@@ -1057,7 +1079,10 @@ def _check_outside(trace, texts, tol):
     found = []
     for artist in trace.order:
         first, worst, sides, count = None, 0.0, {}, 0
-        for k, (box, clip) in sorted(trace.boxes[artist].items()):
+        clips = {c for _, c, _ in trace.boxes[artist].values()}
+        # A clip box that changes is a reveal mask (a write-on), not a cut.
+        static_clip = len(clips) == 1
+        for k, (box, clip, _) in sorted(trace.boxes[artist].items()):
             seen = box
             if clip is not None:
                 seen = _intersect(box, clip)
@@ -1068,7 +1093,7 @@ def _check_outside(trace, texts, tol):
                 for s, v in _canvas_overshoot(seen, width, height).items()
                 if v > tol
             }
-            if clip is not None and artist in texts:
+            if clip is not None and artist in texts and static_clip:
                 cut = _clip_overshoot(box, clip)
                 over.update({s: v for s, v in cut.items() if v > tol})
             if not over:
@@ -1099,6 +1124,8 @@ def _check_outside(trace, texts, tol):
 def _check_spike(trace, spike_px):
     found = []
     for artist in trace.order:
+        if artist in trace.ticks:
+            continue
         ks = sorted(trace.boxes[artist])
         runs, run = [], [ks[0]]
         for k in ks[1:]:
@@ -1114,6 +1141,10 @@ def _check_spike(trace, spike_px):
         )
         for run in runs:
             if len(run) < 6:
+                continue
+            boxes = np.array([trace.boxes[artist][k][0] for k in run])
+            extent = np.ptp(boxes[:, 2:] - boxes[:, :2], axis=0)
+            if extent.max() > 1.0:  # it changes shape: a bar, a connector, a text
                 continue
             c = np.array([_center(trace.boxes[artist][k][0]) for k in run])
             chord = c[-1] - c[0]
@@ -1293,7 +1324,6 @@ def motion_faults(
         trace = _Trace(samples)
         for k, t in enumerate(samples):
             at(t)
-            fig.canvas.draw()
             trace.add(k, fig, _renderer(fig))
     finally:
         if dpi is not None:

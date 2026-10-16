@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import pytest
 from matplotlib.patches import PathPatch, Rectangle
 from matplotlib.path import Path
-from matplotlib.transforms import IdentityTransform
+from matplotlib.transforms import Bbox, IdentityTransform, TransformedBbox
 
 import eyepiece.testing as ept
 
@@ -329,6 +329,13 @@ def test_a_declared_pair_may_overlap():
     assert ept.motion_faults(fig, at, SPAN, moves=moves) == []
 
 
+def test_a_faint_pair_crossing_is_not_an_overlap_fault():
+    fig, at, a, b, moves = _crossing()
+    a.set_alpha(0.1)
+    b.set_alpha(0.1)
+    assert ept.motion_faults(fig, at, SPAN, moves=moves) == []
+
+
 def test_a_mover_over_a_still_neighbour_is_not_an_overlap_fault():
     fig = _figure()
     still = fig.text(0.4, 0.5, "static label", fontsize=14)
@@ -376,6 +383,20 @@ def test_text_cut_by_its_axes_is_outside_but_a_clipped_line_is_not():
     assert _kinds(found) == ["outside"]
     assert found[0].artist is label
     assert line.get_visible()
+
+
+def test_a_growing_reveal_mask_is_not_a_cut():
+    fig = _figure()
+    label = fig.text(0.1, 0.5, "revealed left to right", fontsize=14)
+    label.set_clip_on(True)
+
+    def at(t):
+        right = 20.0 + 300.0 * _smooth(t / DURATION)
+        label.set_clip_box(
+            TransformedBbox(Bbox([[0, 0], [right, 200]]), IdentityTransform())
+        )
+
+    assert ept.motion_faults(fig, at, SPAN) == []
 
 
 def test_a_clean_clip_inside_the_frame_has_nothing_outside():
@@ -430,6 +451,27 @@ def test_a_small_marker_orbiting_a_wide_loop_is_not_a_spike():
         _move(marker, 190 + 80 * math.cos(a), 96 + 60 * math.sin(a))
 
     assert ept.motion_faults(fig, at, SPAN, spikes=True) == []
+
+
+def test_tick_labels_that_trade_places_are_not_spikes():
+    fig, ax = plt.subplots(figsize=(4.0, 2.0), dpi=DPI)
+    fig.subplots_adjust(bottom=0.3, left=0.2)
+
+    def at(t):
+        ax.set_xlim(0.0, 10.0 + 7.3 * _smooth(t / DURATION))
+
+    assert ept.motion_faults(fig, at, SPAN, spikes=True) == []
+
+
+def test_an_artist_that_changes_shape_is_not_a_spike():
+    fig = _figure()
+    bar = _box(fig, 40, 80, 20, 20)
+
+    def at(t):
+        k = round(t * 30.0)
+        bar.set_width(20.0 + (60.0 if k == 30 else 2.0 * k))
+
+    assert "spike" not in _kinds(ept.motion_faults(fig, at, SPAN, spikes=True))
 
 
 def test_one_frame_teleport_is_a_spike():
