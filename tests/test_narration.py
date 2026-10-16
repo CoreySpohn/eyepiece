@@ -1088,3 +1088,77 @@ def test_the_muxed_bed_level_and_seed_are_parameters(tmp_path):
     assert abs(_gap_rms_db(ffmpeg, a) - (-50.0)) < 2.0
     assert a.read_bytes() == b.read_bytes()
     assert _gap_rms_db(ffmpeg, c) < -90.0
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_synthesis_refuses_faults_before_building_an_engine(
+    tmp_path, monkeypatch, cached
+):
+    script = nr.Script(
+        (nr.Line("clean", "A clean line."), nr.Line("bad", "It is 1e-15."))
+    )
+    if cached:
+        key = script.line_key(script.line("bad"))
+        (tmp_path / f"{key}.json").write_text(json.dumps({"audio": f"{key}.wav"}))
+        (tmp_path / f"{key}.wav").write_bytes(b"cached audio")
+    made = []
+
+    def engine(received):
+        made.append(received)
+        raise AssertionError("the engine must not be built for faulty speech")
+
+    monkeypatch.setitem(synth.ENGINES, "kokoro", engine)
+    with pytest.raises(getattr(nr, "SpeechTextError", ValueError), match=r"bad.*1e-15"):
+        synth.synthesize(script, tmp_path, write_audio=_write_wav)
+    assert made == []
+    assert not (tmp_path / f"{script.line_key(script.line('clean'))}.json").exists()
+
+
+def test_synthesis_accepts_faults_in_display_text(tmp_path):
+    script = nr.Script(
+        (nr.Line("contrast", "One times ten to the minus 15.", display="1e-15"),)
+    )
+    nr.check_script_speech(script)
+    calls = []
+    assert synth.synthesize(
+        script, tmp_path, speak=_fake_speak(calls), write_audio=_write_wav
+    ) == ["contrast"]
+    assert calls == ["contrast"]
+    key = script.cache_keys()[0]
+    assert (
+        json.loads((tmp_path / f"{key}.json").read_text())["text"]
+        == script.lines[0].spoken
+    )
+
+
+def test_synthesis_checks_speech_with_an_explicit_speaker(tmp_path):
+    script = nr.Script((nr.Line("bad", "It is 1e-15."),))
+    calls = []
+    with pytest.raises(getattr(nr, "SpeechTextError", ValueError), match=r"bad.*1e-15"):
+        synth.synthesize(
+            script, tmp_path, speak=_fake_speak(calls), write_audio=_write_wav
+        )
+    assert calls == []
+
+
+def test_synthesis_cli_reports_bad_speech_without_a_traceback(tmp_path):
+    script_path = tmp_path / "script.py"
+    script_path.write_text(
+        "from eyepiece import narration as nr\n"
+        "SCRIPT = nr.Script((nr.Line('contrast', 'It is 1e-15.'),))\n"
+    )
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "eyepiece.narration.synth",
+            str(script_path),
+            str(tmp_path / "cache"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode != 0
+    assert "contrast" in done.stderr and "1e-15" in done.stderr
+    assert "Traceback" not in done.stderr
