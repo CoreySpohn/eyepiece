@@ -62,18 +62,34 @@ from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
+from eyepiece._meaning import (
+    MEANING_KINDS,
+    MeaningError,
+    MeaningFault,
+    assert_meaning,
+    meaning_faults,
+    meaning_faults_chain,
+    meaning_report,
+)
 from eyepiece.attention import _data_colors, _default_avoid, _renderer
 
 __all__ = [
     "KINDS",
+    "MEANING_KINDS",
     "VENUES",
+    "MeaningError",
+    "MeaningFault",
     "ReadabilityError",
     "ReadabilityFault",
     "SpeechRate",
     "SpeechRateError",
+    "assert_meaning",
     "assert_readable",
     "assert_speech_rate",
     "caption_line",
+    "meaning_faults",
+    "meaning_faults_chain",
+    "meaning_report",
     "readability_faults",
     "speech_rate",
 ]

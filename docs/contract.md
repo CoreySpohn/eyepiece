@@ -583,6 +583,25 @@ a label with an opaque backing box is not reported over marks. The result is
 deterministic and the figure keeps its dpi. `assert_readable` raises
 `ReadabilityError` with the report.
 
+`meaning_faults(fig, at=pose, times=..., keys={gid_prefix: meaning})` checks
+what the colors say, which `readability_faults` does not. Artists are tied to a
+meaning by `gid` prefix (longest prefix wins, and an artist with no `gid`
+inherits its nearest ancestor's). Colors are measured as drawn, after artist
+alpha and any `Stage` dim, over the background, in CAM02-UCS under normal
+vision and the three Machado types at severity 100. It reports four kinds:
+`same-frame` (two meanings in one color within `fault_de`, or within `warn_de`
+as a warning, downgraded when a marker, line style or hatch also differs),
+`rebound` (one color carrying different meanings at different times, or across
+the clips of `meaning_faults_chain`, unless declared with `rebind`), `cue-form`
+(a key named in `cue_keys` drawn as a line, as text, as an opaque patch over
+its subject, or in a color another key uses; the cue is a band, ring or
+underlay in the text color), and `unkeyed` (a chromatic artist with no
+meaning, advisory unless `strict`). `sharing` pairs may share a color but not
+a clip. A finding is waived only by naming it in `waive` with a reason, and
+stays in `meaning_report`, whose all-pass wording is "no tier 1 or 2 findings".
+`assert_meaning` raises `MeaningError`. It needs `colorspacious`, in the
+`test` extra.
+
 `caption_line(fig, at=pose, times=...)` uses the same extents to place
 captions: it returns the WebVTT `line:` percentage of the lowest strip, two
 caption lines tall, that no visible text of the figure touches at any sampled
