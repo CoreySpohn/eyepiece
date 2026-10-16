@@ -650,8 +650,9 @@ both moves from its place in the first to its place in the second, and it moves
 with its group: a tag, or a run of neighbours in no tag, takes one eased
 progress, so a word travels whole, and the groups start left to right. A tag
 that both equations have but whose glyphs do not match, such as ``num`` becoming
-another ``num``, is carried as one box that moves and scales onto the new box,
-with the old glyphs fading out as the new ones fade in inside it. Glyphs with
+another ``num``, morphs: the outlines of the old glyphs turn into the outlines
+of the new ones, as ManimCE's `Transform` does (the next clip and the
+comparison below show it). Glyphs with
 no counterpart at all fade out where they stand, in the first part of the beat,
 or fade in where they will stand, in the last part, after everything has
 settled. A tagged glyph pairs only inside its tag, and `key_map` pairs two
@@ -695,6 +696,42 @@ for k in (0, N_BAYES - 1):
     draw_bayes(fig, k)
     ept.assert_readable(fig)
 HTML(ep.animate(fig, draw_bayes, N_BAYES, fps=20).jshtml(dpi=80))
+```
+
+A replaced tag changes shape by default. The outlines of the old glyphs turn
+into the outlines of the new ones, aligned as ManimCE's `Transform` aligns
+paths: glyph for glyph in reading order, the side with fewer glyphs gaining
+stacked copies of its own, a hole that one glyph lacks growing from a point, and
+every outline split until both have the same curves. ``replace="fade"`` is the
+option that keeps the older behavior: the old glyphs ride a box that moves and
+scales onto the box of the new ones, fading out as the new ones fade in inside
+it. Below, the same Bayes move twice, the fade first and the morph second. The
+thirteen glyphs of the numerator outnumber the four of ``0.24``, so several
+outlines gather on each new glyph and the middle of the morph is crowded, as it
+is in Manim.
+
+```{code-cell} python
+from IPython.display import display
+
+
+def bayes_move(replace):
+    fig = plt.figure(figsize=(7.6, 2.4))
+    board = fig.add_axes([0, 0, 1, 1])
+    board.set(xlim=(0, 1), ylim=(0, 1))
+    board.axis("off")
+    left = ep.Anchor.from_data(board, (0.06, 0.5))
+    eq_a = ep.equation(left, BAYES_A, fontsize=34, colors=TERM_COLORS, ha="left")
+    eq_b = ep.equation(left, BAYES_B, fontsize=34, colors=TERM_COLORS, ha="left")
+    return fig, ep.transform(eq_a, eq_b, stagger=0.55, replace=replace)
+
+
+for replace in ("fade", "morph"):
+    fig, move = bayes_move(replace)
+
+    def draw(fig, k, move=move):
+        move.update(min(1.0, max(0.0, (k - 12) / 36)))
+
+    display(HTML(ep.animate(fig, draw, N_BAYES, fps=20).jshtml(dpi=80)))
 ```
 
 Most rearrangements keep most glyphs, and then the move is mostly travel.

@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.path import Path
 
 import eyepiece as ep
 import eyepiece.testing as ept
@@ -451,9 +452,9 @@ def test_savefig_at_200_dpi_matches_a_native_200_dpi_build():
     assert np.array_equal(_pixels(fig), _pixels(build(100)))  # savefig left dpi alone
 
 
-def _aligned_pair():
+def _aligned_pair(**kwargs):
     fig, a, b = _pair(BAYES_A, BAYES_B)
-    return fig, a, b, ep.transform(a, b)
+    return fig, a, b, ep.transform(a, b, **kwargs)
 
 
 def test_aligned_end_states_are_each_equation_as_placed():
@@ -552,7 +553,7 @@ def test_a_group_that_does_not_travel_does_not_rise():
 
 
 def test_replaced_terms_cross_fade_inside_a_moving_box():
-    fig, a, b, move = _aligned_pair()
+    fig, a, b, move = _aligned_pair(replace="fade")
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
@@ -662,7 +663,8 @@ def test_auto_align_keeps_the_shared_shift_still_without_a_tag():
         assert np.allclose(ga[first].vertices(renderer), start, atol=1e-6)
 
 
-def _left_anchored_bayes():
+def _left_anchored_bayes(replace="fade"):
+    """The gallery's Bayes clip; ``replace=None`` takes transform's default."""
     fig = plt.figure(figsize=(7.6, 2.4), dpi=80)
     board = fig.add_axes([0, 0, 1, 1])
     board.set(xlim=(0, 1), ylim=(0, 1))
@@ -671,7 +673,8 @@ def _left_anchored_bayes():
     colors = {"lhs": "C0", "num": "C1", "den": "C3", "res": "C2"}
     a = ep.equation(left, BAYES_A, fontsize=34, colors=colors, ha="left")
     b = ep.equation(left, BAYES_B, fontsize=34, colors=colors, ha="left")
-    return fig, ep.transform(a, b, stagger=0.55)
+    options = {} if replace is None else {"replace": replace}
+    return fig, ep.transform(a, b, stagger=0.55, **options)
 
 
 def test_left_anchored_bayes_moves_without_a_jump_into_or_out_of_rest():
@@ -729,3 +732,195 @@ def _leaning(bar):
         bar.get_path().vertices[1, 1] += 5.0
 
     return tipped
+
+
+def _all_vertices(move, renderer):
+    return [g.vertices(renderer) for g in move.artists["glyphs"] if g.get_visible()]
+
+
+def test_replace_must_be_fade_or_morph():
+    _fig, a, b = _pair(BAYES_A, BAYES_B)
+    with pytest.raises(ValueError, match="replace"):
+        ep.transform(a, b, replace="dissolve")
+
+
+def test_morph_and_fade_pair_the_same_glyphs():
+    _fig, a, b = _pair(BAYES_A, BAYES_B)
+    fade = ep.transform(a, b, replace="fade")
+    morph = ep.transform(a, b, replace="morph")
+    assert (fade.pairs, fade.gone, fade.new, fade.replaced) == (
+        morph.pairs,
+        morph.gone,
+        morph.new,
+        morph.replaced,
+    )
+
+
+def test_morph_rest_states_are_each_equation_as_drawn():
+    fig, a, b = _pair(BAYES_A, BAYES_B)
+    move = ep.transform(a, b, replace="morph")
+    move.update(0.0)
+    assert np.array_equal(_pixels(fig), _alone(BAYES_A))
+    move.update(1.0)
+    rest = _pixels(fig)
+    for g in a.artists["glyphs"]:
+        g.set_visible(False)
+    for g in b.artists["glyphs"]:
+        g.set_visible(True)
+    assert np.array_equal(rest, _pixels(fig))
+    move.update(0.4)
+    assert not np.array_equal(rest, _pixels(fig))
+    for u in (0.5, 0.9, 0.3, 0.0, 1.0, 0.7):
+        move.update(u)
+    move.update(1.0)
+    assert np.array_equal(_pixels(fig), rest)
+
+
+def test_left_anchored_morph_moves_without_a_jump_into_or_out_of_rest():
+    fig, move = _left_anchored_bayes("morph")
+
+    def at(t):
+        move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
+
+    ept.assert_motion(fig, at, ept.Span(0.0, 2.0), fps=30)
+
+
+def test_morph_changes_shape_where_fade_only_moves_a_box():
+    """A replaced term's outlines are not scaled copies of the old ones mid-move."""
+    fig, a, b = _pair(BAYES_A, BAYES_B)
+    morph = ep.transform(a, b, replace="morph")
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    ia, ib = next(
+        r
+        for r in morph.replaced
+        if _term_of(a, a.artists["glyphs"][r[0][0]], renderer) == "num"
+    )
+    ga, gb = a.artists["glyphs"], b.artists["glyphs"]
+    morph.update(0.45)
+    # The 13 source glyphs outnumber the 4 target glyphs: the sources draw the
+    # morphs and the targets stay hidden until the move ends.
+    assert len(ia) > len(ib)
+    assert all(ga[i].get_visible() for i in ia)
+    assert all(not gb[j].get_visible() for j in ib)
+    alphas = [ga[i].get_alpha() for i in ia]
+    assert all(al is None or 0.0 <= al <= 1.0 for al in alphas)
+    assert any(al is not None and al < 1.0 for al in alphas)  # copies fade out
+
+
+def test_morph_never_makes_a_nan_or_an_infinity():
+    fig, a, b = _pair(BAYES_A, BAYES_B)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    move = ep.transform(a, b, replace="morph")
+    for u in np.linspace(0.0, 1.0, 41):
+        move.update(float(u))
+        for v in _all_vertices(move, renderer):
+            assert np.isfinite(v).all(), u
+    for u in (1e-9, 0.5, 1 - 1e-9):
+        move.update(u, level=0.0)
+        move.update(u, level=0.5)
+        for v in _all_vertices(move, renderer):
+            assert np.isfinite(v).all(), u
+
+
+@pytest.mark.parametrize(
+    "tex_a, tex_b",
+    [
+        (r"${{t:.}}$", r"${{t:=}}$"),  # a dot becomes a rectilinear bar pair
+        (r"${{t:-}}+c$", r"${{t:x^2_i}}+c$"),
+        (r"${{t:\frac{a}{b}}}$", r"${{t:0}}$"),  # a rule into a glyph
+        (r"${{t:abc}}$", r"${{t:|}}$"),
+        (r"${{t:8}}$", r"${{t:Pr(E|H)Pr(H)}}$"),
+    ],
+)
+def test_morph_degenerate_pairs_stay_finite_and_rest_exactly(tex_a, tex_b):
+    fig, a, b = _pair(tex_a, tex_b)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    move = ep.transform(a, b, replace="morph", align=None)
+    assert move.replaced
+    for u in np.linspace(0.0, 1.0, 21):
+        move.update(float(u))
+        for v in _all_vertices(move, renderer):
+            assert np.isfinite(v).all(), (u, tex_a, tex_b)
+    move.update(0.0)
+    assert np.array_equal(_pixels(fig), _alone(tex_a))
+    move.update(1.0)
+    rest = _pixels(fig)
+    for g in a.artists["glyphs"]:
+        g.set_visible(False)
+    for g in b.artists["glyphs"]:
+        g.set_visible(True)
+    assert np.array_equal(rest, _pixels(fig))
+
+
+def test_morph_carrier_reaches_the_target_outline_as_the_move_ends():
+    """One short of the end, each drawn outline already lies on the target's."""
+    fig, a, b = _pair(r"${{t:0}}$", r"${{t:1}}$")
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    move = ep.transform(a, b, replace="morph", align=None, stagger=1.0)
+    (glyph,) = [g for g in a.artists["glyphs"]]
+    target = b.artists["glyphs"][0]
+    move.update(1.0)
+    # Matplotlib puts a dummy vertex at the origin on each closing code.
+    real = np.asarray(target.piece.draw_codes) != Path.CLOSEPOLY
+    final = target.vertices(renderer)[real]
+    move.update(1.0 - 1e-6)
+    drawn = glyph.vertices(renderer)
+    assert drawn.min(0) == pytest.approx(final.min(0), abs=0.05)
+    assert drawn.max(0) == pytest.approx(final.max(0), abs=0.05)
+
+
+def test_morph_is_a_move_of_the_motion_part_of_the_beat():
+    """New text still arrives after the motion, as with the box."""
+    fig, a, b = _pair(BAYES_A, BAYES_B)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    move = ep.transform(a, b, replace="morph")
+    gb = b.artists["glyphs"]
+    res = [j for j in move.new if _term_of(b, gb[j], renderer) == "res"]
+    for u in (0.1, 0.3, 0.5, 0.59):
+        move.update(u)
+        assert all(not gb[j].get_visible() for j in res)
+    ga = a.artists["glyphs"]
+    move.update(0.6)
+    settled = [v.copy() for v in _all_vertices(move, renderer)]
+    move.update(0.9)
+    again = _all_vertices(move, renderer)
+    # The morph has finished by 0.6, so only the arriving text changes.
+    assert len(again) >= len(settled) and ga
+    for v, w in zip(settled, again, strict=False):
+        assert np.allclose(v, w, atol=1e-6)
+
+
+@pytest.mark.parametrize("replace", ["fade", "morph"])
+def test_curved_glyphs_do_not_pop_when_a_move_starts_or_ends(replace):
+    """A curved glyph rasterizes alike at rest and in motion: no antialiasing step."""
+    fig, a, b = _pair(r"${{t:a}}$", r"${{t:g}}$")
+    move = ep.transform(a, b, replace=replace, align=None, stagger=1.0)
+    move.update(0.0)
+    start = _pixels(fig).astype(int)
+    move.update(1.0)
+    end = _pixels(fig).astype(int)
+    for u, rest in ((1e-3, start), (1.0 - 1e-3, end)):
+        move.update(u)
+        assert np.abs(_pixels(fig).astype(int) - rest).max() < 25, (replace, u)
+    for tex in ("a", r"\mathrm{Pr}(E|H)", "0.24"):
+        fig, a, b = _pair(f"${{{{t:{tex}}}}}$", r"${{t:x^2}}$")
+        move = ep.transform(a, b, replace=replace, align=None, stagger=1.0)
+        move.update(0.0)
+        rest = _pixels(fig).astype(int)
+        move.update(1e-9)
+        assert np.abs(_pixels(fig).astype(int) - rest).max() < 25, (replace, tex)
+
+
+def test_default_morph_bayes_lints_clean_with_its_declared_contract():
+    fig, move = _left_anchored_bayes(None)
+    duration = 2.0
+
+    def at(t):
+        move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
+
+    assert ept.motion_faults(fig, at, ept.Span(0.0, duration), moves=[move]) == []
