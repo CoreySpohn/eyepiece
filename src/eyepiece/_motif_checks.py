@@ -178,20 +178,32 @@ def _signature_faults(motifs, mode):
 
 
 def _sharing_faults(motifs):
-    present = set(motifs)
+    """Never-together pairs present in the set, by motif key or by role name.
+
+    A pair names motif keys or role names, so ``(local_zodi, reference)``
+    fires for a set holding the ``local_zodi`` motif and any motif whose role
+    is ``reference``.
+    """
+    providers = {}
+    for key, m in motifs.items():
+        providers.setdefault(key, set()).add(key)
+        providers.setdefault(m.role, set()).add(key)
     out = []
-    for pair in (*motifs.sharing, *motifs.exclusions):
-        a, b = pair
-        if a in present and b in present:
-            out.append(
-                MotifFault(
-                    "sharing",
-                    "fault",
-                    (a, b),
-                    f"{a} and {b} are declared never to appear together "
-                    "(they share a color or a map family), and both are in the set",
+    for a, b in (*motifs.sharing, *motifs.exclusions):
+        for ka in sorted(providers.get(a, ())):
+            for kb in sorted(providers.get(b, ())):
+                if ka == kb:
+                    continue
+                out.append(
+                    MotifFault(
+                        "sharing",
+                        "fault",
+                        (ka, kb),
+                        f"{a} and {b} are declared never to appear together "
+                        f"(they share a color or a map family); {ka} stands "
+                        f"for {a} and {kb} for {b}, and both are in the set",
+                    )
                 )
-            )
     return out
 
 

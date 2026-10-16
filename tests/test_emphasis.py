@@ -314,7 +314,7 @@ def test_step_list_current_bright_finished_dim_later_hidden(mode):
     assert all(t.get_visible() for t in texts)
     assert texts[0].get_fontsize() == 9
     ink = to_rgba(matplotlib.rcParams["text.color"])
-    dim = to_rgba(ep._style.neutral(0.55))
+    dim = to_rgba(ep._style.neutral(ep._style.dim_level()))
     res.update(1)
     head0, body0, head1, head2, body2 = texts
     assert to_rgba(head0.get_color()) == dim and to_rgba(body0.get_color()) == dim

@@ -88,6 +88,36 @@ fig = motif_sheet("dark", motifs)
 fig = motif_sheet("paper", motifs)
 ```
 
+## The cue
+
+The cue marks the subject of a step. It is a form (a band here; a ring or an underlay
+work the same way) in the text color, so it spends no hue and never recolors the
+motif under it. The planet keeps its own color and marker.
+
+```{code-cell} python
+def cue_example(mode):
+    """A band behind a planet, with the planet's own style untouched."""
+    hwostyle.use(mode)
+    fig, ax = plt.subplots(figsize=(4.6, 1.6), layout="constrained")
+    ax.add_patch(
+        mpatches.Rectangle((0.3, 0.2), 0.4, 0.6, zorder=0, **motifs["cue"].patch_kw())
+    )
+    ax.plot([0.05, 0.95], [0.5, 0.5], **motifs["truth"].line_kw())
+    ax.plot([0.5], [0.5], **motifs["planet"].marker_kw(size=12))
+    ax.text(0.5, 0.88, "cue (text color)", ha="center", va="center")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis("off")
+    return fig
+
+
+fig = cue_example("light")
+```
+
+```{code-cell} python
+fig = cue_example("dark")
+```
+
 ## Under color-vision deficiency
 
 Each row shows the hue motifs as a viewer with normal vision and with each
@@ -101,7 +131,10 @@ def vision_rows(mode, motifs):
     from hwostyle.colors import simulate_cvd
 
     hwostyle.use(mode)
-    hues = [m for m in motifs.values() if m.is_hue]
+    hues = []
+    for m in motifs.values():
+        if m.is_hue and all(m.color != seen.color for seen in hues):
+            hues.append(m)  # one swatch per distinct hue
     kinds = [None, "deuteranopia", "protanopia", "tritanopia"]
     fig, ax = plt.subplots(figsize=(0.45 * len(hues) + 1.6, 1.6), layout="constrained")
     for r, kind in enumerate(kinds):
@@ -110,7 +143,7 @@ def vision_rows(mode, motifs):
             ax.add_patch(mpatches.Rectangle((c, -r), 0.9, 0.8, color=color))
         ax.text(-0.2, -r + 0.4, kind or "normal", ha="right", va="center")
     for c, motif in enumerate(hues):
-        ax.text(c + 0.45, 1.0, motif.key, rotation=60, ha="left", va="bottom", fontsize=7)
+        ax.text(c + 0.45, 1.0, motif.noun, rotation=60, ha="left", va="bottom", fontsize=7)
     ax.set_xlim(-3.0, len(hues) + 1)
     ax.set_ylim(-3.2, 2.2)
     ax.axis("off")
@@ -135,6 +168,8 @@ paper).
 import eyepiece.testing as ept
 
 hwostyle.use("dark")
+# disk against model is the weakest dark pair (purple against pink under
+# protanomaly), so this clip shows what a finding looks like.
 clip = motifs.only("star", "planet", "disk", "model")
 print(ept.motif_margins(clip, mode="dark"))
 for fault in ept.motif_faults(clip, mode="dark"):

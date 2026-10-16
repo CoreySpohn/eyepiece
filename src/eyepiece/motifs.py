@@ -54,9 +54,9 @@ _FIELDS = (
     "on_image",
 )
 
-# Stand-ins when hwostyle lacks `motifs`: neutral rank -> blend level, the
-# never-together pairs, and the core rows. The newer hwostyle table is the
-# source of truth; this keeps the mechanism working against an older one.
+# Stand-ins when hwostyle lacks `motifs`: a row-for-row copy of its table.
+# The hwostyle table is the source of truth; a parity test keeps this copy
+# equal to it, and it exists only so an older hwostyle still works.
 _FALLBACK_RANKS = {
     "background": 0.0,
     "furniture": 0.2,
@@ -71,35 +71,154 @@ _FALLBACK_RANKS = {
 _FALLBACK_SHARING = (("disk", "prior"), ("local_zodi", "reference"))
 _FALLBACK_EXCLUSIONS = (("pupil", "probability"), ("pupil", "statistic"))
 _FALLBACK_ROWS = (
-    {"key": "star", "role": "star", "marker": "*", "linestyle": "none"},
-    {"key": "planet", "role": "planet", "marker": "o", "linestyle": "none"},
+    {
+        "key": "star",
+        "noun": "star",
+        "role": "star",
+        "marker": "*",
+        "linestyle": "none",
+        "on_image": ("+", "text"),
+    },
+    {
+        "key": "starlight",
+        "noun": "starlight",
+        "role": "star",
+        "marker": ".",
+        "linestyle": "none",
+        "hatch": "..",
+    },
+    {
+        "key": "planet",
+        "noun": "planet",
+        "role": "planet",
+        "marker": "o",
+        "linestyle": "none",
+        "on_image": ("o", "text"),
+    },
     {
         "key": "disk",
+        "noun": "exozodiacal dust",
         "role": "disk",
         "hatch": "///",
+        "linewidth": 0.8,
         "fill_alpha": 0.12,
         "fill_alpha_dark": 0.22,
     },
-    {"key": "ray", "role": "star", "arrowstyle": "-|>"},
-    {"key": "aperture", "role": "hardware", "marker": "|", "linewidth": 3.0},
-    {"key": "optics", "role": "hardware", "marker": "d", "fill_alpha": 0.15},
+    {
+        "key": "local_zodi",
+        "noun": "local zodiacal dust",
+        "role": "zodi",
+        "hatch": "..",
+        "linewidth": 0.8,
+        "fill_alpha": 0.10,
+        "fill_alpha_dark": 0.18,
+    },
+    {
+        "key": "aperture",
+        "noun": "aperture",
+        "role": "hardware",
+        "marker": "|",
+        "linewidth": 3.0,
+    },
+    {
+        "key": "optics",
+        "noun": "instrument optics",
+        "role": "hardware",
+        "marker": "d",
+        "fill_alpha": 0.15,
+    },
     {
         "key": "detector",
+        "noun": "detector",
         "role": "hardware",
         "marker": "s",
         "hatch": "xx",
         "fill_alpha": 0.10,
     },
-    {"key": "data", "role": "data", "marker": "|", "linestyle": "none"},
-    {"key": "model", "role": "model"},
-    {"key": "truth", "role": "truth", "linestyle": "--"},
-    {"key": "prior", "role": "prior"},
-    {"key": "posterior", "role": "posterior", "linewidth": 1.6},
-    {"key": "threshold", "role": "threshold", "linestyle": ":", "fontstyle": "italic"},
-    {"key": "alert", "role": "alert", "marker": "X", "linestyle": "none"},
-    {"key": "positive", "role": "positive", "marker": "o", "linestyle": "none"},
-    {"key": "negative", "role": "negative", "marker": "s", "linestyle": "none"},
-    {"key": "cue", "role": "text", "linewidth": 2.0, "fill_alpha": 0.25},
+    {
+        "key": "pixel",
+        "noun": "pixel",
+        "role": "planet",
+        "marker": "s",
+        "fill_alpha": 0.30,
+        "on_image": ("s", "text"),
+    },
+    {"key": "ray", "noun": "light ray", "role": "star", "arrowstyle": "-|>"},
+    {
+        "key": "integration",
+        "noun": "integration direction",
+        "role": "integration",
+        "linestyle": "--",
+        "arrowstyle": "]->",
+    },
+    {
+        "key": "data_flow",
+        "noun": "data flow",
+        "role": "data_flow",
+        "arrowstyle": "simple",
+        "linewidth": 0.8,
+        "fill_alpha": 0.18,
+    },
+    {
+        "key": "reference_plane",
+        "noun": "reference plane",
+        "role": "scenery",
+        "linestyle": "-.",
+        "fontstyle": "italic",
+        "linewidth": 0.8,
+        "fill_alpha": 0.10,
+        "fill_alpha_dark": 0.25,
+    },
+    {
+        "key": "speckle",
+        "noun": "speckle",
+        "role": "star",
+        "marker": "x",
+        "linestyle": "none",
+        "on_image": ("x", "text"),
+    },
+    {
+        "key": "data",
+        "noun": "measurement",
+        "role": "data",
+        "marker": "|",
+        "linestyle": "none",
+        "on_image": ("|", "text"),
+    },
+    {"key": "model", "noun": "model", "role": "model"},
+    {"key": "truth", "noun": "true value", "role": "truth", "linestyle": "--"},
+    {"key": "prior", "noun": "prior", "role": "prior"},
+    {"key": "posterior", "noun": "posterior", "role": "posterior", "linewidth": 1.6},
+    {
+        "key": "threshold",
+        "noun": "threshold",
+        "role": "threshold",
+        "linestyle": ":",
+        "fontstyle": "italic",
+    },
+    {
+        "key": "alert",
+        "noun": "alert",
+        "role": "alert",
+        "marker": "X",
+        "linestyle": "none",
+        "on_image": ("X", "text"),
+    },
+    {
+        "key": "positive",
+        "noun": "certified claim",
+        "role": "positive",
+        "marker": "o",
+        "linestyle": "none",
+    },
+    {
+        "key": "negative",
+        "noun": "rejected claim",
+        "role": "negative",
+        "marker": "s",
+        "linestyle": "none",
+    },
+    {"key": "cue", "noun": "cue", "role": "text", "linewidth": 2.0, "fill_alpha": 0.25},
 )
 
 
@@ -206,6 +325,13 @@ class Motif:
     fill_alpha_dark: float | None = None
     on_image: tuple | None = None
 
+    def __post_init__(self):
+        """Refuse a hex role: a motif stores a role name, never a color."""
+        if str(self.role).startswith("#"):
+            raise ValueError(
+                f"{self.key}: role {self.role!r} is a hex color; use a role name"
+            )
+
     @property
     def color(self):
         """The color in the active mode, resolved now."""
@@ -222,8 +348,18 @@ class Motif:
 
     @property
     def has_second_channel(self):
-        """Whether a marker, hatch, arrow or font style also identifies it."""
-        return any((self.marker, self.hatch, self.arrowstyle, self.fontstyle))
+        """Whether a channel beyond color and a plain line identifies it.
+
+        A marker, hatch, arrow style, font style or a line style other than
+        solid (or ``"none"``, which a marker implies) counts.
+        """
+        return bool(
+            self.marker
+            or self.hatch
+            or self.arrowstyle
+            or self.fontstyle
+            or self.linestyle not in ("-", "none")
+        )
 
     def signature(self):
         """The channels other than color that identify this motif.
@@ -345,17 +481,14 @@ class MotifSet(Mapping):
     def default(cls):
         """The default table from `hwostyle.motifs`.
 
-        Falls back to a smaller stand-in table when the installed hwostyle
+        Falls back to a row-for-row copy of the table when the installed hwostyle
         predates it. The table is the whole vocabulary, not one figure's: it
         holds hue pairs that never share a clip, so check `only(...)` the
         keys a clip uses.
         """
         table = _hwostyle_table()
         if table is None:
-            rows = [
-                Motif(**{"noun": r["key"].replace("_", " "), **r})
-                for r in _FALLBACK_ROWS
-            ]
+            rows = [Motif(**r) for r in _FALLBACK_ROWS]
             return cls(
                 rows,
                 sharing=_FALLBACK_SHARING,
@@ -402,12 +535,17 @@ class MotifSet(Mapping):
         return self._like([self[k] for k in keys])
 
     def derive(self, key, **changes):
-        """A set with `key` changed, or added as a derived motif.
+        """A set with the motif at `key` changed.
 
         Args:
-            key: Existing key to change in place.
+            key: Key of a motif in the set.
             **changes: Fields of the motif to change.
+
+        Raises:
+            KeyError: If `key` is not in the set. Use `add` with
+                ``motif.derive(key=...)`` to add a variant under a new key.
         """
+        self[key]
         return self._like(
             [m.derive(**changes) if m.key == key else m for m in self.values()]
         )
