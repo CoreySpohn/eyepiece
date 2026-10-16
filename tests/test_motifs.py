@@ -202,12 +202,12 @@ def test_a_seventh_hue_is_always_a_fault():
 
 
 def test_confusable_hues_are_a_fault_unless_a_second_channel_separates_them():
-    plain = ep.MotifSet([_m("m", "model"), _m("r", "reference")])
-    (fault,) = [f for f in ept.motif_faults(plain, mode="light") if f.kind == "cvd"]
+    plain = ep.MotifSet([_m("a", "alert"), _m("r", "reference")])
+    (fault,) = [f for f in ept.motif_faults(plain, mode="dark") if f.kind == "cvd"]
     assert fault.severity == "fault"
     assert 5.0 < fault.de < 10.0
-    marked = ep.MotifSet([_m("m", "model"), _m("r", "reference", marker="o")])
-    (soft,) = [f for f in ept.motif_faults(marked, mode="light") if f.kind == "cvd"]
+    marked = ep.MotifSet([_m("a", "alert"), _m("r", "reference", marker="o")])
+    (soft,) = [f for f in ept.motif_faults(marked, mode="dark") if f.kind == "cvd"]
     assert soft.severity == "warning"
     far = ep.MotifSet([_m("s", "star"), _m("p", "planet")])
     assert "cvd" not in [f.kind for f in ept.motif_faults(far, mode="dark")]
@@ -290,27 +290,28 @@ def _cvd(motifs, mode):
 
 
 def test_below_the_hard_floor_a_second_channel_does_not_soften_the_finding():
-    """Light reference against posterior is 4.3 apart: a fault even with a marker."""
-    marked = ep.MotifSet([_m("r", "reference", marker="o"), _m("p", "posterior")])
-    (fault,) = _cvd(marked, "light")
+    """Spectral star against planet is 4.5 apart: a fault even with a marker."""
+    hwostyle.use("dark", palette_family="spectral")
+    marked = ep.MotifSet([_m("s", "star", marker="o"), _m("p", "planet")])
+    (fault,) = _cvd(marked, None)
     assert fault.de < 5.0
     assert fault.severity == "fault"
-    # above the floor the same marker softens it (light model against reference)
-    above = ep.MotifSet([_m("m", "model", marker="o"), _m("r", "reference")])
-    (soft,) = _cvd(above, "light")
+    # above the floor the same marker softens it (dark alert against reference)
+    above = ep.MotifSet([_m("a", "alert", marker="o"), _m("r", "reference")])
+    (soft,) = _cvd(above, "dark")
     assert 5.0 < soft.de < 10.0
     assert soft.severity == "warning"
 
 
 def test_a_pair_that_is_close_only_under_tritanomaly_is_found():
-    """Light model against alert: 5.7 under tritanomaly, 13.9 or more otherwise."""
-    pair = ep.MotifSet([_m("m", "model"), _m("a", "alert")])
-    (fault,) = _cvd(pair, "light")
+    """Dark model against the verdict orange: 9.6 under tritanomaly, 40+ otherwise."""
+    pair = ep.MotifSet([_m("m", "model"), _m("n", "negative")])
+    (fault,) = _cvd(pair, "dark")
     assert fault.severity == "fault"
-    assert fault.de == pytest.approx(5.7, abs=0.2)
+    assert fault.de == pytest.approx(9.6, abs=0.2)
     # a pair far apart under tritanomaly too is left alone
     far = ep.MotifSet([_m("s", "star"), _m("p", "planet")])
-    assert _cvd(far, "light") == []
+    assert _cvd(far, "dark") == []
 
 
 def test_a_pair_between_ten_and_twenty_apart_only_under_tritanomaly_warns():
@@ -322,13 +323,13 @@ def test_a_pair_between_ten_and_twenty_apart_only_under_tritanomaly_warns():
 
 
 def test_a_declared_never_together_pair_is_skipped_by_the_distance_check():
-    motifs = ep.MotifSet([_m("m", "model"), _m("r", "reference")])
-    assert _cvd(motifs, "light")
+    motifs = ep.MotifSet([_m("a", "alert"), _m("r", "reference")])
+    assert _cvd(motifs, "dark")
     declared = ep.MotifSet(
-        [_m("m", "model"), _m("r", "reference")], sharing=[("m", "r")]
+        [_m("a", "alert"), _m("r", "reference")], sharing=[("a", "r")]
     )
-    assert _cvd(declared, "light") == []
-    assert "sharing" in [f.kind for f in ept.motif_faults(declared, mode="light")]
+    assert _cvd(declared, "dark") == []
+    assert "sharing" in [f.kind for f in ept.motif_faults(declared, mode="dark")]
 
 
 def test_dimming_blends_toward_the_background_and_never_away():
@@ -412,6 +413,10 @@ def test_the_stand_in_table_matches_the_hwostyle_table_row_for_row():
     assert motif_module._FALLBACK_RANKS == dict(table.NEUTRAL_RANKS)
     assert motif_module._FALLBACK_SHARING == tuple(table.SHARING_SETS)
     assert motif_module._FALLBACK_EXCLUSIONS == tuple(table.EXCLUSION_PAIRS)
+    assert motif_module._FALLBACK_ACCEPTED == tuple(
+        motif_module.AcceptedPair(r.a, r.b, r.modes, r.channels, r.de)
+        for r in table.ACCEPTED_PAIRS
+    )
 
 
 def test_step_list_finished_steps_use_the_mode_dim_level():
@@ -421,3 +426,64 @@ def test_step_list_finished_steps_use_the_mode_dim_level():
         faint = res.artists["text"][0].get_color()
         assert tuple(faint) == pytest.approx(ep._style.neutral(level), abs=1e-6)
         plt.close("all")
+
+
+def test_a_label_reads_the_ink_where_hwostyle_has_one_and_the_mark_elsewhere(
+    table_set,
+):
+    zodi = table_set["local_zodi"]
+    assert zodi.label_color == "zodi"
+    hwostyle.use("dark")
+    assert zodi.label_kw()["color"] == "#15903e"
+    assert zodi.color == "#117733"
+    assert zodi.resolve_label("light") == "#2e7d32"
+    assert zodi.resolve_label("paper") == zodi.resolve("paper")
+    assert table_set["star"].label_kw()["color"] == table_set["star"].color
+    assert table_set["reference_plane"].label_kw()["fontstyle"] == "italic"
+
+
+def test_a_label_falls_back_to_the_mark_without_a_table(monkeypatch):
+    monkeypatch.setattr(motif_module, "_hwostyle_table", lambda: None)
+    zodi = ep.MotifSet.default()["local_zodi"]
+    hwostyle.use("dark")
+    assert zodi.label_color == "zodi"
+    assert zodi.label in (zodi.color, "#15903e")
+
+
+def test_the_default_sets_local_zodi_is_never_with_alert_or_posterior(default_set):
+    assert default_set.never_together("local_zodi", "alert")
+    assert default_set.never_together("posterior", "local_zodi")
+    both = default_set.only("local_zodi", "alert")
+    assert "sharing" in [f.kind for f in ept.motif_faults(both, mode="dark")]
+
+
+def test_an_accepted_pair_passes_only_with_its_second_channels(table_set):
+    ref_line = _m("ref", "reference", linestyle="--")
+    alert_x = _m("alert", "alert", marker="X", linestyle="none")
+    accepted = table_set.only().add(ref_line, alert_x)
+    assert accepted.accepts("ref", "alert", "dark")
+    assert not accepted.accepts("ref", "alert", "light")
+    assert _cvd(accepted, "dark") == []
+    plain = table_set.only().add(_m("ref", "reference"), _m("alert", "alert"))
+    assert not plain.accepts("ref", "alert", "dark")
+    (fault,) = _cvd(plain, "dark")
+    assert fault.severity == "fault"
+    assert fault.de == pytest.approx(7.3, abs=0.2)
+    marker_only = table_set.only().add(
+        _m("ref", "reference"), _m("alert", "alert", marker="X")
+    )
+    (soft,) = _cvd(marker_only, "dark")
+    assert soft.severity == "warning"
+
+
+def test_the_verdict_residual_is_accepted_in_paper_with_a_marker_difference(
+    table_set,
+):
+    hwostyle.use("paper")
+    pair = table_set.only("negative").add(_m("ref", "reference", linestyle="--"))
+    assert pair.accepts("ref", "negative", "paper")
+    assert _cvd(pair, "paper") == []
+    same_marker = table_set.only().add(
+        _m("ref", "reference", marker="s"), table_set["negative"]
+    )
+    assert not same_marker.accepts("ref", "negative", "paper")
