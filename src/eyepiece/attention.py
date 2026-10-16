@@ -53,7 +53,7 @@ from matplotlib.transforms import Affine2D, Bbox, IdentityTransform
 from eyepiece import _style
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import _unsnapped
-from eyepiece._result import MosaicResult, PlotResult
+from eyepiece._result import MosaicResult, MotionContract, PlotResult
 from eyepiece.emphasis import _own_background, _resolve_background
 
 # Where on an artist's box `Anchor.from_artist` resolves, as box fractions.
@@ -446,6 +446,8 @@ def flight(
 ):
     """Carry a copy of a mark from one place to another, across panels.
 
+    Its ghost travels; the move leaves the source and destination geometry alone.
+
     The move shows that one quantity has become another: a dot read off a
     curve in one panel is carried onto the axis of the next, or a value is
     carried into the label that names it. The source stays where it is; a
@@ -602,8 +604,22 @@ def flight(
     update(1.0)
     axes = [a for a in (source.axes, destination.axes) if a is not None]
     axes = list(dict.fromkeys(axes)) or list(fig.axes)
+    overlaps = []
+    for item in dict.fromkeys((mark, destination.artist, crossfade)):
+        if item is None:
+            continue
+        # Equation terms are layout anchors; their glyphs are the drawn marks.
+        for part in getattr(item, "_pieces", (item,)):
+            if _root_figure(part) is fig and part.get_visible():
+                overlaps.append((ghost, part))
     return MosaicResult(
-        axes=np.array(axes, dtype=object), artists={key: ghost}, update=update
+        axes=np.array(axes, dtype=object),
+        artists={key: ghost},
+        update=update,
+        contract=MotionContract(
+            moves=(ghost,),
+            may_overlap=tuple(dict.fromkeys(overlaps)),
+        ),
     )
 
 
@@ -1522,6 +1538,8 @@ def _looks(target, background, seen, out):
 class Stage:
     """Groups of drawn artists set to absolute levels: shown, dimmed, or absent.
 
+    Its artists change opacity and color; their geometry stays in place.
+
     A staged explanation brings in one idea per beat and quiets what the
     viewer has already read. A `Stage` holds named groups of artists (an
     artist, an Axes, which stages everything it holds except its
@@ -1578,6 +1596,26 @@ class Stage:
             if not looks:
                 raise ValueError(f"stage group {name!r} holds no drawn artist")
             self._looks[name] = looks
+        # Axes decorations and virtual equation terms are not drawn leaves
+        # that the motion checker can trace. Their real glyphs are included.
+        rest = []
+        for looks in self._looks.values():
+            for look in looks:
+                artist = look.artist
+                owner = artist.axes if artist.axes is not None else artist.get_figure()
+                if owner is None or artist not in owner.get_children():
+                    continue
+                if (
+                    isinstance(artist, Spine)
+                    or getattr(artist, "_pieces", ())
+                    or not artist.get_visible()
+                    or np.all(np.asarray(artist.get_alpha()) == 0.0)
+                ):
+                    continue
+                if isinstance(artist, Text) and not artist.get_text().strip():
+                    continue
+                rest.append(artist)
+        self.contract = MotionContract(rest=tuple(rest))
 
     @property
     def names(self):
@@ -1933,6 +1971,8 @@ def collapse(
 ):
     """Gather the cells of a row into one bar whose length is their sum.
 
+    Its cell copy gathers and travels; the original cells stay in place.
+
     The move shows that a set adds up to one value: each cell, drawn as a
     segment where it sits, slides into a bar between `start` and `end` and
     takes a share of the bar's length in proportion to its weight, so the
@@ -1948,7 +1988,8 @@ def collapse(
     ``u = 1``, where the caller draws its own bar; with `to`, it is visible
     from ``u > 0`` until ``carry = 1``, where the caller draws the landed
     bar. The rest state, when it is made, is the move finished: nothing
-    drawn.
+    drawn. The copy fades in over the first fifth of the gather and fades
+    out over the last fifth of the gather, or of the carry when `to` is given.
 
     Args:
         ax: The axes the cells are drawn in.
@@ -2028,6 +2069,11 @@ def collapse(
         if target is not None:
             blend = min(1.0, max(0.0, e))  # a color cannot overshoot
             shade = cells + blend * (target - cells)
+        opacity = _ease(min(1.0, state["u"] / 0.2), "smoothstep")
+        finish = state["u"] if landing is None else state["carry"]
+        opacity *= _ease(min(1.0, (1.0 - finish) / 0.2), "smoothstep")
+        shade = shade.copy()
+        shade[:, 3] *= opacity
         return place, shade
 
     rc = matplotlib.rcParams
@@ -2055,7 +2101,10 @@ def collapse(
     axes = [a for a in (ax, start.axes, *(x.axes for x in landing or ())) if a]
     axes = list(dict.fromkeys(axes))
     return MosaicResult(
-        axes=np.array(axes, dtype=object), artists={"line": ghost}, update=update
+        axes=np.array(axes, dtype=object),
+        artists={"line": ghost},
+        update=update,
+        contract=MotionContract(moves=(ghost,)),
     )
 
 
@@ -2682,6 +2731,8 @@ def morph(
 ):
     """Carry one path into another, keeping its identity on the way.
 
+    Its ghost changes shape; both original paths stay in place.
+
     The move shows that one shape has become another: a circle that becomes a
     square, a curve that becomes a different curve, an outline that becomes
     a smaller one. A ghost is drawn in between, and each point of the first
@@ -2712,7 +2763,8 @@ def morph(
     autoscaling. It is visible only for ``0 < u < 1``: at ``u = 0`` and
     ``u = 1`` it draws nothing, so those frames are the frames without the
     move and the caller shows the first and the second path at their ends.
-    The rest state, when the move is made, is ``u = 1``.
+    The ghost fades in over the first fifth of the move and fades out over
+    the last fifth, continuously reaching its absent rest state at ``u = 1``.
 
     Args:
         a: The path to start from: a `Line2D` (a run is closed if its first
@@ -2788,11 +2840,26 @@ def morph(
     def update(u, level=1.0):
         u = _check_u(u)
         ghost._u = u
-        ghost._level = min(1.0, max(0.0, float(level)))
+        envelope = _ease(min(1.0, u / 0.2, (1.0 - u) / 0.2), "smoothstep")
+        ghost._level = min(1.0, max(0.0, float(level))) * envelope
         ghost.set_visible(0.0 < u < 1.0)
 
     update(1.0)
-    return PlotResult(ax=axes, artists={"fill": ghost}, update=update)
+    return PlotResult(
+        ax=axes,
+        artists={"fill": ghost},
+        update=update,
+        contract=MotionContract(
+            moves=(ghost,),
+            may_overlap=tuple(
+                (ghost, item)
+                for item in (a, b)
+                if isinstance(item, Artist)
+                and _root_figure(item) is _root_figure(ghost)
+                and item.get_visible()
+            ),
+        ),
+    )
 
 
 # Write
@@ -3018,6 +3085,9 @@ def write(
 ):
     """Write a text out by hand: trace its glyph outlines, then fill them.
 
+    Its ghost traces changing outlines and cannot be traced by the checker; the
+    real text is hidden until the end, so the contract declares nothing.
+
     The move is for a label or a short equation that should arrive the way
     a hand would put it on a board, so the eye follows the writing. A ghost
     traces the outline of each glyph in reading order, one glyph starting
@@ -3109,7 +3179,10 @@ def write(
 
     update(1.0)
     return PlotResult(
-        ax=text.axes, artists={"fill": ghost, "text": text}, update=update
+        ax=text.axes,
+        artists={"fill": ghost, "text": text},
+        update=update,
+        contract=MotionContract(),
     )
 
 
@@ -3541,6 +3614,8 @@ def readout(
 ):
     r"""A running value on screen that counts to a new value without jitter.
 
+    Its digits change in fixed slots; the prefix and tail stay in place.
+
     Use it for a number that changes while the viewer watches, such as
     ``t = 3.2 h`` or ``Pr = 0.41``. The format is fixed: a fixed-point `fmt`
     (so the number of decimals never changes), a `prefix`, a `suffix` and a
@@ -3676,7 +3751,11 @@ def readout(
         update(0.0, state.level)
 
     return _ReadoutResult(
-        ax=at.axes, artists={"text": parts}, update=update, set=set_value
+        ax=at.axes,
+        artists={"text": parts},
+        update=update,
+        set=set_value,
+        contract=MotionContract(rest=tuple(parts)),
     )
 
 
@@ -3841,6 +3920,8 @@ def words(
     text_kw=None,
 ):
     r"""Set one line of text as one text per word, to color or reveal alone.
+
+    Its words reveal in place; the line layout stays fixed.
 
     The line is laid out once, as a single string: each word sits where it
     would in one `Text` of the whole line, with that text's spacing, and its
@@ -4008,7 +4089,12 @@ def words(
         reveal(u, by, level, ease)
 
     return _WordsResult(
-        ax=at.axes, artists={"text": made}, update=update, reveal=reveal
+        ax=at.axes,
+        artists={"text": made},
+        update=update,
+        reveal=reveal,
+        # reveal() can choose letters at call time, changing the visible box.
+        contract=MotionContract(moves=tuple(made)),
     )
 
 

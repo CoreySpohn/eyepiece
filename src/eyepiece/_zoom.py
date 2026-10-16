@@ -26,7 +26,7 @@ from matplotlib.transforms import Bbox, IdentityTransform
 
 from eyepiece import _style
 from eyepiece._motion import _apply_ease as _ease
-from eyepiece._result import PlotResult
+from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import (
     Anchor,
     _as_anchor,
@@ -364,6 +364,8 @@ def follow_zoom(
 ):
     """Hang a magnified inset on a panel that follows a moving point.
 
+    Its box and connectors follow the target; the parent artists stay untouched.
+
     The inset shows the panel's own artists (lines, patches, collections
     and images; they are drawn again, not re-plotted, so a moving mark and
     changing data show in it with nothing to refresh) through a window
@@ -473,11 +475,16 @@ def follow_zoom(
     inset.patch.set_facecolor(_resolve_background(ax))
     # A halo in the panel's own background under every line, so the frame
     # reads on a dark image and on a light one alike.
-    halo = _resolve_background(ax)
+    halo = matplotlib.colors.to_rgba(_resolve_background(ax))
 
-    def haloed(artist, width):
+    def haloed(artist, width, alpha=1.0):
         artist.set_path_effects(
-            [pe.Stroke(linewidth=width + 2.4, foreground=halo), pe.Normal()]
+            [
+                pe.Stroke(
+                    linewidth=width + 2.4, foreground=(*halo[:3], halo[3] * alpha)
+                ),
+                pe.Normal(),
+            ]
         )
 
     for spine in inset.spines.values():
@@ -545,6 +552,8 @@ def follow_zoom(
         inset.patch.set_alpha(scaled(bases["face"]))
         for spine, base in zip(inset.spines.values(), bases["spines"], strict=True):
             spine.set_alpha(scaled(base))
+        for part in (box, *links, *inset.spines.values()):
+            haloed(part, part.get_linewidth(), a)
 
     update(1.0)
     return PlotResult(
@@ -552,4 +561,11 @@ def follow_zoom(
         artists={"ellipse": box, "lines": links},
         update=update,
         insets=(inset,),
+        contract=MotionContract(
+            moves=(box, *links),
+            # The paired connectors span the same gap between the two boxes.
+            may_overlap=(tuple(links),),
+            rest=() if loc == "auto" else (inset.patch,),
+            rectilinear=(box, inset.patch),
+        ),
     )
