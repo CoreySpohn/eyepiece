@@ -271,12 +271,12 @@ qt = center_angle + np.angle(np.exp(1j * (np.arctan2(quads[..., 1], quads[..., 0
 
 def unroll(t):
     """Rings opened into columns at x = r, angle up the side, at progress t."""
-    if t >= 1.0:
-        return np.stack([qr, qt * 13.0 / np.pi], axis=-1)
-    a = t / (1.0 - t)
-    phi = qt / (1.0 + a)
-    xs = qr * ((1.0 + a) * np.cos(phi) - a)
-    ys = qr * (1.0 + a) * np.sin(phi) * ((1.0 - t) + t * 13.0 / (np.pi * np.maximum(qr, 1e-9)))
+    t = np.clip(t, 0.0, 1.0)
+    remaining = 1.0 - t
+    phi = qt * remaining
+    # sinc takes its limiting value at zero, including at the origin and rest.
+    xs = qr * (1.0 - 0.5 * qt**2 * remaining * np.sinc(phi / (2.0 * np.pi))**2)
+    ys = qt * np.sinc(phi / np.pi) * (qr * remaining + t * 13.0 / np.pi)
     return np.stack([xs, ys], axis=-1)
 
 
@@ -529,7 +529,7 @@ touches data, in every panel it passes through.
 
 ```{code-cell} python
 fig, (star, speed) = plt.subplots(
-    1, 2, figsize=(8.0, 2.8), gridspec_kw={"wspace": 0.35}
+    1, 2, figsize=(8.0, 2.8), gridspec_kw={"wspace": 0.35}, layout="constrained"
 )
 star.set(xlim=(-1.0, 1.0), ylim=(-1.0, 1.0), xlabel="x", ylabel="y")
 speed.set(xlim=(0.0, 1.0), ylim=(-1.0, 1.0), xlabel="phase", ylabel="velocity")
@@ -625,8 +625,9 @@ plt.show()
 
 The ring is drawn counterclockwise and the box clockwise, and the frames show
 the ring growing into the box without a twist. The ghost is hidden at
-``u = 0`` and ``u = 1``, so in a clip the caller shows the ring before the
-move and the box after it.
+``u = 0`` and ``u = 1``, fading in over the first fifth of the move and out
+over the last fifth. In a clip the caller shows the ring before the move
+and the box after it.
 
 ## Warp: the plane moves
 
