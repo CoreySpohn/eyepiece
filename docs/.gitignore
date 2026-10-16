@@ -5,3 +5,4 @@ narration/**/*.wav
 narration/**/*.mp4
 narration/**/*.vtt
 _static/*.mp4
+narration/**/*.srt

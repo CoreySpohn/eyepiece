@@ -29,5 +29,6 @@ SCRIPT = nr.Script(
             "The finished figure is one picture, and each part of it was "
             "introduced in turn.",
         ),
-    )
+    ),
+    speed=0.85,
 )

@@ -1,59 +1,59 @@
 {
- "key": "6333fbf03686a87a",
- "duration_s": 4.5,
+ "key": "bf6f60878f469481",
+ "duration_s": 5.15,
  "words": [
   [
    "The",
-   0.225,
-   0.325
+   0.275,
+   0.375
   ],
   [
    "marker",
-   0.325,
-   0.925
+   0.375,
+   1.025
   ],
   [
    "picks",
-   0.925,
-   1.25
+   1.025,
+   1.35
   ],
   [
    "out",
-   1.25,
-   1.4875
+   1.35,
+   1.6375
   ],
   [
    "one",
-   1.4875,
-   1.75
+   1.6375,
+   1.9625
   ],
   [
    "separation",
-   1.75,
-   2.7375
+   1.9625,
+   3.1125
   ],
   [
    "along",
-   2.7375,
-   3.125
+   3.1125,
+   3.55
   ],
   [
    "that",
-   3.125,
-   3.375
+   3.55,
+   3.8375
   ],
   [
    "profile.",
-   3.375,
-   4.225
+   3.8375,
+   4.85
   ]
  ],
  "text": "The marker picks out one separation along that profile.",
- "audio": "6333fbf03686a87a.opus",
+ "audio": "bf6f60878f469481.opus",
  "rate": 24000,
- "samples": 108000,
+ "samples": 123600,
  "voice": "bm_george",
- "speed": 1.0,
+ "speed": 0.85,
  "lang": "b",
  "engine": "kokoro",
  "engine_version": "0.9.4",
