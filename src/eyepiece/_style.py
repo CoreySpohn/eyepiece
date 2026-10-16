@@ -40,7 +40,7 @@ _ROLE_FALLBACKS = {
     # stand-in is its light-mode hex.
     "positive": "#1565C0",
     "negative": "#E65100",
-    "posterior": "#8E5923",
+    "posterior": "#662506",
     "truth": "#757575",
 }
 
