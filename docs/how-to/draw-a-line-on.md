@@ -34,7 +34,9 @@ reveal.update(0.6)
 plt.show()
 ```
 
-a two-point line on a log axis draws straight in log space, so a line that stands for a linear rule needs dense samples or a linear axis.
+The reveal follows the path as drawn. A two-point line on a log axis draws
+straight in log space, so a line that stands for a linear rule needs dense
+samples or a linear axis.
 
 `update(0.0)` hides the line and `update(1.0)` restores its full path, markers,
 and dashes.

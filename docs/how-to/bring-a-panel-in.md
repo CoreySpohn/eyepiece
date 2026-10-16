@@ -51,7 +51,10 @@ plt.show()
 Freeze the layout after setting limits, ticks, labels, and titles, then apply
 Stage before the build in every frame.
 `build.update(1.0)` restores the axes as made, and omitting `title=True` keeps
-titles visible throughout.
+titles visible throughout. When the panel group of a Stage holds the axes, it
+also dims the titles, and the build restores their opacity once it finishes, so
+dim the panel only while the build is still running or keep titles out of the
+Stage group.
 Keep artists recolored on every frame outside Stage groups, since Stage owns
 their colors, and see {doc}`the staging catalog <../gallery/motion-staging>`
 and {doc}`the clock catalog <../gallery/motion-clock>` for more examples.

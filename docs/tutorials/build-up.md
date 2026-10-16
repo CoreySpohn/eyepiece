@@ -125,9 +125,9 @@ HTML(anim.jshtml(dpi=80))
 Readability checks text size, overlap, clipping, and text on marks, while
 motion checks every frame for jumps, dead moves, drift, torn groups,
 collisions, departures, spikes, and invalid shape changes under the supplied
-declarations. Plan checks report timing faults and unread knobs, meaning
-checks compare declared artist meanings when supplied, and speech checks
-measure narration rate when narration is present.
+declarations. The same call also reports timing faults and unread knobs from the
+plan, compares declared artist meanings when you supply them, and measures
+narration rate when the plan has a narration.
 
 See the {doc}`checks catalog <../gallery/motion-checks>` for declarations and
 reports, and the {doc}`clock catalog <../gallery/motion-clock>` for other spans.
