@@ -151,10 +151,12 @@ the API reference, and the groups are:
   `(label, glyph)` list over the `GLYPHS` vocabulary, in its own axes or in
   the caller's data coordinates, `schematic`, a preset wrapper over it, and
   `rail_panels` for a strip of axes hung under the planes of a drawn rail.
-- **Motion.** `Timeline`, which declares an animation's beats in seconds and
-  resolves them for any frame rate into a `Plan` of per-frame knob values,
-  with `ease` (including `back_out` and `running_start`, which overshoot and
-  pull back), `stagger`, and `frame_count`.
+- **Motion.** `Timeline`, which declares an animation's named spans (holds,
+  entries, moves, captions, pulses, the lines of a narration) in seconds and
+  resolves them for any frame rate into a `Plan` of per-frame knob values and
+  `Event`s, with `Time` handles that add exactly, `Span` and `Fault` records,
+  `ease` (including `back_out` and `running_start`, which overshoot and pull
+  back), `stagger`, and `frame_count`.
 - **Cameras and morphs.** `zoom_path`, the optimal pan-and-zoom path between
   two views, `view_limits` for a data camera and `overview_box` to mark its
   view on an overview panel; `PageCamera`, which renders any view of a
@@ -188,7 +190,9 @@ the API reference, and the groups are:
   each caption holds for its number of words.
   The submodule `eyepiece.testing` checks a figure, or a clip sampled at
   chosen times, for overlapping text, text clipped by the frame, text too
-  small for its venue, and text on marks of its own color; `speech_rate`
+  small for its venue, and text on marks of its own color; `motion_faults`
+  samples every frame of a move and reports jumps, dead moves, drift, torn
+  groups, overlaps, and artists that leave the frame; `speech_rate`
   reports the words per minute of each narrated line.
 - **Layout.** `extent_lod`, `extent_lod_from_pixels`, `extent_arcsec`,
   `extent_au`, the matching `label_lod`, `label_arcsec`, and `label_au`, plus

@@ -1,16 +1,11 @@
 """Presentation time and camera geometry for animations, in NumPy alone.
 
-An explanatory animation is a sequence of beats: holds, in which the viewer
-reads while nothing moves, and ramps, in which something moves while no new
-text arrives. `Timeline` declares those beats in seconds and the presentation
-knobs they set or move (a title key, an angle, a zoom width); `at_fps`
-resolves them for one frame rate into a `Plan`, whose frames a caller's draw
-function reads. One timeline serves several venues, since frame boundaries
-are computed from cumulative time for each rate.
-
-A knob is a presentation quantity, never a physical sample index: a ramp
-interpolates how a figure is shown, not simulated time, so nothing here
-touches a prepared `Sequence`, whose time is sampled and never interpolated.
+The clock itself (`Timeline`, `Plan`) lives in `eyepiece._clock`; this module
+holds what it is built from: the frame rule (`frame_count`), the easing
+curves, and `Tempo`, the one place a staged clip's pace is set. A knob is a
+presentation quantity, never a physical sample index: a move interpolates how
+a figure is shown, not simulated time, so nothing here touches a prepared
+`Sequence`, whose time is sampled and never interpolated.
 
 The other pieces are the geometry a moving figure needs: easing curves,
 per-item stagger, the van Wijk and Nuij optimal pan-and-zoom path between two
@@ -25,7 +20,7 @@ helpers never load matplotlib.
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 
 import numpy as np
@@ -40,7 +35,6 @@ _EASINGS = (
     "running_start",
 )
 _STRENGTH_KINDS = ("back_out", "running_start")
-_RESERVED = frozenset({"beat", "u", "index", "t"})
 _SPACES = ("linear", "log")
 _SQRT2 = math.sqrt(2.0)
 
@@ -195,8 +189,7 @@ def stagger(u, rank, *, span=0.35):
     Args:
         u: The beat's progress in [0, 1].
         rank: Array of item ranks in [0, 1], for example a normalized radius.
-            With a `Plan`, pass ``plan.progress(k, beat, eased=False)`` as `u`,
-            not a frame's ``u`` field, which is already eased.
+            With a `Plan`, pass ``plan.progress(k, span, eased=False)`` as `u`.
         span: Fraction of the beat each item takes, in (0, 1].
 
     Returns:
@@ -274,7 +267,7 @@ class Tempo:
       ``factor * settle_s`` before anything else moves (`rest_s`).
 
     It is the one reading rule of the package: `Timeline.read` holds for
-    `read_s` too.
+    `read_s` too, and a caption leaves once read for `read_s`.
 
     At the defaults a caption holds about 1 s plus 0.4 s per word and a
     settle lasts about 0.8 s; ``factor=1`` is a brisker pace, 0.75 s plus
@@ -330,33 +323,6 @@ class Tempo:
 # Timeline
 
 
-@dataclass(frozen=True)
-class Beat:
-    """One resolved beat of a `Plan`.
-
-    Attributes:
-        name: The beat's name, unique within its timeline.
-        kind: ``"hold"`` or ``"ramp"``.
-        start: Index of the beat's first frame.
-        stop: Index one past its last frame.
-        seconds: Its declared duration.
-        ease: The easing of a ramp (a kind name or a callable); ``"linear"``
-            for a hold.
-    """
-
-    name: str
-    kind: str
-    start: int
-    stop: int
-    seconds: float
-    ease: object = field(default="linear", compare=False)
-
-    @property
-    def n(self):
-        """Number of frames in the beat."""
-        return self.stop - self.start
-
-
 def _apply_ease(r, how="smoothstep"):
     """Eased progress for a kind name or a callable; the input is clipped first."""
     if callable(how):
@@ -402,319 +368,6 @@ def _is_number(value):
     return isinstance(value, (int, float, np.integer, np.floating)) and not isinstance(
         value, bool
     )
-
-
-class Timeline:
-    """Beats of an explanatory animation, declared in seconds.
-
-    Holds and ramps are appended in order. A hold may change knobs when it
-    starts (a new title, a new cue); a ramp moves numeric knobs to targets
-    and changes nothing else, so text never arrives during motion. A
-    timeline cannot open with a ramp, whose start state would never be
-    shown. Resolve it for a frame rate with `at_fps`.
-
-    Example::
-
-        tl = Timeline(knobs={"text": "intro", "theta": 0.0})
-        tl.hold(2.0, name="intro")
-        tl.hold(1.0, name="cue", set={"text": "turn"})
-        tl.ramp(3.0, name="turn", to={"theta": 1.0})
-        tl.hold(2.0, name="end")
-        plan = tl.at_fps(30)
-        for frame in plan.frames:
-            draw(frame["text"], frame["theta"])
-
-    Args:
-        knobs: The knob names and their initial values. Every name a later
-            `set` or `to` uses must be declared here; ``beat``, ``u``,
-            ``index`` and ``t`` are reserved for the frame fields.
-
-    Raises:
-        ValueError: If a knob name is reserved.
-    """
-
-    def __init__(self, knobs=None):
-        self._initial = dict(knobs or {})
-        for name in self._initial:
-            if name in _RESERVED:
-                raise ValueError(
-                    f"knob name {name!r} is reserved for frame fields "
-                    f"{sorted(_RESERVED)}"
-                )
-        self._state = dict(self._initial)
-        self._steps = []
-
-    def _check_known(self, names):
-        for name in names:
-            if name not in self._initial:
-                raise ValueError(
-                    f"knob {name!r} was not declared; declared knobs are "
-                    f"{sorted(self._initial)}"
-                )
-
-    def _add(self, kind, seconds, name, payload, how="linear"):
-        seconds = float(seconds)
-        if not math.isfinite(seconds) or seconds <= 0.0:
-            raise ValueError(f"beat seconds must be finite and positive, got {seconds}")
-        if name is None:
-            name = f"{kind}{len(self._steps)}"
-        if any(step[0] == name for step in self._steps):
-            raise ValueError(f"a beat named {name!r} already exists")
-        self._steps.append((name, kind, seconds, payload, how))
-        return self
-
-    def hold(self, seconds, *, name=None, set=None):
-        """Append a beat in which nothing moves.
-
-        Args:
-            seconds: Duration of the hold.
-            name: The beat's name; None generates one.
-            set: Knob values that change when the hold starts.
-
-        Returns:
-            This timeline, for chaining.
-        """
-        changes = dict(set or {})
-        self._check_known(changes)
-        self._add("hold", seconds, name, changes)
-        self._state.update(changes)
-        return self
-
-    def ramp(self, seconds, *, name=None, to=None, ease="smoothstep", space="linear"):
-        """Append a beat that moves numeric knobs to targets.
-
-        Frame ``i`` of an ``n``-frame ramp reaches progress ``(i + 1) / n``,
-        so its first frame already differs from the hold before it and its
-        last frame shows the targets exactly.
-
-        Args:
-            seconds: Duration of the ramp.
-            name: The beat's name; None generates one.
-            to: Target values for numeric knobs.
-            ease: An easing kind for `eyepiece.ease`, or a callable mapping
-                progress in [0, 1] to eased progress. ``"back_out"`` and
-                ``"running_start"`` carry a knob past its ends and back, and
-                the frame's ``u`` leaves [0, 1] with it; bind a strength
-                with `functools.partial`.
-            space: ``"linear"`` interpolates values; ``"log"`` interpolates
-                their logarithms, for widths and other scales, and needs
-                both ends positive.
-
-        Returns:
-            This timeline, for chaining.
-
-        Raises:
-            ValueError: If the timeline has no beat yet, a knob is
-                undeclared or not numeric, a log-space end is not positive,
-                or `ease` or `space` is unknown.
-        """
-        if not self._steps:
-            raise ValueError("a timeline must open with a hold, not a ramp")
-        targets = dict(to or {})
-        self._check_known(targets)
-        if space not in _SPACES:
-            raise ValueError(f"unknown space {space!r}; use one of {_SPACES}")
-        if not callable(ease) and ease not in _EASINGS:
-            raise ValueError(f"unknown easing {ease!r}; use one of {_EASINGS}")
-        for key, target in targets.items():
-            start = self._state[key]
-            if not (_is_number(start) and _is_number(target)):
-                raise ValueError(f"knob {key!r} must be numeric to ramp")
-            if space == "log" and (start <= 0 or target <= 0):
-                raise ValueError(
-                    f"a log-space ramp of {key!r} needs positive ends, "
-                    f"got {start} and {target}"
-                )
-        self._add("ramp", seconds, name, (targets, space), how=ease)
-        self._state.update(targets)
-        return self
-
-    def read(self, text, *, name=None, tempo=None, set=None):
-        """Append a hold long enough to read `text`.
-
-        The hold is `Tempo.read_s`: about 1 s plus 0.4 s per word at the
-        default tempo, a symbol in math counting as two words.
-
-        Args:
-            text: The words on screen, a string or caption pieces.
-            name: The beat's name; None generates one.
-            tempo: The `Tempo` that sets the hold; None uses the default.
-            set: Knob values that change when the hold starts.
-
-        Returns:
-            This timeline, for chaining.
-        """
-        tempo = Tempo() if tempo is None else tempo
-        return self.hold(tempo.read_s(text), name=name, set=set)
-
-    @property
-    def seconds(self):
-        """Total declared duration."""
-        return math.fsum(step[2] for step in self._steps)
-
-    def at_fps(self, fps):
-        """Resolve the beats for one frame rate.
-
-        Beat boundaries are ``frame_count`` of the cumulative time at each
-        boundary, so the total frame count is ``frame_count(seconds, fps)``
-        and does not drift with the number of beats.
-
-        Args:
-            fps: Frame rate in frames per second.
-
-        Returns:
-            A `Plan`.
-
-        Raises:
-            ValueError: If the timeline is empty, or a beat rounds to no
-                frames at this rate.
-        """
-        if not self._steps:
-            raise ValueError("the timeline has no beats")
-        # Each boundary from the exactly summed prefix of durations, so the
-        # total is frame_count(self.seconds, fps) whatever the beat count.
-        bounds = [0]
-        for i in range(len(self._steps)):
-            elapsed = math.fsum(step[2] for step in self._steps[: i + 1])
-            bounds.append(frame_count(elapsed, fps))
-        beats = []
-        frames = []
-        state = dict(self._initial)
-        for (name, kind, seconds, payload, how), start, stop in zip(
-            self._steps, bounds[:-1], bounds[1:], strict=True
-        ):
-            n = stop - start
-            if n <= 0:
-                raise ValueError(
-                    f"beat {name!r} ({seconds} s) rounds to no frames at {fps} fps"
-                )
-            beats.append(Beat(name, kind, start, stop, seconds, how))
-            if kind == "hold":
-                state.update(payload)
-                for j in range(n):
-                    frames.append(
-                        {**state, "beat": name, "u": (j + 1) / n,
-                         "index": start + j, "t": (start + j) / fps}
-                    )  # fmt: skip
-                continue
-            targets, space = payload
-            begin = {key: state[key] for key in targets}
-            for j in range(n):
-                e = _apply_ease((j + 1) / n, how)
-                values = {
-                    key: (
-                        targets[key]
-                        if j == n - 1
-                        else _interp(begin[key], targets[key], e, space)
-                    )
-                    for key in targets
-                }
-                frames.append(
-                    {**state, **values, "beat": name, "u": e,
-                     "index": start + j, "t": (start + j) / fps}
-                )  # fmt: skip
-            state.update(targets)
-        return Plan(float(fps), tuple(beats), tuple(frames))
-
-
-class Plan:
-    """A timeline resolved for one frame rate.
-
-    Attributes:
-        fps: The frame rate.
-        beats: The `Beat` records, in order.
-        frames: One dict per frame, each a fresh copy: the knob values plus
-            ``beat`` (the beat's name), ``u`` (the beat's eased progress),
-            ``index`` (the frame index) and ``t`` (seconds from the start).
-    """
-
-    def __init__(self, fps, beats, frames):
-        self.fps = fps
-        self.beats = beats
-        self.frames = frames
-        self._by_name = {b.name: b for b in beats}
-
-    @property
-    def n_frames(self):
-        """Total frame count."""
-        return len(self.frames)
-
-    @property
-    def seconds(self):
-        """Running time at this frame rate."""
-        return self.n_frames / self.fps
-
-    def _beat(self, name):
-        try:
-            return self._by_name[name]
-        except KeyError:
-            raise KeyError(f"no beat named {name!r}") from None
-
-    def progress(self, k, beat, *, eased=True):
-        """Progress of `beat` at frame `k`: 0 before it, 1 after it.
-
-        Args:
-            k: Frame index.
-            beat: The beat's name.
-            eased: Apply the beat's easing (a hold's progress is linear).
-
-        Returns:
-            A float in [0, 1]; with ``"back_out"`` or ``"running_start"``
-            an eased value leaves that range between the ends.
-        """
-        b = self._beat(beat)
-        if k < b.start:
-            return 0.0
-        if k >= b.stop:
-            return 1.0
-        r = (k - b.start + 1) / b.n
-        return _apply_ease(r, b.ease) if eased else r
-
-    def beat_at(self, k):
-        """The `Beat` that frame `k` belongs to.
-
-        Raises:
-            IndexError: If `k` is outside the plan.
-        """
-        for b in self.beats:
-            if b.start <= k < b.stop:
-                return b
-        raise IndexError(f"frame {k} is outside the plan's {self.n_frames} frames")
-
-    def start(self, beat):
-        """Index of the beat's first frame."""
-        return self._beat(beat).start
-
-    def last(self, beat):
-        """Index of the beat's last frame, its settled state."""
-        return self._beat(beat).stop - 1
-
-    def mid(self, beat):
-        """Index of the frame at the beat's halfway progress (rounded down)."""
-        b = self._beat(beat)
-        return b.start + (b.n - 1) // 2
-
-    def find(self, where, *, last=False):
-        """Index of the first (or last) frame whose fields match `where`.
-
-        Args:
-            where: A dict of field names and values, all of which must match.
-            last: Return the last matching frame instead of the first.
-
-        Raises:
-            ValueError: If no frame matches.
-        """
-        indices = range(self.n_frames - 1, -1, -1) if last else range(self.n_frames)
-        for k in indices:
-            frame = self.frames[k]
-            if all(frame.get(key) == value for key, value in where.items()):
-                return k
-        raise ValueError(f"no frame matches {where!r}")
-
-    def nearest(self, key, value):
-        """Index of the frame whose numeric field `key` is closest to `value`."""
-        values = np.array([float(f[key]) for f in self.frames])
-        return int(np.argmin(np.abs(values - float(value))))
 
 
 # ---------------------------------------------------------------------------

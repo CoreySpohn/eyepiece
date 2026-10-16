@@ -4,13 +4,13 @@
 the word times and the audio are kept beside the clip, and every later render
 reads them without a speech model. A cue mark in the text fires an attention
 move on the word that names its subject, and the length of each line sets the
-length of the beat that shows it.
+length of the part of the clip that shows it.
 
 The code on this page is shown rather than executed.
 
 ## The script
 
-A `Script` is a tuple of `Line`. A line is one beat of the clip, spoken as a
+A `Script` is a tuple of `Line`. A line is one part of the clip, spoken as a
 unit. A mark of the form `{kind:target}` sits in front of the word it names
 and is removed before the text is spoken.
 
@@ -30,14 +30,13 @@ SCRIPT = nr.Script(
 )
 ```
 
-The kind is the move the clip runs (`indicate`, `circumscribe`, or any name
-the clip understands) and the target names what it acts on. A line can start an
-equation move with ``{transform:bayes}``: the cue's time starts the ramp that
-drives ``ep.transform(a, b)`` and the clip names its own target (`bayes` here),
-as it does for any kind. `Cue` and `Narration` take it unchanged, since a kind
-is free text. Give that line a `min_s` at least as long as the ramp, as for a
-pulse, so the line does not end in the middle of the move, and name a term of
-either equation as an `indicate` target (``{indicate:num}``) the same way. Write the
+The kind is the move the clip runs (`show`, `indicate`, `circumscribe`,
+`move`, or any name the clip understands) and the target names what it acts
+on. A line can start an equation move with ``{move:bayes}``: the cue's time
+starts the move that drives ``ep.transform(a, b)`` and the clip names its own
+target (`bayes` here), as it does for any kind. `Cue` and `Narration` take it
+unchanged, since a kind is free text. Name a term of either equation as an
+`indicate` target (``{indicate:num}``) the same way. Write the
 numbers in a line as they appear on the figure, and read them from the
 figure's source rather than typing them twice. The voice defaults to Kokoro
 `bm_george`, a British English voice, with language code `"b"`.
@@ -74,29 +73,64 @@ words outside its dictionary.
 ## Laying it out
 
 `Narration.load` reads the cache and places the lines one after another. A
-beat lasts as long as its speech plus the line's padding, or `min_s` for the
-motion that must finish inside it, whichever is longer. `min_s` replaces a
-hold typed by hand.
+`Narration` is placement only: it knows where each line and each word falls on
+the clip's clock and nothing about what the clip does with them.
+`Narration.place(key, start_s, end_s=None)` lays one line on the clock, purely;
+a cue is the start of its word, with no lead.
+
+The clip places its moves on the words through `eyepiece.Timeline`. Open each
+line with `line(key)`, in script order, and write the verbs of that line. A
+verb with no `at=` starts on its mark: `enter`, `text` and `caption` on
+`show:<name>` a tenth of a second ahead of the word, `pulse` on
+`indicate:<name>` centered on the word, `ring` on `circumscribe:<name>`
+starting on the word, and `move` on `move:<name>`. A mark in the current or an
+earlier line can be named with `cue="kind:target"`, and a mark in a later line
+cannot be waited on. A line lasts until its speech and padding end or until
+its last moving span ends plus 0.6 s, whichever is later, and the next line
+starts there; the pulses and rings of a line never hold it open. This replaces
+the hand-typed holds, the per-line minimum lengths and the second layout pass.
+A span whose mark falls while the cursor is still busy starts late; up to
+`max_late_s` (0.5 s by default, a `Timeline` argument) that is noted, and
+beyond it the timeline raises, naming the span, its cue word and the seconds.
+Line keys and section names have a namespace of their own, so a line and a
+span may share a name. A mid-clip still is the last frame of a span with
+`stills={"x.png": (span, "last")}`, not `span.end`.
+
+`Narration(min_s=)` and `Narration.load(..., min_s=)` still work for one
+minor release and warn with a `DeprecationWarning`: the value is a duration
+from the start of each line, and `ends=` (an absolute end time) or a
+`Timeline` replaces it.
 
 ```python
-narration = nr.Narration.load(
-    SCRIPT, "narration/clip", lead_s=0.15, min_s={"open": 3.0}
-)
-plan = narration.timeline({"title": "none"}).at_fps(30)
+import eyepiece as ep
+
+narration = nr.Narration.load(SCRIPT, "narration/clip")
+tl = ep.Timeline(narration=narration, tempo=ep.Tempo())
+tl.line("open")
+tl.pulse("star")
+tl.line("leak")
+tl.pulse("speckle")
+tl.ring("planet")
+plan = tl.at_fps(30)
 
 for k, frame in enumerate(plan.frames):
     ...  # draw the frame as for any Plan
 
-k = narration.cue_frame(plan, "leak", "indicate", "speckle")
+cue = plan.events(what="cue")[0]  # name, t_s and the frame that shows it
+solved = tl.narration  # the narration with each line's solved start and end
 ```
 
-`Narration.timeline` returns an `eyepiece.Timeline` with one hold per line,
-so the clip keeps its knobs and its `Plan`; `cue_frame` is the frame of that
-plan on which a cue fires, kept inside its own beat. `cues` lists every cue,
-and `check(kinds=..., targets=...)` raises on a mark the clip does not
-handle, and with `used=True` on one it never asked for. Narration measures
-the pace of the speech, so it takes the place of `Tempo` for the lines it
-covers. A transition is eased and overlapped with the speech, for example with
+`Timeline.narration` rebuilds the `Narration` with those starts and ends, and
+that object is the one `audio_track`, `mux` and the captions take. A line must
+be opened for every line of the script, and a mark that no verb fires is a
+fault, so a retyped line cannot leave a cue silent. The same function with
+`narration=None` builds the silent clip: `section(name)` replaces `line(key)`,
+captions leave once read, and a pulse or ring placed only by a cue is skipped
+and recorded in `plan.faults` as information. `cues` lists every cue, and
+`check(kinds=..., targets=...)` raises on a mark the clip does not handle, and
+with `used=True` on one it never asked for. Narration measures the pace of the
+speech, so it takes the place of `Tempo` for the lines it covers. A transition
+is eased and overlapped with the speech, for example with
 `Stage.weigh(levels, ease="smoothstep")`.
 
 ## Audio and captions

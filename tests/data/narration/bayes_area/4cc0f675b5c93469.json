@@ -1,0 +1,86 @@
+{
+ "key": "4cc0f675b5c93469",
+ "duration_s": 5.2,
+ "words": [
+  [
+   "How",
+   0.225,
+   0.425
+  ],
+  [
+   "does",
+   0.425,
+   0.6625
+  ],
+  [
+   "seeing",
+   0.6625,
+   1.0
+  ],
+  [
+   "a",
+   1.0,
+   1.125
+  ],
+  [
+   "deep",
+   1.125,
+   1.4375
+  ],
+  [
+   "band",
+   1.4375,
+   2.2125
+  ],
+  [
+   "change",
+   2.2125,
+   2.6
+  ],
+  [
+   "the",
+   2.6,
+   2.7375
+  ],
+  [
+   "chance",
+   2.7375,
+   3.275
+  ],
+  [
+   "that",
+   3.275,
+   3.3875
+  ],
+  [
+   "a",
+   3.3875,
+   3.45
+  ],
+  [
+   "planet",
+   3.45,
+   3.85
+  ],
+  [
+   "has",
+   3.85,
+   4.0625
+  ],
+  [
+   "water?",
+   4.0625,
+   4.875
+  ]
+ ],
+ "text": "How does seeing a deep band change the chance that a planet has water?",
+ "audio": "4cc0f675b5c93469.opus",
+ "rate": 24000,
+ "samples": 124800,
+ "voice": "bm_george",
+ "speed": 1.0,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

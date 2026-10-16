@@ -73,9 +73,10 @@ implement them are internal organization.
   `(label, glyph)` element list, over the `GLYPHS` vocabulary), and
   `schematic`, a preset wrapper over `rail` for the imager and coronagraph
   trains that come up constantly.
-- **Motion.** `Timeline` (an animation's holds and ramps declared in
-  seconds and resolved for any frame rate into a `Plan` of per-frame knob
-  values), with `ease`, `stagger`, and `frame_count`.
+- **Motion.** `Timeline` (an animation's named spans declared in seconds
+  and resolved for any frame rate into a `Plan` of per-frame knob values and
+  `Event`s, with a narration placing each span on its word), with `Time`,
+  `Span`, `Fault`, `ease`, `stagger`, and `frame_count`.
 - **Cameras and morphs.** `zoom_path` (the optimal pan-and-zoom path between
   two views), `view_limits` and `overview_box` for a camera that zooms an
   axes, `PageCamera` (any view of a finished figure, re-rendered sharp at a

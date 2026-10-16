@@ -94,8 +94,9 @@ def cmap(name, override=None):
     Args:
         name: Semantic name defined by hwostyle.
         override: A matplotlib Colormap, registered cmap name, or semantic
-            role; wins when not None. Missing "statistic" uses PuOr until
-            hwostyle provides that role.
+            role; wins when not None. A missing "statistic" or "pupil" role
+            (an hwostyle older than the role) falls back to PuOr or
+            Oranges.
 
     Returns:
         A matplotlib Colormap instance.

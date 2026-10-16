@@ -390,7 +390,7 @@ for (plane, data, is_focal), (ax_img, ax_rail) in zip(panels, slots, strict=True
         # no extent, so imshow_log drops the index ticks on its own
         ep.imshow_log(data, ax=ax_img, floor=1e-8, vmax=1.0, colorbar=False)
     else:
-        ax_img.imshow(data, origin="lower", interpolation="nearest", cmap="magma")
+        ax_img.imshow(data, origin="lower", interpolation="nearest", cmap=hwostyle.cmaps.pupil)
         ax_img.set_xticks([])  # a raw imshow still needs asking
         ax_img.set_yticks([])
     ax_img.set_title(plane)
@@ -577,7 +577,7 @@ for panel, (plane, data, is_focal) in zip(strip.insets, panels, strict=True):
     if is_focal:
         ep.imshow_log(data, ax=panel, floor=1e-8, vmax=1.0, colorbar=False)
     else:
-        panel.imshow(data, origin="lower", interpolation="nearest", cmap="magma")
+        panel.imshow(data, origin="lower", interpolation="nearest", cmap=hwostyle.cmaps.pupil)
         panel.set_xticks([])
         panel.set_yticks([])
 ```

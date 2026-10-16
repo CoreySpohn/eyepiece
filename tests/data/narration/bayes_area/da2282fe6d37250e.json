@@ -1,0 +1,66 @@
+{
+ "key": "da2282fe6d37250e",
+ "duration_s": 4.475,
+ "words": [
+  [
+   "A",
+   0.225,
+   0.3125
+  ],
+  [
+   "deep",
+   0.3125,
+   0.625
+  ],
+  [
+   "band",
+   0.625,
+   1.025
+  ],
+  [
+   "appears",
+   1.025,
+   1.525
+  ],
+  [
+   "in",
+   1.525,
+   1.6875
+  ],
+  [
+   "0.8",
+   1.6875,
+   2.9125
+  ],
+  [
+   "of",
+   2.9125,
+   2.9875
+  ],
+  [
+   "the",
+   2.9875,
+   3.075
+  ],
+  [
+   "water",
+   3.075,
+   3.375
+  ],
+  [
+   "worlds.",
+   3.375,
+   4.2
+  ]
+ ],
+ "text": "A deep band appears in 0.8 of the water worlds.",
+ "audio": "da2282fe6d37250e.opus",
+ "rate": 24000,
+ "samples": 107400,
+ "voice": "bm_george",
+ "speed": 1.0,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}
