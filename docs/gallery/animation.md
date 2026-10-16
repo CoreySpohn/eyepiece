@@ -151,6 +151,22 @@ animations grows quickly, and roughly twenty to thirty frames at dpi 100 on
 a small figure is the range worth staying inside. Frame count is the first
 thing to cut, figure size the second.
 
+## Frame time from a plan
+
+A plan holds the clock for every frame next to its knobs. `plan.value(k, name)`
+reads a knob, and it also reads the three frame fields: `"t"` (seconds),
+`"index"` and `"section"`. Reading a frame field is not knob use, so it never
+hides an unread knob from `plan.unused_knobs()`.
+
+```{code-cell} python
+tl = ep.Timeline({"x": 0.0})
+tl.section("intro")
+tl.move("go", 1.0, to={"x": 1.0})
+plan = tl.at_fps(10)
+print(plan.value(4, "t"), plan.value(4, "index"), plan.value(4, "section"))
+print(plan.unused_knobs())
+```
+
 ## Writing a video
 
 `.save` takes as many paths as there are destinations and renders one pass

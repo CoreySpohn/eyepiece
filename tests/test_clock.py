@@ -800,3 +800,34 @@ def test_unused_knobs_counts_value_frames_and_progress_reads_and_skips_pulse_kno
     unread, constant = plan.unused_knobs()
     assert unread == ("d",) and constant == ("d",)
     assert not any(k.startswith("pulse.") for k in (*unread, *constant))
+
+
+def _field_plan():
+    tl = ep.Timeline({"a": 0.0})
+    tl.section("intro")
+    tl.move("go", 1.0, to={"a": 1.0})
+    return tl.at_fps(10)
+
+
+def test_value_returns_the_frame_fields():
+    plan = _field_plan()
+    for k in (0, 3, plan.n_frames - 1):
+        assert plan.value(k, "t") == k / plan.fps == plan.frames[k]["t"]
+        assert plan.value(k, "index") == k
+        assert plan.value(k, "section") == plan.frames[k]["section"] == "intro"
+    with pytest.raises(IndexError):
+        plan.value(plan.n_frames, "t")
+
+
+def test_reading_frame_fields_leaves_unused_knobs_unchanged():
+    plan = _field_plan()
+    before = plan.unused_knobs()
+    for name in ("t", "index", "section"):
+        plan.value(0, name)
+    assert plan.unused_knobs() == before == (("a",), ())
+
+
+def test_value_still_rejects_unknown_names():
+    plan = _field_plan()
+    with pytest.raises(KeyError, match="no knob named 'tt'"):
+        plan.value(0, "tt")
