@@ -101,6 +101,7 @@ def test_say_refuses_nonfinite_values(value):
         ("d^6.1", "d^6.1", "power"),
         ("arcsec^2", "arcsec^2", "power"),
         ("x^(2)", "x^(2)", "power"),
+        ("x^(-2)", "x^(-2)", "power"),
         ("+/-1%", "+/-", "plus_minus"),
         ("~1%", "~", "approximation"),
         ("I*", "*", "asterisk"),
