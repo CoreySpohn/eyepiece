@@ -47,6 +47,8 @@ with tempfile.TemporaryDirectory() as directory:
 
 A span name selects its settled last frame, a `(span, "mid")` tuple selects
 its middle frame, and a number selects a time in seconds.
-Each still matches the frame captured by the first sink, and this example
-removes its temporary output when the context ends.
+The `.html` file is only the first sink of the recording, here a stand-in for
+your video path; `on_rescale="raise"` stops the recording if a draw function
+moves an axis limit. Each still matches the frame captured by the first sink,
+and this example removes its temporary output when the context ends.
 See {doc}`the animation catalog <../gallery/animation>` for other sinks.
