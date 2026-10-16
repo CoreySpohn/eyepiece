@@ -3,6 +3,7 @@
 from dataclasses import FrozenInstanceError
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 from matplotlib.lines import Line2D
 from matplotlib.transforms import IdentityTransform
@@ -302,7 +303,10 @@ def test_discrete_hold_sweep_reports_only_the_unplanned_jump():
     assert report.motion[0].time == pytest.approx(0.8)
 
 
-@pytest.mark.parametrize(("step", "frame"), [("slide", 3), (3, 3), ("late", 8), (8, 8)])
+@pytest.mark.parametrize(
+    ("step", "frame"),
+    [("slide", 3), (3, 3), ("late", 8), (8, 8), (np.int64(8), 8)],
+)
 def test_explicit_steps_add_span_starts_or_frame_indices(step, frame):
     fig, draw, plan = _stepped_clip()
     extra = _marker(fig, y=30, color="black")
@@ -348,7 +352,7 @@ def test_step_frames_merge_two_knobs_and_include_initial_changes():
     assert tl.at_fps(10).step_frames() == (0, 4, 6, 8)
 
 
-@pytest.mark.parametrize("bad", [-1, 10**6, 2.5, None])
+@pytest.mark.parametrize("bad", [-1, 10**6, 2.5, None, True])
 def test_a_step_outside_the_plan_is_refused(bad):
     fig, draw, plan, _ = _clip()
     with pytest.raises(ValueError, match="frame index"):
