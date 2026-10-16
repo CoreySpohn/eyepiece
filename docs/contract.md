@@ -294,6 +294,45 @@ customized `axes.prop_cycle` is used as-is, and only an untouched factory
 default falls back to the light palette. Working on bare matplotlib is
 supported, not merely tolerated.
 
+### Motifs
+
+An object that recurs across figures (the star, a planet, a detector, a
+reference plane) is a `Motif`, and a `MotifSet` holds motifs by key, never by
+position. The key ``"planet"`` is the same planet whatever else a set lists,
+which an order-based assignment cannot promise across the scripts of one talk.
+A motif stores a hwostyle role name or a neutral rank and never a hex value;
+`motif.color` resolves it through `eyepiece.role` at the moment it is read, so
+a mode switch reaches every figure, and a saved figure state keeps the motif
+key and not a color that goes stale. Beside the color a motif carries its
+marker, line style, hatch, arrow style and font style: the non-color channels
+that tell it apart when its color is shared, dimmed or lost to color vision.
+`signature()` returns them, `line_kw`, `marker_kw` and `patch_kw` turn the
+motif into matplotlib arguments, and `derive(**changes)` makes a chapter's own
+variant. `MotifSet.default()` reads the table from `hwostyle.motifs`, and an
+older hwostyle gets a smaller stand-in table, as a missing role does.
+
+A figure spends at most four hues, and hwostyle owns that budget with the
+table. A fifth or sixth hue needs a second channel, a seventh is never used,
+and the pairs hwostyle declares never to co-occur (exozodi with prior, local
+zodi with reference, and the image roles that share a map family) stay out of
+one clip, because viewers remember a color across a clip and not only across a
+figure. On an image a motif is its glyph in overlay ink and not its hue. The
+cue that marks the subject of a step is a form (a ring, a band or an underlay)
+drawn in the text color. It spends no hue, it never recolors the motif it
+marks, and it is never a line, a marker or text. The contrast a dimmed step
+keeps is 0.35 in dark mode and 0.5 in light and paper mode, which `Stage`
+resolves when `dim` is None; an explicit `dim` wins.
+
+`eyepiece.testing.motif_faults(motifs, mode=...)` checks the subset a figure or
+clip draws with (`MotifSet.only`), not the whole default table. It reports two
+motifs that share a color and every other channel, a never-together pair in
+one set, hues past the budget without a second channel, hues that fall close
+in CAM02-UCS under normal vision or a color-vision deficiency, hues that fall
+close once dimmed together (advisory), and a cue that is not a form in the
+text color or that matches the color of a motif in the set. `motif_margins`
+returns the distances behind these. `assert_motifs` raises `MotifError`. The
+checks need `colorspacious`, which the `test` extra installs.
+
 ## Image display defaults to nearest
 
 Every `imshow` call defaults to `interpolation="nearest"` and

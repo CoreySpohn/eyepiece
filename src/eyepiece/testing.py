@@ -62,18 +62,32 @@ from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
+from eyepiece._motif_checks import (
+    MOTIF_KINDS,
+    MotifError,
+    MotifFault,
+    assert_motifs,
+    motif_faults,
+    motif_margins,
+)
 from eyepiece.attention import _data_colors, _default_avoid, _renderer
 
 __all__ = [
     "KINDS",
+    "MOTIF_KINDS",
     "VENUES",
+    "MotifError",
+    "MotifFault",
     "ReadabilityError",
     "ReadabilityFault",
     "SpeechRate",
     "SpeechRateError",
+    "assert_motifs",
     "assert_readable",
     "assert_speech_rate",
     "caption_line",
+    "motif_faults",
+    "motif_margins",
     "readability_faults",
     "speech_rate",
 ]

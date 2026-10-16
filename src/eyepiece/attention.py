@@ -1542,7 +1542,9 @@ class Stage:
     Args:
         groups: Mapping of group name to an artist, an Axes, or an iterable
             of these.
-        dim: Contrast a dimmed group keeps, in [0, 1].
+        dim: Contrast a dimmed group keeps, in [0, 1]. None resolves it by
+            the active mode when the stage is made: 0.35 in dark mode and 0.5
+            in light and paper, where dimmed hues separate less.
         background: Color every group blends toward. None resolves it per
             artist, as `fade` does: the face of the axes it is drawn in,
             else the nearest opaque figure face.
@@ -1557,9 +1559,9 @@ class Stage:
         stage.rest()  # the still
     """
 
-    def __init__(self, groups, *, dim=0.35, background=None):
+    def __init__(self, groups, *, dim=None, background=None):
         """Read every group's artists as drawn now; that is the rest state."""
-        dim = float(dim)
+        dim = float(_style.dim_level() if dim is None else dim)
         if not 0.0 <= dim <= 1.0:
             raise ValueError(f"dim must be in [0, 1], got {dim}")
         self.dim = dim
