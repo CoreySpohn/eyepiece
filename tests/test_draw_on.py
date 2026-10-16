@@ -214,3 +214,11 @@ def test_draw_on_rejects_invalid_lines_without_changing_valid_ones():
         ep.draw_on([line, ax.patch])
     assert len(ax.lines) == 1
     assert line.get_visible()
+
+
+def test_draw_on_rejects_stepped_drawstyles():
+    fig, ax = plt.subplots()
+    (line,) = ax.plot([0, 1, 2], [0, 1, 0], drawstyle="steps-mid")
+    with pytest.raises(ValueError, match="stepped"):
+        ep.draw_on(line)
+    plt.close(fig)

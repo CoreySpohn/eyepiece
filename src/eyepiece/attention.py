@@ -2358,7 +2358,7 @@ class _DrawOn(Line2D):
             if reach <= 0.0:
                 break
         self.update_from(source)
-        self.set_visible(True)
+        self.set_visible(True)  # update_from copied the hidden source's flag
         self.set_transform(IdentityTransform())
         self.set_drawstyle("default")
         self.set_antialiased(source.get_antialiased())
@@ -2400,7 +2400,9 @@ def draw_on(lines, *, ease="linear") -> PlotResult:
 
     Raises:
         TypeError: If an item is not a `Line2D`.
-        ValueError: If there are no lines or a line has no axes.
+        ValueError: If there are no lines, a line has no axes, or a line
+            uses a drawstyle other than ``"default"``, whose stepped path
+            the reveal cannot follow.
     """
     items = [lines] if isinstance(lines, Line2D) else list(lines)
     if not items:
@@ -2410,6 +2412,8 @@ def draw_on(lines, *, ease="linear") -> PlotResult:
             raise TypeError(f"draw_on needs a Line2D, got {type(line).__name__}")
         if line.axes is None:
             raise ValueError("draw_on needs lines attached to axes")
+        if line.get_drawstyle() != "default":
+            raise ValueError("draw_on does not support stepped drawstyles")
     copies = [_DrawOn(line) for line in items]
     states = [(line.get_visible(), line.get_alpha()) for line in items]
     for line, copy in zip(items, copies, strict=True):
