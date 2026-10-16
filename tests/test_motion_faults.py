@@ -8,10 +8,13 @@ text off the edge); none of them uses the old code.
 """
 
 import math
+from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
 import pytest
-from matplotlib.patches import PathPatch, Rectangle
+from matplotlib.collections import LineCollection
+from matplotlib.lines import Line2D
+from matplotlib.patches import PathPatch, Polygon, Rectangle
 from matplotlib.path import Path
 from matplotlib.transforms import Bbox, IdentityTransform, TransformedBbox
 
@@ -109,7 +112,6 @@ def test_jump_into_the_rest_state():
     found = ept.motion_faults(fig, at, SPAN)
     assert _kinds(found) == ["jump"]
     assert found[0].time == pytest.approx(2.0)
-    assert "rest state" in found[0].detail
     assert found[0].value > 4.0
 
 
@@ -138,7 +140,7 @@ def test_jump_in_the_middle_of_a_move():
     found = ept.motion_faults(fig, at, SPAN)
     assert [f.kind for f in found] == ["jump"]
     assert found[0].time == pytest.approx(1.0)
-    assert "one frame" in found[0].detail
+    assert found[0].value > 4.0
 
 
 def test_eased_travel_has_no_jump():
@@ -463,17 +465,6 @@ def test_tick_labels_that_trade_places_are_not_spikes():
     assert ept.motion_faults(fig, at, SPAN, spikes=True) == []
 
 
-def test_an_artist_that_changes_shape_is_not_a_spike():
-    fig = _figure()
-    bar = _box(fig, 40, 80, 20, 20)
-
-    def at(t):
-        k = round(t * 30.0)
-        bar.set_width(20.0 + (60.0 if k == 30 else 2.0 * k))
-
-    assert "spike" not in _kinds(ept.motion_faults(fig, at, SPAN, spikes=True))
-
-
 def test_one_frame_teleport_is_a_spike():
     fig = _figure()
     block = _box(fig, 20, 80, 40, 40)
@@ -484,7 +475,9 @@ def test_one_frame_teleport_is_a_spike():
 
     found = ept.motion_faults(fig, at, SPAN, spikes=True)
     assert "spike" in _kinds(found)
-    assert "velocity" in next(f for f in found if f.kind == "spike").detail
+    spike = next(f for f in found if f.kind == "spike")
+    assert spike.value == pytest.approx(120.0, abs=2.0)  # out by 64, back by 56
+    assert spike.time == pytest.approx(1.0, abs=1.0 / 30.0)
 
 
 def test_a_figure_with_a_canvas_that_has_no_pixels_is_still_checked():
@@ -501,6 +494,548 @@ def test_a_figure_with_a_canvas_that_has_no_pixels_is_still_checked():
     found = ept.motion_faults(fig, at, SPAN)
     assert _kinds(found) == ["outside"]
     assert type(fig.canvas) is FigureCanvasBase
+
+
+# review findings: each test names the defect it reproduces
+
+
+def _clip_to(artist, x0, x1):
+    artist.set_clip_on(True)
+    artist.set_clip_box(
+        TransformedBbox(Bbox([[x0, 0], [x1, 200]]), IdentityTransform())
+    )
+
+
+def _rotate(points, degrees, about=(100.0, 100.0)):
+    a = math.radians(degrees)
+    c, s = math.cos(a), math.sin(a)
+    out = []
+    for x, y in points:
+        dx, dy = x - about[0], y - about[1]
+        out.append((about[0] + c * dx - s * dy, about[1] + s * dx + c * dy))
+    return out
+
+
+def test_contract_dicts_on_objects_are_unwrapped():
+    fig, at, steady = _slider(shift_px=14.0)
+    holder = SimpleNamespace(contract={"rest": [steady]})
+    found = ept.motion_faults(fig, at, SPAN, moves=[holder])
+    assert _kinds(found) == ["drift"]
+    assert ept.motion_faults(fig, at, SPAN, moves=[SimpleNamespace(contract={})]) == []
+
+    fig = _figure()
+    block = _box(fig, 20, 80, 60, 40)
+    contract = {"name": "slide", "span": (0.5, 1.5), "artists": [block]}
+    found = ept.motion_faults(
+        fig, lambda t: None, SPAN, moves=[SimpleNamespace(contract=contract)]
+    )
+    assert _kinds(found) == ["dead"]
+    assert "slide" in found[0].detail
+
+    fig, at, parts = _row(stagger=0.15)
+    holder = SimpleNamespace(contract={"groups": [parts]})
+    assert _kinds(ept.motion_faults(fig, at, SPAN, moves=[holder])) == ["tear"]
+
+    fig, at, a, b, _ = _crossing()
+    contract = {"artists": [a, b]}
+    assert _kinds(
+        ept.motion_faults(fig, at, SPAN, moves=[SimpleNamespace(contract=contract)])
+    ) == ["overlap"]
+    contract["may_overlap"] = [(a, b)]
+    holder = SimpleNamespace(contract=contract)
+    assert ept.motion_faults(fig, at, SPAN, moves=[holder]) == []
+
+
+def _scatter_clip():
+    fig, ax = plt.subplots(figsize=(4.0, 2.0), dpi=DPI)
+    ax.set(xlim=(0, 10), ylim=(0, 10), xticks=[], yticks=[])
+    return fig, ax
+
+
+def test_a_moving_scatter_is_traced_and_its_alpha_array_does_not_crash():
+    fig, ax = _scatter_clip()
+    dots = ax.scatter([2.0, 3.0], [5.0, 5.0], s=200, alpha=[0.5, 0.8])
+
+    def at(t):
+        u = _smooth(t / DURATION)
+        dots.set_offsets([[2.0 + 5.0 * u, 5.0], [3.0 + 5.0 * u, 5.0]])
+
+    found = ept.motion_faults(fig, at, SPAN, rest=[dots])
+    assert _kinds(found) == ["drift"]
+    assert found[0].artist is dots
+    assert found[0].value == pytest.approx(5.0 / 10.0 * fig.bbox.width * 0.775, rel=0.1)
+    dots.set_offsets([[2.0, 5.0], [3.0, 5.0]])
+    assert ept.motion_faults(fig, lambda t: None, SPAN, rest=[dots]) == []
+
+
+def test_a_moving_line_collection_is_traced():
+    fig, ax = _scatter_clip()
+    lines = LineCollection([[(1, 1), (3, 1)], [(1, 2), (3, 2)]], colors="C0")
+    ax.add_collection(lines)
+
+    def at(t):
+        d = 4.0 * _smooth(t / DURATION)
+        lines.set_segments([[(1 + d, 1), (3 + d, 1)], [(1 + d, 2), (3 + d, 2)]])
+
+    found = ept.motion_faults(fig, at, SPAN, rest=[lines])
+    assert _kinds(found) == ["drift"]
+    assert found[0].value > 100.0
+
+
+def test_a_scatter_pushed_off_the_figure_is_outside():
+    fig = _figure()
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set(xlim=(0, 10), ylim=(0, 10))
+    ax.axis("off")
+    dots = ax.scatter([5.0], [5.0], s=400, clip_on=False)
+
+    def at(t):
+        dots.set_offsets([[5.0 + 7.0 * _smooth(t / DURATION), 5.0]])
+
+    found = ept.motion_faults(fig, at, SPAN)
+    assert _kinds(found) == ["outside"]
+    assert found[0].artist is dots
+
+
+def test_a_pure_teleport_is_a_jump():
+    fig = _figure()
+    block = _box(fig, 20, 80, 60, 40)
+
+    def at(t):
+        _move(block, 280.0 if t >= 1.0 else 20.0, 80)
+
+    found = ept.motion_faults(fig, at, SPAN)
+    assert _kinds(found) == ["jump"]
+    assert found[0].time == pytest.approx(1.0, abs=1.0 / 30.0)
+    assert found[0].value > 1.0
+    # The same block holding still has nothing to report.
+    assert ept.motion_faults(fig, lambda t: _move(block, 20, 80), SPAN) == []
+
+
+def test_a_one_frame_excursion_of_a_stationary_artist_is_flagged():
+    fig = _figure()
+    block = _box(fig, 100, 80, 30, 30)
+
+    def at(t):
+        _move(block, 230.0 if round(t * 30.0) == 30 else 100.0, 80)
+
+    assert "jump" in _kinds(ept.motion_faults(fig, at, SPAN))
+    found = ept.motion_faults(fig, at, SPAN, spikes=True)
+    spikes = [f for f in found if f.kind == "spike"]
+    assert spikes
+    assert spikes[0].artist is block
+    assert spikes[0].value == pytest.approx(130.0, abs=2.0)
+    # A one-pixel flutter of the same artist is not a spike.
+    fig = _figure()
+    block = _box(fig, 100, 80, 30, 30)
+
+    def flutter(t):
+        _move(block, 101.0 if round(t * 30.0) == 30 else 100.0, 80)
+
+    assert ept.motion_faults(fig, flutter, SPAN, spikes=True) == []
+
+
+def _cut_label(clip_right):
+    fig = _figure()
+    label = fig.text(0.1, 0.5, "a long label that is cut", fontsize=14)
+    label.set_clip_on(True)
+
+    def at(t):
+        _clip_to(label, 0.0, clip_right(t))
+
+    return fig, at, label
+
+
+def test_a_clip_box_that_barely_changes_is_not_a_reveal():
+    fig, at, label = _cut_label(lambda t: 120.0 + 1e-5 * t)
+    found = ept.motion_faults(fig, at, SPAN)
+    assert _kinds(found) == ["outside"]
+    assert found[0].artist is label
+    assert found[0].value > 50.0
+    # A real reveal, growing to uncover the whole label, is not a cut.
+    fig, at, _ = _cut_label(lambda t: 20.0 + 300.0 * _smooth(t / DURATION))
+    assert ept.motion_faults(fig, at, SPAN) == []
+
+
+def test_a_label_clipped_away_entirely_is_outside():
+    fig = _figure()
+    label = fig.text(0.3, 0.5, "gone", fontsize=14)
+    _clip_to(label, 0.0, 300.0)
+
+    def at(t):
+        label.set_position((0.3 + 0.8 * _smooth(t / DURATION), 0.5))
+
+    found = ept.motion_faults(fig, at, SPAN)
+    assert _kinds(found) == ["outside"]
+    assert found[0].artist is label
+    # The same label that never leaves the clip has nothing to report.
+    label.set_position((0.3, 0.5))
+    assert ept.motion_faults(fig, lambda t: None, SPAN) == []
+
+
+def _faded_pair(**style):
+    fig = _figure()
+    a = _box(fig, 100, 80, **style)
+    b = _box(fig, 140, 90, **style)
+
+    def at(t):
+        _move(a, 100 + 20 * t, 80)
+        _move(b, 140 - 20 * t, 90)
+
+    return fig, at, [{"artists": [a, b]}]
+
+
+def test_patch_alpha_is_not_squared():
+    for style in ({"alpha": 0.5}, {"color": (0.0, 0.0, 0.0, 0.5)}):
+        fig, at, moves = _faded_pair(**style)
+        found = ept.motion_faults(fig, at, SPAN, moves=moves)
+        assert _kinds(found) == ["overlap"], style
+    # Under the 0.3 cutoff stays clean, over it reports.
+    fig, at, moves = _faded_pair(alpha=0.2)
+    assert ept.motion_faults(fig, at, SPAN, moves=moves) == []
+    fig, at, moves = _faded_pair(alpha=0.35)
+    assert _kinds(ept.motion_faults(fig, at, SPAN, moves=moves)) == ["overlap"]
+
+
+def test_a_faint_patch_is_still_traced_for_the_frame_edge():
+    fig = _figure()
+    block = _box(fig, 300, 80, 60, 40, alpha=0.2)
+
+    def at(t):
+        _move(block, 300 + 70 * _smooth(t / DURATION), 80)
+
+    found = ept.motion_faults(fig, at, SPAN, moves=[{"artists": [block]}])
+    assert _kinds(found) == ["outside"]
+
+
+def _crossing_boxes(fps_clip=None):
+    fig = _figure()
+    a = _box(fig, 100, 80, 30, 20)
+    b = _box(fig, 140, 85, 30, 20)
+
+    def at(t):
+        _move(a, 100 + 20 * t, 80)
+        _move(b, 140 - 20 * t, 85)
+
+    return fig, at, a, b
+
+
+@pytest.mark.parametrize("fps", [24, 30, 60])
+def test_overlap_does_not_depend_on_the_frame_rate(fps):
+    fig, at, a, b = _crossing_boxes()
+    found = ept.motion_faults(fig, at, SPAN, fps=fps, moves=[{"artists": [a, b]}])
+    assert _kinds(found) == ["overlap"]
+    assert {found[0].artist, found[0].other} == {a, b}
+
+
+def test_overlap_uses_only_what_the_clip_leaves_visible():
+    fig, at, a, b = _crossing_boxes()
+    moves = [{"artists": [a, b]}]
+    _clip_to(a, 0.0, 120.0)
+    _clip_to(b, 125.0, 400.0)
+    assert ept.motion_faults(fig, at, SPAN, moves=moves, kinds=["overlap"]) == []
+    _clip_to(a, 0.0, 400.0)
+    _clip_to(b, 0.0, 400.0)
+    found = ept.motion_faults(fig, at, SPAN, moves=moves, kinds=["overlap"])
+    assert _kinds(found) == ["overlap"]
+
+
+@pytest.mark.parametrize("fps", [24, 30, 60])
+def test_a_smooth_accelerating_move_has_no_jump_at_any_frame_rate(fps):
+    fig = _figure()
+    block = _box(fig, 20, 80, 60, 40)
+
+    def at(t):
+        _move(block, 20 + 250 * (t / DURATION) ** 5, 80)
+
+    assert ept.motion_faults(fig, at, SPAN, fps=fps) == []
+
+
+def test_a_step_into_rest_is_found_with_rest_appended_after_the_move():
+    fig, at = _ramp_clip(final_step=2.5)
+    found = ept.motion_faults(fig, at, ept.Span(0.0, 2.5))
+    assert _kinds(found) == ["jump"]
+    assert found[0].time == pytest.approx(2.0, abs=1.0 / 30.0)
+    fig, at = _ramp_clip(final_step=1.5)
+    assert ept.motion_faults(fig, at, ept.Span(0.0, 2.5)) == []
+
+
+def test_a_declared_move_boundary_decides_where_rest_begins():
+    fig, at = _ramp_clip(final_step=2.5)
+    moves = [{"name": "fade", "span": (0.0, 2.0)}]
+    found = ept.motion_faults(fig, at, ept.Span(0.0, 2.5), moves=moves)
+    assert _kinds(found) == ["jump"]
+    assert found[0].time == pytest.approx(2.0, abs=1.0 / 30.0)
+
+
+def _teleporting(width_growth_px=0.0, normalized=False):
+    fig = _figure()
+    if normalized:
+        box = Rectangle((0.05, 0.4), 0.1, 0.2, transform=fig.transFigure, facecolor="k")
+        box.set_clip_on(False)
+        fig.add_artist(box)
+    else:
+        box = _box(fig, 20, 80, 40, 40)
+
+    def at(t):
+        k = round(t * 30.0)
+        jump = 60.0 if k >= 30 else 0.0
+        if normalized:
+            box.set_x(0.05 + (4.0 * k + jump) / 400.0)
+            box.set_width(0.1 + width_growth_px * k / 60.0 / 400.0)
+        else:
+            _move(box, 20 + 4.0 * k + jump, 80)
+            box.set_width(40.0 + width_growth_px * k / 60.0)
+
+    return fig, at, box
+
+
+def test_a_slight_shape_change_does_not_hide_a_teleport():
+    for growth in (0.0, 2.0):
+        fig, at, _ = _teleporting(width_growth_px=growth)
+        found = ept.motion_faults(fig, at, SPAN, spikes=True)
+        assert "spike" in _kinds(found), growth
+    for dpi in (80, 100):
+        fig, at, _ = _teleporting(width_growth_px=1.2, normalized=True)
+        found = ept.motion_faults(fig, at, SPAN, spikes=True, dpi=dpi)
+        assert "spike" in _kinds(found), dpi
+
+
+def test_a_bar_that_grows_a_lot_is_not_a_spike():
+    fig = _figure()
+    bar = _box(fig, 40, 40, 20, 20)
+
+    def at(t):
+        k = round(t * 30.0)
+        bar.set_width(20.0 + (160.0 if k >= 30 else 0.0))
+        bar.set_y(40.0 + 2.0 * k)
+
+    # Its width jumps, which takes the center sideways: not a position fault.
+    assert "spike" not in _kinds(ept.motion_faults(fig, at, SPAN, spikes=True))
+    # The same sideways jump of a bar that keeps its shape is one.
+    fig = _figure()
+    block = _box(fig, 40, 40, 20, 20)
+
+    def hop(t):
+        k = round(t * 30.0)
+        _move(block, 40.0 + (80.0 if k >= 30 else 0.0), 40.0 + 2.0 * k)
+
+    assert "spike" in _kinds(ept.motion_faults(fig, hop, SPAN, spikes=True))
+
+
+def test_stable_tick_labels_with_a_one_frame_excursion_are_a_spike():
+    fig, ax = plt.subplots(figsize=(4.0, 2.0), dpi=DPI)
+    fig.subplots_adjust(bottom=0.35, left=0.2)
+    ax.set(xlim=(0, 10), ylim=(0, 1), xticks=[2, 4, 6, 8], yticks=[])
+
+    def at(t):
+        ax.tick_params(axis="x", pad=30.0 if round(t * 30.0) == 30 else 3.5)
+
+    found = ept.motion_faults(fig, at, SPAN, kinds=["spike"])
+    assert _kinds(found) == ["spike"]
+    assert found[0].value > 20.0
+
+
+def test_velocity_is_judged_over_elapsed_time():
+    fig = _figure()
+    block = _box(fig, 20, 80, 30, 30)
+    times = [0.0, 0.01, 0.02, 0.5, 0.51, 0.52, 1.0, 1.01, 1.02]
+
+    def at(t):
+        _move(block, 20 + 100 * t, 80)
+
+    assert ept.motion_faults(fig, at, times, kinds=["spike"]) == []
+
+    # A genuine change of velocity at the same sampling is still reported.
+    def kinked(t):
+        _move(block, 20 + 100 * t + (60.0 if t >= 0.51 else 0.0), 80)
+
+    assert _kinds(ept.motion_faults(fig, kinked, times, kinds=["spike"])) == ["spike"]
+
+
+def _pair_of_polygons(rect_lag):
+    fig = _figure()
+    tri_pts = [(40.0, 80.0), (70.0, 80.0), (40.0, 110.0)]
+    rect_pts = [(130.0, 80.0), (160.0, 80.0), (160.0, 110.0), (130.0, 110.0)]
+    tri = Polygon(tri_pts, transform=IdentityTransform(), facecolor="k")
+    rect = Polygon(rect_pts, transform=IdentityTransform(), facecolor="k")
+    for patch in (tri, rect):
+        patch.set_clip_on(False)
+        fig.add_artist(patch)
+
+    def at(t):
+        u = _smooth(t / DURATION)
+        tri.set_xy(_rotate(tri_pts, 90.0 * u))
+        rect.set_xy(_rotate(rect_pts, 90.0 * u * (1.0 - rect_lag)))
+
+    return fig, at, [tri, rect]
+
+
+def test_a_rigid_rotation_does_not_tear_and_a_lagging_part_does():
+    fig, at, pair = _pair_of_polygons(rect_lag=0.0)
+    assert ept.motion_faults(fig, at, SPAN, groups=[pair], tol_px=0.5) == []
+    fig, at, pair = _pair_of_polygons(rect_lag=0.3)
+    found = ept.motion_faults(fig, at, SPAN, groups=[pair])
+    assert _kinds(found) == ["tear"]
+    assert {found[0].artist, found[0].other} == set(pair)
+
+
+def test_a_resting_line_whose_middle_point_moves_drifts():
+    fig = _figure()
+    line = Line2D(
+        [50, 100, 150], [50, 100, 50], transform=IdentityTransform(), color="k"
+    )
+    line.set_clip_on(False)
+    fig.add_artist(line)
+
+    def at(t):
+        line.set_data([50, 100 + 40 * _smooth(t / DURATION), 150], [50, 100, 50])
+
+    found = ept.motion_faults(fig, at, SPAN, rest=[line])
+    assert _kinds(found) == ["drift"]
+    assert found[0].value > 5.0
+    assert ept.motion_faults(fig, lambda t: None, SPAN, rest=[line]) == []
+
+
+def _two_stage(first_moves_b, second_moves_b=True):
+    fig = _figure()
+    a = _glyph(fig, 60, 80)
+    b = _glyph(fig, 200, 80)
+
+    def at(t):
+        _shift_glyph(a, 60 + 50 * _smooth(t / DURATION), 80)
+        x = 200.0
+        if first_moves_b:
+            x += 40 * _smooth(t)
+        if second_moves_b:
+            x += 60 * _smooth(t - 1.0)
+        _shift_glyph(b, x, 80)
+
+    return fig, at, a, b
+
+
+def test_rest_declared_by_a_move_holds_only_over_its_span():
+    fig, at, _, b = _two_stage(first_moves_b=False)
+    moves = [
+        {"name": "a", "span": (0.0, 1.0), "rest": [b]},
+        {"name": "b", "span": (1.0, 2.0), "artists": [b]},
+    ]
+    assert ept.motion_faults(fig, at, SPAN, moves=moves) == []
+    fig, at, _, b = _two_stage(first_moves_b=True)
+    moves[0]["rest"] = [b]
+    moves[1]["artists"] = [b]
+    found = ept.motion_faults(fig, at, SPAN, moves=moves)
+    assert _kinds(found) == ["drift"]
+    assert found[0].artist is b
+    assert found[0].time < 1.0
+
+
+def test_a_group_declared_by_a_move_holds_only_over_its_span():
+    fig = _figure()
+    left, right = _glyph(fig, 60, 80), _glyph(fig, 120, 80)
+
+    def at(t):
+        u = _smooth(t - 1.0)
+        _shift_glyph(left, 60 + 80 * _smooth(t), 80)
+        _shift_glyph(right, 120 + 80 * _smooth(t) + 40 * u, 80)
+
+    moves = [{"span": (0.0, 1.0), "groups": [[left, right]]}]
+    assert ept.motion_faults(fig, at, SPAN, moves=moves) == []
+    moves = [{"span": (0.0, 2.0), "groups": [[left, right]]}]
+    assert _kinds(ept.motion_faults(fig, at, SPAN, moves=moves)) == ["tear"]
+
+
+def test_an_allowed_overlap_holds_only_over_its_span():
+    fig, at, a, b, _ = _crossing()
+    inside = [{"span": (0.0, 2.0), "artists": [a, b], "may_overlap": [(a, b)]}]
+    assert ept.motion_faults(fig, at, SPAN, moves=inside) == []
+    early = [{"span": (0.0, 0.2), "artists": [a, b], "may_overlap": [(a, b)]}]
+    assert _kinds(ept.motion_faults(fig, at, SPAN, moves=early)) == ["overlap"]
+
+
+def test_an_alpha_only_move_is_not_dead_on_a_transparent_figure():
+    fig = _figure()
+    fig.patch.set_alpha(0.0)
+    block = _box(fig, 20, 80, 60, 40, color="w", alpha=0.0)
+
+    def at(t):
+        block.set_alpha(min(1.0, max(0.1, t / DURATION)))
+
+    moves = [{"name": "fade", "span": (0.0, 2.0), "artists": [block]}]
+    assert ept.motion_faults(fig, at, SPAN, moves=moves) == []
+    block.set_alpha(0.6)
+    assert _kinds(ept.motion_faults(fig, lambda t: None, SPAN, moves=moves)) == ["dead"]
+
+
+def test_a_declared_move_whose_artists_never_show_is_dead():
+    fig = _figure()
+    ghost = Rectangle((10, 10), 30, 30, transform=IdentityTransform(), alpha=0.0)
+    fig.add_artist(ghost)
+    other = _box(fig, 200, 100, 40, 40)
+
+    def at(t):
+        _move(other, 200 + 100 * _smooth(t / DURATION), 100)
+
+    found = ept.motion_faults(
+        fig, at, SPAN, moves=[{"name": "ghost", "artists": [ghost]}]
+    )
+    assert _kinds(found) == ["dead"]
+    assert "ghost" in found[0].detail
+
+
+@pytest.mark.parametrize("stop", [0.1 + 0.2, 0.95, 1.0 / 3.0, 2.0])
+def test_the_last_sample_is_exactly_stop(stop):
+    seen = []
+    fig = _figure()
+    _box(fig, 10, 10)
+    ept.motion_faults(fig, seen.append, ept.Span(0.0, stop))
+    assert seen[-1] == stop
+    assert seen == sorted(seen)
+
+
+def test_a_callback_branching_on_stop_reaches_its_final_state():
+    stop = 0.1 + 0.2
+    fig = _figure()
+    block = _box(fig, 20, 80, 60, 40, alpha=0.0)
+
+    def at(t):
+        block.set_alpha(1.0 if t >= stop else 0.5 * t / stop)
+
+    found = ept.motion_faults(fig, at, ept.Span(0.0, stop))
+    assert block.get_alpha() == 1.0
+    assert found == [] or _kinds(found) == ["jump"]
+
+
+def test_pixels_are_kept_only_for_the_kinds_that_read_them(monkeypatch):
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+    calls = []
+    real = FigureCanvasAgg.buffer_rgba
+    monkeypatch.setattr(
+        FigureCanvasAgg, "buffer_rgba", lambda self: calls.append(1) or real(self)
+    )
+    fig, at, steady = _slider(shift_px=14.0)
+    ept.motion_faults(fig, at, SPAN, kinds=["drift"], rest=[steady])
+    assert calls == []
+    ept.motion_faults(fig, at, SPAN, kinds=["jump"])
+    assert len(calls) == 61
+
+
+def test_a_tear_names_both_artists_and_empty_groups_are_ignored():
+    fig, at, parts = _row(stagger=0.15)
+    found = ept.motion_faults(fig, at, SPAN, groups=[parts])
+    assert found[0].artist in parts
+    assert found[0].other in parts
+    assert found[0].other is not found[0].artist
+    assert ept.motion_faults(fig, at, SPAN, groups=[[], [parts[0]]]) == []
+
+
+def test_a_spike_is_dated_at_its_first_faulty_sample():
+    fig, at, _ = _hopper(hop_px=9.0, travel_px=2.0)
+    found = ept.motion_faults(fig, at, SPAN, spikes=True)
+    assert found[0].kind == "spike"
+    assert found[0].time < 0.9  # the peak of the hop is at t = 1
+    assert found[0].value == pytest.approx(9.0, abs=1.0)  # the peak is the value
 
 
 # the call
@@ -548,7 +1083,9 @@ def test_the_result_is_deterministic_and_ordered_by_time():
     fig, at, parts = _row(stagger=0.15)
     first = ept.motion_faults(fig, at, SPAN, groups=[parts], spikes=True)
     again = ept.motion_faults(fig, at, SPAN, groups=[parts], spikes=True)
+    assert _kinds(first) == ["tear"]
     assert [str(f) for f in first] == [str(f) for f in again]
+    assert [f.value for f in first] == [f.value for f in again]
     times = [f.time for f in first]
     assert times == sorted(times)
 
@@ -557,8 +1094,8 @@ def test_assert_motion_raises_with_every_fault_named():
     fig, at, steady = _slider(shift_px=14.0)
     with pytest.raises(ept.MotionError, match="drift") as raised:
         ept.assert_motion(fig, at, SPAN, rest=[steady])
-    assert len(raised.value.faults) == 1
-    assert "should stay still" in str(raised.value)
+    assert [f.kind for f in raised.value.faults] == ["drift"]
+    assert raised.value.faults[0].value == pytest.approx(14.0, abs=0.6)
     fig, at, steady = _slider(shift_px=0.0)
     ept.assert_motion(fig, at, SPAN, rest=[steady])
 
@@ -592,7 +1129,7 @@ def test_public_names():
         assert hasattr(ept, name)
 
 
-def test_a_clip_with_text_and_a_move_runs_clean_and_fast():
+def test_a_clip_with_text_and_a_move_runs_clean():
     fig, ax = plt.subplots(figsize=(8.0, 4.5), dpi=DPI)
     ax.set(xlim=(0, 10), ylim=(0, 10), xticks=range(0, 11, 2), yticks=range(0, 11, 2))
     (dot,) = ax.plot([1], [5], "o", color="C0")
