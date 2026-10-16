@@ -2006,7 +2006,8 @@ class ClipReport:
         meaning: `MeaningFault` list, empty when no meaning keys were supplied.
             Warnings and advisories count as findings too.
         motion: `MotionFault` list from sampling every frame.
-        plan_faults: The plan's `eyepiece.Fault` list, including info findings.
+        plan_faults: The plan's `eyepiece.Fault` list, including info findings,
+            which are kept here but do not count toward `faults` or `ok`.
         unread_knobs: List of knob names never read by the draw function.
             Constant knobs that were read do not count as unread.
         speech: List of ``(line_key, wpm)`` pairs above the speech ceiling.
@@ -2025,11 +2026,15 @@ class ClipReport:
 
         Visual findings use their own kind, plan findings use their code,
         and the remaining kinds are ``"unread-knob"`` and ``"speech-rate"``.
+        Plan findings of severity ``"info"`` (a pulse skipped in a silent
+        clip, a span that starts slightly late) are not faults.
         """
         entries = [
             (f.kind, f.detail) for f in (*self.readability, *self.meaning, *self.motion)
         ]
-        entries += [(f.code, f.message) for f in self.plan_faults]
+        entries += [
+            (f.code, f.message) for f in self.plan_faults if f.severity != "info"
+        ]
         entries += [("unread-knob", name) for name in self.unread_knobs]
         entries += [
             ("speech-rate", f"{key}: {wpm:g} words/min") for key, wpm in self.speech

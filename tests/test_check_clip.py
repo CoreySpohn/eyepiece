@@ -257,3 +257,13 @@ def test_public_names():
     for name in ("check_clip", "assert_clip", "ClipReport", "ClipError"):
         assert name in ept.__all__
         assert hasattr(ept, name)
+
+
+def test_info_plan_findings_are_kept_but_do_not_fail_the_clip():
+    fig, draw, plan, _ = _clip()
+    plan.faults = [ep.Fault("skipped", "info", "pulse 'x' is placed only by a cue")]
+    report = ept.check_clip(fig, draw, plan)
+    assert report.plan_faults == plan.faults
+    assert report.ok
+    plan.faults = [ep.Fault("collapsed", "error", "span 'blink' is too short")]
+    assert not ept.check_clip(fig, draw, plan).ok
