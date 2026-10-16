@@ -492,8 +492,23 @@ half a frame rounds up. Two spans that write one knob on the same frame raise.
 The other checks are faults (text arriving over motion, a caption leaving
 before it is read, a span that rounds to no frames); a strict timeline raises
 them and any other records them in `Plan.faults`, with information-level
-entries for what the clock did on its own (a skipped pulse, a span clamped to
-the clip).
+entries for what the clock did on its own (a skipped pulse, a span truncated
+at the end of the clip).
+
+Names live in two places. Span and knob names share one namespace, and a
+repeat raises. Sections and lines share a second one, so a span may carry the
+name of the line it sits in (the `square` line may hold the `square` entry),
+but two sections or lines may not share a name. No user-given name may hold
+`:`, because event names and cue marks use it as a separator.
+
+A span truncated at the end of the clip keeps its speed: it plays the frames
+it has and the rest are never drawn, and the information-level fault says by
+how many frames. A span that a cue places can start later than its word when
+the cursor is still busy; the wait is an information-level `late` fault up to
+`Timeline(max_late_s=0.5)` seconds and an error beyond it, which a strict
+timeline raises, naming the span, the cue word and the seconds. In a narrated
+clip speech reads the captions, so a caption that the next caption replaces
+leaves without a read-time check; a silent clip keeps it.
 
 Narration is placement only. `Narration.place` lays one line on the clock and
 is pure, a cue is the start of its word with no lead, and the lead of each
@@ -515,7 +530,13 @@ rounds up), a span name resolves through the `Plan` to the span's settled
 last frame, and a request the recording never reaches is an error rather than
 a missing file. `on_rescale` is one of `"warn"`, `"raise"` and `"ignore"`;
 `"raise"` raises `ScaleDriftError` and removes every output the call began, so
-a failed run leaves nothing that could pass for a finished one.
+a failed run leaves nothing that could pass for a finished one. The last
+frame of a span is `(span, "last")`, never `span.end`: the end time is the
+first instant after the span, and a time that rounds to the clip's frame count
+is past the last frame and is the "never written" error. A recording given its
+`plan` also warns once, as it closes, about every knob the draw function never
+read and every knob that never changes (the always-present `pulse.*` and
+`ring.*` knobs excepted), because a clip about motion needs a knob that moves.
 
 ### Attention moves sit on the figure
 

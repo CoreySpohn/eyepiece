@@ -85,6 +85,17 @@ cannot be waited on. A line lasts until its speech and padding end or until
 its last moving span ends plus 0.6 s, whichever is later, and the next line
 starts there; the pulses and rings of a line never hold it open. This replaces
 the hand-typed holds, the per-line minimum lengths and the second layout pass.
+A span whose mark falls while the cursor is still busy starts late; up to
+`max_late_s` (0.5 s by default, a `Timeline` argument) that is noted, and
+beyond it the timeline raises, naming the span, its cue word and the seconds.
+Line keys and section names have a namespace of their own, so a line and a
+span may share a name. A mid-clip still is the last frame of a span with
+`stills={"x.png": (span, "last")}`, not `span.end`.
+
+`Narration(min_s=)` and `Narration.load(..., min_s=)` still work for one
+minor release and warn with a `DeprecationWarning`: the value is a duration
+from the start of each line, and `ends=` (an absolute end time) or a
+`Timeline` replaces it.
 
 ```python
 import eyepiece as ep
