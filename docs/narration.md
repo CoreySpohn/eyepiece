@@ -6,7 +6,8 @@ reads them without a speech model. A cue mark in the text fires an attention
 move on the word that names its subject, and the length of each line sets the
 length of the part of the clip that shows it.
 
-The code on this page is shown rather than executed.
+The code on this page is shown rather than executed. The motion gallery
+includes a runnable example of number wording for speech.
 
 ## The script
 
@@ -40,6 +41,35 @@ unchanged, since a kind is free text. Name a term of either equation as an
 numbers in a line as they appear on the figure, and read them from the
 figure's source rather than typing them twice. The voice defaults to Kokoro
 `bm_george`, a British English voice, with language code `"b"`.
+
+## Numbers in speech
+
+`nr.say(value, spec="g", *, unit=None, signed=False)` uses the same numeric
+format specification as the figure, then expands notation for speech.
+`nr.say(3e-8, ".0e")` gives "3 times ten to the minus 8", and
+`nr.say(-0.126, ".1%")` gives "minus 12.6 percent". Plain decimals keep
+their digits: `nr.say(0.943, ".3f")` gives "0.943". `signed=True` adds
+"plus" to positive values. Nonfinite values raise `ValueError`.
+
+The supported units are `um` (microns), `nm` (nanometers), `pc` (parsecs),
+`AU`, `arcsec` (arcseconds), `mas` (milliarcseconds), `mag/arcsec^2`
+(magnitudes per square arcsecond), and `lambda/D` (lambda over D). An unknown
+unit raises `ValueError` naming the available choices. Use `display=` to
+keep the figure notation in captions while giving the voice these words.
+
+`nr.speech_faults(text)` returns frozen `SpeechFault` records with `token`,
+`kind`, `detail` and `start` (a character index). It identifies exponent and
+power notation, ASCII `+/-`, `~`, `*`, slashes, binary minus signs and
+micron abbreviations after numbers. Decimals, signed percentages, word
+hyphens and `S/N` are accepted. Write operators and units in words when
+they are part of speech.
+
+`nr.check_script_speech(script) -> None` checks every `Line.spoken` and
+raises `nr.SpeechTextError`, a `ValueError`, naming the line and token for
+each fault. It needs no speech engine and can be called before estimating
+timing. Synthesis calls it before any engine import or speech, including
+when cache files exist. Cue targets and display text are never checked.
+The synthesis CLI reports the same error without a traceback.
 
 ## Speaking it
 

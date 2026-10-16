@@ -37,6 +37,7 @@ import numpy as np
 
 from ._align import align
 from ._script import KOKORO_VERSION
+from ._speech import SpeechTextError, check_script_speech
 from ._timeline import MissingAudioError, Spoken, Word
 
 SAMPLE_RATE = 24000
@@ -153,9 +154,12 @@ def synthesize(
         The keys of the lines that were spoken.
 
     Raises:
+        SpeechTextError: If spoken text contains notation the engine can
+            misread. All lines are checked before any engine call.
         MissingAudioError: If a line has JSON but no audio and ``respeak`` is
             not set.
     """
+    check_script_speech(script)
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     write_audio = _write_compressed if write_audio is None else write_audio
@@ -263,13 +267,16 @@ def main(argv=None):
             audio = "audio" if has_audio else "NO AUDIO"
             print(f"{key}  {line or '(unused)':<12} {audio}  {text}")
         return
-    spoken = synthesize(
-        script,
-        args.cache_dir,
-        force=args.force,
-        respeak=args.respeak,
-        prune=args.prune,
-    )
+    try:
+        spoken = synthesize(
+            script,
+            args.cache_dir,
+            force=args.force,
+            respeak=args.respeak,
+            prune=args.prune,
+        )
+    except SpeechTextError as err:
+        parser.error(str(err))
     print(f"spoke {len(spoken)} lines: {', '.join(spoken) or 'none, all cached'}")
 
 

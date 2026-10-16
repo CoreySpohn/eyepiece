@@ -1096,6 +1096,31 @@ says "P of H given E"; the cue marks stay on the spoken words. When no position
 is clear, `caption_line` raises, and the clip reserves a caption band in its
 layout instead.
 
+## Numbers for the voice
+
+Use the figure's value and format specification with `nr.say` so the spoken
+digits keep the same precision. Exponents, percentages and units become
+words the voice reads correctly; captions can retain the compact notation.
+`nr.check_script_speech` checks spoken text before synthesis and can also be
+called without a speech engine. A fault raises `nr.SpeechTextError` with the
+line key and offending token. `nr.speech_faults` inspects text directly.
+
+```{code-cell} python
+from eyepiece import narration as nr
+
+contrast = 3e-8
+spoken = f"The contrast is {nr.say(contrast, '.0e')}."
+line = nr.Line("contrast", spoken, display=f"The contrast is {contrast:.0e}.")
+script = nr.Script((line,))
+nr.check_script_speech(script)
+print(line.spoken)
+print(line.display)
+print(nr.say(-0.126, ".1%"))
+print(nr.say(0.943, ".3f"))
+print(nr.say(0.55, ".2f", unit="um"))
+print(nr.speech_faults(line.spoken))
+```
+
 ## Captions at a playback time
 
 `nr.caption_at(cues, t)` returns the text to show at time `t` in seconds.
