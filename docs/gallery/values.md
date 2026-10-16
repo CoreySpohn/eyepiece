@@ -13,8 +13,8 @@ kernelspec:
 # Points colored by values
 
 `scatter_values` pairs a scalar-colored point cloud with an inset colorbar.
-Role names follow the active style at call time; `statistic` uses PuOr until
-the style supplies its own mapping.
+Role names follow the active style at call time. The `statistic` fallback
+(PuOr) applies only to an hwostyle older than that role.
 
 ```{code-cell} python
 import hwostyle

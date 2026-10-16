@@ -271,6 +271,22 @@ update. A mode switch therefore changes the next snapshot and never an
 existing result, which is what lets a movie or a slide play to the end in
 the colors it started with.
 
+Image colormaps follow the same rule. A primitive picks its colormap by the
+role of the quantity it draws, through `hwostyle.cmaps.<role>`, and never by a
+map name, so a change of style reaches every figure at once. The roles are
+`intensity` (idealized model images), `readouts` (detector readouts and processed
+data products), `residual` (signed difference images), `opd` (signed wavefront
+error), `statistic` (signed statistics and SNR maps), `phase` (cyclic phase),
+`probability` (posterior and scatter density), `pupil` (pupil transmission), and
+`mask` (validity masks and binary apertures). The sequential roles are oriented by
+the page, with low values at the page end: dark on a dark page, and pale on a
+white page for `probability` and `pupil`. `pupil` and `probability` share their
+colors, so they never appear in the same figure: pupil belongs to optics figures
+and probability to inference figures. `cmaps.high_dynamic_range` and
+`roles.envelope` are deprecated and warn, so new code uses `intensity` or
+`readouts`. When the installed hwostyle predates a role, eyepiece falls back to a
+plain matplotlib map for `statistic` and `pupil`, and nothing else.
+
 A primitive called with no style applied at all still produces a sensible
 figure. Colormaps fall back to the light-mode definitions, and palette
 colors follow the matplotlib environment the caller is already in: a
