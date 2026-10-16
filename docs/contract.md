@@ -633,6 +633,40 @@ a label with an opaque backing box is not reported over marks. The result is
 deterministic and the figure keeps its dpi. `assert_readable` raises
 `ReadabilityError` with the report.
 
+`motion_faults(fig, at, times, moves=..., rest=..., groups=...)` is the same
+check for the path between two states rather than the states themselves.
+Given a `Span(start, stop)` it poses the figure at every frame of the venue's
+frame rate (30 per second for each venue; `fps=` overrides), always ending
+exactly on `stop`, draws it, and traces every visible artist, equation glyph
+paths and collections included, with the rendered frame when a pixel check is
+asked for. It returns `MotionFault` records, sorted by time, of seven kinds.
+`jump` is a frame step far above the typical one and not echoed by its
+neighbours, a step into the rest state (the end of a declared move, else the
+last step that changes anything) that is both above half the ratio and twice
+the step before it, or, for a clip too still to have a typical step, one
+artist that moves a large share of its size in one frame. `dead` is a declared
+move whose region never changes, or whose artists are never visible. `drift`
+is an artist listed in `rest` whose box or ink centroid moves by more than
+`tol_px`. `tear` is a `groups` set whose members, by their ink centroids,
+change their spacing, so a stagger or a drift of one member shows and a rigid
+rotation does not; a group declared with `scales=True` may scale as a whole.
+`overlap` is two artists, text or declared in `moves`, whose visible parts
+cover each other beyond a tolerance while both travel (judged over a tenth of
+a second, so the answer does not depend on the frame rate) and are not listed
+in `may_overlap`. `outside` is any traced artist, a glyph path included, past
+the frame, and any text or declared artist cut by its clip box or clipped away
+entirely; a clip box that only widens, and ends by uncovering the artist, is a
+reveal and not a cut. `spike` is a hop off the path, or a one-frame excursion,
+or a kink in speed (measured over elapsed time) on an artist that keeps its
+shape; it is off unless `spikes=True` or `kinds` names it, because a small hop
+is sometimes the intended motion. A move is a dict, or any object whose
+`contract` is a dict or has the same fields, with the keys `name`, `span`,
+`artists`, `rest`, `groups` and `may_overlap`; a move's `rest`, `groups` and
+`may_overlap` hold only over its `span`. The call restores the figure's dpi and
+canvas and is deterministic. It costs the draw time of each frame plus a
+little; the frames are kept only for `jump` and `dead`. `assert_motion` raises
+`MotionError` with the report.
+
 `caption_line(fig, at=pose, times=...)` uses the same extents to place
 captions: it returns the WebVTT `line:` percentage of the lowest strip, two
 caption lines tall, that no visible text of the figure touches at any sampled
