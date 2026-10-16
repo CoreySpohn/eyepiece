@@ -21,7 +21,7 @@ from matplotlib.path import Path
 from eyepiece import _style
 from eyepiece._motion import _Unsnap
 from eyepiece._phasor import HEAD_LENGTH, HEAD_PER_MARKER, HEAD_WIDTH, _Arrow
-from eyepiece._result import PlotResult
+from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import _check_u, _TextFade
 
 # Arrow kinds: the matplotlib arrow style and the number of heads.
@@ -108,6 +108,8 @@ def arrow(
     zorder=6,
 ):
     """Draw an arrow that can grow and move without being redrawn.
+
+    Its shaft grows and its label follows the ends; other artists stay untouched.
 
     One `FancyArrowPatch` carries the shaft and the head or heads. `update`
     sets its ends and its growth, so a build-up can lengthen a vector, slide
@@ -242,7 +244,15 @@ def arrow(
     artists = {"arrow": patch}
     if note is not None:
         artists["text"] = note
-    return PlotResult(ax=ax, artists=artists, update=update)
+    return PlotResult(
+        ax=ax,
+        artists=artists,
+        update=update,
+        contract=MotionContract(
+            moves=(patch,) + (() if note is None else (note,)),
+            may_overlap=() if note is None else ((patch, note),),
+        ),
+    )
 
 
 class _ArcArrow(_Arrow):
@@ -313,6 +323,8 @@ def angle_arc(
     zorder=6,
 ):
     r"""Draw an arc between two directions that can sweep without being redrawn.
+
+    Its arc sweeps and its label follows the sweep; other artists stay untouched.
 
     The arc about `center` runs from `start_angle` to `end_angle`, one patch
     along a circular path, so an arrowhead at an end is tangent to the arc
@@ -446,7 +458,15 @@ def angle_arc(
     artists = {"arrow": patch}
     if note is not None:
         artists["text"] = note
-    return PlotResult(ax=ax, artists=artists, update=update)
+    return PlotResult(
+        ax=ax,
+        artists=artists,
+        update=update,
+        contract=MotionContract(
+            moves=(patch,) + (() if note is None else (note,)),
+            may_overlap=() if note is None else ((patch, note),),
+        ),
+    )
 
 
 def compass(
@@ -466,6 +486,8 @@ def compass(
     zorder=6,
 ):
     """Draw north and east arrows from one point, turning together.
+
+    Its arrows grow and turn with their labels; other artists stay untouched.
 
     Two arrows built on `arrow`, from `center`, each with a letter just
     beyond its tip. `update(angle=...)` turns the pair, as a roll turns a
@@ -590,4 +612,12 @@ def compass(
     artists = {"arrow": [p.artists["arrow"] for p in parts]}
     if notes:
         artists["text"] = notes
-    return PlotResult(ax=ax, artists=artists, update=update)
+    return PlotResult(
+        ax=ax,
+        artists=artists,
+        update=update,
+        contract=MotionContract(
+            moves=tuple(artists["arrow"]) + tuple(notes),
+            may_overlap=(tuple(artists["arrow"]),),
+        ),
+    )

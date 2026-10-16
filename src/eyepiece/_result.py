@@ -53,7 +53,7 @@ primitive documents, which is empty for every primitive that creates none.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 ARTIST_KEYS = frozenset(
     {
@@ -73,6 +73,33 @@ ARTIST_KEYS = frozenset(
 )
 
 
+@dataclass(frozen=True)
+class MotionContract:
+    """Geometry a move promises, using the figure's own artists.
+
+    Attributes:
+        moves: Artists whose drawing may move or change shape.
+        rest: Artists whose geometry stays still during the move.
+        groups: Tuples of artists that move rigidly, or dicts with
+            ``artists`` and ``scales=True`` for uniform scaling.
+        may_overlap: Artist pairs allowed to overlap while moving.
+        settles: Always True: the move is continuous into its rest state.
+        arrives_after_motion: Texts that fade in after motion has settled.
+        rectilinear: Pieces that stay axis-aligned rectangles throughout.
+
+    Empty tuples make no promise. Contracts describe drawing; they do not
+    change it, and opacity alone does not count as geometry.
+    """
+
+    moves: tuple = ()
+    rest: tuple = ()
+    groups: tuple = ()
+    may_overlap: tuple = ()
+    settles: bool = field(default=True, init=False)
+    arrives_after_motion: tuple = ()
+    rectilinear: tuple = ()
+
+
 @dataclass(frozen=True, eq=False)
 class PlotResult:
     """Result of a single-axes plotting primitive.
@@ -88,12 +115,14 @@ class PlotResult:
         insets: Tuple of the Axes the primitive created beside `ax`, for
             the caller to fill, in the order the primitive documents.
             Empty when it created none.
+        contract: Optional motion promises over the returned artists.
     """
 
     ax: object
     artists: dict
     update: Callable | None = None
     insets: tuple = ()
+    contract: MotionContract | None = field(default=None, kw_only=True)
 
     @property
     def fig(self):
@@ -114,11 +143,13 @@ class MosaicResult:
         update: Optional callable that redraws with new data, reusing the
             transform the primitive applied on first draw. None when the
             primitive has no such transform to reuse.
+        contract: Optional motion promises over the returned artists.
     """
 
     axes: object
     artists: dict
     update: Callable | None = None
+    contract: MotionContract | None = field(default=None, kw_only=True)
 
     @property
     def fig(self):
