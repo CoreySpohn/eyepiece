@@ -1664,9 +1664,9 @@ class Stage:
         Args:
             levels: Mapping of group name to a presence in [0, 1], or to a
                 ``(presence, contrast)`` pair.
-            ease: An easing kind for `eyepiece.ease`, or a callable from progress to
-            eased progress such as ``functools.partial(ep.ease, kind="back_out",
-            strength=0.2)``, or None for the levels
+            ease: An easing kind for `eyepiece.ease`, or a callable from progress
+                to eased progress such as ``functools.partial(ep.ease,
+                kind="back_out", strength=0.2)``, or None for the levels
                 as given. It shapes presence only, so a caller that ramps a
                 presence linearly in time gets a fade that starts and stops
                 gently, and presence 0 and 1 stay where they are. Contrast is
@@ -1701,9 +1701,9 @@ class Stage:
             u: Progress from `start` to the state, from 0 to 1; values
                 outside are clipped. At 1 (the default) the stage is exactly
                 in the state.
-            ease: An easing kind for `eyepiece.ease`, or a callable from progress to
-            eased progress such as ``functools.partial(ep.ease, kind="back_out",
-            strength=0.2)``, applied to `u`.
+            ease: An easing kind for `eyepiece.ease`, or a callable from progress
+                to eased progress such as ``functools.partial(ep.ease,
+                kind="back_out", strength=0.2)``, applied to `u`.
 
         Returns:
             The levels drawn, ``{name: (presence, contrast)}``.
