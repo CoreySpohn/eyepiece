@@ -457,36 +457,72 @@ class Motif:
             return self.fill_alpha_dark
         return self.fill_alpha
 
-    def line_kw(self):
-        """Keyword arguments for ``ax.plot`` of this motif as a line."""
-        return {"color": self.color, "ls": self.linestyle, "lw": self.linewidth}
+    def line_kw(self, *, gid=None):
+        """Keyword arguments for ``ax.plot`` of this motif as a line.
 
-    def label_kw(self):
-        """Keyword arguments for ``ax.text`` of this motif's label."""
-        kw = {"color": self.label}
+        Args:
+            gid: Artist identifier; None uses the motif key.
+
+        Returns:
+            A dict of line properties, including ``gid``.
+        """
+        return {
+            "color": self.color,
+            "ls": self.linestyle,
+            "lw": self.linewidth,
+            "gid": self.key if gid is None else gid,
+        }
+
+    def label_kw(self, *, gid=None):
+        """Keyword arguments for ``ax.text`` of this motif's label.
+
+        Args:
+            gid: Artist identifier; None uses the motif key.
+
+        Returns:
+            A dict of label properties, including ``gid``.
+        """
+        kw = {"color": self.label, "gid": self.key if gid is None else gid}
         if self.fontstyle:
             kw["fontstyle"] = self.fontstyle
         return kw
 
-    def marker_kw(self, size=None):
+    def marker_kw(self, size=None, *, gid=None):
         """Keyword arguments for ``ax.plot`` of this motif as a point.
 
         Args:
             size: Marker size in points; None keeps the rcParams default.
+            gid: Artist identifier; None uses the motif key.
+
+        Returns:
+            A dict of marker properties, including ``gid``.
         """
-        kw = {"color": self.color, "marker": self.marker, "ls": "none"}
+        kw = {
+            "color": self.color,
+            "marker": self.marker,
+            "ls": "none",
+            "gid": self.key if gid is None else gid,
+        }
         if size is not None:
             kw["ms"] = size
         return kw
 
-    def patch_kw(self):
-        """Keyword arguments for a matplotlib patch of this motif as a region."""
+    def patch_kw(self, *, gid=None):
+        """Keyword arguments for a matplotlib patch of this motif as a region.
+
+        Args:
+            gid: Artist identifier; None uses the motif key.
+
+        Returns:
+            A dict of patch properties, including ``gid``.
+        """
         color = self.color
         kw = {
             "facecolor": to_rgba(color, self.fill()),
             "edgecolor": color,
             "lw": self.linewidth,
             "ls": self.linestyle if self.linestyle != "none" else "-",
+            "gid": self.key if gid is None else gid,
         }
         if self.hatch:
             kw["hatch"] = self.hatch
@@ -606,6 +642,20 @@ class MotifSet(Mapping):
     def __len__(self):
         """Number of motifs."""
         return len(self._motifs)
+
+    def meaning_keys(self) -> dict:
+        """Map motif gid prefixes to meaning keys for meaning checks.
+
+        Returns:
+            A dict mapping each motif key to itself, for the ``keys`` argument
+            of `eyepiece.testing.meaning_faults`.
+
+        Example::
+
+            motifs = MotifSet.default().only("model", "truth")
+            faults = ept.meaning_faults(fig, keys=motifs.meaning_keys())
+        """
+        return {key: key for key in self}
 
     def _like(self, motifs):
         return MotifSet(

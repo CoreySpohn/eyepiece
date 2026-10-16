@@ -76,14 +76,69 @@ def test_kwargs_follow_how_the_motif_is_drawn():
     assert patch["hatch"] == "///"
     assert patch["edgecolor"] == disk.color
     assert patch["facecolor"][3] == pytest.approx(0.12)
-    assert disk.line_kw() == {"color": disk.color, "ls": "-", "lw": 0.8}
+    assert disk.line_kw() == {
+        "color": disk.color,
+        "ls": "-",
+        "lw": 0.8,
+        "gid": "disk",
+    }
     point = _m("star", "star", marker="*", linestyle="none")
     assert point.marker_kw(size=9) == {
         "color": point.color,
         "marker": "*",
         "ls": "none",
         "ms": 9,
+        "gid": "star",
     }
+
+
+@pytest.mark.parametrize("helper", ["line_kw", "marker_kw", "patch_kw", "label_kw"])
+def test_motif_kwargs_carry_the_key_as_gid(helper):
+    motif = _m("planet", "planet", marker="o")
+    kwargs = getattr(motif, helper)
+    assert kwargs()["gid"] == motif.key
+    assert kwargs(gid=None)["gid"] == motif.key
+
+
+@pytest.mark.parametrize("helper", ["line_kw", "marker_kw", "patch_kw", "label_kw"])
+@pytest.mark.parametrize("gid", ["planet:orbit", ""])
+def test_motif_kwargs_accept_an_explicit_gid(helper, gid):
+    motif = _m("planet", "planet", marker="o")
+    assert getattr(motif, helper)(gid=gid)["gid"] == gid
+
+
+def test_meaning_keys_maps_each_motif_key_to_itself():
+    motifs = ep.MotifSet([_m("a", "star"), _m("b", "planet")])
+    assert motifs.meaning_keys() == {"a": "a", "b": "b"}
+    assert motifs.only("b").meaning_keys() == {"b": "b"}
+    assert ep.MotifSet([]).meaning_keys() == {}
+
+
+def test_meaning_keys_finds_a_same_hue_pair_drawn_with_motif_kwargs():
+    hwostyle.use("dark")
+    motifs = ep.MotifSet([_m("a", "planet"), _m("b", "planet")])
+    fig, ax = plt.subplots(figsize=(4, 3), dpi=80)
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    for y, motif in zip((3, 6), motifs.values(), strict=True):
+        ax.plot([1, 9], [y, y], **motif.line_kw())
+    found = ept.meaning_faults(fig, keys=motifs.meaning_keys())
+    (same,) = [f for f in found if f.kind == "same-frame"]
+    assert same.severity == "fault"
+    assert set(same.keys) == {"a", "b"}
+    assert same.de == pytest.approx(0.0)
+    assert "unkeyed" not in [f.kind for f in found]
+
+
+def test_meaning_keys_passes_distinct_hues_drawn_with_motif_kwargs():
+    hwostyle.use("dark")
+    motifs = ep.MotifSet([_m("a", "planet"), _m("b", "star")])
+    fig, ax = plt.subplots(figsize=(4, 3), dpi=80)
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    for y, motif in zip((3, 6), motifs.values(), strict=True):
+        ax.plot([1, 9], [y, y], **motif.line_kw())
+    assert ept.meaning_faults(fig, keys=motifs.meaning_keys()) == []
 
 
 def test_the_fill_is_stronger_on_a_dark_page():
