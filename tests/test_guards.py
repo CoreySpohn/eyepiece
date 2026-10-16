@@ -127,6 +127,8 @@ _EXPECTED_ALL = [
     "Fault",
     "Frame",
     "MosaicResult",
+    "Motif",
+    "MotifSet",
     "PageCamera",
     "Plan",
     "PlotResult",

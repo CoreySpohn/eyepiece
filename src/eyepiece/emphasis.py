@@ -478,8 +478,10 @@ def step_list(
             width.
         detail_offset: Distance from a heading's top down to its detail's
             top, as a fraction of the axes height.
-        dim: Color of a finished step. None uses a neutral tone halfway
-            between the background and the text color.
+        dim: Color of a finished step. None uses the neutral tone at the
+            mode's dim level (`Stage`'s default contrast): 0.35 of the way
+            from the background to the text color in dark mode, 0.5 in light
+            and paper.
         text_kw: Extra kwargs for every `Text` (for example `fontsize`),
             applied last. Color and weight carry the step's state and are
             set by `update`.
@@ -510,7 +512,7 @@ def step_list(
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     ax.axis("off")
     ink = matplotlib.rcParams["text.color"]
-    faint = _style.neutral(0.55) if dim is None else dim
+    faint = _style.neutral(_style.dim_level()) if dim is None else dim
     kw = {"ha": "left", "va": "top", "color": ink, **(text_kw or {})}
     texts = []
     groups = []

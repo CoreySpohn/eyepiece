@@ -258,6 +258,7 @@ gallery/animation
 gallery/motion
 gallery/one-scene-n-views
 gallery/prepared
+gallery/motifs
 ```
 
 ```{toctree}

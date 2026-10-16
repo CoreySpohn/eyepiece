@@ -82,16 +82,27 @@ from eyepiece._meaning import (
     meaning_faults_chain,
     meaning_report,
 )
+from eyepiece._motif_checks import (
+    MOTIF_KINDS,
+    MotifError,
+    MotifFault,
+    assert_motifs,
+    motif_faults,
+    motif_margins,
+)
 from eyepiece.attention import _data_colors, _default_avoid, _renderer
 
 __all__ = [
     "KINDS",
     "MEANING_KINDS",
+    "MOTIF_KINDS",
     "MOTION_KINDS",
     "VENUES",
     "VENUE_FPS",
     "MeaningError",
     "MeaningFault",
+    "MotifError",
+    "MotifFault",
     "MotionError",
     "MotionFault",
     "ReadabilityError",
@@ -100,6 +111,7 @@ __all__ = [
     "SpeechRate",
     "SpeechRateError",
     "assert_meaning",
+    "assert_motifs",
     "assert_motion",
     "assert_readable",
     "assert_speech_rate",
@@ -107,6 +119,8 @@ __all__ = [
     "meaning_faults",
     "meaning_faults_chain",
     "meaning_report",
+    "motif_faults",
+    "motif_margins",
     "motion_faults",
     "readability_faults",
     "speech_rate",

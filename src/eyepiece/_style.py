@@ -31,6 +31,7 @@ _ROLE_FALLBACKS = {
     "model": 1,
     "predicted": 1,
     "reference": 3,
+    "zodi": 3,
     "envelope": 5,
     "alert": 4,
     "highlight": 1,
@@ -47,6 +48,28 @@ _ROLE_FALLBACKS = {
 def mode():
     """Active hwostyle mode, or "light" when no mode has been activated."""
     return hwostyle.current_mode() or "light"
+
+
+def dim_level(mode_name=None):
+    """Contrast a dimmed group keeps: 0.35 in dark mode, 0.5 otherwise.
+
+    Dimmed hues lose separation faster on a white page than on black, so the
+    light and paper levels dim less. hwostyle owns the numbers
+    (`hwostyle.motifs.DIM_LEVELS`); an older hwostyle without them gets the
+    same values from here.
+
+    Args:
+        mode_name: A mode name, or None for the active mode.
+
+    Returns:
+        A float in [0, 1].
+    """
+    name = mode_name or mode()
+    try:
+        from hwostyle.motifs import DIM_LEVELS as levels
+    except ImportError:
+        levels = {"dark": 0.35}
+    return levels.get(name, 0.5)
 
 
 def _light_cmaps():
