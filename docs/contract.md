@@ -647,7 +647,17 @@ moves rigidly. A group arcs on an optional arc, up when it moves right and down 
 (``min(1, travel / fontsize)``), so two groups that swap places pass each other and a group that does not travel sideways does not arc. A tag both
 equations have whose glyphs do not all match is a replacement: what is left of it in the first is
 carried as one box that moves and scales onto the box of what is left in the second, fading out
-while the second, drawn inside the moving box, fades in. Glyphs with no counterpart at all
+while the second, drawn inside the moving box, fades in. `replace="morph"` (default `"fade"`, the
+box) changes the outlines instead, aligned as ManimCE's `Transform` aligns paths: every segment is
+a cubic, the glyphs of each side pair in reading order and the side with fewer is padded with
+stacked copies of its own glyphs (which start or end invisible), each pair gets the same contours
+(a missing contour is a null contour at the last point of the last one, so a hole grows from or
+shrinks to a point) and the same curve count (curves split evenly in their parameter), and the
+control points, fill color and opacity mix linearly in display space on the group's eased
+progress. Both modes rest at the two equations as drawn, take the motion part of the beat, and
+leave matched glyphs and unmatched glyphs as they are. Contours pair by index, as in Manim, so a
+morph that pairs an outline with a hole flips that contour's winding part way and the nonzero
+fill can briefly close a hole. Glyphs with no counterpart at all
 fade out in the first `fade` of the beat or fade in in the last, so when anything fades in
 the motion takes the first ``1 - fade``, and new text arrives after the motion has settled. A
 fraction bar stretches as a rectangle, each corner moving to its partner, so its ends stay square. A transform's narration cue is ``{move:name}``, whose time

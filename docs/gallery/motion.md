@@ -696,6 +696,40 @@ for k in (0, N_BAYES - 1):
 HTML(ep.animate(fig, draw_bayes, N_BAYES, fps=20).jshtml(dpi=80))
 ```
 
+A replaced tag can also change shape. With ``replace="morph"`` the outlines of
+the old glyphs turn into the outlines of the new ones, aligned as ManimCE's
+`Transform` aligns paths: glyph for glyph in reading order, the side with
+fewer glyphs gaining stacked copies of its own, a hole that one glyph lacks
+growing from a point, and every outline split until both have the same
+curves. The default, ``replace="fade"``, stays the box. Below, the same
+Bayes move twice, the default first and the morph second. The thirteen glyphs of
+the numerator outnumber the four of ``0.24``, so several outlines gather on
+each new glyph and the middle of the move is crowded, as it is in Manim.
+
+```{code-cell} python
+from IPython.display import display
+
+
+def bayes_move(replace):
+    fig = plt.figure(figsize=(7.6, 2.4))
+    board = fig.add_axes([0, 0, 1, 1])
+    board.set(xlim=(0, 1), ylim=(0, 1))
+    board.axis("off")
+    left = ep.Anchor.from_data(board, (0.06, 0.5))
+    eq_a = ep.equation(left, BAYES_A, fontsize=34, colors=TERM_COLORS, ha="left")
+    eq_b = ep.equation(left, BAYES_B, fontsize=34, colors=TERM_COLORS, ha="left")
+    return fig, ep.transform(eq_a, eq_b, stagger=0.55, replace=replace)
+
+
+for replace in ("fade", "morph"):
+    fig, move = bayes_move(replace)
+
+    def draw(fig, k, move=move):
+        move.update(min(1.0, max(0.0, (k - 12) / 36)))
+
+    display(HTML(ep.animate(fig, draw, N_BAYES, fps=20).jshtml(dpi=80)))
+```
+
 Most rearrangements keep most glyphs, and then the move is mostly travel.
 Below, ``a^2 + b^2 = c^2`` becomes ``a^2 = c^2 - b^2``: every ``a``, ``c`` and
 square stays a glyph, ``a^2`` stays where it is, ``b^2`` crosses the equals sign

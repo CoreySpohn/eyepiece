@@ -33,6 +33,7 @@ from matplotlib.path import Path
 from matplotlib.textpath import text_to_path
 from matplotlib.transforms import Bbox, IdentityTransform
 
+from eyepiece import _bezier
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import _Unsnap
 from eyepiece._motion import stagger as _stagger
@@ -288,6 +289,11 @@ def _snap_shift(vertices, height, codes=None):
     return _snapped(vertices, height) - vertices
 
 
+def _rectilinear(piece):
+    """Whether Agg would snap this piece at rest: every segment axis-aligned."""
+    return bool(np.ndim(_snap_shift(piece.local, 0.0, piece.codes)))
+
+
 class _Glyph(PathPatch):
     """One piece of an equation, drawn where the equation (or a transform) says."""
 
@@ -322,6 +328,8 @@ class _Glyph(PathPatch):
         pose = self.pose
         if pose is None:
             return own
+        if isinstance(pose, _MorphPose):
+            return pose.job.map(pose.e, renderer)
         if isinstance(pose, _BoxPose):
             v = pose.group.map(self, pose.side, pose.e, renderer)
             weight = 1.0 - pose.e if pose.side == "a" else pose.e
@@ -365,6 +373,8 @@ class _Glyph(PathPatch):
             return
         if self.pose is not None and self.pose.rule is not None:
             self.set_path(self.rule_path(renderer))
+        elif isinstance(self.pose, _MorphPose):
+            self.set_path(Path(self.vertices(renderer), self.pose.job.codes))
         else:
             self.set_path(Path(self.vertices(renderer), self.piece.codes))
         super().draw(renderer)
@@ -388,6 +398,110 @@ class _BoxPose:
     side: str
     e: float
     rule: object = None
+
+
+@dataclass
+class _MorphPose:
+    """A glyph drawn as one outline-to-outline morph job of a replaced term."""
+
+    job: object
+    e: float
+    rule: object = None
+
+
+@dataclass
+class _MorphJob:
+    """One aligned pair of outlines: where it starts, where it ends, who draws it."""
+
+    carrier: object
+    eq_a: object
+    eq_b: object
+    points_a: object
+    points_b: object
+    codes: object
+    alpha_a: float
+    alpha_b: float
+    rgb_a: object
+    rgb_b: object
+    snap_a: bool
+    snap_b: bool
+
+    def map(self, e, renderer):
+        """The morphing outline in display pixels at progress `e`.
+
+        Control points are mixed in display space. A piece that Agg would snap
+        at rest (a bar, a minus sign) takes its snap shift in over the end of
+        the move, as a matched glyph does, so the rest state is reached
+        without a step.
+        """
+        a = self.eq_a.place(self.points_a, renderer)
+        b = self.eq_b.place(self.points_b, renderer)
+        v = (1.0 - e) * a + e * b
+        if self.snap_a:
+            v = v + (1.0 - e) * (_snapped(a, renderer.height) - a)
+        if self.snap_b:
+            v = v + e * (_snapped(b, renderer.height) - b)
+        return v
+
+
+class _Morph:
+    """The leftovers of one tag in both equations, one outline turning into the other.
+
+    This follows ManimCE's `Transform` on two groups of paths. The glyphs of
+    each side pair in reading order, and the side with fewer gets stacked
+    copies of its own glyphs (`Mobject.add_n_more_submobjects`), copies that
+    start or end invisible. Each pair is aligned contour by contour and curve
+    by curve (`VMobject.align_points`), and its control points, fill color and
+    opacity are mixed linearly in display space. The glyphs of the larger side
+    draw the morphs, so every glyph that the pairing needs is already an
+    artist; the other side is hidden between the ends.
+    """
+
+    def __init__(self, source, target):
+        self.source = source
+        self.target = target
+        paths = [
+            [_bezier.to_cubic(Path(g.piece.local, g.piece.codes)) for g in side]
+            for side in (source, target)
+        ]
+        al = _bezier.align_groups(*paths)
+        eq_a, eq_b = source[0].eq, target[0].eq
+        by_source = len(source) >= len(target)
+        self.carriers = source if by_source else target
+        self.jobs = []
+        for k in range(len(al.a)):
+            ga = source[al.index_a[k]]
+            gb = target[al.index_b[k]]
+            points_a, codes = _bezier.flatten(al.a[k])
+            points_b, _ = _bezier.flatten(al.b[k])
+            self.jobs.append(
+                _MorphJob(
+                    carrier=ga if by_source else gb,
+                    eq_a=eq_a,
+                    eq_b=eq_b,
+                    points_a=points_a,
+                    points_b=points_b,
+                    codes=codes,
+                    alpha_a=0.0 if al.copy_a[k] else 1.0,
+                    alpha_b=0.0 if al.copy_b[k] else 1.0,
+                    rgb_a=np.array(ga.rgb),
+                    rgb_b=np.array(gb.rgb),
+                    snap_a=_rectilinear(ga.piece),
+                    snap_b=_rectilinear(gb.piece),
+                )
+            )
+
+    def apply(self, e, level):
+        """Pose every glyph of the term at eased progress `e`."""
+        for g in (*self.source, *self.target):
+            if g not in self.carriers:
+                _set_alpha(g, 0.0)
+        for job in self.jobs:
+            g = job.carrier
+            g.pose = _MorphPose(job, e)
+            g.set_facecolor(tuple((1.0 - e) * job.rgb_a + e * job.rgb_b))
+            g.mixed = True
+            _set_alpha(g, ((1.0 - e) * job.alpha_a + e * job.alpha_b) * level)
 
 
 class _Replacement:
@@ -793,6 +907,7 @@ def transform(
     key_map=None,
     fade=0.4,
     align="auto",
+    replace="fade",
 ):
     """Carry one equation into another, glyph by glyph.
 
@@ -815,15 +930,25 @@ def transform(
     and a group that does not move sideways does not arc.
 
     A tag the two equations share whose glyphs do not all match (``num`` that
-    becomes another ``num``) is a replacement, as in a fade-transform: what
-    is left of the tag in `eq_a` is carried as one box that moves and scales
-    onto the box of what is left in `eq_b`, fading out while the new glyphs,
-    drawn inside the moving box, fade in. Glyphs of the tag that do match still
-    pair on their own. Material with no counterpart at all (a tag in only one
-    equation, or glyphs in no tag that match nothing) fades out where it stands
-    in the first `fade` of the beat, or fades in where it will stand in the
-    last `fade` of the beat, after the motion has settled: when anything fades
-    in, the motion takes the first ``1 - fade`` of the beat.
+    becomes another ``num``) is a replacement. With ``replace="fade"``, as in
+    a fade-transform, what is left of the tag in `eq_a` is carried as one box
+    that moves and scales onto the box of what is left in `eq_b`, fading out
+    while the new glyphs, drawn inside the moving box, fade in. With
+    ``replace="morph"`` the outlines change shape instead, as ManimCE's
+    `Transform` does: the glyphs left of the tag in each equation pair in
+    reading order, the side with fewer gets stacked copies of its own glyphs
+    (which start or end invisible), each pair is split into the same contours
+    and curves (a contour that one glyph lacks, such as the third of an ``8``
+    against a ``0``, grows from or shrinks to a point), and the control points, fill
+    color and opacity mix linearly in display space on the group's eased
+    progress. A morph that flips the winding of a contour part way fills by
+    the nonzero rule, and so can briefly fill a hole, as Manim's does. Glyphs
+    of the tag that do match still pair on their own. Material with no
+    counterpart at all (a tag in only one equation, or glyphs in no tag that
+    match nothing) fades out where it stands in the first `fade` of the beat,
+    or fades in where it will stand in the last `fade` of the beat, after the
+    motion has settled: when anything fades in, the motion takes the first
+    ``1 - fade`` of the beat.
 
     `eq_b` is placed so that the aligned glyph keeps its place: `eq_b` takes
     on the position that puts `align`'s first matched glyph exactly where it is
@@ -865,6 +990,10 @@ def transform(
             sideways shift that the most groups share (binned at a quarter of
             a font size, the leftmost group on a tie), or None to leave both
             equations on their own anchors.
+        replace: How a replaced tag changes: ``"fade"`` (a box that carries
+            the old glyphs out as the new ones fade in) or ``"morph"`` (outline
+            into outline). Matched glyphs and glyphs with no counterpart are
+            the same either way.
 
     Returns:
         A `PlotResult` on `eq_a`'s axes with ``artists["glyphs"]`` (the glyphs
@@ -878,8 +1007,8 @@ def transform(
     Raises:
         TypeError: If an end is not the result of `equation`.
         ValueError: If `stagger` or `fade` is outside (0, 1], the equations
-            are in different figures, `arc` is not finite, or the `align` tag
-            has no matched glyph.
+            are in different figures, `arc` is not finite, `replace` is
+            unknown, or the `align` tag has no matched glyph.
         KeyError: If a `key_map` or `align` name is not a tag of its equation.
 
     Example::
@@ -906,6 +1035,8 @@ def transform(
         raise ValueError(f"fade must be in (0, 1], got {fade}")
     if not math.isfinite(arc):
         raise ValueError(f"arc must be finite, got {arc}")
+    if replace not in ("fade", "morph"):
+        raise ValueError(f"unknown replace: {replace!r}; known: ['fade', 'morph']")
     key_map = dict(key_map or {})
     for ta, tb in key_map.items():
         if ta not in ea.tags:
@@ -937,8 +1068,9 @@ def transform(
                 _RULE_POINTS,
                 True,
             )
+    swap_type = _Morph if replace == "morph" else _Replacement
     swaps = [
-        _Replacement([ea.glyphs[i] for i in ia], [eb.glyphs[j] for j in ib])
+        swap_type([ea.glyphs[i] for i in ia], [eb.glyphs[j] for j in ib])
         for ia, ib in replaced
     ]
     swapped_a = {i for ia, _ in replaced for i in ia}
@@ -977,6 +1109,9 @@ def transform(
                 g.mixed = False
         for g in eb.glyphs:
             g.pose = None
+            if g.mixed:
+                g.set_facecolor(g.rgb)
+                g.mixed = False
         if u <= 0.0 or u >= 1.0:
             shown, hidden = (ea, eb) if u <= 0.0 else (eb, ea)
             for g in shown.glyphs:
@@ -1001,6 +1136,9 @@ def transform(
                     _set_alpha(a, level)
                 continue
             mix = min(1.0, max(0.0, e))
+            if isinstance(item, _Morph):
+                item.apply(mix, level)
+                continue
             leave = 1.0 - _ease(min(1.0, mix / 0.6), "smoothstep")
             enter = _ease(min(1.0, max(0.0, (mix - 0.4) / 0.6)), "smoothstep")
             for g in item.source:
