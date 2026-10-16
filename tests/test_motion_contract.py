@@ -1,5 +1,6 @@
 """Built-in moves declare the geometry that their real artists draw."""
 
+import dataclasses
 from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 
@@ -11,6 +12,7 @@ from matplotlib.artist import Artist
 from matplotlib.collections import LineCollection
 from matplotlib.path import Path
 from matplotlib.text import Text
+from matplotlib.transforms import Affine2D
 
 import eyepiece as ep
 import eyepiece.testing as ept
@@ -163,7 +165,8 @@ def test_moves_declare_real_artists_and_lint_cleanly(name):
     fig, result, at = _clip(name)
     assert isinstance(result.contract, ep.MotionContract)
     members = set(_members(result.contract))
-    assert members
+    # A write declares nothing: its real text is hidden until the end.
+    assert members or name == "write"
     seen = set()
     for t in np.linspace(0, 2, 61):
         at(t)
@@ -335,3 +338,62 @@ def test_flight_contract_resolves_drawn_leaves_and_excludes_prototypes():
     assert eq.term("x") not in set(_members(move.contract))
     assert {pair[1] for pair in move.contract.may_overlap} == set(eq.term("x")._pieces)
     assert all(a.get_figure(root=True) is fig for a in _members(move.contract))
+
+
+# Negative controls: a promise that is broken must be reported.
+
+
+def _shifted(at, artists, px_per_s):
+    """A clip that also slides `artists` sideways at a steady speed."""
+    originals = {a: a.get_transform() for a in artists}
+
+    def pose(t):
+        at(t)
+        for artist, base in originals.items():
+            artist.set_transform(base + Affine2D().translate(px_per_s * t, 0.0))
+
+    return pose
+
+
+@pytest.mark.parametrize("name", ["follow_zoom", "readout", "Stage", "transform"])
+def test_a_rest_artist_that_moves_is_reported_as_drift(name):
+    fig, result, at = _clip(name)
+    assert result.contract.rest
+    pose = _shifted(at, [result.contract.rest[0]], 30.0)
+    found = ept.motion_faults(fig, pose, ept.Span(0, 2), moves=[result])
+    assert "drift" in {f.kind for f in found}
+
+
+@pytest.mark.parametrize("name", ["angle_arc", "compass", "follow_zoom"])
+def test_dropping_the_declared_overlap_is_reported(name):
+    fig, result, at = _clip(name)
+    assert result.contract.may_overlap
+    bare = dataclasses.replace(result.contract, may_overlap=())
+    found = ept.motion_faults(fig, at, ept.Span(0, 2), moves=[bare])
+    assert "overlap" in {f.kind for f in found}
+
+
+def test_a_glyph_pulled_out_of_a_rigid_group_is_reported_as_a_tear():
+    fig, ax = _board()
+    move, _a, _b = _transform(ax)
+    group = move.contract.groups[0]
+    pose = _shifted(lambda t: move.update(t / 2), [group[0]], 20.0)
+    found = ept.motion_faults(fig, pose, ept.Span(0, 2), moves=[move])
+    assert "tear" in {f.kind for f in found}
+
+
+def test_a_rule_inside_a_replaced_term_is_not_declared_rectilinear():
+    _fig, ax = _board()
+    at = ep.Anchor.from_data(ax, (0.15, 0.5))
+    a = ep.equation(at, r"${{t:xy}}=\frac{{n:p}}{{d:q}}$", fontsize=23, ha="left")
+    b = ep.equation(
+        at, r"${{t:\frac{r}{s}}}=\frac{{n:p}}{{d:q}}$", fontsize=23, ha="left"
+    )
+    move = ep.transform(a, b, align=None)
+    rules_b = [g for g in b.artists["glyphs"] if g.piece.is_rule]
+    term = set(b.term("t")._pieces)
+    inside = [g for g in rules_b if g in term]
+    assert inside, "the replaced term holds a rule"
+    assert not set(inside) & set(move.contract.rectilinear)
+    kept = [g for g in a.artists["glyphs"] if g.piece.is_rule]
+    assert kept and set(kept) <= set(move.contract.rectilinear)

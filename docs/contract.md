@@ -180,8 +180,8 @@ when one drifts anyway.
 artists. `PlotResult.contract` and `MosaicResult.contract` hold it, or None
 when the primitive declares no motion contract. The new `contract` argument is
 keyword-only, preserving positional arguments in result subclasses.
-`Stage.contract` describes its staged artists. The artists are the ones the figure draws, not copies
-made for the checker. Pass a result directly as
+`Stage.contract` describes its staged artists. The artists are the ones the
+figure draws, not copies made for the checker. Pass a result directly as
 `motion_faults(fig, at, times, moves=[result])`.
 
 - `moves` is a tuple of artists whose geometry may move or change shape;
@@ -206,8 +206,8 @@ as rigid only when their relative layout stays the same; its rules remain
 rectilinear even when their lengths change. A word reveal by letters changes
 its visible extent, and `reveal` can choose that mode on each call, so a word
 contract allows changing extents across both reveal modes. A write declares
-its stationary real text; its renderer-only ghost has no independently
-traceable geometry. An inset's spines and virtual
+nothing: its real text is hidden until the end and its renderer-only ghost has
+no independently traceable geometry, so no drift check could compare anything. An inset's spines and virtual
 layout artists likewise do not become traceable marks by being declared.
 These declarations describe drawing and do not change it. The checker reads
 `moves`, `rest`, `groups` and `may_overlap`; `settles`, `arrives_after_motion`

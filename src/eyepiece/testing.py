@@ -1586,9 +1586,9 @@ def motion_faults(
         times: Sample times, or a `Span` to sample at every frame.
         moves: Declared moves, each a dict (or an object whose ``contract`` is
             a dict or has the same fields) with any of ``name``, ``span``
-            (start, stop), ``artists`` (or ``moves``, those that may move), ``rest``,
-            ``groups`` and ``may_overlap``; the last three hold only over
-            the span. None declares nothing; ``jump``, ``outside`` and the
+            (start, stop), ``artists`` (or ``moves``, those that may move),
+            ``rest``, ``groups`` and ``may_overlap``; the last three hold only
+            over the span. None declares nothing; ``jump``, ``outside`` and the
             text ``overlap`` still run.
         rest: Artists that must not move.
         groups: Groups that move rigidly: each a list of artists, or a dict

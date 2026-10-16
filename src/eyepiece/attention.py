@@ -3085,7 +3085,8 @@ def write(
 ):
     """Write a text out by hand: trace its glyph outlines, then fill them.
 
-    Its ghost traces changing outlines; the real text stays in place.
+    Its ghost traces changing outlines and cannot be traced by the checker; the
+    real text is hidden until the end, so the contract declares nothing.
 
     The move is for a label or a short equation that should arrive the way
     a hand would put it on a board, so the eye follows the writing. A ghost
@@ -3181,7 +3182,7 @@ def write(
         ax=text.axes,
         artists={"fill": ghost, "text": text},
         update=update,
-        contract=MotionContract(rest=(text,)),
+        contract=MotionContract(),
     )
 
 

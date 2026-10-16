@@ -1023,6 +1023,7 @@ def transform(
         for j in fades_in:
             _set_alpha(eb.glyphs[j], arrive * level)
 
+    replaced_ids = {id(g) for swap in swaps for g in (*swap.source, *swap.target)}
     # Sharing a progress does not make a changed typesetting rigid. Keep a
     # matched group only when every outline has the same translation; rules
     # stretch independently and replacements may scale differently on x and y.
@@ -1063,6 +1064,12 @@ def transform(
             may_overlap=tuple(
                 (a, b) for swap in swaps for a in swap.source for b in swap.target
             ),
-            rectilinear=tuple(g for g in (*ea.glyphs, *eb.glyphs) if g.piece.is_rule),
+            # A rule inside a replaced term deforms with the term, so only rules
+            # that pair rule to rule, or that fade in place, stay rectangles.
+            rectilinear=tuple(
+                g
+                for g in (*ea.glyphs, *eb.glyphs)
+                if g.piece.is_rule and id(g) not in replaced_ids
+            ),
         ),
     )
