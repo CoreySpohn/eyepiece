@@ -1,0 +1,91 @@
+{
+ "key": "f9313c8abc6e6f04",
+ "duration_s": 5.775,
+ "words": [
+  [
+   "The",
+   0.225,
+   0.3375
+  ],
+  [
+   "finished",
+   0.3375,
+   0.7625
+  ],
+  [
+   "figure",
+   0.7625,
+   1.25
+  ],
+  [
+   "is",
+   1.25,
+   1.4375
+  ],
+  [
+   "one",
+   1.4375,
+   1.7125
+  ],
+  [
+   "picture,",
+   1.7125,
+   2.425
+  ],
+  [
+   "and",
+   2.55,
+   2.6875
+  ],
+  [
+   "each",
+   2.6875,
+   3.0125
+  ],
+  [
+   "part",
+   3.0125,
+   3.3125
+  ],
+  [
+   "of",
+   3.3125,
+   3.425
+  ],
+  [
+   "it",
+   3.425,
+   3.6
+  ],
+  [
+   "was",
+   3.6,
+   3.8
+  ],
+  [
+   "introduced",
+   3.8,
+   4.5
+  ],
+  [
+   "in",
+   4.5,
+   4.6875
+  ],
+  [
+   "turn.",
+   4.6875,
+   5.5
+  ]
+ ],
+ "text": "The finished figure is one picture, and each part of it was introduced in turn.",
+ "audio": "f9313c8abc6e6f04.opus",
+ "rate": 24000,
+ "samples": 138600,
+ "voice": "bm_george",
+ "speed": 1.0,
+ "lang": "b",
+ "engine": "kokoro",
+ "engine_version": "0.9.4",
+ "model": "Kokoro-82M"
+}

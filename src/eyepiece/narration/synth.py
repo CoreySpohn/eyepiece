@@ -247,7 +247,7 @@ def list_cache(script, cache_dir):
 
 
 def _load_script(path):
-    if Path(path).suffix == ".json":
+    if Path(path).suffix.lower() == ".json":
         return Script.from_json(path)
     spec = importlib.util.spec_from_file_location("narration_script", path)
     module = importlib.util.module_from_spec(spec)
