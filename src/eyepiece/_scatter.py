@@ -30,7 +30,7 @@ def scatter_values(
         ax: Single Axes, or None to create a figure.
         cmap: hwostyle role, registered colormap name, or Colormap. None
             uses "probability". The "statistic" role falls back to PuOr
-            only when the active style does not define it.
+            only for an hwostyle older than the role.
         vmin: Lower color limit; None uses the data minimum.
         vmax: Upper color limit; None uses the data maximum.
         cbar_label: Optional colorbar label.

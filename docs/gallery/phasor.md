@@ -288,7 +288,7 @@ shown = [1.0, 2.5, 4.5]
 def spot(inset, i):
     """A point source offset by the i-th separation, drawn in the inset."""
     image = np.exp(-0.5 * (np.hypot(gx - shown[i] + 2.0, gy) / 0.5) ** 2)
-    inset.imshow(image, origin="lower", cmap="magma", interpolation="nearest")
+    inset.imshow(image, origin="lower", cmap=hwostyle.cmaps.intensity, interpolation="nearest")
     inset.set_xticks([])
     inset.set_yticks([])
 
