@@ -1002,6 +1002,52 @@ finding otherwise. Pass `motifs=motifs` to check the meanings attached by
 `Motif.line_kw()`, or pass an explicit `keys` mapping. With neither argument,
 the meaning check is skipped.
 
+### Declare intentional steps
+
+A discrete sweep can change a marker position or a label at each hold.
+`plan.step_frames()` returns the sorted unique frames where a step write
+changes a knob value. A write that repeats the held value does not count.
+Frame `k` is the first frame showing the new value, including frame zero
+when it differs from the initial value.
+
+`check_clip` always declares these frames. For changes made outside the plan,
+pass `steps=[frame_index, "span_name"]`; a span name declares its first frame
+`k0`, and an unknown name raises `KeyError`. These declarations add to the
+automatic steps. Only jumps ending at a declared frame are omitted, including
+steps into rest. All other checks still run. When calling `motion_faults`
+directly, `steps` contains times in seconds instead of frame indices. Matching
+uses an absolute tolerance of `1e-9` seconds; a jump one sample away is still
+reported.
+
+```{code-cell} python
+import matplotlib.pyplot as plt
+import eyepiece as ep
+import eyepiece.testing as ept
+from matplotlib.lines import Line2D
+from matplotlib.transforms import IdentityTransform
+
+fig = plt.figure(figsize=(4.0, 2.0), dpi=100)
+dot = Line2D([40], [80], marker="o", color="black", linestyle="none",
+             transform=IdentityTransform())
+fig.add_artist(dot)
+timeline = ep.Timeline({"x": 40.0}, tempo=ep.Tempo(factor=1.0))
+timeline.hold(0.5)
+timeline.hold(0.5, name="next_position", to={"x": 160.0})
+timeline.hold(0.5, to={"x": 280.0})
+plan = timeline.at_fps(10)
+
+
+def draw(k):
+    dot.set_xdata([plan.value(k, "x")])
+
+
+print(plan.step_frames())  # (5, 10)
+print(ept.assert_clip(fig, draw, plan))
+# Additional declarations can use either form, even for the same frame.
+print(ept.assert_clip(fig, draw, plan, steps=[5, "next_position"]))
+plt.show()
+```
+
 ## Caption placement and wrapping
 
 A caption at the player's default position, the bottom of the picture, lands

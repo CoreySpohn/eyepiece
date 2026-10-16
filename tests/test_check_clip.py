@@ -267,3 +267,79 @@ def test_info_plan_findings_are_kept_but_do_not_fail_the_clip():
     assert report.ok
     plan.faults = [ep.Fault("collapsed", "error", "span 'blink' is too short")]
     assert not ept.check_clip(fig, draw, plan).ok
+
+
+def _stepped_clip(*, jump=False):
+    fig = plt.figure(figsize=(4, 2), dpi=100)
+    dot = _marker(fig, color="black")
+    mover = _marker(fig, y=140, color="black")
+    tl = ep.Timeline({"x": 40.0, "travel": 0.0}, tempo=ep.Tempo(factor=1.0))
+    tl.run("traveling", 2.0, to={"travel": 8.0}, at=0.0)
+    tl.move("slide", 0.2, at=0.3)
+    for x in (40.0, 100.0, 160.0, 220.0):
+        tl.hold(0.5, to={"x": x})
+    plan = tl.at_fps(10)
+
+    def draw(k):
+        dot.set_xdata([plan.value(k, "x")])
+        mover.set_xdata([40 + plan.value(k, "travel") + (80 if jump and k >= 8 else 0)])
+
+    return fig, draw, plan
+
+
+def test_discrete_hold_sweep_has_no_jump():
+    fig, draw, plan = _stepped_clip()
+    assert ept.check_clip(fig, draw, plan).ok
+    assert ept.check_clip(fig, draw, plan, steps=[]).ok
+
+
+def test_discrete_hold_sweep_reports_only_the_unplanned_jump():
+    fig, draw, plan = _stepped_clip(jump=True)
+    report = ept.check_clip(fig, draw, plan)
+    assert _kinds(report) == ["jump"]
+    assert len(report.motion) == 1
+    assert report.motion[0].time == pytest.approx(0.8)
+
+
+@pytest.mark.parametrize("step", ["slide", 3])
+def test_explicit_steps_add_span_starts_or_frame_indices(step):
+    fig, draw, plan = _stepped_clip()
+    extra = _marker(fig, y=30, color="black")
+
+    def with_jump(k):
+        draw(k)
+        extra.set_xdata([40 + (80 if k >= 3 else 0)])
+
+    assert ept.check_clip(fig, with_jump, plan, steps=[step]).ok
+
+
+def test_unknown_step_span_names_the_missing_span():
+    fig, draw, plan, _ = _clip()
+    with pytest.raises(KeyError, match="missing-step"):
+        ept.check_clip(fig, draw, plan, steps=["missing-step"])
+
+
+def test_step_frames_ignore_no_op_writes_and_smooth_changes():
+    tl = ep.Timeline({"x": 0.0}, tempo=ep.Tempo(factor=1.0))
+    tl.hold(0.2, to={"x": 0.0})
+    tl.hold(0.2, to={"x": 1.0})
+    tl.hold(0.2, to={"x": 1.0})
+    tl.run("ramp", 0.2, to={"x": 2.0})
+    tl.hold(0.2, to={"x": 2.0})
+    tl.hold(0.2, to={"x": 0.0})
+    plan = tl.at_fps(10)
+    assert plan.step_frames() == (2, 10)
+    assert plan.value(1, "x") == 0.0
+    assert plan.value(2, "x") == 1.0
+    assert plan.value(9, "x") == 2.0
+    assert plan.value(10, "x") == 0.0
+
+
+def test_step_frames_merge_two_knobs_and_include_initial_changes():
+    tl = ep.Timeline({"x": 0.0, "label": "first"}, tempo=ep.Tempo(factor=1.0))
+    tl.hold(0.2, to={"x": 1.0, "label": "second"})
+    tl.hold(0.2, to={"x": 1.0, "label": "second"})
+    tl.hold(0.2, to={"label": "third"})
+    tl.hold(0.2, to={"x": 2.0, "label": "fourth"})
+    tl.move("rename", 0.2, to={"label": "last"})
+    assert tl.at_fps(10).step_frames() == (0, 4, 6, 8)

@@ -1648,6 +1648,7 @@ def motion_faults(
     times,
     *,
     moves=None,
+    steps=(),
     rest=(),
     groups=(),
     may_overlap=(),
@@ -1727,6 +1728,10 @@ def motion_faults(
             ``rest``, ``groups`` and ``may_overlap``; the last three hold only
             over the span. None declares nothing; ``jump``, ``outside`` and the
             text ``overlap`` still run.
+        steps: Sample times in seconds at which discontinuities are intended.
+            A ``jump`` is omitted only when its destination sample time
+            matches a declared time within an absolute tolerance of 1e-9 s.
+            This includes steps into rest; all other kinds are unchanged.
         rest: Artists that must not move.
         groups: Groups that move rigidly: each a list of artists, or a dict
             ``{"artists": [...], "scales": True}`` for a group that scales.
@@ -1806,7 +1811,7 @@ def motion_faults(
         fig.set_canvas(old_canvas)
         if dpi is not None:
             fig.set_dpi(old_dpi)
-    return _analyze(
+    found = _analyze(
         trace,
         kinds=kinds,
         moves=moves,
@@ -1820,6 +1825,15 @@ def motion_faults(
         frame_tol=frame_tol,
         spike_px=spike_px,
     )
+    steps = tuple(steps)
+    return [
+        fault
+        for fault in found
+        if fault.kind != "jump"
+        or not any(
+            math.isclose(fault.time, t, rel_tol=0.0, abs_tol=1e-9) for t in steps
+        )
+    ]
 
 
 def _analyze(
@@ -2094,7 +2108,7 @@ def _clip_moves(moves, plan):
 
 
 def check_clip(
-    fig, draw, plan, *, venue="video", keys=None, motifs=None, moves=None
+    fig, draw, plan, *, venue="video", keys=None, motifs=None, moves=None, steps=None
 ) -> ClipReport:
     """Re-render a plan-driven clip and collect its checks without writing files.
 
@@ -2121,6 +2135,12 @@ def check_clip(
         moves: Mapping from artists to plan span names or testing `Span`
             values, or an iterable of declarations accepted by `motion_faults`.
             A declaration dict's ``span`` may also be a plan span name.
+        steps: Additional intended discontinuities as integer frame indices
+            or plan span names, which declare the span's first frame (k0).
+            The plan's `step_frames()` are always declared, including when
+            this is None or empty. Frames become times k / plan.fps for
+            `motion_faults`, suppressing only jumps ending at those samples
+            within 1e-9 s; other kinds are unchanged.
 
     Returns:
         A frozen `ClipReport` with the findings from each check.
@@ -2128,9 +2148,14 @@ def check_clip(
     Raises:
         ValueError: If the venue is unknown or the plan has fewer than three
             frames, as required by `motion_faults`.
-        KeyError: If a move names an unknown plan span.
+        KeyError: If a move or step names an unknown plan span.
     """
     declared = _clip_moves(moves, plan)
+    step_frames = set(plan.step_frames())
+    step_frames.update(
+        plan._span(step).k0 if isinstance(step, str) else step for step in steps or ()
+    )
+    step_times = [k / plan.fps for k in sorted(step_frames)]
     if keys is None and motifs is not None:
         keys = motifs.meaning_keys()
     review_times = [k / plan.fps for k in plan.review_frames()]
@@ -2156,7 +2181,9 @@ def check_clip(
             if keys is not None
             else []
         )
-        motion = motion_faults(fig, at=at, times=times, moves=declared, fps=plan.fps)
+        motion = motion_faults(
+            fig, at=at, times=times, moves=declared, steps=step_times, fps=plan.fps
+        )
         unread, _ = plan.unused_knobs()
         speech = (
             [] if plan.narration is None else list(speech_rate(plan.narration).fast)

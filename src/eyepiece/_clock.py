@@ -1321,7 +1321,7 @@ class Timeline:
                         (name,),
                     )
                 )
-        knobs = self._build_knobs(spans, n_frames)
+        knobs, steps = self._build_knobs(spans, n_frames)
         found += self._kind_checks(spans)
         if self._strict and found:
             raise ValueError("; ".join(dict.fromkeys(f.message for f in found)))
@@ -1335,7 +1335,7 @@ class Timeline:
                 (sec.name, sec.key, float(sec._start), float(sec._end), a, b)
             )
         return Plan(fps, n_frames, spans, knobs, tuple(sections),
-                    tuple(info + found), narration)  # fmt: skip
+                    tuple(info + found), narration, steps=steps)  # fmt: skip
 
     def _build_knobs(self, spans, n):
         by_knob = {}
@@ -1343,6 +1343,7 @@ class Timeline:
             for w in self._writes[name]:
                 by_knob.setdefault(w.knob, []).append((s, w))
         values = {}
+        steps = set()
         for knob in self._known:
             initial = self._initial.get(knob, 0.0)
             vals = [initial] * n
@@ -1360,6 +1361,9 @@ class Timeline:
                 if s.k0 >= n:
                     continue
                 if step:
+                    before = vals[s.k0 - 1] if s.k0 > 0 else initial
+                    if not _same(before, w.to):
+                        steps.add(s.k0)
                     vals[s.k0 :] = [w.to] * (n - s.k0)
                     continue
                 frm = w.start
@@ -1380,7 +1384,7 @@ class Timeline:
                     )
                 vals[s.k1 :] = [w.to] * max(0, n - s.k1)
             values[knob] = vals
-        return values
+        return values, tuple(sorted(steps))
 
     def _kind_checks(self, spans):
         out = []
@@ -1500,7 +1504,9 @@ class Plan:
             ``section``.
     """
 
-    def __init__(self, fps, n_frames, spans, knobs, sections, faults, narration):
+    def __init__(
+        self, fps, n_frames, spans, knobs, sections, faults, narration, *, steps=()
+    ):
         self.fps = fps
         self.n_frames = n_frames
         self.spans = spans
@@ -1509,6 +1515,7 @@ class Plan:
         self._knobs = knobs
         self._sections = sections
         self._events = None
+        self._steps = steps
         self._read = set()
         self.frames = _Frames(self)
         labels = [""] * n_frames
@@ -1668,6 +1675,16 @@ class Plan:
             and (kind is None or e.kind == kind)
             and (section is None or e.section == section)
         ]
+
+    def step_frames(self) -> tuple[int, ...]:
+        """Return sorted unique frames where a step write changes a knob value.
+
+        A hold with ``to`` or another write in step space declares a step.
+        Non-numeric targets also step at the span start. Frame k is the first
+        frame showing the new value; a write of the value already held does
+        not count. At frame zero the comparison is with the initial value.
+        """
+        return self._steps
 
     def review_frames(self):
         """The frames a contact sheet draws, sorted and unique.
