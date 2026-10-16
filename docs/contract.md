@@ -789,7 +789,8 @@ shape; it is off unless `spikes=True` or `kinds` names it, because a small hop
 is sometimes the intended motion. `shape-class` is a patch or line listed in
 `rectilinear` (a fraction bar, a rule, a box) whose drawn outline stops being an
 axis-aligned rectangle, by corner count or by a side slanted more than `tol_px`;
-a rotated rectangle is reported. A move is a dict, or any object whose
+a rotated rectangle is reported, and a straight line is a rectangle with no
+thickness that passes while it is horizontal or vertical. A move is a dict, or any object whose
 `contract` is a dict or has the same fields, with the keys `name`, `span`,
 `artists` (or `moves`), `rest`, `groups`, `may_overlap` and `rectilinear`; a
 move's `rest`, `groups`, `may_overlap` and `rectilinear` hold only over its

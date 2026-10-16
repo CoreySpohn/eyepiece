@@ -1430,3 +1430,44 @@ def test_a_collection_cannot_be_declared_rectilinear():
         ept.motion_faults(
             fig, lambda t: None, SPAN, rectilinear=[mark], kinds=["shape-class"]
         )
+
+
+def _line_clip(end_at):
+    fig = _figure()
+    line = Line2D([40, 200], [90, 90], transform=IdentityTransform(), lw=2)
+    fig.add_artist(line)
+
+    def at(t):
+        x, y = end_at(_smooth(t / DURATION))
+        line.set_data([40, x], [90, y])
+
+    return fig, at, line
+
+
+def test_a_horizontal_line_rule_passes_while_it_stays_axis_aligned():
+    fig, at, line = _line_clip(lambda u: (120 + 80 * u, 90))
+    found = ept.motion_faults(fig, at, SPAN, rectilinear=[line], kinds=["shape-class"])
+    assert found == []
+
+
+def test_a_line_rule_that_tilts_is_reported():
+    fig, at, line = _line_clip(lambda u: (200, 90 + 8 * u))
+    found = ept.motion_faults(fig, at, SPAN, rectilinear=[line], kinds=["shape-class"])
+    assert _kinds(found) == ["shape-class"]
+    assert found[0].value == pytest.approx(8.0, abs=0.5)
+
+
+def test_a_bent_polyline_is_not_a_rectangle():
+    fig = _figure()
+    line = Line2D([40, 120, 120], [90, 90, 130], transform=IdentityTransform())
+    fig.add_artist(line)
+    found = ept.motion_faults(
+        fig, lambda t: None, SPAN, rectilinear=[line], kinds=["shape-class"]
+    )
+    assert "no longer a rectangle" in found[0].detail
+
+
+def test_a_hairline_rectangle_keeps_its_corners():
+    fig, at, bar = _rect_clip(lambda u: _corners_of(40, 90, 80 + 160 * u, 90.4))
+    found = ept.motion_faults(fig, at, SPAN, rectilinear=[bar], kinds=["shape-class"])
+    assert found == []

@@ -1340,14 +1340,17 @@ def _display_outline(artist):
     return [r for r in runs if len(r) >= 2]
 
 
-def _corners(run, tol):
-    """The corners of a closed run, dropping repeats and collinear points."""
+_SHAPE_EPS = 1e-3  # pixels; repeats and collinear points, far below any tolerance
+
+
+def _corners(run):
+    """The corners of a run, dropping repeated and collinear points."""
     run = np.asarray(run, dtype=float)
     keep = [run[0]]
     for point in run[1:]:
-        if np.abs(point - keep[-1]).max() > tol:
+        if np.abs(point - keep[-1]).max() > _SHAPE_EPS:
             keep.append(point)
-    if len(keep) > 1 and np.abs(keep[0] - keep[-1]).max() <= tol:
+    if len(keep) > 1 and np.abs(keep[0] - keep[-1]).max() <= _SHAPE_EPS:
         keep.pop()
     out = []
     n = len(keep)
@@ -1359,14 +1362,21 @@ def _corners(run, tol):
             - (here[1] - before[1]) * (after[0] - here[0])
         )
         reach = max(np.hypot(*(after - before)), 1e-9)
-        if cross / reach > tol:
+        if cross / reach > _SHAPE_EPS:
             out.append(here)
-    return out
+    return out, keep
 
 
-def _slant(run, tol):
-    """Largest pixel offset of a closed run from an axis-aligned rectangle."""
-    corners = _corners(run, tol)
+def _slant(run):
+    """Largest pixel offset of a run from an axis-aligned rectangle.
+
+    A run with no corner at all is a straight segment, a rectangle with no
+    thickness: it is off axis by the smaller of its two extents.
+    """
+    corners, points = _corners(run)
+    if not corners:
+        span = np.ptp(np.asarray(points), axis=0)
+        return float(min(span))
     if len(corners) != 4:
         return float("inf")
     worst = 0.0
@@ -1387,7 +1397,7 @@ def _check_shape_class(trace, pieces, tol):
             )
         worst, first = 0.0, None
         for k in ks:
-            off = max(_slant(run, tol) for run in samples[k])
+            off = max(_slant(run) for run in samples[k])
             if off > tol and first is None:
                 first = k
             worst = max(worst, off)
@@ -1690,7 +1700,10 @@ def motion_faults(
     - ``"shape-class"``: a patch or line declared ``rectilinear`` (a fraction
       bar, a rule, a box) whose drawn outline stops being an axis-aligned
       rectangle: a corner count other than four, or a side slanted by more
-      than `tol_px`. A rotated rectangle is not axis-aligned and is reported.
+      than `tol_px`. A rotated rectangle is not axis-aligned and is reported. A
+      straight line is a rectangle with no thickness: it passes while it is
+      horizontal or vertical and is reported when it tilts by more than
+      `tol_px`.
     - ``"spike"``: an artist that hops off its straight path by more than
       `spike_px` while travelling less than it hops, that makes a one-frame
       excursion, or that changes velocity (position over elapsed time) by
