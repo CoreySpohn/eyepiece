@@ -766,7 +766,7 @@ Given a `Span(start, stop)` it poses the figure at every frame of the venue's
 frame rate (30 per second for each venue; `fps=` overrides), always ending
 exactly on `stop`, draws it, and traces every visible artist, equation glyph
 paths and collections included, with the rendered frame when a pixel check is
-asked for. It returns `MotionFault` records, sorted by time, of seven kinds.
+asked for. It returns `MotionFault` records, sorted by time, of eight kinds.
 `jump` is a frame step far above the typical one and not echoed by its
 neighbours, a step into the rest state (the end of a declared move, else the
 last step that changes anything) that is both above half the ratio and twice
@@ -786,10 +786,15 @@ entirely; a clip box that only widens, and ends by uncovering the artist, is a
 reveal and not a cut. `spike` is a hop off the path, or a one-frame excursion,
 or a kink in speed (measured over elapsed time) on an artist that keeps its
 shape; it is off unless `spikes=True` or `kinds` names it, because a small hop
-is sometimes the intended motion. A move is a dict, or any object whose
+is sometimes the intended motion. `shape-class` is a patch or line listed in
+`rectilinear` (a fraction bar, a rule, a box) whose drawn outline stops being an
+axis-aligned rectangle, by corner count or by a side slanted more than `tol_px`;
+a rotated rectangle is reported, and a straight line is a rectangle with no
+thickness that passes while it is horizontal or vertical. A move is a dict, or any object whose
 `contract` is a dict or has the same fields, with the keys `name`, `span`,
-`artists` (or `moves`), `rest`, `groups` and `may_overlap`; a move's `rest`,
-`groups` and `may_overlap` hold only over its `span`. The call restores the figure's dpi and
+`artists` (or `moves`), `rest`, `groups`, `may_overlap` and `rectilinear`; a
+move's `rest`, `groups`, `may_overlap` and `rectilinear` hold only over its
+`span`. The call restores the figure's dpi and
 canvas and is deterministic. It costs the draw time of each frame plus a
 little; the frames are kept only for `jump` and `dead`. `assert_motion` raises
 `MotionError` with the report.
