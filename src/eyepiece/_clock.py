@@ -1555,10 +1555,19 @@ class Plan:
     def value(self, k, knob):
         """The value of `knob` on frame `k`.
 
+        The frame fields ``"t"`` (seconds), ``"index"`` and ``"section"``
+        are also accepted; reading one does not count as knob use.
+
         Raises:
             KeyError: If the knob is unknown, naming near matches.
             IndexError: If `k` is outside the plan.
         """
+        if knob in _RESERVED:
+            if not 0 <= k < self.n_frames:
+                raise IndexError(
+                    f"frame {k} is outside the plan's {self.n_frames} frames"
+                )
+            return {"index": k, "t": k / self.fps, "section": self._labels[k]}[knob]
         self._read.add(knob)
         try:
             vals = self._knobs[knob]
