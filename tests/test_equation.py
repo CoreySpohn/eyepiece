@@ -463,10 +463,14 @@ def test_the_aligned_glyphs_never_move():
     lhs = [i for i, _ in move.pairs if _term_of(a, ga[i], renderer) == "lhs"]
     assert lhs
     rest = {i: ga[i].vertices(renderer).copy() for i in lhs}
-    for u in np.linspace(0.0, 0.99, 12):
+    first = {}
+    for u in np.linspace(0.01, 0.99, 12):
         move.update(float(u))
         for i in lhs:
-            assert np.allclose(ga[i].vertices(renderer), rest[i], atol=1e-6)
+            v = ga[i].vertices(renderer)
+            # Only the pixel snapping Agg would add at rest (under half a pixel).
+            assert np.allclose(v, rest[i], atol=0.5)
+            assert np.allclose(v, first.setdefault(i, v), atol=1e-6)
 
 
 def test_align_names_a_tag_or_none_and_checks_it():
@@ -640,3 +644,26 @@ def test_auto_align_keeps_the_shared_shift_still_without_a_tag():
     for u in (0.2, 0.5, 0.8):
         move.update(u)
         assert np.allclose(ga[first].vertices(renderer), start, atol=1e-6)
+
+
+def _left_anchored_bayes():
+    fig = plt.figure(figsize=(7.6, 2.4), dpi=80)
+    board = fig.add_axes([0, 0, 1, 1])
+    board.set(xlim=(0, 1), ylim=(0, 1))
+    board.axis("off")
+    left = ep.Anchor.from_data(board, (0.06, 0.5))
+    colors = {"lhs": "C0", "num": "C1", "den": "C3", "res": "C2"}
+    a = ep.equation(left, BAYES_A, fontsize=34, colors=colors, ha="left")
+    b = ep.equation(left, BAYES_B, fontsize=34, colors=colors, ha="left")
+    return fig, ep.transform(a, b, stagger=0.55)
+
+
+def test_left_anchored_bayes_moves_without_a_jump_into_or_out_of_rest():
+    """Pixel snapping on the fraction bar and the signs is not a step at the ends."""
+    fig, move = _left_anchored_bayes()
+    duration = 2.0
+
+    def at(t):
+        move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
+
+    ept.assert_motion(fig, at, ept.Span(0.0, duration), fps=30)

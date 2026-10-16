@@ -255,6 +255,40 @@ class _Eq:
         return local * self.scale(renderer) + self.origin(renderer)
 
 
+def _snapped(vertices, height):
+    out = np.floor(vertices + 0.5)
+    out[:, 1] = height - np.floor(height - vertices[:, 1] + 0.5)
+    return out
+
+
+def _snap_shift(vertices, height, codes=None):
+    """What Agg's pixel snapping would add to a piece drawn at rest, in pixels.
+
+    Agg rounds the vertices of a path whose segments are all horizontal or
+    vertical (bars, minus signs, equals signs) to whole pixels and leaves any
+    other path alone. A glyph that moves is drawn unsnapped, so it takes this
+    shift in over the end of its move and the rest state is reached without a
+    step. Without `codes` the piece is a rule, which is always rectilinear.
+    Agg rounds in its own frame, which counts y down from the top, so `height`
+    (the canvas height in pixels) settles which way a tie goes.
+    """
+    if codes is None:
+        return _snapped(vertices, height) - vertices
+    if any(c not in (Path.MOVETO, Path.LINETO, Path.CLOSEPOLY) for c in codes):
+        return 0.0
+    start = None
+    prev = None
+    for v, c in zip(vertices, codes, strict=True):
+        if c == Path.CLOSEPOLY:
+            v = start
+        elif c == Path.MOVETO:
+            start = v
+        elif min(abs(v[0] - prev[0]), abs(v[1] - prev[1])) >= 1e-4:
+            return 0.0
+        prev = v
+    return _snapped(vertices, height) - vertices
+
+
 class _Glyph(PathPatch):
     """One piece of an equation, drawn where the equation (or a transform) says."""
 
@@ -290,12 +324,18 @@ class _Glyph(PathPatch):
         if pose is None:
             return own
         if isinstance(pose, _BoxPose):
-            return pose.group.map(self, pose.side, pose.e, renderer)
+            v = pose.group.map(self, pose.side, pose.e, renderer)
+            weight = 1.0 - pose.e if pose.side == "a" else pose.e
+            return v + weight * _snap_shift(own, renderer.height, self.piece.codes)
         partner = pose.partner
         there = partner.eq.place(partner.piece.local, renderer)
         v = (1.0 - pose.e) * own + pose.e * there
         v[:, 1] += self._lift(renderer, own, there)
-        return v
+        return (
+            v
+            + (1.0 - pose.e) * _snap_shift(own, renderer.height, self.piece.codes)
+            + pose.e * _snap_shift(there, renderer.height, partner.piece.codes)
+        )
 
     def rule_path(self, renderer):
         pose = self.pose
@@ -309,6 +349,11 @@ class _Glyph(PathPatch):
                 pb, renderer
             )
             v[:, 1] += lift
+            v = (
+                v
+                + (1.0 - pose.e) * _snap_shift(eq.place(pa, renderer), renderer.height)
+                + pose.e * _snap_shift(other.place(pb, renderer), renderer.height)
+            )
             vertices += [v, v[:1]] if closed else [v]
             codes += [Path.MOVETO, *[Path.LINETO] * (len(v) - 1)]
             if closed:
@@ -800,7 +845,7 @@ def transform(
     draws and never geometry, so it dims the whole move. Pass the uneased beat
     progress, as for `stagger`; the easing lives in the move.
 
-    A narration can start the move with a ``{transform:name}`` cue.
+    A narration can start the move with a ``{move:name}`` cue.
 
     Args:
         eq_a: The `equation` result to start from.
@@ -909,7 +954,12 @@ def transform(
     span = float(np.ptp(xs)) if len(xs) else 0.0
     ranks = (xs - xs.min()) / span if span > 0.0 else np.zeros(len(xs))
     settle = 1.0 - fade if fades_in else 1.0
-    unsnap = _Unsnap([*ea.glyphs, *eb.glyphs])
+    # Only glyphs that move are unsnapped; the ones that fade in place stay
+    # snapped, as they are at rest.
+    moving = {id(ea.glyphs[i]) for i, _ in pairs}
+    for swap in swaps:
+        moving.update(id(g) for g in (*swap.source, *swap.target))
+    unsnap = _Unsnap([g for g in (*ea.glyphs, *eb.glyphs) if id(g) in moving])
 
     def update(u, level=1.0):
         u = _check_u(u)
