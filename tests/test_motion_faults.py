@@ -11,6 +11,7 @@ import math
 from types import SimpleNamespace
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
 from matplotlib.collections import LineCollection
 from matplotlib.lines import Line2D
@@ -1314,3 +1315,118 @@ def test_many_identical_declarations_cost_about_one(monkeypatch):
     calls.clear()
     ept.motion_faults(fig, at, SPAN, moves=one * 20, kinds=["dead"])
     assert len(calls) <= few + 2
+
+
+# Shape class: a piece declared rectilinear stays an axis-aligned rectangle.
+
+
+def _rect_clip(corners_at):
+    """A figure with one polygon whose corners (display pixels) depend on u."""
+    fig = _figure()
+    poly = Polygon(
+        corners_at(0.0), closed=True, transform=IdentityTransform(), fc="C0", ec="none"
+    )
+    fig.add_artist(poly)
+
+    def at(t):
+        poly.set_xy(corners_at(_smooth(t / DURATION)))
+
+    return fig, at, poly
+
+
+def _corners_of(x0, y0, x1, y1):
+    return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]])
+
+
+def test_a_bar_that_stretches_as_a_rectangle_keeps_its_shape():
+    fig, at, bar = _rect_clip(lambda u: _corners_of(40, 90, 80 + 160 * u, 94))
+    found = ept.motion_faults(fig, at, SPAN, rectilinear=[bar], kinds=["shape-class"])
+    assert found == []
+
+
+def test_a_bar_whose_ends_slant_in_the_middle_of_a_move_is_reported():
+    def corners(u):
+        lean = 6.0 * np.sin(np.pi * u)  # the right end leans, then straightens
+        return np.array(
+            [[40, 90], [80 + 160 * u + lean, 90], [80 + 160 * u, 94], [40, 94]]
+        )
+
+    fig, at, bar = _rect_clip(corners)
+    found = ept.motion_faults(fig, at, SPAN, rectilinear=[bar], kinds=["shape-class"])
+    assert _kinds(found) == ["shape-class"]
+    assert found[0].artist is bar
+    # A slanted side is off axis by its smaller offset, here the 4 px height.
+    assert found[0].value == pytest.approx(4.0, abs=0.5)
+    assert 0.0 < found[0].time < DURATION
+
+
+def test_a_rectangle_that_turns_is_not_axis_aligned():
+    def corners(u):
+        a = 0.5 * np.pi * 0.3 * u
+        rot = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+        return (_corners_of(-40, -3, 40, 3) @ rot.T) + [120, 100]
+
+    fig, at, bar = _rect_clip(corners)
+    found = ept.motion_faults(fig, at, SPAN, rectilinear=[bar], kinds=["shape-class"])
+    assert _kinds(found) == ["shape-class"]
+    # Without the declaration the same clip is not a fault of this kind.
+    assert ept.motion_faults(fig, at, SPAN, kinds=["shape-class"]) == []
+
+
+def test_a_piece_that_gains_a_corner_is_no_longer_a_rectangle():
+    def corners(u):
+        notch = 4.0 * u
+        return np.array(
+            [
+                [40, 90],
+                [200, 90],
+                [200, 100],
+                [120 + notch, 100],
+                [120 + notch, 94],
+                [40, 94],
+            ]
+        )
+
+    fig, at, piece = _rect_clip(corners)
+    found = ept.motion_faults(fig, at, SPAN, rectilinear=[piece], kinds=["shape-class"])
+    assert _kinds(found) == ["shape-class"]
+    assert "no longer a rectangle" in found[0].detail
+
+
+def test_extra_points_along_a_straight_side_do_not_count_as_corners():
+    def corners(u):
+        x1 = 80 + 160 * u
+        return np.array(
+            [[40, 90], [60, 90], [x1 / 2 + 30, 90], [x1, 90], [x1, 94], [40, 94]]
+        )
+
+    fig, at, bar = _rect_clip(corners)
+    assert (
+        ept.motion_faults(fig, at, SPAN, rectilinear=[bar], kinds=["shape-class"]) == []
+    )
+
+
+def test_a_declared_move_carries_its_rectilinear_pieces():
+    def corners(u):
+        return np.array([[40, 90], [160 + 6 * u, 90], [160, 94], [40, 94]])
+
+    fig, at, bar = _rect_clip(corners)
+    move = {"name": "bar", "rectilinear": [bar]}
+    found = ept.motion_faults(fig, at, SPAN, moves=[move], kinds=["shape-class"])
+    assert _kinds(found) == ["shape-class"]
+
+
+def test_a_rectilinear_artist_that_never_shows_is_an_error():
+    fig, at, bar = _rect_clip(lambda u: _corners_of(40, 90, 80 + 160 * u, 94))
+    bar.set_visible(False)
+    with pytest.raises(ValueError, match="not visible"):
+        ept.motion_faults(fig, at, SPAN, rectilinear=[bar], kinds=["shape-class"])
+
+
+def test_a_collection_cannot_be_declared_rectilinear():
+    fig = _figure()
+    mark = fig.add_artist(LineCollection([[(10, 10), (50, 10)]]))
+    with pytest.raises(TypeError, match="rectilinear"):
+        ept.motion_faults(
+            fig, lambda t: None, SPAN, rectilinear=[mark], kinds=["shape-class"]
+        )

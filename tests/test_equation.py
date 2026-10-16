@@ -683,3 +683,17 @@ def test_left_anchored_bayes_moves_without_a_jump_into_or_out_of_rest():
         move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
 
     ept.assert_motion(fig, at, ept.Span(0.0, duration), fps=30)
+
+
+def test_the_bar_stays_an_axis_aligned_rectangle_through_the_move():
+    """The check that catches a fraction bar resampled into a slant."""
+    fig, move = _left_anchored_bayes()
+    bars = [g for g in move.artists["glyphs"] if g.piece.is_rule]
+    assert bars
+
+    def at(t):
+        move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
+
+    ept.assert_motion(
+        fig, at, ept.Span(0.0, 2.0), fps=30, rectilinear=bars, kinds=["shape-class"]
+    )
