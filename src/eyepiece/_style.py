@@ -15,6 +15,7 @@ import matplotlib
 from matplotlib.colors import to_hex, to_rgb, to_rgba
 
 _LIGHT_CMAPS = None
+_VIDEO = False
 _LIGHT_PALETTE = None
 _LIGHT_ROLES = None
 # Stand-ins for roles an older hwostyle lacks; "pupil" is pale to dark like
@@ -46,8 +47,45 @@ _ROLE_FALLBACKS = {
 
 
 def mode():
-    """Active hwostyle mode, or "light" when no mode has been activated."""
-    return hwostyle.current_mode() or "light"
+    """Active mode name.
+
+    The hwostyle mode, "light" when none is active, or "dark-video" while
+    `use_video` is on in dark mode.
+    """
+    name = hwostyle.current_mode() or "light"
+    if _VIDEO and name == "dark":
+        from eyepiece._video import VIDEO_MODE
+
+        return VIDEO_MODE
+    return name
+
+
+def use_video(on=True):
+    """Resolve roles from the video-safe dark table while in dark mode.
+
+    The ``"dark-video"`` table is derived from the dark roles (see
+    `video_roles`): each role keeps its hue, its BT.709 chroma is capped
+    at 75 so thin lines survive 4:2:0 encoding, and a dim role is lifted
+    to a contrast of at least 5 on the dark background. It applies to
+    `role` and to motif colors; the palette cycle, colormaps and neutrals
+    are unchanged, and so are the light and paper modes. Turn it on for a
+    clip that is encoded to video, after ``hwostyle.use("dark")``.
+
+    Args:
+        on: Whether video-safe roles are used.
+
+    Returns:
+        Whether they were used before the call.
+
+    Example::
+
+        hwostyle.use("dark")
+        ep.use_video()
+        ep.role("planet")  # the capped cyan
+    """
+    global _VIDEO
+    was, _VIDEO = _VIDEO, bool(on)
+    return was
 
 
 def dim_level(mode_name=None):
@@ -64,7 +102,9 @@ def dim_level(mode_name=None):
     Returns:
         A float in [0, 1].
     """
-    name = mode_name or mode()
+    from eyepiece._video import base_mode
+
+    name = base_mode(mode_name or mode())
     try:
         from hwostyle.motifs import DIM_LEVELS as levels
     except ImportError:
@@ -170,6 +210,12 @@ def role(name, override=None):
         return override
     if name not in _ROLE_FALLBACKS:
         raise KeyError(f"No role {name!r}. Available: {sorted(_ROLE_FALLBACKS)}")
+    from eyepiece._video import VIDEO_MODE, video_roles
+
+    if mode() == VIDEO_MODE:
+        table = video_roles()
+        if name in table:
+            return table[name]
     source = getattr(hwostyle, "roles", None) if hwostyle.current_mode() else None
     if source is None:
         try:

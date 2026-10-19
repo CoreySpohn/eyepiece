@@ -279,6 +279,11 @@ def _role_in(name, mode):
         return _style.role(name)
     from hwostyle.palettes import Palette, Roles
 
+    from eyepiece._video import VIDEO_MODE, base_mode, video_roles
+
+    if mode == VIDEO_MODE and name in video_roles():
+        return video_roles()[name]
+    mode = base_mode(mode)
     try:
         return to_hex(Roles(mode)[name])
     except (KeyError, TypeError):
@@ -290,7 +295,9 @@ def _neutral_in(level, mode):
     """Hex gray `level` of the way from the background to the text color."""
     if mode is None:
         return to_hex(_style.neutral(level))
-    rc = hwostyle.styles.MODE_RC[mode]
+    from eyepiece._video import base_mode
+
+    rc = hwostyle.styles.MODE_RC[base_mode(mode)]
     back = to_rgba(rc["axes.facecolor"])[:3]
     front = to_rgba(rc["text.color"])[:3]
     return to_hex(tuple(b + (f - b) * level for b, f in zip(back, front, strict=True)))
@@ -300,6 +307,10 @@ def _label_in(role, mark, mode):
     """Label ink of a role in a mode, or `mark` when there is none."""
     if role is None:
         return mark
+    from eyepiece._video import VIDEO_MODE, video_label_inks
+
+    if (mode or _style.mode()) == VIDEO_MODE:
+        return video_label_inks().get(role, mark)
     if mode is None:
         roles = getattr(hwostyle, "roles", None) if hwostyle.current_mode() else None
     else:
@@ -452,7 +463,9 @@ class Motif:
 
     def fill(self, mode=None):
         """Face opacity of a region in a mode (the active one when None)."""
-        name = mode or _style.mode()
+        from eyepiece._video import base_mode
+
+        name = base_mode(mode or _style.mode())
         if name == "dark" and self.fill_alpha_dark is not None:
             return self.fill_alpha_dark
         return self.fill_alpha
@@ -705,7 +718,10 @@ class MotifSet(Mapping):
         A pair is accepted when its roles are listed for the mode and the two
         motifs differ in every channel the record requires.
         """
+        from eyepiece._video import base_mode
+
         ma, mb = self[a], self[b]
+        mode = base_mode(mode)
         for rec in self.accepted:
             if mode not in rec.modes:
                 continue

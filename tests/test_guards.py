@@ -236,6 +236,8 @@ _EXPECTED_ALL = [
     "transform",
     "triptych",
     "unsnapped",
+    "use_video",
+    "video_roles",
     "view_limits",
     "warp",
     "warp_grid",

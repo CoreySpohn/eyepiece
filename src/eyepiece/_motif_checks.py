@@ -32,6 +32,7 @@ import hwostyle
 from matplotlib.colors import to_hex, to_rgb
 
 from eyepiece import _style
+from eyepiece._video import base_mode
 
 MOTIF_KINDS = ("signature", "sharing", "budget", "cvd", "dimmed", "cue")
 _VISIONS = ("deuteranomaly", "protanomaly", "tritanomaly")
@@ -95,11 +96,11 @@ def _worst(a, b):
 
 
 def _mode_name(mode):
-    return mode or hwostyle.current_mode() or "light"
+    return mode or _style.mode()
 
 
 def _dim_toward_background(color, level, mode):
-    rc = hwostyle.styles.MODE_RC[_mode_name(mode)]
+    rc = hwostyle.styles.MODE_RC[base_mode(_mode_name(mode))]
     back = to_rgb(rc["axes.facecolor"])
     rgb = to_rgb(color)
     return "#" + "".join(
@@ -296,7 +297,7 @@ def _cue_faults(motifs, mode):
         return []
     cue = motifs["cue"]
     out = []
-    text = hwostyle.styles.MODE_RC[_mode_name(mode)]["text.color"]
+    text = hwostyle.styles.MODE_RC[base_mode(_mode_name(mode))]["text.color"]
     cue_color = cue.resolve(mode)
     if _de(cue_color, to_hex(text)) > _CUE_SAME:
         out.append(

@@ -363,6 +363,20 @@ and probability to inference figures. `cmaps.high_dynamic_range` and
 `readouts`. When the installed hwostyle predates a role, eyepiece falls back to a
 plain matplotlib map for `statistic` and `pupil`, and nothing else.
 
+Video gets one derived variant of the dark roles. `eyepiece.use_video()`, after
+`hwostyle.use("dark")`, makes `role` and the motif colors resolve from the
+``"dark-video"`` table (`eyepiece.video_roles()`), and `motif_faults` accepts the
+mode by name. The table is computed from the dark roles, never picked: each role
+keeps its Oklab hue, its BT.709 chroma (the length of Cb and Cr in 8-bit code
+values, the part 4:2:0 encoding halves in resolution) is capped at 75, and a dim
+role is lifted to a contrast of 5 on black. `alert` keeps a cap of 85 and `disk`
+and `prior` a floor of 4.5, because at the plain limits they fall within the
+`motif_faults` fault distance of `posterior` and `positive` for a color-vision
+deficiency; the tests hold the variant to adding no motif fault or warning that
+the dark mode does not have. The palette cycle, the colormaps, the neutrals and
+the light and paper modes are unchanged, and nothing changes until
+`use_video` is called.
+
 A primitive called with no style applied at all still produces a sensible
 figure. Colormaps fall back to the light-mode definitions, and palette
 colors follow the matplotlib environment the caller is already in: a
