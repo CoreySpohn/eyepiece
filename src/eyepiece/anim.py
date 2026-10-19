@@ -110,9 +110,12 @@ PRESETS = {
 
 # Line ends and corners for video: butt caps, so a line is exactly as long as
 # it is measured (a projecting cap adds half the width at each end), and round
-# joins. Line2D reads these when it is made, so `record` applies them to
-# artists made during a recording; build a clip's figure under
-# ``matplotlib.rc_context(VIDEO_RC)`` for the rest.
+# joins. Matplotlib reads these rcParams when an artist is created, never when
+# it is drawn: `record` applies them, but only to artists made during the
+# recording. Build a clip's figure under ``matplotlib.rc_context(VIDEO_RC)``
+# (or `talk_rc`, which includes it); setting them after the figure exists, or
+# only around the recording, leaves its lines with the caps they were made
+# with.
 VIDEO_RC = {
     "lines.solid_capstyle": "butt",
     "lines.dash_capstyle": "butt",
@@ -141,7 +144,11 @@ def talk_rc(height_px=1080, dpi=None):
     (axes, grids, patch edges) 0.6 of that. At 1080 px and 120 dpi body text
     is 35 pt and a data stroke 3.2 pt. Tick marks are dropped, and the
     constrained-layout pads keep a 4 percent margin. `VIDEO_RC` is included.
-    Build the figure under it; the documentation sizes are left alone::
+
+    Matplotlib reads these rcParams when an artist is created, not when it
+    is drawn, so build the whole figure under them; entering the context
+    after the figure exists, or only around `record`, changes nothing already
+    made. The documentation sizes are left alone::
 
         with matplotlib.rc_context(ep.talk_rc()):
             fig, ax = plt.subplots(figsize=(16, 9), dpi=120)
