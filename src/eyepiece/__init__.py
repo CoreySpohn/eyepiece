@@ -171,6 +171,7 @@ __all__ = [
     "view_limits",
     "warp",
     "warp_grid",
+    "weighted_draws",
     "words",
     "write",
     "zoom_path",
@@ -314,6 +315,7 @@ _LAZY_EXPORTS = {
     "exposure_text": ("eyepiece._photons", "exposure_text"),
     "photons": ("eyepiece._photons", "photons"),
     "hop": ("eyepiece._hop", "hop"),
+    "weighted_draws": ("eyepiece._weighted", "weighted_draws"),
 }
 
 

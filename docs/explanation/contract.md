@@ -385,6 +385,12 @@ contracts rather than the mechanism behind them.
   interval at the current count. Nothing moves continuously; every change is
   a cut at a draw, named by `steps(knob)`. The rest state, `u = 1`, is the
   last draw, its ghosts and the final tally: the still.
+- `weighted_draws`: draws that carry weights, drawn with area (or opacity)
+  proportional to the weight on one scale for the clip; no weight is floored
+  or equalized. With `resample=seed`, `update(u)` plays seeded systematic
+  resampling: every weight moves linearly to its parent's offspring count over
+  `n`, so a parent with no offspring shrinks away and positions never change.
+  The rest state, `u = 1`, is the resampled set.
 
 ## Style resolves at call time
 

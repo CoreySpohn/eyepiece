@@ -248,6 +248,7 @@ _EXPECTED_ALL = [
     "view_limits",
     "warp",
     "warp_grid",
+    "weighted_draws",
     "words",
     "write",
     "zoom_path",
