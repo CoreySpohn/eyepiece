@@ -96,6 +96,7 @@ __all__ = [
     "draw_on",
     "ease",
     "equation",
+    "exposure_text",
     "extent_arcsec",
     "extent_au",
     "extent_lod",
@@ -127,6 +128,7 @@ __all__ = [
     "overview_box",
     "phase_ring",
     "phasor",
+    "photons",
     "pixel_quads",
     "plot_contrast_curve",
     "plot_radial",
@@ -304,6 +306,8 @@ _LAZY_EXPORTS = {
     "quad_image": ("eyepiece._pixel_morph", "quad_image"),
     "Arrivals": ("eyepiece._photons", "Arrivals"),
     "arrivals": ("eyepiece._photons", "arrivals"),
+    "exposure_text": ("eyepiece._photons", "exposure_text"),
+    "photons": ("eyepiece._photons", "photons"),
 }
 
 
