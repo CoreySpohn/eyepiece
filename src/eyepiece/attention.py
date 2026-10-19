@@ -53,6 +53,7 @@ from matplotlib.transforms import Affine2D, Bbox, IdentityTransform
 from eyepiece import _style
 from eyepiece._motion import DEFAULT_EASE, _unsnapped
 from eyepiece._motion import _apply_ease as _ease
+from eyepiece._motion import stagger as _stagger
 from eyepiece._result import MosaicResult, MotionContract, PlotResult
 from eyepiece.emphasis import _own_background, _resolve_background
 
@@ -2446,6 +2447,214 @@ def draw_on(lines, *, ease="linear") -> PlotResult:
             copy._fraction = fraction
             copy.set_zorder(line.get_zorder())
             copy.set_visible(visible and 0.0 < fraction and u < 1.0)
+
+    return PlotResult(
+        ax=items[0].axes,
+        artists={"lines": [*items, *copies]},
+        update=update,
+        contract=MotionContract(moves=tuple(copies)),
+    )
+
+
+# The head of `head_draw`: the last tenth of the drawn length, in steps of
+# color from the body toward the text ink, and how much of the remaining
+# path it takes to dissolve into the body color.
+_HEAD_FRACTION = 0.10
+_HEAD_STEPS = 4
+_HEAD_SWELL = 0.3
+_HEAD_DISSOLVE = 0.12
+_HEAD_DOT = 2.2
+
+
+def _arc_slice(parts, lengths, lo, hi):
+    """The stretch of a multi-part polyline from length `lo` to `hi`, NaN-split."""
+    shown, start = [], 0.0
+    for points, length in zip(parts, lengths, strict=True):
+        a, b = max(lo, start), min(hi, start + length)
+        if b > a and length > 0.0:
+            steps = np.hypot(*np.diff(points, axis=0).T)
+            done = np.concatenate([[0.0], np.cumsum(steps)])
+            ends = [
+                np.array([np.interp(s, done, points[:, i]) for i in (0, 1)])
+                for s in (a - start, b - start)
+            ]
+            inside = points[(done > a - start) & (done < b - start)]
+            if shown:
+                shown.append(np.full((1, 2), np.nan))
+            shown.append(np.vstack([ends[0], inside, ends[1]]))
+        start += length
+    return np.vstack(shown) if shown else np.empty((0, 2))
+
+
+class _HeadDraw(_DrawOn):
+    """A line's current path cut by arc length, with a bright head on the cut."""
+
+    def __init__(self, source, head_color):
+        super().__init__(source)
+        self._head_color = np.asarray(to_rgb(head_color))
+        self._level = 1.0
+
+    def glow(self):
+        """How present the head is: 1 while drawing, 0 as the path completes."""
+        f = self._fraction
+        if f <= 0.0:
+            return 0.0
+        return float(_ease(min(1.0, (1.0 - f) / _HEAD_DISSOLVE), DEFAULT_EASE))
+
+    def draw(self, renderer):
+        """Draw the body, the head steps and the tip dot from the current path."""
+        if not self.get_visible() or self._fraction <= 0.0:
+            return
+        source = self._source
+        path = source.get_transform().transform_path(source.get_path())
+        parts = [points for points, _ in _line_parts(path.vertices, False)]
+        lengths = [float(np.hypot(*np.diff(p, axis=0).T).sum()) for p in parts]
+        total = sum(lengths)
+        reach = self._fraction * total
+        glow = self.glow()
+        head = _HEAD_FRACTION * total * glow
+        self.update_from(source)
+        self.set_visible(True)  # update_from copied the hidden source's flag
+        self.set_transform(IdentityTransform())
+        self.set_drawstyle("default")
+        self.set_antialiased(source.get_antialiased())
+        self.set_snap(source.get_snap())
+        self.set_label("_nolegend_")
+        self.set_marker("None")
+        base = to_rgba(source.get_color(), source.get_alpha())
+        lw = source.get_linewidth()
+        body = _arc_slice(parts, lengths, 0.0, max(0.0, reach - head))
+        self.set_data(body[:, 0], body[:, 1])
+        Line2D.draw(self, renderer)
+        if glow <= 0.0:
+            return
+        capstyle, joinstyle = self.get_solid_capstyle(), self.get_solid_joinstyle()
+        self.set_solid_capstyle("round")
+        self.set_solid_joinstyle("round")
+        self.set_linestyle("-")
+        for j in range(_HEAD_STEPS):
+            lo = reach - head * (_HEAD_STEPS - j) / _HEAD_STEPS
+            hi = reach - head * (_HEAD_STEPS - 1 - j) / _HEAD_STEPS
+            piece = _arc_slice(parts, lengths, max(0.0, lo), hi)
+            if len(piece) < 2:
+                continue
+            m = (j + 1) / _HEAD_STEPS * glow
+            rgb = np.asarray(base[:3]) * (1.0 - m) + self._head_color * m
+            self.set_color((*rgb, base[3]))
+            self.set_linewidth(lw * (1.0 + _HEAD_SWELL * m))
+            self.set_data(piece[:, 0], piece[:, 1])
+            Line2D.draw(self, renderer)
+        tip = _arc_slice(parts, lengths, 0.0, reach)
+        if len(tip):
+            self.set_linestyle("None")
+            self.set_marker("o")
+            self.set_markersize(lw * _HEAD_DOT)
+            self.set_markeredgecolor("none")
+            self.set_markerfacecolor((*self._head_color, base[3] * glow))
+            self.set_data(tip[-1:, 0], tip[-1:, 1])
+            Line2D.draw(self, renderer)
+        self.set_solid_capstyle(capstyle)
+        self.set_solid_joinstyle(joinstyle)
+
+
+def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResult:
+    """Draw lines on at constant arc-length speed with a bright head on the tip.
+
+    The signature reveal of a path. The drawn length grows at one speed in
+    display pixels along the path, whatever its vertex spacing, its segment
+    lengths or its axes scales, so a curve sampled densely in one place and
+    sparsely in another, or a rectangle with a short side, draws evenly. The
+    last tenth of the drawn length brightens in four steps from the line's
+    own color toward the text ink and swells slightly, and a dot in the text
+    ink rides the tip. Over the last part of the path the head dissolves into
+    the body color, so the move arrives at the plain line with no change of
+    color or width at the end.
+
+    Motion contract: only the drawn prefix of each path changes; it grows
+    monotonically from the start of the path, at the eased progress, and its
+    tip moves along the path at constant speed in arc length for a linear
+    ease. The source line's data, transform, style and markers are never
+    changed. The head and the tip dot exist only strictly between the ends;
+    at ``u = 0`` nothing is drawn, and at ``u = 1``, the rest state, the
+    source line draws itself, so the rest frame equals the plain still
+    (pixel-identical outside a recording, within half a pixel inside an
+    unsnapped one). The head color and width are continuous into rest: they
+    return to the body's own as the path completes. Markers and dashes of
+    the source appear only at rest; while drawing the path is solid. The
+    head and the dot are clipped like their line, so a path that starts on
+    the axes edge shows half a dot there; leave a margin, and
+    `eyepiece.testing.motion_faults` reports the cut as ``outside``.
+
+    With several lines, ``lag`` staggers them as Manim's ``lag_ratio``
+    does: each line takes a window of ``1 / (1 + (n - 1) lag)`` of the beat
+    and the next starts ``lag`` of a window after it, so 0 draws all of them
+    together and 1 draws them one after another. The ease applies inside
+    each line's window.
+
+    Args:
+        lines: One `Line2D` or an iterable of lines attached to axes.
+        ease: An easing kind for `eyepiece.ease`, or a callable mapping
+            progress to eased progress. The default is the library's
+            reveal ease.
+        lag: Fraction of a line's window before the next line starts, in
+            [0, 1].
+        head_color: Color of the head and the tip dot. None uses the text
+            color, read now.
+
+    Returns:
+        A `PlotResult` on the first line's axes, with the source lines and
+        their drawing copies in ``artists["lines"]``, the copies declared in
+        ``contract.moves``, and ``update(u, level=1.0)``. Progress and level
+        are clipped to [0, 1]; ``level`` multiplies opacity only.
+
+    Raises:
+        TypeError: If an item is not a `Line2D`.
+        ValueError: If there are no lines, a line has no axes, a line uses a
+            stepped drawstyle, or `lag` is outside [0, 1].
+
+    Example::
+
+        reveal = ep.head_draw([ring, curve], lag=0.4)
+        for u in np.linspace(0.0, 1.0, 84):
+            reveal.update(u)
+            rec.frame()
+    """
+    lag = float(lag)
+    if not 0.0 <= lag <= 1.0:
+        raise ValueError(f"head_draw lag must be in [0, 1], got {lag}")
+    items = [lines] if isinstance(lines, Line2D) else list(lines)
+    if not items:
+        raise ValueError("head_draw needs at least one line")
+    for line in items:
+        if not isinstance(line, Line2D):
+            raise TypeError(f"head_draw needs a Line2D, got {type(line).__name__}")
+        if line.axes is None:
+            raise ValueError("head_draw needs lines attached to axes")
+        if line.get_drawstyle() != "default":
+            raise ValueError("head_draw does not support stepped drawstyles")
+    ink = _style.neutral(1.0) if head_color is None else head_color
+    copies = [_HeadDraw(line, ink) for line in items]
+    states = [(line.get_visible(), line.get_alpha()) for line in items]
+    for line, copy in zip(items, copies, strict=True):
+        line.axes.add_artist(copy)
+    n = len(items)
+    span = 1.0 / (1.0 + (n - 1) * lag)
+    ranks = np.linspace(0.0, 1.0, n) if n > 1 else np.zeros(1)
+
+    def update(u, level=1.0):
+        u, level = _check_u(u), _check_u(level)
+        local = _stagger(u, ranks, span=span) if n > 1 else np.array([u])
+        for line, copy, (visible, alpha), v in zip(
+            items, copies, states, local, strict=True
+        ):
+            v = float(v)
+            fraction = v if v in (0.0, 1.0) else _check_u(_ease(v, ease))
+            base = 1.0 if alpha is None else alpha
+            line.set_alpha(alpha if level == 1.0 else level * base)
+            line.set_visible(visible and v >= 1.0)
+            copy._fraction = fraction
+            copy.set_zorder(line.get_zorder())
+            copy.set_visible(visible and 0.0 < fraction and v < 1.0)
 
     return PlotResult(
         ax=items[0].axes,

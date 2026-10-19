@@ -257,6 +257,24 @@ within half a pixel, and a held frame's axes and spines are drawn unsnapped
 too. `record(snap=True)` restores the per-move snapping above, and with it
 the pixel-exact rest state.
 
+## Signature moves keep a motion contract
+
+Each signature move states what it lets move, what it must not touch, how it
+arrives at rest, and the rest state it ends in. The tests pin these
+contracts rather than the mechanism behind them.
+
+- `head_draw`: only the drawn prefix of each path changes. It grows from the
+  start of the path at the eased progress, and its tip moves at constant
+  speed in display arc length for a linear ease, whatever the vertex spacing
+  or axis scale. The last tenth of the drawn length brightens toward the text
+  ink with a dot on the tip; over the last eighth of the path the head
+  dissolves into the body color, so the move arrives at the plain line with
+  no step in color or width. The source line's data, style and markers are
+  never changed. At `u = 0` nothing is drawn and at `u = 1` the source draws
+  itself, so the rest frame equals the plain still (pixel-exact outside a
+  recording, within half a pixel inside an unsnapped one). Several lines
+  stagger with `lag=`, as Manim's `lag_ratio`.
+
 ## Style resolves at call time
 
 Color, colormap, and savefig policy come from hwostyle, and every lookup

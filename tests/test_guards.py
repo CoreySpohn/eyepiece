@@ -180,6 +180,7 @@ _EXPECTED_ALL = [
     "flight",
     "follow_zoom",
     "frame_count",
+    "head_draw",
     "hist_fill",
     "hist_vs_pdf",
     "imshow_diverging",

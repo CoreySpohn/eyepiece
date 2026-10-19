@@ -56,6 +56,9 @@ def _clip(name):
     elif name == "draw_on":
         (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
         result = ep.draw_on(line)
+    elif name == "head_draw":
+        (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
+        result = ep.head_draw(line)
     elif name == "morph":
         (a,) = ax.plot([0.2, 0.4, 0.5], [0.3, 0.6, 0.3])
         (b,) = ax.plot([0.3, 0.5, 0.7], [0.3, 0.7, 0.3])
@@ -151,6 +154,7 @@ def _members(contract):
     [
         "write",
         "draw_on",
+        "head_draw",
         "morph",
         "flight",
         "collapse",
