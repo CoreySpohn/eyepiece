@@ -60,9 +60,11 @@ The mechanics this module does own, each closing a specific trap:
   would carry 300-dpi frames. The writer dpi is the only effective control.
 
 `PRESETS` holds fps/dpi pairs for the usual destinations, e.g.
-`record(fig, "talk.mp4", **PRESETS["talk"])`. Video presets run at 30 fps,
-which keeps a slow move smooth and costs little in bytes for flat graphics.
-Use ``talk_60`` for turns and camera moves, where 30 fps still judders.
+`record(fig, "talk.mp4", **PRESETS["talk"])`. The ``talk`` preset runs at
+60 fps: the default ease moves fastest at mid-move, and 30 fps still judders
+there on turns and camera moves. ``talk_60`` is the same pair under its old
+name. The documentation presets run at 30 fps, which keeps a slow move smooth
+and costs little in bytes for flat graphics.
 ``doc_hd`` rasterizes at 200 dpi, the resolution of a documentation still,
 so a clip beside its still is not visibly softer on a 2x screen.
 
@@ -93,7 +95,7 @@ from eyepiece._ffmpeg import (
 from eyepiece._motion import frame_count
 
 PRESETS = {
-    "talk": {"fps": 30, "dpi": 120},
+    "talk": {"fps": 60, "dpi": 120},
     "talk_60": {"fps": 60, "dpi": 120},
     "gif": {"fps": 8, "dpi": 85},
     "jshtml": {"fps": 14, "dpi": 100},

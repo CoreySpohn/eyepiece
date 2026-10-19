@@ -52,8 +52,8 @@ def _flat_frames(n, size):
     return [frame] * n
 
 
-def test_presets_run_at_30_fps_with_a_60_fps_option_and_a_still_resolution_doc():
-    assert PRESETS["talk"]["fps"] == 30
+def test_talk_runs_at_60_fps_and_docs_at_30_with_a_still_resolution_doc():
+    assert PRESETS["talk"] == {"fps": 60, "dpi": 120}
     assert PRESETS["docs"]["fps"] == 30
     assert PRESETS["talk_60"] == {"fps": 60, "dpi": 120}
     assert PRESETS["doc_hd"] == {"fps": 30, "dpi": 200}
@@ -113,20 +113,20 @@ def test_record_uses_the_profile_and_overrides_reach_it(tmp_path):
 
 
 @needs_ffmpeg
-def test_a_short_talk_clip_has_the_frames_of_30_fps(tmp_path):
+def test_a_short_talk_clip_has_the_frames_of_60_fps(tmp_path):
     fig, ax = plt.subplots(figsize=(1.6, 1.2))
     (dot,) = ax.plot([0.5], [0.5], "o")
     path = tmp_path / "t.mp4"
     with ep.record(fig, path, **{**PRESETS["talk"], "dpi": 40}) as rec:
-        for k in range(45):
-            dot.set_data([k / 45], [0.5])
+        for k in range(90):
+            dot.set_data([k / 90], [0.5])
             rec.frame()
     out = subprocess.run(
         [FFMPEG, "-i", str(path), "-f", "null", "-"], capture_output=True, text=True
     )
     count = int(re.findall(r"frame=\s*(\d+)", out.stderr)[-1])
-    assert count == 45
-    assert "30 fps" in _info(path)
+    assert count == 90
+    assert "60 fps" in _info(path)
     plt.close(fig)
 
 
