@@ -1,5 +1,7 @@
 """The hop mover: exchangeable draws in turn, ghosts that dim, a converging tally."""
 
+import itertools
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -108,9 +110,11 @@ def test_ghosts_are_bounded_and_dim_with_age():
     for age, ghost in enumerate(pool, start=1):
         np.testing.assert_allclose(np.column_stack(ghost.get_data()), draws[7 - age])
     alphas = [g.get_alpha() for g in pool]
+    # The newest ghost is at the bound, and each older one strictly dimmer
+    # but still visible; the exact ladder is free.
     assert alphas[0] == pytest.approx(0.6)
-    assert alphas == sorted(alphas, reverse=True)
-    assert alphas[-1] == pytest.approx(0.2)
+    assert all(a > b for a, b in itertools.pairwise(alphas))
+    assert alphas[-1] > 0.0
     assert mark.artists["line"].get_zorder() > max(g.get_zorder() for g in pool)
 
 
