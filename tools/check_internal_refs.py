@@ -33,6 +33,7 @@ PATTERNS = [
     r"eac1_dlux",
     r"(?i)\bgreenfield\b",
     r"Tier[- ][GR]\b",
+    r"(?i)\bsynthesis famil(?:y|ies)\b",
 ]
 
 COMPILED = [(pattern, re.compile(pattern)) for pattern in PATTERNS]

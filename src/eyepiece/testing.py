@@ -1082,9 +1082,14 @@ def _steps(frames):
     return out
 
 
-def _changed(before, after):
-    """Box, in output pixels from the lower left, of what changed between frames."""
+def _changed(before, after, mask=None):
+    """Box, in output pixels from the lower left, of what changed between frames.
+
+    Pixels where `mask` is True are left out.
+    """
     diff = np.abs(after.astype(np.int16) - before.astype(np.int16)).max(axis=2)
+    if mask is not None:
+        diff[mask] = 0
     rows, cols = np.nonzero(diff)
     if not len(rows):
         return None
@@ -1138,15 +1143,81 @@ def _check_teleports(trace, tol, jump_ratio):
     return found
 
 
-def _check_jump(trace, jump_ratio, rest_times, tol):
+def _draw_cuts(trace, drawn, step_ks):
+    """Masks of the draw group's boxes at each declared step where it changes.
+
+    Returns:
+        ``{k: mask}`` for each step ending at sample `k` where the pixels
+        inside the group's boxes (at ``k - 1`` and `k`, padded) change; the
+        mask is a boolean array of the frame's rows and columns.
+    """
+    cuts = {}
+    for k in sorted(step_ks):
+        if k < 1:
+            continue
+        height, width = trace.frames[k].shape[:2]
+        mask = np.zeros((height, width), dtype=bool)
+        for artist in drawn:
+            for j in (k - 1, k):
+                box = trace.box(artist, j)
+                if box is None:
+                    continue
+                x0, y0, x1, y1 = (
+                    box[0] - 2.0,
+                    box[1] - 2.0,
+                    box[2] + 2.0,
+                    box[3] + 2.0,
+                )
+                rows = slice(max(int(height - y1), 0), max(int(height - y0) + 1, 0))
+                cols = slice(max(int(x0), 0), max(int(x1) + 1, 0))
+                mask[rows, cols] = True
+        before = trace.frames[k - 1][mask].astype(np.int16)
+        after = trace.frames[k][mask].astype(np.int16)
+        if before.size and np.abs(after - before).max() > 0:
+            cuts[k] = mask
+    return cuts
+
+
+def _check_jump(trace, jump_ratio, rest_times, tol, cuts=None, group=()):
     size = _steps(trace.frames)
+    for k, mask in (cuts or {}).items():
+        # Outside the draw group only: its own cut is by design.
+        diff = np.abs(
+            trace.frames[k].astype(np.int16) - trace.frames[k - 1].astype(np.int16)
+        )
+        diff[mask] = 0
+        size[k - 1] = float(diff.mean())
     moving = [i for i, v in enumerate(size) if v > _STEP_FLOOR]
     if len(moving) < 3:
         return _check_teleports(trace, tol, jump_ratio)
-    return _jumps(trace, size, moving, jump_ratio, rest_times, tol)
+    found = _jumps(trace, size, moving, jump_ratio, rest_times, tol, cuts or {})
+    if cuts:
+        # The mask blinds the pixel baseline inside the group's boxes, so an
+        # artist outside the group that sits there is followed on its own.
+        found += [
+            f
+            for f in _check_teleports(trace, tol, jump_ratio)
+            if f[0] in cuts and f[2] not in group and _in_mask(trace, f[2], f[0], cuts)
+        ]
+    return found
 
 
-def _jumps(trace, size, moving, jump_ratio, rest_times, tol):
+def _in_mask(trace, artist, k, cuts):
+    """Whether `artist` overlaps the draw group's mask at the cut ending at `k`."""
+    mask = cuts[k]
+    height = mask.shape[0]
+    for j in (k - 1, k):
+        box = trace.box(artist, j)
+        if box is None:
+            continue
+        rows = slice(max(int(height - box[3]), 0), max(int(height - box[1]) + 1, 0))
+        cols = slice(max(int(box[0]), 0), max(int(box[2]) + 1, 0))
+        if mask[rows, cols].any():
+            return True
+    return False
+
+
+def _jumps(trace, size, moving, jump_ratio, rest_times, tol, cuts=None):
     median = float(np.median([size[i] for i in moving]))
     last = len(size) - 1
     if rest_times:
@@ -1176,7 +1247,7 @@ def _jumps(trace, size, moving, jump_ratio, rest_times, tol):
             f"the picture changes {value:.2f} levels {where}, "
             f"{value / median:.1f} times the median step of {median:.2f}"
         )
-        box = _changed(trace.frames[i], trace.frames[i + 1])
+        box = _changed(trace.frames[i], trace.frames[i + 1], (cuts or {}).get(i + 1))
         box = box or (0.0, 0.0, *trace.size)
         found.append((i + 1, "jump", None, None, box, detail, value / median))
     return found
@@ -1656,6 +1727,7 @@ def motion_faults(
     *,
     moves=None,
     steps=(),
+    draws=(),
     rest=(),
     groups=(),
     may_overlap=(),
@@ -1741,6 +1813,20 @@ def motion_faults(
             A ``jump`` is omitted only when its destination sample time
             matches a declared time within an absolute tolerance of 1e-9 s.
             This includes steps into rest; all other kinds are unchanged.
+            With a draw group declared, a step where the group changes
+            excuses only the group (see `draws`).
+        draws: The draw group: artists that change in a cut at the declared
+            steps by design, such as the draws of a run of exchangeable
+            draws (a declared move's ``draws`` adds to it). At a step where
+            the group changes, the jump check looks at the picture outside
+            the group's boxes (before and after the step, padded by two
+            pixels): the group's own cut is excused, and any other artist
+            that cuts at the same step is still reported, by the pixel
+            baseline or, in a clip too still to have one, as an artist that
+            jumps. Artists of the group may also overlap one another. Every
+            other check holds for the group as for any artist. A step where
+            the group does not change (a scene cut) still excuses the whole
+            picture. A change inside a group's box at its cut is not seen.
         rest: Artists that must not move.
         groups: Groups that move rigidly: each a list of artists, or a dict
             ``{"artists": [...], "scales": True}`` for a group that scales.
@@ -1820,10 +1906,12 @@ def motion_faults(
         fig.set_canvas(old_canvas)
         if dpi is not None:
             fig.set_dpi(old_dpi)
-    found = _analyze(
+    return _analyze(
         trace,
         kinds=kinds,
         moves=moves,
+        steps=steps,
+        draws=draws,
         rest=rest,
         groups=groups,
         may_overlap=may_overlap,
@@ -1834,15 +1922,6 @@ def motion_faults(
         frame_tol=frame_tol,
         spike_px=spike_px,
     )
-    steps = tuple(steps)
-    return [
-        fault
-        for fault in found
-        if fault.kind != "jump"
-        or not any(
-            math.isclose(fault.time, t, rel_tol=0.0, abs_tol=1e-9) for t in steps
-        )
-    ]
 
 
 def _analyze(
@@ -1850,6 +1929,8 @@ def _analyze(
     *,
     kinds,
     moves,
+    steps=(),
+    draws=(),
     rest,
     groups,
     may_overlap,
@@ -1868,6 +1949,7 @@ def _analyze(
     allowed = [(frozenset(p), *everywhere) for p in may_overlap]
     pieces = [(a, *everywhere) for a in rectilinear]
     declared = set()
+    group = set(draws)
     rest_times = []
     for move in moves:
         span = _declared(move, "span")
@@ -1881,9 +1963,18 @@ def _analyze(
         allowed += [
             (frozenset(p), lo, hi) for p in _declared(move, "may_overlap") or ()
         ]
+        group |= set(_declared(move, "draws") or ())
+    drawn = [a for a in trace.order if a in group]
+    allowed += [(frozenset(p), *everywhere) for p in itertools.combinations(drawn, 2)]
+    step_ks = {
+        k
+        for k, s in enumerate(trace.times)
+        if any(math.isclose(s, t, rel_tol=0.0, abs_tol=1e-9) for t in steps)
+    }
+    cuts = _draw_cuts(trace, drawn, step_ks) if drawn and trace.frames else {}
     found = []
     if "jump" in kinds:
-        found += _check_jump(trace, jump_ratio, rest_times, tol_px)
+        found += _check_jump(trace, jump_ratio, rest_times, tol_px, cuts, group)
     if "dead" in kinds:
         found += _check_dead(trace, moves)
     if "drift" in kinds:
@@ -1899,6 +1990,15 @@ def _analyze(
         found += _check_spike(trace, spike_px)
     if "shape-class" in kinds:
         found += _check_shape_class(trace, pieces, tol_px)
+    # A declared step excuses its jump; at a cut of the draw group it excuses
+    # only the group, whose boxes the pixel baseline already left out there.
+    found = [
+        f
+        for f in found
+        if f[1] != "jump"
+        or f[0] not in step_ks
+        or (f[0] in cuts and (f[2] is None or f[2] not in group))
+    ]
     order = {kind: i for i, kind in enumerate(MOTION_KINDS)}
     found.sort(key=lambda f: (f[0], order[f[1]]))
     return [
@@ -2149,7 +2249,9 @@ def check_clip(
             The plan's `step_frames()` are always declared, including when
             this is None or empty. Frames become times k / plan.fps for
             `motion_faults`, suppressing only jumps ending at those samples
-            within 1e-9 s; other kinds are unchanged.
+            within 1e-9 s; other kinds are unchanged. A move whose contract
+            names ``draws`` (a draw group) is excused at those steps only for
+            its group, as in `motion_faults`.
 
     Returns:
         A frozen `ClipReport` with the findings from each check.
