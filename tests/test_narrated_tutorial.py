@@ -52,11 +52,23 @@ def test_docs_track_no_generated_audio_video_or_captions():
         text=True,
         check=True,
     )
+    names = [name for name in tracked.stdout.split("\0") if name]
     excluded = {".opus", ".flac", ".wav", ".mp4", ".vtt", ".srt"}
+
+    def committed_speech(name):
+        # The spoken audio of a line is committed beside its timing JSON in a
+        # narration cache, so the docs build never synthesizes speech.
+        path = Path(name)
+        return (
+            path.suffix.lower() == ".opus"
+            and path.parent.name == "cache"
+            and str(path.with_suffix(".json")) in names
+        )
+
     media = [
         name
-        for name in tracked.stdout.split("\0")
-        if name and Path(name).suffix.lower() in excluded
+        for name in names
+        if Path(name).suffix.lower() in excluded and not committed_speech(name)
     ]
     assert media == []
 
