@@ -84,7 +84,7 @@ def hop(
 ) -> PlotResult:
     """Play exchangeable draws at a steady rate, leaving ghosts and a tally.
 
-    The mark of uncertainty shown as draws (synthesis family six): each draw
+    The mark of uncertainty shown as draws: each draw
     of a set (an orbit from a posterior, a curve from an ensemble) is shown
     in turn as one line, the current draw in full color and the draws before
     it as ghosts that dim with age, so the eye sees the spread the set
