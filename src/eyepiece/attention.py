@@ -34,6 +34,7 @@ check of the leaders and links.
 
 import math
 import re
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -3863,11 +3864,9 @@ def write(
     lw=None,
     ease="linear",
     zorder=20,
+    overlap=None,
 ):
     """Write a text out by hand: each glyph traced with a thin pen, then filled.
-
-    Its ghost traces changing outlines and cannot be traced by the checker; the
-    real text is hidden until the end, so the contract declares nothing.
 
     The move is for a label or a short equation that should arrive the way
     a hand would put it on a board, so the eye follows the writing. Each
@@ -3892,7 +3891,9 @@ def write(
     state, the text is drawn as it is without the move, with its own
     colors, opacity and visibility. The ghost reads the text's color and
     opacity each time it is drawn, so a `Stage` that owns the text weighs it
-    too.
+    too. The returned contract declares nothing: the ghost's outlines change
+    as they are traced, so the motion checks cannot follow them, and the
+    real text stays hidden until the hand-over.
 
     Args:
         text: The `Text` artist to write. It must stay in its figure, and
@@ -3908,6 +3909,9 @@ def write(
         ease: An easing kind for `eyepiece.ease` for the beat as a whole.
             Inside each glyph's window progress is linear.
         zorder: Drawing order of the ghost among the figure's children.
+        overlap: Deprecated and ignored. Earlier versions faded the text in
+            over this share of the beat; glyph timing is now set by `lag`
+            and the hand-over by `draw`. Passing it warns.
 
     Returns:
         A `PlotResult` on the text's axes (None for text on the figure), with
@@ -3934,6 +3938,13 @@ def write(
     """
     if not isinstance(text, Text):
         raise TypeError(f"write takes a Text artist, got {type(text).__name__}")
+    if overlap is not None:
+        warnings.warn(
+            "write(overlap=) is ignored and will be removed; glyph timing is "
+            "set by lag and the hand-over by draw",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     draw = float(draw)
     if not 0.0 < draw < 1.0:
         raise ValueError(f"write draw must be in (0, 1), got {draw}")
@@ -4582,6 +4593,10 @@ def ruler_readout(
     head is at the end of its path, the ruler at its full length and the
     counter at the exact value of the path's end, which is the still a
     figure of the same quantities shows.
+
+    Bind it after the figure's layout is final: the counter's slots are sized
+    by sampling the head's path in display coordinates when it is bound, so
+    a later layout change can leave them too narrow.
 
     Args:
         head: A `head_draw` result; its ``update`` is called with ``u``.

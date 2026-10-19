@@ -50,7 +50,9 @@ def mode():
     """Active mode name.
 
     The hwostyle mode, "light" when none is active, or "dark-video" while
-    `use_video` is on in dark mode.
+    `use_video` is on in dark mode. "dark-video" is not an hwostyle mode:
+    pass the name through `eyepiece._video.base_mode` before looking it up
+    in a table keyed by hwostyle mode (such as `MODE_RC`).
     """
     name = hwostyle.current_mode() or "light"
     if _VIDEO and name == "dark":

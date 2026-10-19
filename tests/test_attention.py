@@ -2588,6 +2588,19 @@ def test_write_is_exported():
     assert ep.write is eyepiece.attention.write
 
 
+def test_write_overlap_is_deprecated_and_ignored():
+    fig, text = _write_fig("Write ij")
+    plain = ep.write(text)
+    plain.update(0.5)
+    expected = _pixels_of(fig)
+    plain.update(1.0)
+    with pytest.warns(DeprecationWarning, match="overlap"):
+        move = ep.write(text, overlap=0.1)
+    move.update(0.5)
+    assert np.array_equal(_pixels_of(fig), expected)
+    plt.close(fig)
+
+
 @pytest.mark.parametrize("string", ["Write ij", r"$E=\frac{m}{2}v^2$", "two\nlines"])
 def test_write_rest_state_is_pixel_exact(string):
     fig, text = _write_fig(string)
