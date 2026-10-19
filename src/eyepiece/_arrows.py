@@ -16,6 +16,7 @@ import math
 
 import matplotlib
 import numpy as np
+from matplotlib.patches import FancyArrowPatch
 from matplotlib.path import Path
 
 from eyepiece import _style
@@ -106,6 +107,7 @@ def arrow(
     label_kw=None,
     arrow_kw=None,
     zorder=6,
+    grow="length",
 ):
     """Draw an arrow that can grow and move without being redrawn.
 
@@ -123,6 +125,18 @@ def arrow(
     on the line in a backing box. The arrow grows from `tail` for a vector
     and outward from the middle for the two-headed kinds, so a dimension
     opens from its center.
+
+    With ``grow="scaled"`` the arrow grows as Manim's ``GrowArrow`` does:
+    its line width and head size are `u` times their drawn values, so a
+    growing arrow is the drawn arrow scaled by `u` about its tail (about its
+    middle for the two-headed kinds), thin and small at first. The default,
+    ``"length"``, lengthens the shaft at the drawn width with a full head.
+
+    Motion contract: the ends move along the line from tail to head and
+    nothing else does; the label stays at the middle of the full arrow. With
+    ``grow="scaled"`` the width and the head scale with `u` too, so the
+    shape is the same at every `u`. At ``u = 1``, the rest state, both
+    modes draw the arrow as made.
 
     Args:
         tail: Start of the arrow, ``(x, y)`` in the data coordinates of `ax`.
@@ -145,6 +159,8 @@ def arrow(
             ``fontsize``, ``bbox``); a ``bbox`` of None draws no box.
         arrow_kw: Extra `FancyArrowPatch` keywords, applied last.
         zorder: Drawing order of the arrow; its label is just above.
+        grow: ``"length"`` (the shaft lengthens at full width and head) or
+            ``"scaled"`` (width and head scale with the length).
 
     Returns:
         A `PlotResult` on `ax` with ``artists["arrow"]`` the patch and, with a
@@ -157,8 +173,8 @@ def arrow(
         absent at ``u = 0``. The rest state is ``u = 1``.
 
     Raises:
-        ValueError: If `kind` is unknown, or an end or `head_size` is not
-            finite.
+        ValueError: If `kind` or `grow` is unknown, or an end or `head_size`
+            is not finite.
 
     Example::
 
@@ -170,6 +186,8 @@ def arrow(
     """
     if kind not in _KINDS:
         raise ValueError(f"kind must be one of {sorted(_KINDS)}, got {kind!r}")
+    if grow not in ("length", "scaled"):
+        raise ValueError(f"grow must be 'length' or 'scaled', got {grow!r}")
     style, heads = _KINDS[kind]
     ends = [_point(tail, "tail"), _point(head, "head")]
     size = _finite(head_size, "head_size")
@@ -212,6 +230,8 @@ def arrow(
             boxed=thin,
         )
     base_alpha = patch.get_alpha()
+    # The drawn width and the nominal head, which a scaled growth multiplies.
+    full = (FancyArrowPatch.get_mutation_scale(patch), patch.get_linewidth())
     fade = None if note is None else _TextFade(note)
     snap = _Unsnap([patch])
 
@@ -230,6 +250,10 @@ def arrow(
             start, stop = mid + u * (a - mid), mid + u * (b - mid)
         snap.moving(0.0 < u < 1.0)
         patch.set_positions(tuple(start), tuple(stop))
+        if grow == "scaled":
+            scale = 1.0 if u >= 1.0 else u
+            patch.set_mutation_scale(full[0] * scale)
+            patch.set_linewidth(full[1] * scale)
         _set_level(patch, base_alpha, level)
         if note is not None:
             mid = 0.5 * (a + b)

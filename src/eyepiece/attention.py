@@ -1886,12 +1886,21 @@ def _renderer(figure):
 
 _SPINES = {"x": ("bottom", "top"), "y": ("left", "right")}
 
+# Share of a staccato axis build the spine takes, before the tick and number
+# beats: an equal beat would sweep the spine across in a frame or two.
+_STACCATO_SPINE = 0.4
+
 
 class _AxisBuild:
     """The build of one axis of an axes: spine, ticks, tick labels, label."""
 
-    def __init__(self, ax, which, *, label, spine_end, tick_fade, label_lag):
+    def __init__(
+        self, ax, which, *, label, spine_end, tick_fade, label_lag, staccato=False
+    ):
         self.ax = ax
+        self.staccato = staccato
+        self._events = None
+        self._writer = None
         self.which = which
         self.axis = ax.xaxis if which == "x" else ax.yaxis
         self.spine_end = spine_end
@@ -1934,6 +1943,74 @@ class _AxisBuild:
             frac = to_axes.transform(np.array([point], dtype=float))[0]
         return float(frac[0] if self.which == "x" else frac[1])
 
+    def _beats(self):
+        """The staccato order: the spine, each tick, each number, along the axis.
+
+        Only what the axes draws counts: a tick outside the view limits, and
+        a number with no text, take no beat.
+        """
+        if self._events is None:
+            inside = sorted(
+                (
+                    (f, marks, texts, grid)
+                    for f, (_loc, marks, texts, grid) in (
+                        (self._fraction(t[0]), t) for t in self.ticks
+                    )
+                    if -1e-9 <= f <= 1.0 + 1e-9
+                ),
+                key=lambda event: event[0],
+            )
+            self._events = (
+                [self.spines]
+                + [[*marks, grid] for _f, marks, _texts, grid in inside]
+                + [
+                    texts
+                    for _f, _marks, texts, _grid in inside
+                    if any(t.artist.get_text() for t in texts)
+                ]
+            )
+        return self._events
+
+    def _write(self, progress):
+        """Write the axis label with `write`; False when it has no outline."""
+        if self._writer is None:
+            try:
+                self._writer = write(self.axis.label)
+            except ValueError:
+                self._writer = False
+        if self._writer:
+            self._writer.update(progress)
+        return bool(self._writer)
+
+    def _staccato(self, u):
+        """The spine draws on, then one beat per tick and number, each eased."""
+        beats = self._beats()
+        n = len(beats) - 1
+        g = min(1.0, u / self.spine_end)
+        line = _STACCATO_SPINE if n else 1.0
+        s = max(0.0, g - line) / (1.0 - line) * n if n else 0.0
+        for _loc, marks, texts, grid in self.ticks:
+            for part in (*marks, *texts, grid):
+                part.fade(0.0)
+        for i, parts in enumerate(beats):
+            if i == 0:
+                w = _ease(min(1.0, g / line))
+                big = 1e3
+                if self.which == "x":
+                    self._spine_clip.set_bounds(-big, -big, big + w, 3.0 * big)
+                else:
+                    self._spine_clip.set_bounds(-big, -big, 3.0 * big, big + w)
+                for part in parts:
+                    part.clip(self._spine_clip)
+                    part.fade(1.0 if w > 0.0 else 0.0)
+                continue
+            w = _ease(min(1.0, max(0.0, s - (i - 1))))
+            for part in parts:
+                part.fade(w)
+        self.label.restore()
+        if self.write_label:
+            self._write(max(0.0, (u - self.spine_end) / (1.0 - self.spine_end)))
+
     def update(self, u):
         if u >= 1.0:
             for part in [*self.spines, self.label]:
@@ -1941,6 +2018,11 @@ class _AxisBuild:
             for _loc, marks, texts, grid in self.ticks:
                 for part in (*marks, *texts, grid):
                     part.restore()
+            if self._writer:
+                self._writer.update(1.0)
+            return
+        if self.staccato:
+            self._staccato(u)
             return
         # The front runs from the origin to past the far end, so the last
         # tick label has finished fading in when the spine is drawn.
@@ -1982,7 +2064,9 @@ class _AxisBuild:
         self.label.clip(self._label_clip)
 
 
-def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
+def build_axes(
+    ax, *, axis="both", label=True, spine_end=0.7, title=False, style="sweep"
+):
     """Build an axes the way a teacher draws one: line, ticks, numbers, name.
 
     An explanation that introduces a quantity draws its axis in front of
@@ -1991,6 +2075,18 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
     just after, and the axis label writes on last, from its first letter.
     One axis at a time keeps one new quantity at a time; ``axis="both"``
     builds the horizontal axis and then the vertical one.
+
+    ``style="staccato"`` builds with the rhythm of Manim's ``Create(axes)``:
+    the spine draws on, then each tick appears in turn along the axis, then
+    each number, every one in its own eased window of equal length, so the
+    build is a sequence of small events rather than one sweep; the label is
+    then written by `write`, glyph by glyph.
+
+    Motion contract: nothing moves; the build only clips, fades and writes
+    in place. In the default sweep a tick appears when the spine's front
+    reaches it; in the staccato build the spine is complete before the
+    first tick. At ``u = 1``, the rest state, the axes are drawn exactly as
+    made.
 
     Nothing about the axes' limits, ticks, or layout changes: the build only
     clips and fades what the axes already draws, so it moves no data limit
@@ -2008,6 +2104,9 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
         title: Fade the center, left, and right axes titles in with the last
             axis label. False leaves the titles as made throughout. True
             uses the final label stage even when `label` is False.
+        style: ``"sweep"`` (one front along each axis, the label wiped on)
+            or ``"staccato"`` (one beat per spine, tick and number, the
+            label written with `write`).
 
     Returns:
         A `PlotResult` on `ax` with ``update(u)``, `u` from 0 (nothing of
@@ -2015,7 +2114,8 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
         The result is made in its rest state.
 
     Raises:
-        ValueError: If `axis` is unknown or `spine_end` is outside (0, 1).
+        ValueError: If `axis` or `style` is unknown or `spine_end` is outside
+            (0, 1).
 
     Example::
 
@@ -2029,6 +2129,8 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
     spine_end = float(spine_end)
     if not 0.0 < spine_end < 1.0:
         raise ValueError(f"spine_end must be in (0, 1), got {spine_end}")
+    if style not in ("sweep", "staccato"):
+        raise ValueError(f"unknown style: {style!r}; known: ['staccato', 'sweep']")
     which = ("x", "y") if axis == "both" else (axis,)
     parts = [
         _AxisBuild(
@@ -2038,6 +2140,7 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
             spine_end=spine_end,
             tick_fade=0.25,
             label_lag=0.05,
+            staccato=style == "staccato",
         )
         for w in which
     ]

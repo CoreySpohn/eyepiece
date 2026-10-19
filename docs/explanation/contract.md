@@ -324,6 +324,30 @@ contracts rather than the mechanism behind them.
   position and no hue is added. At `u = 0` the figure is as it was; at
   `u = 1` it is the landed still, whatever path the knob took: the geometry
   at its own width, the dot set, the number bold and the ruler gone.
+- `arrow(grow="scaled")`: the arrow grows as the drawn arrow scaled by `u`
+  about its tail (about its middle for the two-headed kinds): line width and
+  head size are `u` times their drawn values, so the shape is the same at
+  every `u`. The ends move along the line from tail to head and nothing else
+  moves. At `u = 0` nothing is drawn and at `u = 1` the arrow is exactly as
+  made.
+- `build_axes(style="staccato")`: the build is a sequence of small events.
+  The spine draws on over the first 40% of each axis's build, then each tick
+  appears in turn along the axis and then each number, every one eased in its
+  own window of equal length, so at most one of them is part way in at a
+  time; a tick outside the view limits or a number with no text takes no
+  window. The axis label is then written glyph by glyph by `write`. Nothing
+  moves and no limit changes; only furniture is faded, clipped or written.
+  The spine has a longer window than a tick because, in an equal one, it
+  swept across in a frame or two and the clip read as a jump. At `u = 1` the
+  axes are exactly as made.
+- `transform(fade_toward=True)`: glyphs with no counterpart fade while they
+  drift, at the same time as the matched glyphs move, instead of fading in
+  place before and after the motion. The leaving glyphs move together toward
+  the center of the arriving ones (of the whole target when none arrive) and
+  fade out; the arriving ones come from the center of the leaving ones and
+  fade in; each side moves rigidly and only the two sides may overlap. The
+  rest states are those of the plain transform: `eq_a` at `u = 0` and `eq_b`
+  at `u = 1`.
 
 ## Style resolves at call time
 
