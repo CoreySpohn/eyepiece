@@ -388,3 +388,122 @@ def photons(
         steps=steps,
         arrivals=arrivals,
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class ApertureCounts:
+    """What a photons mark shows inside an aperture, at one clock sample.
+
+    Attributes:
+        sample: The clock sample read.
+        exposure: Its exposure time.
+        pixels: The number of pixels in the aperture.
+        counts: The drawn photons in the aperture.
+        expected: The expected photons in the aperture, leak plus signal.
+        leak: The expected leak photons in the aperture, taken as known.
+        signal: The signal estimate, ``counts - leak``.
+        snr: The signal-to-noise ratio of this draw,
+            ``(counts - leak) / sqrt(expected)``.
+        snr_expected: The expected signal-to-noise ratio,
+            ``(expected - leak) / sqrt(expected)``.
+    """
+
+    sample: int
+    exposure: float
+    pixels: int
+    counts: int
+    expected: float
+    leak: float
+    signal: float
+    snr: float
+    snr_expected: float
+
+
+def aperture_counts(mark, aperture, *, leak, sample=None) -> ApertureCounts:
+    """Read the counts a photons mark shows in an aperture, and their S/N.
+
+    The readout of a detector integrating, read off the mark: the counts are
+    the sum of the drawn pixels of the sample the mark shows, so a number on
+    screen always agrees with the image beside it, and a re-render replays
+    it exactly.
+
+    Estimator: aperture photometry against a known leak. With the aperture
+    sum of the drawn counts ``N``, of the expected leak ``B = sum(leak) *
+    t`` and of the expected total ``E = sum(rate) * t`` at the exposure
+    ``t`` shown, the signal estimate is ``N - B`` and its noise is the
+    Poisson standard deviation of the aperture sum, ``sqrt(E)``, so the S/N
+    of the draw is ``(N - B) / sqrt(E)`` and its expectation is ``(E - B) /
+    sqrt(E)``. The estimator assumes the leak is known exactly and photon
+    noise is the only noise: it ignores speckle calibration error, detector
+    noise and the uncertainty of a leak estimated from the data, each of
+    which lowers a real S/N. Over many seeds the draw's S/N scatters about
+    the expected one with unit standard deviation. Before any exposure
+    (``E = 0``) both S/N values are zero.
+
+    Args:
+        mark: A result of `photons`.
+        aperture: A boolean mask shaped like the image, True inside the
+            aperture.
+        leak: The expected leak per unit exposure in every pixel, in the
+            units of the arrivals' rate (the rate without the signal).
+        sample: The clock sample to read; None reads the one the mark shows
+            now.
+
+    Returns:
+        An `ApertureCounts`.
+
+    Raises:
+        TypeError: If `mark` is not a result of `photons`.
+        ValueError: If `aperture` or `leak` does not match the image, the
+            aperture is empty or not boolean, or the leak is negative,
+            not finite, or above the rate inside the aperture.
+
+    Example::
+
+        mark = ep.photons(ep.arrivals(leak + planet, clock, seed=7), ax=ax)
+        ring = np.hypot(xx - 3.5, yy - 1.5) <= 1.0
+        mark.update(u)
+        read = ep.aperture_counts(mark, ring, leak=leak)
+        label.set_text(f"S/N = {read.snr:.1f}")
+    """
+    channel = getattr(mark, "arrivals", None)
+    if not isinstance(mark, _PhotonsResult) or channel is None:
+        raise TypeError(
+            f"aperture_counts reads a photons mark, got {type(mark).__name__}"
+        )
+    shape = channel.rate.shape
+    aperture = np.asarray(aperture)
+    if aperture.dtype != bool or aperture.shape != shape:
+        raise ValueError(
+            f"aperture_counts aperture must be a boolean mask shaped {shape}, "
+            f"got {aperture.dtype} {aperture.shape}"
+        )
+    if not aperture.any():
+        raise ValueError("aperture_counts aperture is empty")
+    leak = np.broadcast_to(np.asarray(leak, dtype=float), shape)
+    if not np.all(np.isfinite(leak)) or np.any(leak < 0.0):
+        raise ValueError("aperture_counts leak must be finite and non-negative")
+    rate_in = float(channel.rate[aperture].sum())
+    leak_in = float(leak[aperture].sum())
+    if leak_in > rate_in * (1.0 + 1e-12):
+        raise ValueError(
+            "aperture_counts leak exceeds the rate in the aperture; pass the "
+            "rate without the signal"
+        )
+    k = mark.sample() if sample is None else range(channel.n)[sample]
+    t = float(channel.exposure[k])
+    n_in = int(channel.counts[k][aperture].sum())
+    expected = rate_in * t
+    background = leak_in * t
+    noise = float(np.sqrt(expected))
+    return ApertureCounts(
+        sample=k,
+        exposure=t,
+        pixels=int(aperture.sum()),
+        counts=n_in,
+        expected=expected,
+        leak=background,
+        signal=n_in - background,
+        snr=(n_in - background) / noise if noise > 0.0 else 0.0,
+        snr_expected=(expected - background) / noise if noise > 0.0 else 0.0,
+    )

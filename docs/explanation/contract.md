@@ -371,7 +371,10 @@ contracts rather than the mechanism behind them.
   pixel's displayed value (a pixel's first photon fully) and fade within the
   window. At `u = 1` the final counts show with no glow, the plain still. The
   cuts are the draws: `steps(knob)` names their frames for `check_clip`, and
-  every other check runs as usual.
+  every other check runs as usual. `aperture_counts(mark, aperture, leak=)`
+  reads its numbers off the mark, the drawn pixels of the sample shown, so a
+  readout beside the image changes on the same frames and never disagrees
+  with it.
 
 ## Style resolves at call time
 
