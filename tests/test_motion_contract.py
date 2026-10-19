@@ -67,6 +67,14 @@ def _clip(name):
             ruler=ep.ruler(ax, (0.1, 0.1), (0.1, 0.1), "x", head_scale=0),
             ruler_to=lambda x, y: (x, 0.1),
         )
+    elif name == "click":
+        (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
+        result = ep.click(
+            line,
+            dot=anchor((0.8, 0.6)),
+            readout=ep.readout(anchor((0.1, 0.9)), 0.42, fmt=".2f"),
+            ruler=ep.ruler(ax, (0.1, 0.1), (0.6, 0.1), "x", head_scale=0),
+        )
     elif name == "morph":
         (a,) = ax.plot([0.2, 0.4, 0.5], [0.3, 0.6, 0.3])
         (b,) = ax.plot([0.3, 0.5, 0.7], [0.3, 0.7, 0.3])
@@ -164,6 +172,7 @@ def _members(contract):
         "draw_on",
         "head_draw",
         "ruler_readout",
+        "click",
         "morph",
         "flight",
         "collapse",

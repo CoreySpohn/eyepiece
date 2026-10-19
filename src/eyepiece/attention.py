@@ -4559,6 +4559,203 @@ def ruler_readout(
     )
 
 
+# Click
+
+_CLICK_SWELL = 1.55
+_CLICK_DOT_GROW = 0.5  # the dot grows over the first half of the beat
+_CLICK_SET = _PLATEAU_RISE  # the number starts to set bold as the swell peaks
+_CLICK_SET_S = 0.2  # fraction of the beat over which the number turns bold
+_CLICK_DOT_LW = 3.2  # the dot's diameter in line widths of the geometry
+
+
+class _Dot(Line2D):
+    """A round dot at an anchor, resolved in display space when drawn."""
+
+    def __init__(self, target, **kw):
+        super().__init__([], [], transform=IdentityTransform(), linestyle="None",
+                         marker="o", **kw)  # fmt: skip
+        self._target = target
+
+    def draw(self, renderer):
+        if not self.get_visible():
+            return
+        x, y = self._target.display(renderer)
+        self.set_data([x], [y])
+        super().draw(renderer)
+
+
+class _BoldTwin(Artist):
+    """A bold copy of a text, drawn over it while the text turns bold.
+
+    It is a render step of the text's cross-fade, not a second label, so it
+    is a plain artist that draws a private bold `Text` in the text's place.
+    """
+
+    def __init__(self, source):
+        super().__init__()
+        self._source = source
+        self._copy = Text()
+        self.level = 0.0
+
+    def draw(self, renderer):
+        source, copy = self._source, self._copy
+        if self.level <= 0.0 or not source.get_visible():
+            return
+        copy.set_figure(source.get_figure(root=False))
+        copy.update_from(source)
+        copy.set_text(source.get_text())
+        copy.set_position(source.get_position())
+        copy.set_transform(source.get_transform())
+        copy.set_clip_on(False)
+        copy.set_fontweight("bold")
+        copy.set_alpha(self.level)
+        copy.draw(renderer)
+
+
+def click(lines, *, dot=None, readout=None, ruler=None, swell=_CLICK_SWELL,
+          color=None, zorder=22):  # fmt: skip
+    """Land a composite in one beat: the ink swells, a dot sets, the number locks.
+
+    The click is the moment a built-up figure arrives at its answer. Over one
+    beat (`CLICK_S`, 0.6 s, which `Timeline.click` places) the geometry's
+    line width swells by `swell` on a plateau pulse (up over the first 35%,
+    held through the middle 30%, down over the last 35%), an end `dot` grows
+    from nothing to its size over the first half, the `readout` sets bold as
+    the swell reaches its peak, and the `ruler` recedes from there to the end.
+    A hold of at least `CLICK_HOLD_S` (1.5 s) follows the beat: stillness
+    after a click is where the answer is read.
+
+    Motion contract: only the geometry's widths, the dot's size and the
+    ruler's opacity change; nothing moves position and no hue is added. The
+    number turns bold over a fifth of the beat as a cross-fade to a bold
+    copy in the same place, starting as the swell reaches its peak. At
+    ``u = 0`` the figure is as it was before the beat (no dot, regular
+    weight, ruler at full opacity). At ``u = 1`` it is the still of the
+    landed composite: the geometry at its own width, the dot at full size,
+    the number bold and the ruler gone. Update the click after the moves it
+    settles in the same frame, since it overrides the ruler's opacity and the
+    geometry's width.
+
+    Args:
+        lines: The geometry that swells: a `Line2D` or `Patch`, or an
+            iterable of them.
+        dot: An `Anchor` (or an artist, at its center) where the end dot
+            sets, or None for no dot.
+        readout: A `readout` result whose number sets bold, or None.
+        ruler: A `ruler` result that recedes, or None.
+        swell: Peak line-width factor, at least 1.
+        color: Dot color. None uses the first geometry's color.
+        zorder: Drawing order of the dot among the figure's children.
+
+    Returns:
+        A `PlotResult` with ``artists`` (``"lines"``, ``"dot"``, and the
+        bold copies of the number as ``"bold"``) and
+        ``update(u)``, `u` from 0 to 1 over the beat; values outside are
+        clipped. Its contract lists the geometry, the dot and the ruler's
+        parts as moving and the readout's parts at rest (the bold copies are
+        a render step of the cross-fade, drawn in the digits' places).
+
+    Raises:
+        TypeError: If a geometry artist is not a line or a patch.
+        ValueError: If there is no geometry or `swell` is below 1.
+
+    Example::
+
+        landed = ep.click(ring, dot=ep.Anchor.from_data(ax, end), readout=count,
+                          ruler=rule)
+        tl.click("ring")  # 0.6 s on knob "click.ring", then a 1.5 s hold
+        ...
+        landed.update(plan.value(k, "click.ring"))
+    """
+    items = [lines] if isinstance(lines, Artist) else list(lines)
+    if not items:
+        raise ValueError("click needs the geometry that lands")
+    for item in items:
+        if not isinstance(item, (Line2D, Patch)):
+            raise TypeError(
+                f"click swells a line or a patch, got {type(item).__name__}"
+            )
+    swell = float(swell)
+    if swell < 1.0:
+        raise ValueError(f"click swell must be at least 1, got {swell}")
+    widths = [_Channel(a.get_linewidth, a.set_linewidth,
+                       lambda v, k: float(v) * (1.0 + (swell - 1.0) * k))
+              for a in items]  # fmt: skip
+    marker = None
+    if dot is not None:
+        target = _as_anchor(dot, "dot")
+        first = items[0]
+        ink = first.get_color() if isinstance(first, Line2D) else first.get_edgecolor()
+        size = _CLICK_DOT_LW * first.get_linewidth()
+        marker = _Dot(target, color=ink if color is None else color,
+                      markeredgecolor="none", zorder=zorder)  # fmt: skip
+        marker.set_clip_on(False)
+        marker.set_in_layout(False)
+        target.figure.add_artist(marker)
+    digits = [] if readout is None else list(readout.artists["text"])
+    weights = [t.get_fontweight() for t in digits]
+    alphas_digits = [t.get_alpha() for t in digits]
+    twins = []
+    for text in digits:
+        twin = _BoldTwin(text)
+        twin.set_zorder(text.get_zorder())
+        twin.set_clip_on(False)
+        twin.set_in_layout(False)
+        text.figure.add_artist(twin)
+        twins.append(twin)
+    parts, fades, alphas = [], [], []
+    if ruler is not None:
+        parts = [*ruler.artists.get("lines", []), ruler.artists["arrow"]]
+        alphas = [a.get_alpha() for a in parts]
+        if "text" in ruler.artists:
+            fades.append((ruler.artists["text"], _TextFade(ruler.artists["text"])))
+
+    def update(u):
+        u = _check_u(u)
+        k = _pulse(u, "plateau")
+        for channel in widths:
+            channel.apply(k)
+        if marker is not None:
+            grow = min(
+                1.0, max(0.0, _ease(min(1.0, u / _CLICK_DOT_GROW), DEFAULT_EASE))
+            )
+            marker.set_markersize(size * grow)
+            marker.set_visible(grow > 0.0)
+        # The number turns bold as a short cross-fade to a bold twin, then
+        # the text itself is bold and the twin steps aside.
+        c = min(1.0, max(0.0, (u - _CLICK_SET) / _CLICK_SET_S))
+        for text, twin, weight, alpha in zip(
+            digits, twins, weights, alphas_digits, strict=True
+        ):
+            base = 1.0 if alpha is None else alpha
+            if c >= 1.0:
+                text.set_fontweight("bold")
+                text.set_alpha(alpha)
+                twin.level = 0.0
+            else:
+                text.set_fontweight(weight)
+                text.set_alpha(alpha if c <= 0.0 else base * (1.0 - c))
+                twin.level = base * c
+        r = min(1.0, max(0.0, (u - _CLICK_SET) / (1.0 - _CLICK_SET)))
+        level = 1.0 - min(1.0, max(0.0, _ease(r, DEFAULT_EASE)))
+        for artist, alpha in zip(parts, alphas, strict=True):
+            artist.set_alpha(alpha if level >= 1.0 else level * (alpha or 1.0))
+            artist.set_visible(level > 0.0)
+        for text, fade in fades:
+            fade.set(level)
+            text.set_visible(level > 0.0)
+
+    update(0.0)
+    moving = [*items, *([] if marker is None else [marker]), *parts]
+    moving += [text for text, _ in fades]
+    return PlotResult(
+        ax=getattr(items[0], "axes", None),
+        artists={"lines": items, "dot": marker, "bold": twins},
+        update=update,
+        contract=MotionContract(moves=tuple(moving), rest=tuple(digits)),
+    )
+
+
 # Words
 
 

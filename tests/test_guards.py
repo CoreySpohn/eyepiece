@@ -157,6 +157,7 @@ _EXPECTED_ALL = [
     "callout",
     "capture",
     "circumscribe",
+    "click",
     "collapse",
     "compare_grid",
     "compare_row",

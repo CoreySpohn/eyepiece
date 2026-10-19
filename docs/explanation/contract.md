@@ -314,6 +314,16 @@ contracts rather than the mechanism behind them.
   the artist is exactly as it was. Lines, patches and collections swell
   smoothly; a text swells in whole-pixel steps, because Agg hints and places
   text on the pixel grid.
+- `click` and `Timeline.click`: a composite lands in one beat of 0.6 s on
+  screen at any tempo, followed by at least 1.5 s of stillness the tempo
+  never shortens. Over the beat the geometry's width swells by 1.55 on a
+  plateau (up over 35%, held over 30%, down over 35%), the end dot grows from
+  nothing over the first half, the number turns bold over a fifth of the beat
+  from the start of the plateau (a cross-fade to a bold copy in place, never
+  a step), and the ruler recedes from there to the end. Nothing changes
+  position and no hue is added. At `u = 0` the figure is as it was; at
+  `u = 1` it is the landed still, whatever path the knob took: the geometry
+  at its own width, the dot set, the number bold and the ruler gone.
 
 ## Style resolves at call time
 
