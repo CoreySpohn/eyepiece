@@ -278,7 +278,23 @@ thickness that passes while it is horizontal or vertical. A move is a dict, or a
 `artists` (or `moves`), `rest`, `groups`, `may_overlap` and `rectilinear`; a
 move's `rest`, `groups`, `may_overlap` and `rectilinear` hold only over its
 `span`, `may_overlap` also over the tenth of a second on either side in which
-the span's motion already counts as moving. The call restores the figure's dpi and
+the span's motion already counts as moving.
+
+A declared step (`steps`, in seconds) excuses a jump that ends at it. On its
+own it excuses the whole picture, so an artist that cuts by mistake on the
+same frame as an intended cut goes unseen. A draw group (`draws=`, or a move's
+`draws`) narrows that: at a step where the group changes, the jump check
+measures the picture outside the group's boxes, before and after the step,
+padded by two pixels. The group's cut is excused; any other artist that cuts
+on that frame is reported, against the clip's pixel baseline or, in a clip too
+still to have one, as an artist that jumps. The group's artists may overlap
+one another, and every other check holds for them as for any artist. A step
+where the group does not change, such as a scene cut, still excuses the whole
+picture. Inside the group's boxes, which for a run of curves can cover most
+of an axes, the pixel baseline is blind at the group's cuts, so there every
+artist outside the group is followed on its own and one that jumps on the
+cut is reported. What stays unseen is a change there that moves no artist's
+box, such as a line outside the group redrawn within its old extent. The call restores the figure's dpi and
 canvas and is deterministic. It costs the draw time of each frame plus a
 little; the frames are kept only for `jump` and `dead`. `assert_motion` raises
 `MotionError` with the report.
@@ -326,6 +342,8 @@ figure draws, not copies made for the checker. Pass a result directly as
   geometry has settled. Path glyphs are not text artists.
 - `rectilinear` is a tuple of bars, rules or boxes that stay axis-aligned
   rectangles at every progress, including intermediate states.
+- `draws` is the draw group of a run of exchangeable draws: the artists that
+  change in a cut at each draw by design (`hop` declares all of its artists).
 
 Declare only what is true. Empty tuples make no promise. A warp may deform
 its inputs, a growing compass is not rigid, and a replacement equation term
@@ -339,8 +357,9 @@ nothing: its real text is hidden until the end and its renderer-only ghost has
 no independently traceable geometry, so no drift check could compare anything. An inset's spines and virtual
 layout artists likewise do not become traceable marks by being declared.
 These declarations describe drawing and do not change it. The checker reads
-`moves`, `rest`, `groups` and `may_overlap`; `settles`, `arrives_after_motion`
-and `rectilinear` also state promises that a caller can check directly.
+`moves`, `rest`, `groups`, `may_overlap`, `rectilinear` and `draws`; `settles`
+and `arrives_after_motion` also state promises that a caller can check
+directly.
 
 ## Two spans, two uses
 

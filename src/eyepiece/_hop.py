@@ -104,9 +104,14 @@ def hop(
     knob linearly in time, as a `Timeline` run does: an eased knob plays the
     draws at an uneven rate). The cuts
     are by design: declare the frames ``steps`` returns to
-    `eyepiece.testing.check_clip` (or their times to ``motion_faults``). The
-    rest state, ``u = 1``, shows the last draw, its ghosts and the final
-    tally, and is the still of the run.
+    `eyepiece.testing.check_clip` (or their times to ``motion_faults``), with
+    the mark among the moves, so its draw group is excused at those cuts and
+    any other artist that cuts with it is still reported. The group's
+    boxes span most of the draws' axes and the tally panel, so at a cut
+    the check follows each other artist there on its own; a change there
+    that moves no artist's box goes unseen. The rest state, ``u = 1``,
+    shows the last draw, its ghosts and the final tally, and is the still
+    of the run.
 
     Ghosts are the `ghosts` draws before the current one, never more, so the
     picture does not fill in as the run goes on; the draw just before the
@@ -165,7 +170,9 @@ def hop(
         ``"scatter"`` (the estimate at the current count) and ``"text"``
         (when `tally_fmt` is given). ``contract.moves`` declares all of them,
         ``contract.may_overlap`` the pairs that cross by design (any two
-        draws; the interval, its point and the running line), and
+        draws; the interval, its point and the running line),
+        ``contract.draws`` all of them as the draw group, so a check excuses
+        their cuts at the draws and nothing else's, and
         ``update(u, level=1.0)`` poses the run, where ``level`` dims it all.
         Its ``draw(u=None)`` returns the index (from 1) of the draw shown
         (at the last `u` set when None); ``steps(knob)``, given the knob's
@@ -427,7 +434,9 @@ def hop(
         ax=ax,
         artists=artists,
         update=update,
-        contract=MotionContract(moves=tuple(moving), may_overlap=tuple(overlap)),
+        contract=MotionContract(
+            moves=tuple(moving), may_overlap=tuple(overlap), draws=tuple(moving)
+        ),
         draw=draw,
         steps=steps,
         tally=tally_at,

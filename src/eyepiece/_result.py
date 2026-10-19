@@ -86,6 +86,9 @@ class MotionContract:
         settles: Always True: the move is continuous into its rest state.
         arrives_after_motion: Texts that fade in after motion has settled.
         rectilinear: Pieces that stay axis-aligned rectangles throughout.
+        draws: The draw group: artists that change in a cut at each draw
+            of a run of exchangeable draws, by design. A check excuses
+            their cuts at the declared steps, and only theirs.
 
     Empty tuples make no promise. Contracts describe drawing; they do not
     change it, and opacity alone does not count as geometry.
@@ -98,6 +101,7 @@ class MotionContract:
     settles: bool = field(default=True, init=False)
     arrives_after_motion: tuple = ()
     rectilinear: tuple = ()
+    draws: tuple = ()
 
 
 @dataclass(frozen=True, eq=False)
