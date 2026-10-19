@@ -40,12 +40,18 @@ from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import stagger as _stagger
 from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import (
+    _WRITE_PEN_PT,
     Anchor,
     _as_anchor,
     _check_u,
+    _glyph_length,
+    _GlyphPen,
     _morph_pairs,
     _path_parts,
     _pixels,
+    _traced,
+    _write_lag,
+    _write_windows,
 )
 
 # Mathtext is parsed at this size and the outlines scaled down, as TextPath
@@ -645,10 +651,15 @@ def equation(
     for derivations that `transform` rearranges; `term_row` is for a running
     readout whose text changes while its structure does not.
 
-    ``update(u, level=1.0)`` writes the equation on, left to right: each term
-    (and each glyph that belongs to no term) arrives in turn, and `level` is
-    an opacity over all of it, never geometry. At ``u = 1``, the rest state,
-    the equation is drawn whole.
+    ``update(u, level=1.0, reveal="fade")`` brings the equation on, left to
+    right: each term (and each glyph that belongs to no term) fades in in
+    turn, and `level` is an opacity over all of it, never geometry. With
+    ``reveal="write"`` it is written as `write` writes a text: each glyph by
+    its left edge has a window, linear inside, whose first half traces the
+    glyph's outline with a thin pen and whose second half fills the glyph
+    while the pen thins away, about six glyphs in flux at once. Nothing
+    moves in either reveal. At ``u = 1``, the rest state, the equation is
+    drawn whole, its glyphs exactly as made.
 
     Not supported: ``usetex`` (mathtext only), several math spans or text
     outside the span in one string, escaped braces (``\{`` and ``\}``, which
@@ -716,9 +727,40 @@ def equation(
     items += [([g], g.piece.box[0]) for g in eq.glyphs if g.piece.tag is None]
     items.sort(key=lambda it: it[1])
 
-    def update(u, level=1.0):
+    # Write order: every glyph by its left edge, as a hand writes.
+    by_left = sorted(eq.glyphs, key=lambda g: g.piece.box[0])
+    pen = {"artist": None, "jobs": ()}
+
+    def strokes(renderer):
+        out = []
+        for glyph, t, f, level in pen["jobs"]:
+            if t <= 0.0 or f >= 1.0 or not glyph.get_figure(root=True):
+                continue
+            parts = _path_parts(Path(glyph.vertices(renderer), glyph.piece.draw_codes))
+            lines = _traced(parts, _glyph_length(parts), t)
+            out.append((lines, _WRITE_PEN_PT * (1.0 - f), (*glyph.rgb, level)))
+        return out
+
+    def update(u, level=1.0, reveal="fade"):
+        if reveal not in ("fade", "write"):
+            raise ValueError(f"unknown reveal: {reveal!r}; known: ['fade', 'write']")
         u = _check_u(u)
         level = min(1.0, max(0.0, float(level)))
+        if reveal == "write":
+            n = len(by_left)
+            trace, fill = _write_windows(u, n, _write_lag(n, None))
+            for glyph, f in zip(by_left, fill, strict=True):
+                _set_alpha(glyph, float(f) * level)
+            if pen["artist"] is None:
+                pen["artist"] = _GlyphPen(figure, zorder, strokes)
+            pen["jobs"] = [
+                (g, float(t), float(f), level)
+                for g, t, f in zip(by_left, trace, fill, strict=True)
+            ]
+            pen["artist"].set_visible(0.0 < u < 1.0)
+            return
+        if pen["artist"] is not None:
+            pen["artist"].set_visible(False)
         n = len(items)
         for i, (members, _) in enumerate(items):
             r = min(1.0, max(0.0, n * u - i))

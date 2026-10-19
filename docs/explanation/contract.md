@@ -290,6 +290,15 @@ contracts rather than the mechanism behind them.
   own, the ink of the mark they name. At presence 1 every label is exactly in
   place, so the rest state is the still. Labels and callouts only: a group
   holding a data mark raises, because a data mark never drifts.
+- `write` and `equation(...).update(reveal="write")`: ink is laid down glyph
+  by glyph in reading order. Each glyph first traces its outline with a thin
+  pen (0.75 pt by default), then fills; progress is linear inside each
+  glyph's window, the easing lives only in when the windows open, and a
+  short front of four to seven glyphs is in flux at once. The filled glyphs
+  sit on the text as Agg lays it out (hinted advances), so the hand-off into
+  the real text is a cross-fade with no frame lighter than both its ends.
+  Nothing outside the text moves. At `u = 1` the text, or the equation as
+  made, draws itself: the rest state is the still.
 
 ## Style resolves at call time
 

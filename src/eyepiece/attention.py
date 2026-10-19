@@ -3345,7 +3345,8 @@ def morph(
 
 # Write
 
-_WRITE_LW_EM = 0.06
+# The pen of a write, in points: thin, about a pixel on a talk frame.
+_WRITE_PEN_PT = 0.75
 
 
 def _glyph_outlines(text, renderer):
@@ -3379,6 +3380,7 @@ def _glyph_outlines(text, renderer):
             glyph_info, glyph_map, rects = text_to_path.get_glyphs_with_font(
                 font, clean
             )
+            glyph_info = _hinted_advances(glyph_info, clean, prop, figure.dpi)
         moves = (
             Affine2D()
             .scale(size_px / text_to_path.FONT_SCALE)
@@ -3403,6 +3405,37 @@ def _glyph_outlines(text, renderer):
     return glyphs
 
 
+def _hinted_advances(glyph_info, string, prop, dpi):
+    """Glyph x positions as the Agg renderer lays the string out.
+
+    `text_to_path` lays glyphs out unhinted at a reference size, while Agg
+    draws text with hinted advances at the real size, so unhinted outlines
+    drift from the drawn text by a fraction of a pixel per glyph. The
+    outlines keep their shapes and take Agg's positions, so a filled glyph
+    sits on the text it hands over to.
+    """
+    from matplotlib.backends.backend_agg import get_hinting_flag
+    from matplotlib.font_manager import fontManager, get_font
+    from matplotlib.textpath import text_to_path
+
+    font = get_font(fontManager._find_fonts_by_props(prop))
+    font.clear()
+    size = prop.get_size_in_points()
+    font.set_size(size, dpi)
+    try:
+        items = list(font._layout(string, get_hinting_flag()))
+    except (AttributeError, TypeError):
+        return glyph_info
+    if len(items) != len(glyph_info):
+        return glyph_info
+    # Positions in pixels at `dpi`, back to the reference size the outlines use.
+    to_ref = text_to_path.FONT_SCALE / (size * dpi / 72.0)
+    return [
+        (glyph_id, item.x * to_ref, gy, scale)
+        for (glyph_id, _, gy, scale), item in zip(glyph_info, items, strict=True)
+    ]
+
+
 def _left_edge(item):
     verts, codes = item
     return float(verts[np.asarray(codes) != Path.CLOSEPOLY, 0].min())
@@ -3416,14 +3449,101 @@ def _ring(vertices, closed):
     return np.vstack([vertices, vertices[:1]]) if closed else vertices
 
 
-class _GhostWrite(Artist):
-    """The ghost of a write: glyph outlines traced, then the text faded in."""
+def _write_lag(n, lag):
+    """Manim's Write lag for `n` glyphs, unless one is given."""
+    return min(4.0 / max(1, n), 0.2) if lag is None else float(lag)
 
-    def __init__(self, text, *, draw, overlap, lag, lw, ease):
+
+def _write_windows(g, n, lag):
+    """Per-glyph ``(trace, fill)`` at writing progress `g`, linear in each window.
+
+    Glyph `i` has a window of ``span = 1 / (1 + (n - 1) lag)`` of the writing,
+    starting ``i lag span`` in. Over the first half of its window its outline
+    is traced; over the second half it fills while the pen thins away.
+    """
+    span = 1.0 / (1.0 + (n - 1) * lag)
+    w = np.clip((g - np.arange(n) * lag * span) / span, 0.0, 1.0)
+    if g >= 1.0:  # the last window closes exactly, so the rest takes no alpha
+        w = np.ones(n)
+    return np.minimum(1.0, 2.0 * w), np.clip(2.0 * w - 1.0, 0.0, 1.0)
+
+
+def _traced(glyph, length, fraction):
+    """The first `fraction` of a glyph's outline, contour after contour."""
+    reach, lines = fraction * length, []
+    for vertices, closed in glyph:
+        ring = _ring(vertices, closed)
+        seg = float(np.hypot(*np.diff(ring, axis=0).T).sum())
+        if reach > 0.0 and seg > 0.0:
+            lines.append(_cut(ring, min(1.0, reach / seg)))
+        reach = max(0.0, reach - seg)
+    return lines
+
+
+def _lines_path(lines):
+    verts, codes = [], []
+    for line in lines:
+        verts.append(line)
+        codes += [Path.MOVETO, *[Path.LINETO] * (len(line) - 1)]
+    return Path(np.vstack(verts), codes)
+
+
+def _glyph_path(glyph):
+    """A glyph's contours as one fillable path (holes by winding)."""
+    verts, codes = [], []
+    for vertices, closed in glyph:
+        verts.append(vertices)
+        codes += [Path.MOVETO, *[Path.LINETO] * (len(vertices) - 1)]
+        if closed:
+            verts.append(vertices[:1])
+            codes.append(Path.CLOSEPOLY)
+    return Path(np.vstack(verts), codes)
+
+
+class _GlyphPen(Artist):
+    """The pen of a write: each glyph's traced outline at its own width.
+
+    `source(renderer)` returns ``[(lines, lw, rgba), ...]`` as the figure is
+    when it is drawn.
+    """
+
+    def __init__(self, figure, zorder, source):
+        super().__init__()
+        self._source = source
+        self._patch = PathPatch(
+            Path(np.zeros((1, 2)), [Path.MOVETO]),
+            fill=False,
+            capstyle="round",
+            joinstyle="round",
+            transform=IdentityTransform(),
+            clip_on=False,
+        )
+        self.set_zorder(zorder)
+        self.set_in_layout(False)
+        figure.add_artist(self)
+
+    def draw(self, renderer):
+        """Stroke every glyph's traced outline at its width and color."""
+        if not self.get_visible():
+            return
+        patch = self._patch
+        patch.set_figure(self.get_figure(root=False))
+        for lines, lw, rgba in self._source(renderer):
+            if not lines or lw <= 0.0 or rgba[3] <= 0.0:
+                continue
+            patch.set_path(_lines_path(lines))
+            patch.set_linewidth(lw)
+            patch.set_edgecolor(rgba)
+            patch.draw(renderer)
+
+
+class _GhostWrite(Artist):
+    """The ghost of a write: each glyph traced with a thin pen, then filled."""
+
+    def __init__(self, text, *, draw, lag, lw, ease):
         super().__init__()
         self._text = text
         self._draw = draw
-        self._overlap = overlap
         self._lag = lag
         self._lw = lw
         self._ease = ease
@@ -3439,6 +3559,9 @@ class _GhostWrite(Artist):
             capstyle="round",
             joinstyle="round",
             **kw,
+        )
+        self._fill = PathPatch(
+            Path(np.zeros((1, 2)), [Path.MOVETO]), edgecolor="none", lw=0.0, **kw
         )
 
     def glyphs(self, renderer=None):
@@ -3465,33 +3588,27 @@ class _GhostWrite(Artist):
             self._key = key
         return self._glyphs
 
-    def times(self, u):
-        """``(traced, fill)`` at progress `u`.
+    def lag(self):
+        """The lag between glyph starts, as a fraction of a glyph's window."""
+        n = len(self._glyphs) if self._glyphs is not None else 1
+        return _write_lag(n, self._lag)
 
-        `traced` holds the eased fraction of each glyph's outline that is
-        drawn, in reading order; `fill` is the eased opacity of the fill.
+    def times(self, u):
+        """``(traced, fill)`` at progress `u`, one value per glyph in reading order.
+
+        `traced` is the fraction of each glyph's outline drawn and `fill` its
+        fill opacity; both are linear inside the glyph's own window.
         """
         u = _check_u(u)
         n = len(self._glyphs) if self._glyphs is not None else 1
-        span = 1.0 / (1.0 + (n - 1) * self._lag)
-        g = min(1.0, u / self._draw)
-        traced = [
-            min(
-                1.0,
-                max(
-                    0.0,
-                    _ease(
-                        min(1.0, max(0.0, (g - i * self._lag * span) / span)),
-                        self._ease,
-                    ),
-                ),
-            )
-            for i in range(n)
-        ]
-        start = self._draw - self._overlap
-        fill = _ease(min(1.0, max(0.0, (u - start) / (1.0 - start))), self._ease)
-        fill = min(1.0, max(0.0, fill))
-        return traced, fill
+        g = min(1.0, max(0.0, _ease(min(1.0, u / self._draw), self._ease)))
+        trace, fill = _write_windows(g, n, self.lag())
+        return [float(t) for t in trace], [float(f) for f in fill]
+
+    def handoff(self, u):
+        """How far the glyph fills have handed over to the text itself, 0 to 1."""
+        u = _check_u(u)
+        return min(1.0, max(0.0, (u - self._draw) / (1.0 - self._draw)))
 
     def strokes(self, u, renderer=None):
         """The traced part of every glyph at progress `u`, in display pixels.
@@ -3502,111 +3619,107 @@ class _GhostWrite(Artist):
         """
         glyphs = self.glyphs(renderer)
         traced, _ = self.times(u)
-        out = []
-        for glyph, length, frac in zip(glyphs, self._lengths, traced, strict=True):
-            reach, lines = frac * length, []
-            for vertices, closed in glyph:
-                ring = _ring(vertices, closed)
-                seg = float(np.hypot(*np.diff(ring, axis=0).T).sum())
-                if reach > 0.0 and seg > 0.0:
-                    lines.append(_cut(ring, min(1.0, reach / seg)))
-                reach = max(0.0, reach - seg)
-            out.append(lines)
-        return out
+        return [
+            _traced(glyph, length, frac)
+            for glyph, length, frac in zip(glyphs, self._lengths, traced, strict=True)
+        ]
 
     def draw(self, renderer):
-        """Trace and fill the glyphs at the current progress."""
+        """Trace and fill the glyphs, then hand over to the text at the end."""
         if not self.get_visible():
             return
         text = self._text
         color = to_rgb(text.get_color())
         alpha = 1.0 if text.get_alpha() is None else float(text.get_alpha())
         alpha *= self._level
-        _, fill = self.times(self._u)
-        verts, codes = [], []
-        for lines in self.strokes(self._u, renderer):
-            for line in lines:
-                verts.append(line)
-                codes += [Path.MOVETO, *[Path.LINETO] * (len(line) - 1)]
+        glyphs = self.glyphs(renderer)
+        traced, fill = self.times(self._u)
+        h = self.handoff(self._u)
+        # The text comes in under the finished glyphs before they leave, so
+        # no frame shows a gap between the two rasterizations.
+        text_level, glyph_level = min(1.0, 2.0 * h), min(1.0, 2.0 * (1.0 - h))
         figure = _root_figure(text)
-        size = text.get_fontproperties().get_size_in_points()
-        lw = _WRITE_LW_EM * size if self._lw is None else self._lw
-        for patch in (self._stroke,):
+        for patch in (self._stroke, self._fill):
             patch.set_figure(figure)
             patch.set_clip_box(text.get_clip_box())
             patch.set_clip_path(text.get_clip_path())
             patch.set_clip_on(text.get_clip_on())
-        if verts:
-            self._stroke.set_path(Path(np.vstack(verts), codes))
-            self._stroke.set_edgecolor((*color, alpha * (1.0 - fill)))
-            self._stroke.set_linewidth(lw)
-            self._stroke.draw(renderer)
-        if fill > 0.0:
-            # The text itself fades in, so the last frames are its own
-            # rasterization. Its alpha and visibility are restored exactly.
+        if text_level > 0.0:
             was_alpha, was_visible = text.get_alpha(), text.get_visible()
-            text.set_alpha(alpha * fill)
+            text.set_alpha(alpha * text_level)
             text.set_visible(True)
             try:
                 text.draw(renderer)
             finally:
                 text.set_alpha(was_alpha)
                 text.set_visible(was_visible)
+        pen = _WRITE_PEN_PT if self._lw is None else self._lw
+        for glyph, length, t, f in zip(
+            glyphs, self._lengths, traced, fill, strict=True
+        ):
+            if f > 0.0:
+                self._fill.set_path(_glyph_path(glyph))
+                self._fill.set_facecolor((*color, alpha * f * glyph_level))
+                self._fill.draw(renderer)
+            if t > 0.0 and f < 1.0:
+                self._stroke.set_path(_lines_path(_traced(glyph, length, t)))
+                self._stroke.set_linewidth(pen * (1.0 - f))
+                self._stroke.set_edgecolor((*color, alpha * glyph_level))
+                self._stroke.draw(renderer)
 
 
 def write(
     text,
     *,
-    draw=0.7,
-    overlap=0.1,
-    lag=0.5,
+    draw=0.9,
+    lag=None,
     lw=None,
-    ease=DEFAULT_EASE,
+    ease="linear",
     zorder=20,
 ):
-    """Write a text out by hand: trace its glyph outlines, then fill them.
+    """Write a text out by hand: each glyph traced with a thin pen, then filled.
 
     Its ghost traces changing outlines and cannot be traced by the checker; the
     real text is hidden until the end, so the contract declares nothing.
 
     The move is for a label or a short equation that should arrive the way
-    a hand would put it on a board, so the eye follows the writing. A ghost
-    traces the outline of each glyph in reading order, one glyph starting
-    before the one before it has finished, and then the text itself fades in
-    as the stroke fades out. The outlines come from the font the text itself uses
-    (its `FontProperties`, size, rotation, alignment and transform, laid out
-    as the text lays itself out), so the ghost sits on the text. Mathtext
-    works through the mathtext parser: every symbol is a glyph, and a
-    fraction bar or a radical's overline counts as one. Several lines are
-    written one after the other, top down.
+    a hand would put it on a board, so the eye follows the writing. Each
+    glyph, in reading order, has its own window: over its first half a thin
+    pen traces the glyph's outline, and over its second half the glyph fills
+    while the pen thins away. The next glyph starts `lag` of a window after
+    the one before it, so a short front of glyphs is in flux while the ones
+    behind it are finished, as Manim's ``Write`` does. The outlines come
+    from the font the text itself uses (its `FontProperties`, size,
+    rotation, alignment and transform, laid out as the text lays itself
+    out), so the ghost sits on the text. Mathtext works through the
+    mathtext parser: every symbol is a glyph, and a fraction bar or a
+    radical's overline counts as one. Several lines are written one after
+    the other, top down.
 
-    The real `Text` is hidden while the ghost is drawn and shown again at
-    the end, so the rest state is the text as drawn, with its own colors,
-    opacity and visibility. The ghost reads the text's color and opacity
-    each time it is drawn, so a `Stage` that owns the text weighs it too.
-
-    ``update(u, level=1.0)`` is absolute. Over ``0 < u < draw`` the strokes
-    are traced; the fill starts at ``draw - overlap`` and is complete at
-    ``u = 1``. At ``u = 0`` nothing is drawn, and at ``u = 1`` the text is
-    drawn as it is without the move. The fill is the real text drawn at a
-    fractional opacity, so the last frames converge on its rasterization
-    and the swap at ``u = 1`` does not jump; the strokes are gone by then.
+    Motion contract: nothing moves; outlines are traced along the glyphs and
+    filled in place. Progress is linear inside each glyph's window (the
+    `ease` shapes the beat as a whole, linear by default). Over the last
+    ``1 - draw`` of the beat the real text comes in under the filled glyphs
+    and then the glyphs leave, so the last frames converge on the text's own
+    rasterization. At ``u = 0`` nothing is drawn, and at ``u = 1``, the rest
+    state, the text is drawn as it is without the move, with its own
+    colors, opacity and visibility. The ghost reads the text's color and
+    opacity each time it is drawn, so a `Stage` that owns the text weighs it
+    too.
 
     Args:
         text: The `Text` artist to write. It must stay in its figure, and
             while the move is in use it should not be hidden or shown by
             hand.
-        draw: Fraction of the progress spent tracing, in (0, 1).
-        overlap: How much of that tracing the fill overlaps, as a fraction
-            of the progress, in [0, draw): the fill starts at
-            ``draw - overlap``. Zero starts the fill when the tracing ends.
+        draw: Fraction of the progress spent writing the glyphs, in (0, 1);
+            the rest hands over to the text itself.
         lag: How far a glyph's start is offset from the one before it, as a
-            fraction of its own tracing time, in [0, 1]: 0 traces every
-            glyph at once and 1 one after another.
-        lw: Stroke width in points. None uses six hundredths of the font
-            size.
-        ease: An easing kind for `eyepiece.ease`, applied to each glyph's
-            tracing and to the fill.
+            fraction of its own window, in [0, 1]: 0 writes every glyph at
+            once and 1 one after another. None uses ``min(4 / n, 0.2)`` for
+            `n` glyphs, which keeps about six glyphs in flux.
+        lw: Pen width in points. None uses a thin pen of 0.75 pt.
+        ease: An easing kind for `eyepiece.ease` for the beat as a whole.
+            Inside each glyph's window progress is linear.
         zorder: Drawing order of the ghost among the figure's children.
 
     Returns:
@@ -3615,13 +3728,14 @@ def write(
         and ``update(u, level=1.0)``, `u` from 0 to 1 (values outside are
         clipped) and `level` the opacity of the ghost as a fraction of the
         text's own. ``artists["fill"].glyphs()`` returns every glyph as
-        ``[(vertices, closed), ...]`` in display pixels, and
-        ``artists["fill"].strokes(u)`` the traced part of each at `u`.
+        ``[(vertices, closed), ...]`` in display pixels,
+        ``artists["fill"].strokes(u)`` the traced part of each at `u`, and
+        ``artists["fill"].times(u)`` each glyph's traced fraction and fill.
 
     Raises:
         TypeError: If `text` is not a `Text`.
         ValueError: If the text has no outline to trace (empty or only
-            spaces), uses TeX, or `draw`, `overlap` or `lag` is out of range.
+            spaces), uses TeX, or `draw` or `lag` is out of range.
 
     Example::
 
@@ -3633,17 +3747,16 @@ def write(
     """
     if not isinstance(text, Text):
         raise TypeError(f"write takes a Text artist, got {type(text).__name__}")
-    draw, overlap, lag = float(draw), float(overlap), float(lag)
+    draw = float(draw)
     if not 0.0 < draw < 1.0:
         raise ValueError(f"write draw must be in (0, 1), got {draw}")
-    if not 0.0 <= overlap < draw:
-        raise ValueError(f"write overlap must be in [0, draw), got {overlap}")
-    if not 0.0 <= lag <= 1.0:
+    if lag is not None and not 0.0 <= float(lag) <= 1.0:
         raise ValueError(f"write lag must be in [0, 1], got {lag}")
     if text.get_usetex():
         raise ValueError("write does not trace usetex text")
+    _ease(0.5, ease)
     figure = _root_figure(text)
-    ghost = _GhostWrite(text, draw=draw, overlap=overlap, lag=lag, lw=lw, ease=ease)
+    ghost = _GhostWrite(text, draw=draw, lag=lag, lw=lw, ease=ease)
     if not ghost.glyphs():
         raise ValueError(f"write found no outline to trace in {text.get_text()!r}")
     ghost.set_zorder(zorder)
