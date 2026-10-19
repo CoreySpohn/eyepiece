@@ -34,8 +34,10 @@ REGION_FILL_OPACITY_DARK = 0.35
 
 # Total width of the halo stroked behind a label drawn over an image, as a
 # fraction of the text size; half of it extends past each glyph edge. See
-# `label_halo`.
+# `label_halo`. It is drawn at `LABEL_HALO_ALPHA`, so it softens the image
+# under the glyphs rather than outlining them.
 LABEL_HALO_EM = 0.08
+LABEL_HALO_ALPHA = 0.6
 
 _SUPPORTED_ROLES = ("reference",)
 

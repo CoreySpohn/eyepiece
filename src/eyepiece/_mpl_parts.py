@@ -16,6 +16,7 @@ from matplotlib.colors import ListedColormap, LogNorm, Normalize, to_rgb, to_rgb
 from matplotlib.patches import Annulus, Circle
 
 from eyepiece._prepared_render import (
+    LABEL_HALO_ALPHA,
     LABEL_HALO_EM,
     gap_nan,
     label_halo,
@@ -228,6 +229,7 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
                     patheffects.withStroke(
                         linewidth=LABEL_HALO_EM * profile.text_size_pt,
                         foreground=profile.background_color,
+                        alpha=LABEL_HALO_ALPHA,
                     )
                 ]
             parts[mark.id] = ax.text(

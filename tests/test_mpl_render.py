@@ -358,6 +358,7 @@ def test_labels_over_an_image_get_a_background_halo():
         (effect,) = result.parts[key].get_path_effects()
         assert effect._gc["foreground"] == profile.background_color
         assert effect._gc["linewidth"] == pytest.approx(0.08 * 12)
+        assert effect._gc["alpha"] == pytest.approx(0.6)
 
     track = mpl.render(
         TrackView(

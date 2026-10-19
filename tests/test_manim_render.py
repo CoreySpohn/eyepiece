@@ -385,6 +385,7 @@ def test_labels_over_an_image_get_a_background_halo():
             0.08 * profile.text_size_pt * 1.3
         )
         assert glyphs.get_stroke_color(background=True).to_hex().lower() == background
+        assert glyphs.get_stroke_opacity(background=True) == pytest.approx(0.6)
         assert glyphs.get_stroke_width() == 0
     (plain,) = result.parts["plain"].submobjects
     assert plain.get_stroke_width(background=True) == 0
