@@ -51,8 +51,8 @@ from matplotlib.text import Text
 from matplotlib.transforms import Affine2D, Bbox, IdentityTransform
 
 from eyepiece import _style
+from eyepiece._motion import DEFAULT_EASE, _unsnapped
 from eyepiece._motion import _apply_ease as _ease
-from eyepiece._motion import _unsnapped
 from eyepiece._result import MosaicResult, MotionContract, PlotResult
 from eyepiece.emphasis import _own_background, _resolve_background
 
@@ -440,7 +440,7 @@ def flight(
     turn_deg=0.0,
     crossfade=None,
     mark=None,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     fade=0.3,
     zorder=20,
 ):
@@ -1690,7 +1690,7 @@ class Stage:
             for look in self._looks[name]:
                 look.set(presence, contrast)
 
-    def set(self, shown=None, dimmed=(), *, start=None, u=1.0, ease="smoothstep"):
+    def set(self, shown=None, dimmed=(), *, start=None, u=1.0, ease=DEFAULT_EASE):
         """Go to a state, or part of the way there from another.
 
         Args:
@@ -1983,7 +1983,7 @@ def collapse(
     color=None,
     to=None,
     width_pt=None,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     zorder=20,
 ):
     """Gather the cells of a row into one bar whose length is their sum.
@@ -2499,7 +2499,7 @@ def circumscribe(
     color=None,
     lw=None,
     draw=0.6,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     zorder=21,
     line_kw=None,
 ):
@@ -2850,7 +2850,7 @@ def morph(
     closed=None,
     n=_MORPH_POINTS,
     align=True,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     a_kw=None,
     b_kw=None,
     zorder=20,
@@ -3206,7 +3206,7 @@ def write(
     overlap=0.1,
     lag=0.5,
     lw=None,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     zorder=20,
 ):
     """Write a text out by hand: trace its glyph outlines, then fill them.
@@ -3389,7 +3389,7 @@ class _RowTerm(Text):
         super().draw(renderer)
 
 
-def _write_on(texts, fades, u, ease="smoothstep"):
+def _write_on(texts, fades, u, ease=DEFAULT_EASE):
     """Fade the texts in one by one: text ``i`` of ``n`` is whole at ``(i + 1) / n``."""
     n = len(texts)
     for i, (text, fade) in enumerate(zip(texts, fades, strict=True)):
@@ -3732,7 +3732,7 @@ def readout(
     ha="left",
     digits=1,
     signed=None,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     color=None,
     fontsize=None,
     zorder=10,
@@ -4037,7 +4037,7 @@ def words(
     string,
     *,
     by="word",
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     ha="left",
     color=None,
     colors=None,
@@ -4369,7 +4369,7 @@ def link(
     lw=None,
     avoid=None,
     strict=True,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     zorder=15,
     line_kw=None,
 ):

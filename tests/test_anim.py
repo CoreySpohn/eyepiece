@@ -157,7 +157,7 @@ def test_jshtml_returns_html_and_closes_nothing_extra():
 
 def test_presets_are_the_measured_values():
     assert PRESETS == {
-        "talk": {"fps": 30, "dpi": 120},
+        "talk": {"fps": 60, "dpi": 120},
         "talk_60": {"fps": 60, "dpi": 120},
         "gif": {"fps": 8, "dpi": 85},
         "jshtml": {"fps": 14, "dpi": 100},

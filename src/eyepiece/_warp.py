@@ -21,8 +21,8 @@ from matplotlib.patches import FancyArrowPatch, Patch, PathPatch, Polygon
 from matplotlib.path import Path
 from matplotlib.text import Annotation, Text
 
+from eyepiece._motion import DEFAULT_EASE, _Unsnap
 from eyepiece._motion import _apply_ease as _ease
-from eyepiece._motion import _Unsnap
 from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import _check_u, _line_parts, _path_parts, _resample
 
@@ -327,7 +327,7 @@ def warp(
     path="linear",
     about=None,
     n=_WARP_POINTS,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
 ):
     """Carry drawn artists through a map of the plane, continuously.
 

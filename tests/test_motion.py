@@ -50,7 +50,9 @@ def test_frame_count_rejects_bad_durations(seconds):
         ep.frame_count(seconds, 30)
 
 
-@pytest.mark.parametrize("kind", ["linear", "smoothstep", "smootherstep", "cosine"])
+@pytest.mark.parametrize(
+    "kind", ["linear", "smooth", "smoothstep", "smootherstep", "cosine"]
+)
 def test_every_easing_fixes_both_ends_and_clips(kind):
     assert ep.ease(0.0, kind) == pytest.approx(0.0)
     assert ep.ease(1.0, kind) == pytest.approx(1.0)
@@ -60,6 +62,41 @@ def test_every_easing_fixes_both_ends_and_clips(kind):
     values = ep.ease(np.linspace(0.0, 1.0, 11), kind)
     assert isinstance(values, np.ndarray)
     assert np.all(np.diff(values) >= 0.0)
+
+
+# Manim's ``smooth`` (manim/utils/rate_functions.py, inflection 10) at nine
+# points, from its formula (sigmoid(10 (t - 0.5)) - e) / (1 - 2 e), e = sigmoid(-5).
+MANIM_SMOOTH = {
+    0.1: 0.011446579538697649,
+    0.2: 0.041285659785796076,
+    0.25: 0.07010371654510815,
+    0.3: 0.11403653008945559,
+    0.4: 0.26580657804886093,
+    0.5: 0.5,
+    0.6: 0.7341934219511391,
+    0.75: 0.929896283454892,
+    0.9: 0.9885534204613023,
+}
+
+
+def test_smooth_is_manims_sigmoid():
+    for t, want in MANIM_SMOOTH.items():
+        assert ep.ease(t, "smooth") == pytest.approx(want, rel=1e-12, abs=1e-15)
+    u = np.array(list(MANIM_SMOOTH))
+    assert np.allclose(ep.ease(u, "smooth"), list(MANIM_SMOOTH.values()), rtol=1e-12)
+    # longer dwell than smoothstep near the ends, steeper through the middle
+    assert ep.ease(0.1, "smooth") < ep.ease(0.1, "smoothstep")
+    assert ep.ease(0.4, "smooth") < ep.ease(0.4, "smoothstep")
+
+
+def test_smoothstep_stays_available_by_name():
+    assert ep.ease(0.25, "smoothstep") == pytest.approx(0.15625)
+
+
+def test_ease_default_is_the_module_default():
+    from eyepiece._motion import DEFAULT_EASE
+
+    assert ep.ease(0.3) == ep.ease(0.3, DEFAULT_EASE)
 
 
 def test_ease_returns_a_float_for_a_scalar_and_names_bad_kinds():

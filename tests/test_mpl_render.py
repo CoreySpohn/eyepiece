@@ -357,7 +357,8 @@ def test_labels_over_an_image_get_a_background_halo():
     for key in ("panel", "data"):
         (effect,) = result.parts[key].get_path_effects()
         assert effect._gc["foreground"] == profile.background_color
-        assert effect._gc["linewidth"] == pytest.approx(0.25 * 12)
+        assert effect._gc["linewidth"] == pytest.approx(0.08 * 12)
+        assert effect._gc["alpha"] == pytest.approx(0.6)
 
     track = mpl.render(
         TrackView(
@@ -370,15 +371,21 @@ def test_labels_over_an_image_get_a_background_halo():
     )
     assert track.parts["plain"].get_path_effects() == []
 
-    # The halo really reaches the canvas: background-colored pixels appear
-    # inside the label's box, over an image mapped to the top of the table.
-    fig.canvas.draw()
-    buffer = np.asarray(fig.canvas.buffer_rgba())[..., :3]
-    box = result.parts["panel"].get_window_extent()
-    rows = slice(buffer.shape[0] - int(box.y1), buffer.shape[0] - int(box.y0))
-    cols = slice(int(box.x0), int(box.x1))
-    background = np.round(np.array(to_rgba(profile.background_color)[:3]) * 255)
-    assert np.any(np.all(buffer[rows, cols] == background, axis=-1))
+    # The halo really reaches the canvas: inside the label's box, over an
+    # image mapped to the top of the table, it pulls pixels toward the
+    # background color, compared with the same label drawn without it.
+    def box_pixels():
+        fig.canvas.draw()
+        buffer = np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(float)
+        box = result.parts["panel"].get_window_extent()
+        rows = slice(buffer.shape[0] - int(box.y1), buffer.shape[0] - int(box.y0))
+        return buffer[rows, int(box.x0) : int(box.x1)]
+
+    background = np.array(to_rgba(profile.background_color)[:3]) * 255
+    haloed = np.abs(box_pixels() - background).sum(axis=-1)
+    result.parts["panel"].set_path_effects([])
+    bare = np.abs(box_pixels() - background).sum(axis=-1)
+    assert np.any(haloed < bare - 30)
 
 
 def test_unsupported_region_role_raises_before_drawing():
@@ -699,3 +706,14 @@ def test_regions_on_images_are_outlines_but_track_regions_fill():
     assert on_image.get_edgecolor()[3] == 1.0
     on_track = mpl.render(_track()).parts["iwa"]
     assert on_track.get_facecolor()[3] == pytest.approx(0.2)
+
+
+def test_track_regions_fill_more_on_a_dark_background():
+    import matplotlib
+
+    import eyepiece.mpl as mpl
+
+    with matplotlib.rc_context({"axes.facecolor": "#101010", "text.color": "white"}):
+        on_dark = mpl.render(_track()).parts["iwa"]
+    assert on_dark.get_facecolor()[3] == pytest.approx(0.35)
+    assert on_dark.get_edgecolor()[3] == 1.0

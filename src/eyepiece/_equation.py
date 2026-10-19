@@ -35,8 +35,8 @@ from matplotlib.textpath import text_to_path
 from matplotlib.transforms import Bbox, IdentityTransform
 
 from eyepiece import _bezier
+from eyepiece._motion import DEFAULT_EASE, _Unsnap
 from eyepiece._motion import _apply_ease as _ease
-from eyepiece._motion import _Unsnap
 from eyepiece._motion import stagger as _stagger
 from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import (
@@ -915,7 +915,7 @@ def transform(
     *,
     stagger=0.55,
     arc=0.0,
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     key_map=None,
     fade=0.4,
     align="auto",

@@ -2261,7 +2261,7 @@ def test_readout_ease_kind_shapes_the_count():
         res.set(10.0)
         res.update(0.25)
     assert _shown(linear) == "2.5"
-    assert _shown(smooth) == "1.6"
+    assert _shown(smooth) == "0.7"
     with pytest.raises(ValueError, match="easing"):
         ep.readout(at, 0.0, ease="bounce")
 

@@ -29,6 +29,10 @@ The mechanics this module does own, each closing a specific trap:
   bbox varies the frame size from frame to frame, which breaks a writer's
   fixed-size pipe. It is applied through `matplotlib.rc_context`, so it is
   scoped to the recording and never leaks into the caller's rcParams.
+  `path.snap` is turned off the same way unless `record(snap=True)`: Agg
+  snaps markers and axis-aligned edges to whole pixels, which crisps a still
+  and makes a slow move stall, then jump a pixel. `VIDEO_RC` (butt caps,
+  round joins) holds the same way for lines made during the recording.
 - A constrained-layout figure has its layout engine frozen on the first
   `frame()` call, before that frame is grabbed, and the freeze is scoped to
   the recording exactly like the `savefig.bbox` override: `record` restores
@@ -60,9 +64,12 @@ The mechanics this module does own, each closing a specific trap:
   would carry 300-dpi frames. The writer dpi is the only effective control.
 
 `PRESETS` holds fps/dpi pairs for the usual destinations, e.g.
-`record(fig, "talk.mp4", **PRESETS["talk"])`. Video presets run at 30 fps,
-which keeps a slow move smooth and costs little in bytes for flat graphics.
-Use ``talk_60`` for turns and camera moves, where 30 fps still judders.
+`record(fig, "talk.mp4", **PRESETS["talk"])`. The ``talk`` preset runs at
+60 fps: the default ease moves fastest at mid-move, and 30 fps still judders
+there on turns and camera moves. ``talk_60`` is the same pair under its old
+name. The documentation presets run at 30 fps, which keeps a slow move smooth
+and costs little in bytes for flat graphics. `talk_rc` sizes type and strokes
+for a talk frame from its height; documentation figures keep their own sizes.
 ``doc_hd`` rasterizes at 200 dpi, the resolution of a documentation still,
 so a clip beside its still is not visibly softer on a 2x screen.
 
@@ -93,13 +100,95 @@ from eyepiece._ffmpeg import (
 from eyepiece._motion import frame_count
 
 PRESETS = {
-    "talk": {"fps": 30, "dpi": 120},
+    "talk": {"fps": 60, "dpi": 120},
     "talk_60": {"fps": 60, "dpi": 120},
     "gif": {"fps": 8, "dpi": 85},
     "jshtml": {"fps": 14, "dpi": 100},
     "docs": {"fps": 30, "dpi": 100},
     "doc_hd": {"fps": 30, "dpi": 200},
 }
+
+# Line ends and corners for video: butt caps, so a line is exactly as long as
+# it is measured (a projecting cap adds half the width at each end), and round
+# joins. Matplotlib reads these rcParams when an artist is created, never when
+# it is drawn: `record` applies them, but only to artists made during the
+# recording. Build a clip's figure under ``matplotlib.rc_context(VIDEO_RC)``
+# (or `talk_rc`, which includes it); setting them after the figure exists, or
+# only around the recording, leaves its lines with the caps they were made
+# with.
+VIDEO_RC = {
+    "lines.solid_capstyle": "butt",
+    "lines.dash_capstyle": "butt",
+    "lines.solid_joinstyle": "round",
+    "lines.dash_joinstyle": "round",
+}
+
+# Type and stroke of a talk frame as fractions of the frame height: a frame
+# is read from across a room, so it is sized from the frame, not from a page.
+TALK_FRACTIONS = {
+    "title": 0.058,
+    "body": 0.054,
+    "axis_label": 0.039,
+    "tick": 0.034,
+    "data_stroke": 0.005,
+    "scenery_of_data": 0.6,
+    "margin": 0.04,
+}
+
+
+def talk_rc(height_px=1080, dpi=None):
+    """The rcParams of a talk frame, with type and strokes sized from its height.
+
+    An em of body text is 5.4 percent of the frame height, titles 5.8, axis
+    labels 3.9 and tick labels 3.4; a data stroke is 0.5 percent and scenery
+    (axes, grids, patch edges) 0.6 of that. At 1080 px and 120 dpi body text
+    is 35 pt and a data stroke 3.2 pt. Tick marks are dropped, and the
+    constrained-layout pads keep a 4 percent margin. `VIDEO_RC` is included.
+
+    Matplotlib reads these rcParams when an artist is created, not when it
+    is drawn, so build the whole figure under them; entering the context
+    after the figure exists, or only around `record`, changes nothing already
+    made. The documentation sizes are left alone::
+
+        with matplotlib.rc_context(ep.talk_rc()):
+            fig, ax = plt.subplots(figsize=(16, 9), dpi=120)
+
+    Args:
+        height_px: Frame height in pixels.
+        dpi: Dots per inch of the frame; None uses the ``talk`` preset's.
+
+    Returns:
+        A dict of rcParams.
+    """
+    dpi = PRESETS["talk"]["dpi"] if dpi is None else dpi
+    frame_in = height_px / dpi
+    frame_pt = frame_in * 72.0
+    f = TALK_FRACTIONS
+    data = f["data_stroke"] * frame_pt
+    scenery = f["scenery_of_data"] * data
+    pad = f["margin"] * frame_in
+    return {
+        **VIDEO_RC,
+        "font.size": f["body"] * frame_pt,
+        "legend.fontsize": f["body"] * frame_pt,
+        "axes.titlesize": f["title"] * frame_pt,
+        "figure.titlesize": f["title"] * frame_pt,
+        "axes.labelsize": f["axis_label"] * frame_pt,
+        "xtick.labelsize": f["tick"] * frame_pt,
+        "ytick.labelsize": f["tick"] * frame_pt,
+        "lines.linewidth": data,
+        "lines.markersize": 3.0 * data,
+        "axes.linewidth": scenery,
+        "grid.linewidth": scenery,
+        "patch.linewidth": scenery,
+        "xtick.major.size": 0.0,
+        "xtick.minor.size": 0.0,
+        "ytick.major.size": 0.0,
+        "ytick.minor.size": 0.0,
+        "figure.constrained_layout.w_pad": pad,
+        "figure.constrained_layout.h_pad": pad,
+    }
+
 
 _SUFFIX_PRESET = {".mp4": "talk", ".gif": "gif", ".html": "jshtml"}
 
@@ -165,16 +254,20 @@ def _sink_dpi(path, dpi):
     return PRESETS[_SUFFIX_PRESET[Path(path).suffix.lower()]]["dpi"]
 
 
-def _rc_overrides(paths):
+def _rc_overrides(paths, snap=True):
     """The rcParams overrides that must hold for the duration of a recording.
 
     `savefig.bbox` is disabled because a tight bbox lets the frame size
     change between frames, which a writer's fixed-size pipe cannot take.
     The ffmpeg path is resolved here, before any writer is opened, so a
     missing ffmpeg fails with an actionable error instead of a bare
-    FileNotFoundError from a subprocess launch.
+    FileNotFoundError from a subprocess launch. `VIDEO_RC` sets the caps
+    and joins of lines made during the recording. Without `snap`,
+    `path.snap` is off, which unsnaps every artist, whatever its own setting.
     """
-    overrides = {"savefig.bbox": None}
+    overrides = {**VIDEO_RC, "savefig.bbox": None}
+    if not snap:
+        overrides["path.snap"] = False
     if any(Path(p).suffix.lower() == ".mp4" for p in paths):
         overrides["animation.ffmpeg_path"] = _resolve_ffmpeg()
     return overrides
@@ -499,6 +592,7 @@ def record(
     stills=None,
     plan=None,
     stills_dpi=None,
+    snap=False,
     allow_rescale=None,
 ):
     """Open every output file at once and record `fig` frame by frame.
@@ -580,6 +674,12 @@ def record(
             that moves. The ``pulse.*`` and ``ring.*`` knobs are exempt.
         stills_dpi: Dpi of the stills; None uses the first sink's dpi, which
             makes a still pixel-identical to that sink's frame.
+        snap: Whether Agg snaps markers, axis-aligned lines and rectilinear
+            patch edges to whole pixels. The default False draws every frame
+            at sub-pixel positions, so a slow move glides instead of stalling
+            and jumping a pixel; a frame then matches a snapped still of the
+            same state only to within half a pixel. True keeps the snapping
+            of a still.
         allow_rescale: Deprecated; `True` means ``on_rescale="ignore"``. It
             warns with a `DeprecationWarning` and will be removed in a later
             release.
@@ -637,7 +737,7 @@ def record(
     try:
         with ExitStack() as stack:
             stack.callback(restore_engine)
-            stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
+            stack.enter_context(matplotlib.rc_context(_rc_overrides(paths, snap)))
             stack.enter_context(_agg_canvas(fig))
             writers = [_make_writer(p, fps, extra_ffmpeg_args, encoder) for p in paths]
             for writer, path in zip(writers, paths, strict=True):
@@ -770,8 +870,9 @@ class RawSink:
     `record` grabs frames from a figure; a `RawSink` takes frames from
     anywhere, such as `PageCamera.render`, which crops a figure in ways a
     movie writer cannot. Frames go to ffmpeg as raw RGBA and encode as H.264
-    in yuv420p at constant quality, with no metadata and bit-exact encoder
-    flags, so the same frames always give the same file. The movie is
+    in the profile's pixel format (yuv420p by default) at constant quality,
+    with no metadata and bit-exact encoder flags, so the same frames always
+    give the same file. The movie is
     written beside `path` and moved into place only when it finishes, so a
     failed run never replaces a good file with a broken one.
 
@@ -820,7 +921,7 @@ class RawSink:
             _resolve_ffmpeg(), "-y", "-loglevel", "error",
             "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{width}x{height}",
             "-r", str(fps), "-i", "-", "-an",
-            "-vcodec", "libx264", "-pix_fmt", "yuv420p",
+            "-vcodec", "libx264",
             *filters, *encoder_args(fps, encoder), *_BITEXACT,
             *(extra_ffmpeg_args or ()), str(self._partial),
         ]  # fmt: skip

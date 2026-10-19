@@ -243,13 +243,19 @@ Agg snaps axis-aligned lines and patch edges to whole pixels, which makes a
 still crisp and turns a slow move into one-pixel jumps. A move that changes
 geometry therefore sets `snap=False` on the artists it moves for the frames
 strictly between its ends, and restores each artist's own setting at `u = 0`
-and `u = 1`, so the rest state is pixel-exact against the snapped still.
-This holds for `warp`, `arrow`, `angle_arc` and `compass`; the ghosts of
-`flight`, `collapse` and `morph` are drawn only mid-move and are never
-snapped. `Stage` changes opacity and color only, so it has nothing to
-unsnap. The rule lives in each move rather than in `record` because a
-recording cannot tell a moving artist from a resting one, and unsnapping
-every artist would blur the axes and spines of every held frame.
+and `u = 1`, so outside a recording the rest state is pixel-exact against
+the snapped still. This holds for `warp`, `arrow`, `angle_arc` and
+`compass`; the ghosts of `flight`, `collapse` and `morph` are drawn only
+mid-move and are never snapped. `Stage` changes opacity and color only, so
+it has nothing to unsnap.
+
+Inside `record`, which by default (`snap=False`) turns `path.snap` off for
+the whole recording, every frame is drawn at sub-pixel positions, so a mark
+on a slow tail glides instead of stalling, then jumping a pixel. The rest
+frame of a move then matches a snapped still of the same state only to
+within half a pixel, and a held frame's axes and spines are drawn unsnapped
+too. `record(snap=True)` restores the per-move snapping above, and with it
+the pixel-exact rest state.
 
 ## Style resolves at call time
 

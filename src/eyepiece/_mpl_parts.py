@@ -12,10 +12,11 @@ import numpy as np
 from matplotlib import patheffects
 from matplotlib.cm import ScalarMappable
 from matplotlib.collections import LineCollection
-from matplotlib.colors import ListedColormap, LogNorm, Normalize, to_rgba
+from matplotlib.colors import ListedColormap, LogNorm, Normalize, to_rgb, to_rgba
 from matplotlib.patches import Annulus, Circle
 
 from eyepiece._prepared_render import (
+    LABEL_HALO_ALPHA,
     LABEL_HALO_EM,
     gap_nan,
     label_halo,
@@ -192,7 +193,10 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
         elif isinstance(mark, Region):
             color = style["color"]
             common = {
-                "facecolor": to_rgba(color, region_fill_opacity(leaf)),
+                "facecolor": to_rgba(
+                    color,
+                    region_fill_opacity(leaf, to_rgb(profile.background_color)),
+                ),
                 "edgecolor": to_rgba(color, 1.0),
                 "linewidth": stroke,
                 "label": mark.label,
@@ -225,6 +229,7 @@ def draw_leaf(ax, leaf, styles, rgba, profile, parts):
                     patheffects.withStroke(
                         linewidth=LABEL_HALO_EM * profile.text_size_pt,
                         foreground=profile.background_color,
+                        alpha=LABEL_HALO_ALPHA,
                     )
                 ]
             parts[mark.id] = ax.text(

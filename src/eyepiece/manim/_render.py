@@ -30,6 +30,7 @@ import manimpango
 import numpy as np
 
 from eyepiece._prepared_render import (
+    LABEL_HALO_ALPHA,
     LABEL_HALO_EM,
     VIEW_TYPES,
     array_key,
@@ -555,7 +556,9 @@ def _draw_panel(view, styles, rgba, profile, parts):
         elif isinstance(mark, Region):
             mob = manim.VMobject(
                 fill_color=style["color"],
-                fill_opacity=region_fill_opacity(view),
+                fill_opacity=region_fill_opacity(
+                    view, manim.ManimColor(profile.background_color).to_rgb()
+                ),
                 stroke_color=style["color"],
                 stroke_width=stroke,
                 stroke_opacity=1.0,
@@ -582,7 +585,7 @@ def _draw_panel(view, styles, rgba, profile, parts):
                 glyphs.set_stroke(
                     color=profile.background_color,
                     width=LABEL_HALO_EM * profile.text_size_pt * _STROKE_PER_EM_PT,
-                    opacity=1.0,
+                    opacity=LABEL_HALO_ALPHA,
                     background=True,
                 )
             glyphs.set_points(points + _label_offset(points, mark, spec, basis, drop))

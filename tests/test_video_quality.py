@@ -52,8 +52,8 @@ def _flat_frames(n, size):
     return [frame] * n
 
 
-def test_presets_run_at_30_fps_with_a_60_fps_option_and_a_still_resolution_doc():
-    assert PRESETS["talk"]["fps"] == 30
+def test_talk_runs_at_60_fps_and_docs_at_30_with_a_still_resolution_doc():
+    assert PRESETS["talk"] == {"fps": 60, "dpi": 120}
     assert PRESETS["docs"]["fps"] == 30
     assert PRESETS["talk_60"] == {"fps": 60, "dpi": 120}
     assert PRESETS["doc_hd"] == {"fps": 30, "dpi": 200}
@@ -67,6 +67,7 @@ def test_profile_arguments_follow_the_profile_and_its_overrides():
     assert args[args.index("-g") + 1] == "60"
     assert args[args.index("-colorspace") + 1] == "bt709"
     assert "+faststart" in args
+    assert args[args.index("-pix_fmt") + 1] == "yuv420p"
     assert ep.ENCODER_PROFILE is ENCODER_PROFILE
     mine = encoder_args(60, {"crf": 23, "tune": None, "colorspace": None})
     assert mine[mine.index("-crf") + 1] == "23"
@@ -74,6 +75,27 @@ def test_profile_arguments_follow_the_profile_and_its_overrides():
     assert "-tune" not in mine and "-colorspace" not in mine
     with pytest.raises(ValueError, match="unknown encoder keys"):
         encoder_args(30, {"crf_value": 1})
+
+
+@needs_ffmpeg
+def test_yuv444p_is_an_opt_in_pixel_format_for_both_writers(tmp_path):
+    size = (64, 48)
+    for name, encoder, want in (
+        ("default", None, "yuv420p"),
+        ("full", {"pix_fmt": "yuv444p"}, "yuv444p"),
+    ):
+        raw = tmp_path / f"raw-{name}.mp4"
+        with ep.RawSink(raw, size, fps=30, encoder=encoder) as sink:
+            for frame in _flat_frames(3, size):
+                sink.write(frame)
+        fig, _ax = plt.subplots(figsize=(0.64, 0.48))
+        recorded = tmp_path / f"rec-{name}.mp4"
+        with ep.record(fig, recorded, fps=30, dpi=100, encoder=encoder) as rec:
+            rec.hold(3)
+        plt.close(fig)
+        for path in (raw, recorded):
+            line = _info(path)
+            assert want in line and "bt709" in line, (name, line)
 
 
 @needs_ffmpeg
@@ -113,20 +135,20 @@ def test_record_uses_the_profile_and_overrides_reach_it(tmp_path):
 
 
 @needs_ffmpeg
-def test_a_short_talk_clip_has_the_frames_of_30_fps(tmp_path):
+def test_a_short_talk_clip_has_the_frames_of_60_fps(tmp_path):
     fig, ax = plt.subplots(figsize=(1.6, 1.2))
     (dot,) = ax.plot([0.5], [0.5], "o")
     path = tmp_path / "t.mp4"
     with ep.record(fig, path, **{**PRESETS["talk"], "dpi": 40}) as rec:
-        for k in range(45):
-            dot.set_data([k / 45], [0.5])
+        for k in range(90):
+            dot.set_data([k / 90], [0.5])
             rec.frame()
     out = subprocess.run(
         [FFMPEG, "-i", str(path), "-f", "null", "-"], capture_output=True, text=True
     )
     count = int(re.findall(r"frame=\s*(\d+)", out.stderr)[-1])
-    assert count == 45
-    assert "30 fps" in _info(path)
+    assert count == 90
+    assert "60 fps" in _info(path)
     plt.close(fig)
 
 
@@ -173,6 +195,103 @@ def test_a_warped_rectangle_moves_a_tenth_of_a_pixel_per_frame_without_snapping(
     assert jumps < steps // 2
     plt.close(fig)
     plt.close(fig2)
+
+
+def _vline_scene():
+    """A vertical line and a square marker on a one-pixel-per-unit axes."""
+    fig = plt.figure(figsize=(1.0, 0.5), dpi=100)
+    ax = fig.add_axes((0, 0, 1, 1))
+    ax.set_axis_off()
+    ax.set(xlim=(0, 100), ylim=(0, 50))
+    line = ax.axvline(40.0, color="k", lw=3)
+    (dot,) = ax.plot([60.0], [25.0], "s", color="k", ms=6)
+    return fig, line, dot
+
+
+def _slow_stills(tmp_path, steps, **kwargs):
+    """Stills of the scene moved a tenth of a pixel per frame inside `record`."""
+    fig, line, dot = _vline_scene()
+    stills = {tmp_path / f"s{k:02d}.png": k / 10 for k in range(steps)}
+    with ep.record(fig, fps=10, dpi=100, stills=stills, **kwargs) as rec:
+        for k in range(steps):
+            line.set_xdata([40.0 + k / 10] * 2)
+            dot.set_xdata([60.0 + k / 10])
+            rec.frame()
+    plt.close(fig)
+    return [plt.imread(path) for path in sorted(stills)]
+
+
+def test_record_draws_frames_unsnapped_by_default(tmp_path):
+    steps = 12
+    glide = _slow_stills(tmp_path / "glide", steps)
+    assert all(not np.array_equal(a, b) for a, b in itertools.pairwise(glide))
+    crisp = _slow_stills(tmp_path / "crisp", steps, snap=True)
+    stalls = sum(np.array_equal(a, b) for a, b in itertools.pairwise(crisp))
+    assert stalls >= steps // 2
+
+
+def test_record_leaves_the_callers_snapping_as_it_was(tmp_path):
+    before = plt.rcParams["path.snap"]
+    fig, line, _dot = _vline_scene()
+    with ep.record(fig, fps=10, stills={tmp_path / "s.png": 0}) as rec:
+        rec.frame()
+    assert plt.rcParams["path.snap"] == before
+    assert line.get_snap() is None
+    plt.close(fig)
+
+
+def test_video_rc_gives_lines_butt_caps_and_round_joins(tmp_path):
+    assert ep.VIDEO_RC["lines.solid_capstyle"] == "butt"
+    assert ep.VIDEO_RC["lines.solid_joinstyle"] == "round"
+    fig, ax = plt.subplots(figsize=(1, 1))
+    before = plt.rcParams["lines.solid_capstyle"]
+    with ep.record(fig, fps=10, stills={tmp_path / "s.png": 0}) as rec:
+        (made,) = ax.plot([0, 1], [0, 1])
+        rec.frame()
+    assert made.get_solid_capstyle() == "butt"
+    assert made.get_solid_joinstyle() == "round"
+    assert plt.rcParams["lines.solid_capstyle"] == before
+    plt.close(fig)
+
+
+def test_talk_rc_sizes_type_and_stroke_from_the_frame_height():
+    import matplotlib
+
+    rc = ep.talk_rc()  # 1080 px at the talk preset's 120 dpi
+    assert rc["font.size"] == pytest.approx(35.0, abs=0.1)
+    assert rc["axes.titlesize"] == pytest.approx(37.6, abs=0.1)
+    assert rc["axes.labelsize"] == pytest.approx(25.3, abs=0.1)
+    assert rc["xtick.labelsize"] == pytest.approx(22.0, abs=0.1)
+    assert rc["lines.linewidth"] == pytest.approx(3.24, abs=0.01)
+    assert rc["axes.linewidth"] == pytest.approx(1.94, abs=0.01)
+    assert rc["xtick.major.size"] == 0.0
+    assert rc["lines.solid_capstyle"] == "butt"
+    small = ep.talk_rc(720, dpi=100)
+    assert small["font.size"] == pytest.approx(28.0, abs=0.1)
+    assert small["lines.linewidth"] == pytest.approx(2.59, abs=0.01)
+    # one em of body text is 5.4 percent of the frame, at any frame size
+    for height, dpi in ((1080, 120), (720, 100)):
+        with matplotlib.rc_context(ep.talk_rc(height, dpi=dpi)):
+            fig = plt.figure(figsize=(height * 16 / 9 / dpi, height / dpi), dpi=dpi)
+            text = fig.text(0.5, 0.5, "x")
+            em_px = text.get_fontsize() * dpi / 72.0
+            plt.close(fig)
+        assert em_px / height == pytest.approx(0.054)
+    # the documentation sizes are untouched
+    assert plt.rcParams["font.size"] != rc["font.size"]
+
+
+def test_unsnapped_lets_a_slow_mark_glide_outside_a_recording():
+    fig, line, dot = _vline_scene()
+    assert ep.unsnapped([line, dot]) == [line, dot]
+    assert ep.unsnapped(line) is line
+    frames = []
+    for k in range(12):
+        line.set_xdata([40.0 + k / 10] * 2)
+        dot.set_xdata([60.0 + k / 10])
+        frames.append(_gray(fig))
+    assert all(not np.array_equal(a, b) for a, b in itertools.pairwise(frames))
+    plt.close(fig)
 
 
 def test_the_rest_state_after_a_warp_is_pixel_exact_against_the_snapped_still():
