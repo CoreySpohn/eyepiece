@@ -357,24 +357,23 @@ contracts rather than the mechanism behind them.
   rest states are those of the plain transform: `eq_a` at `u = 0` and `eq_b`
   at `u = 1`.
 - `photons` (exchangeable draws): an image develops from its own photons.
-  `arrivals(rate, exposure, seed=)` draws one seeded Poisson process per
-  pixel on the exposure clock: the counts never decrease, the arrivals between
-  two clock times are independent and Poisson with mean rate times the elapsed
+  `arrivals(rate, exposure, seed=)` draws one seeded Poisson process per pixel
+  on the exposure clock: the counts never decrease, the arrivals between two
+  clock times are independent and Poisson with mean rate times the elapsed
   exposure, and the same rate, clock and seed replay the same photons. The
   final counts depend on the seed and the final exposure alone, so the last
   frame equals the still at any frame rate. The mark shows the first clock
   sample settled at `u = 0`, so a hold before the run is still, and gives
   every later sample an equal window of `u`, cutting to it at the window's
-  start; only pixel
-  values change, on one color scale fixed for the clip. The photons of the
-  current sample glow in the head color as bright as the rise they gave the
-  pixel's displayed value (a pixel's first photon fully) and fade within the
-  window. At `u = 1` the final counts show with no glow, the plain still. The
-  cuts are the draws: `steps(knob)` names their frames for `check_clip`, and
-  every other check runs as usual. `aperture_counts(mark, aperture, leak=)`
-  reads its numbers off the mark, the drawn pixels of the sample shown, so a
-  readout beside the image changes on the same frames and never disagrees
-  with it.
+  start; only pixel values change, on one color scale fixed for the clip. The
+  photons of the current sample glow in the head color as bright as the rise
+  they gave the pixel's displayed value (a pixel's first photon fully) and
+  fade within the window. At `u = 1` the final counts show with no glow, the
+  plain still. The cuts are the draws: `steps(knob)` names their frames for
+  `check_clip`, and every other check runs as usual. `aperture_counts(mark,
+  aperture, leak=)` reads its numbers off the mark, the drawn pixels of the
+  sample shown, so a readout beside the image changes on the same frames and
+  never disagrees with it.
 
 ## Style resolves at call time
 

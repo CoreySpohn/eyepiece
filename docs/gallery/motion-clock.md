@@ -17,7 +17,6 @@ import hwostyle
 import matplotlib.pyplot as plt
 import numpy as np
 from IPython.display import HTML
-from matplotlib.colors import LogNorm
 
 import eyepiece as ep
 
@@ -30,14 +29,9 @@ PIXSCALE_LOD = 0.3
 EXTENT = ep.extent_lod_from_pixels(N, PIXSCALE_LOD)
 u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
 x, y = np.meshgrid(u, u)
-r, theta = np.hypot(x, y), np.arctan2(y, x)
 
-# Leftover starlight with twelve spokes, and a companion at 8 lambda/D.
-HALO = 1e-7 * (1.0 + r) ** -3 * (1.0 + 0.8 * np.cos(12 * theta) ** 2)
+# A companion at 8 lambda/D, the target of the zoom below.
 PLANET_XY = (8.0 * np.cos(2.4), 8.0 * np.sin(2.4))
-PLANET = 3e-9 * np.exp(-0.5 * (np.hypot(x - PLANET_XY[0], y - PLANET_XY[1]) / 0.6) ** 2)
-FIELD = HALO + PLANET
-NORM = LogNorm(1e-12, 1e-7)
 ```
 
 ## A timeline
@@ -299,6 +293,7 @@ import jax.numpy as jnp
 from physicaloptix.elements.vortex import build_multiscale_vortex, vortex_forward
 from physicaloptix.transforms.cmft import cmft_fwd
 
+# Double precision: the leak sits eight decades below the star peak.
 jax.config.update("jax_enable_x64", True)
 NPIX, HALF = 64, 8.0  # +-8 lambda/D at 0.25 lambda/D per pixel
 SEP = (3.5, 1.5)  # the planet, in lambda/D
@@ -334,12 +329,18 @@ together, and the expected leak alone. Its S/N is that of the
 signal estimate, the counts less the expected leak over the square root of
 the expected counts: photon noise only, with the leak known exactly. A real
 leak is speckle that drifts and must be calibrated, which adds noise this
-clip does not show. The grain in the image is shot noise, not speckle. At a
-few counts the S/N is not yet meaningful, and a seed can show a run of early
-counts well above the expectation; this page uses seed 0, the first seed
-tried, whose counts stay within two standard deviations of the expectation
-throughout. The player ends on the still, the plain image of the final
-counts.
+clip does not show. The grain in the image is shot noise, not speckle.
+
+The seed is chosen on two criteria: an endpoint near the expectation and a
+trajectory that does not wander against the claim. Seed 7, tried first, put
+6 photons in the ring after one second against 1.1 expected, a false early
+detection at 4.7 standard deviations that the cumulative counts carried
+forward. Seed 0, tried next, ends at S/N 26.8 against 27.3 expected, and its
+ring counts stay within two standard deviations of the expectation at every
+draw. The final counts depend only on the seed and the final exposure, but
+the earlier frames also depend on the clock samples, so a seed pins the whole
+clip only for a fixed clock. The player ends on the still, the plain image of
+the final counts.
 
 ```{code-cell} python
 STAR_RATE, CONTRAST = 1e6, 1e-7  # photons per second at the star peak; illustrative
