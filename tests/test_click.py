@@ -56,6 +56,18 @@ def test_the_beat_is_0_6_s_and_a_1_5_s_stillness_follows_at_any_tempo():
         assert len(moving) == 35  # 36 frames from 0 to 1 at 60 fps
 
 
+def test_a_placed_click_keeps_its_hold_after_the_beat():
+    tl = ep.Timeline({"a": 0.0}, tempo=ep.Tempo(factor=1.0))
+    tl.run("a", 1.0, to={"a": 1.0}, at=0.5)
+    beat = tl.click("ring", at=2.0)
+    assert float(beat.start) == pytest.approx(2.0)
+    plan = tl.at_fps(60)
+    assert plan.n_frames / 60 >= float(beat.end) + 1.5 - 1e-9
+    holds = [s for s in plan.spans.values() if s.kind == "hold"]
+    assert [s.start_s for s in holds] == [pytest.approx(float(beat.end))]
+    assert holds[0].end_s - holds[0].start_s == pytest.approx(1.5)
+
+
 def test_start_is_the_figure_before_the_beat():
     fig, ring, count, rule, end = _scene()
     before = _pixels(fig)

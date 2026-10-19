@@ -1134,7 +1134,9 @@ class Timeline:
 
         The beat is followed by a hold of 1.5 s that the tempo never
         shortens, so the landed composite is read in stillness. The click
-        is seconds on screen, like `run`, and advances the clock.
+        is seconds on screen, like `run`, and advances the clock. A click
+        placed with `at` keeps its hold right after the beat and, like a
+        placed `run`, leaves the clock where it was.
 
         Args:
             target: What lands; the knob is ``click.<target>``.
@@ -1146,7 +1148,18 @@ class Timeline:
         knob = f"click.{target}"
         self._knob(knob)
         span = self.run(knob, CLICK_S, to=1.0, at=at)
-        self._hold(CLICK_HOLD_S, None, None, paced=False)
+        if at is None:
+            self._hold(CLICK_HOLD_S, None, None, paced=False)
+        else:
+            self._add(
+                self._fresh("hold"),
+                "hold",
+                span.end,
+                self._secs(CLICK_HOLD_S, False),
+                self._writes_of(None, None, step_only=True),
+                ease="linear",
+                advance=False,
+            )
         return span
 
     def span(
