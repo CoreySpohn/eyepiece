@@ -451,6 +451,7 @@ increases to the left, as orbix's sky plots draw it.
 
 ```{code-cell} python
 from hwoutils.constants import G, Msun2kg
+from matplotlib.transforms import Bbox
 from orbix.equations.orbit import mean_motion, period_n
 from orbix.orbit import KeplerianOrbit
 
@@ -598,6 +599,25 @@ panel.annotate(f"dashed:\nanswer from\n{len(reference):,}\ndraws: {p_ref:.1%}", 
                xycoords=("axes fraction", "data"), xytext=(8, 0),
                textcoords="offset points", va="center", **note)  # fmt: skip
 fig.text(0.98, 0.97, "toy covariance, illustrative", ha="right", va="top", **note)
+# The counter and the panel's key are stacked from their drawn extents, not
+# fixed offsets, so they cannot meet in whatever font the reader has: the counter
+# sits one pad above the bottom edge, and the panel's foot rises to clear it.
+fig.draw_without_rendering()
+to_fig = fig.transFigure.inverted()
+pad = 6.0 / 72.0 / fig.get_figheight()  # 6 pt, as a figure fraction
+count = Bbox.union([t.get_window_extent() for t in mark.artists["text"]]).transformed(to_fig)
+foot.set_position(foot.get_position().translated(0.0, pad - count.y0))
+key_drop = panel.get_position().y0 - panel.get_tightbbox().transformed(to_fig).y0
+top = panel.get_position().y1
+bottom = 2.0 * pad + count.height + key_drop
+panel.set_position([0.59, bottom, 0.25, top - bottom])
+# The sky's title and axis label are measured too: the sky takes the height left
+# between them and the edges, and its equal-aspect box shrinks if a face needs it.
+box = sky.get_position()  # the drawn box, after the equal aspect
+words = sky.get_tightbbox().transformed(to_fig)
+low = pad + box.y0 - words.y0
+high = 1.0 - pad - (words.y1 - box.y1)
+sky.set_position([0.12, low, 0.40, high - low])
 
 tl = ep.Timeline({"u": 0.0})
 tl.hold(0.5, name="open")
