@@ -273,6 +273,140 @@ so they are anchors for a `callout` and members of a `Stage` group, and
 to a `term_row` term whose text is set in the loop: a term changes width as
 its digits change and pushes its neighbors, where a readout keeps its place.
 
+## Photons on an exposure clock
+
+An image that develops from its own photons shows what an exposure is: each
+frame is a draw of the detector, and the eye watches a planet emerge from
+the shot noise beside the leftover starlight. `arrivals` draws the photons as one seeded Poisson
+process per pixel on an exposure clock, `photons` draws them as a count
+image on one fixed log scale with the newest arrivals glowing as they land,
+and `aperture_counts` reads the counts, the expected counts and the S/N in a
+declared aperture off the image the mark shows. Here the expected images are
+a charge-6 vortex coronagraph computed with physicaloptix: the star's
+leftover light and a planet 3.8 lambda/D out, both in units of the
+unocculted star peak, through an unobscured circular pupil and an ideal
+vortex, not a mission design. The rates are illustrative: the planet's
+contrast (its peak over the star's, before the coronagraph) is set high
+enough to read on screen in seconds of clip, so here the planet outshines
+the leak around it.
+
+```{code-cell} python
+import tempfile
+from pathlib import Path
+
+import jax
+import jax.numpy as jnp
+from physicaloptix.elements.vortex import build_multiscale_vortex, vortex_forward
+from physicaloptix.transforms.cmft import cmft_fwd
+
+jax.config.update("jax_enable_x64", True)
+NPIX, HALF = 64, 8.0  # +-8 lambda/D at 0.25 lambda/D per pixel
+SEP = (3.5, 1.5)  # the planet, in lambda/D
+grid, levels = build_multiscale_vortex(
+    charge=6, npup=192, q=128, scaling_factor=4, window_size=16
+)
+X, Y = jnp.meshgrid(grid, grid)
+pupil = (jnp.hypot(X, Y) <= 0.5).astype(jnp.complex128)
+lyot = (jnp.hypot(X, Y) <= 0.45).astype(jnp.float64)
+focal = jnp.linspace(-HALF, HALF, NPIX + 1)[:-1] + HALF / NPIX
+
+
+def through(field):
+    """The focal-plane intensity behind the vortex and the Lyot stop."""
+    behind = vortex_forward(field, grid, levels) * lyot
+    return np.asarray(jnp.abs(cmft_fwd(behind, grid, focal)) ** 2)
+
+
+peak = float(jnp.abs(cmft_fwd(pupil, grid, jnp.array([0.0]))[0, 0]) ** 2)
+star = through(pupil) / peak
+planet = through(pupil * jnp.exp(2j * jnp.pi * (X * SEP[0] + Y * SEP[1]))) / peak
+fx, fy = np.meshgrid(np.asarray(focal), np.asarray(focal))
+ring = np.hypot(fx - SEP[0], fy - SEP[1]) <= 1.0
+print(f"leak: max {star.max():.1e}, median {np.median(star):.1e} of the star peak")
+```
+
+The clock starts at zero exposure, an empty detector, and runs on a log
+scale to 1000 seconds in 24 draws over five seconds, about five a second.
+The readout is read off the mark on every frame, so it changes on the draws
+and never disagrees with the image. It counts the photons in the ring, one
+lambda/D in radius, beside the counts expected there, planet and leak
+together, and the expected leak alone. Its S/N is that of the
+signal estimate, the counts less the expected leak over the square root of
+the expected counts: photon noise only, with the leak known exactly. A real
+leak is speckle that drifts and must be calibrated, which adds noise this
+clip does not show. The grain in the image is shot noise, not speckle. At a
+few counts the S/N is not yet meaningful, and a seed can show a run of early
+counts well above the expectation; this page uses seed 0, the first seed
+tried, whose counts stay within two standard deviations of the expectation
+throughout. The player ends on the still, the plain image of the final
+counts.
+
+```{code-cell} python
+STAR_RATE, CONTRAST = 1e6, 1e-7  # photons per second at the star peak; illustrative
+leak = STAR_RATE * star
+clock = np.r_[0.0, np.geomspace(1.0, 1e3, 24)]
+channel = ep.arrivals(leak + STAR_RATE * CONTRAST * planet, clock, seed=0)
+
+fig = plt.figure(figsize=(6.4, 3.6))
+image_ax = fig.add_axes([0.03, 0.06, 0.5, 0.88])
+image_ax.set_axis_off()
+mark = ep.photons(channel, ax=image_ax, extent=(-HALF, HALF, -HALF, HALF), cmap="magma")
+circle = np.linspace(0.0, 2.0 * np.pi, 121)
+image_ax.plot(SEP[0] + np.cos(circle), SEP[1] + np.sin(circle), color="C0", lw=1.5)
+backing = {"facecolor": "black", "edgecolor": "none", "alpha": 0.85, "pad": 1.5}
+label = {"fontsize": 10, "color": "C0", "va": "center", "bbox": backing}
+image_ax.text(SEP[0] + 1.3, SEP[1] + 0.9, "planet", **label)
+image_ax.text(0.0, -2.6, "star leak", ha="center", **label)
+mono = {"family": "DejaVu Sans Mono", "fontsize": 11, "va": "top"}
+clock_text = fig.text(0.58, 0.9, "", **mono)
+fig.text(0.58, 0.82, "log clock", fontsize=9, va="top", color=ep.neutral(0.6))
+fig.text(0.58, 0.68, "photons in the ring", fontsize=10, va="top")
+read_text = fig.text(0.58, 0.61, "", **mono)
+fig.text(
+    0.58,
+    0.36,
+    "S/N = (counted - leak) / sqrt(expected)\nphoton noise only, leak known exactly",
+    fontsize=9,
+    va="top",
+)
+fig.text(
+    0.58,
+    0.2,
+    f"charge-6 vortex (physicaloptix)\nplanet contrast {CONTRAST:.0e}, illustrative",
+    fontsize=9,
+    va="top",
+    color=ep.neutral(0.6),
+)
+
+tl = ep.Timeline({"u": 0.0})
+tl.hold(0.4, name="open")
+tl.run("draw", 5.0, to={"u": 1.0})
+tl.hold(1.2, name="rest")
+
+
+def draw_photons(k, plan):
+    mark.update(plan.value(k, "u"))
+    read = ep.aperture_counts(mark, ring, leak=leak)
+    clock_text.set_text("t = " + ep.exposure_text(read.exposure, pad=True))
+    snr = f"{read.snr:>6.1f}" if read.expected > 0 else f"{'--':>6}"
+    read_text.set_text(
+        f"counted  {read.counts:>6,d}\n"
+        f"expected {read.expected:>6,.0f}\n"
+        f"leak     {read.leak:>6,.0f}\n"
+        f"S/N      {snr}"
+    )
+
+
+# An embedded mp4 at 1280 x 720: the photon grain does not compress as frames.
+plan = tl.at_fps(30)
+draw_photons(plan.n_frames - 1, plan)
+movie = ep.animate(fig, lambda f, k: draw_photons(k, plan), plan.n_frames, fps=30)
+with tempfile.TemporaryDirectory() as tmp_dir:
+    # The player embeds the file when it renders, so render it before cleanup.
+    player = HTML(movie.video(Path(tmp_dir) / "photons.mp4", dpi=200)._repr_html_())
+player
+```
+
 ## Overshoot and anticipation
 
 An overshoot ease is for a move whose arrival should read as a landing. Only
