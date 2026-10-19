@@ -1292,7 +1292,8 @@ def ruler(
         backing: Draw the background-colored line under the arrow and the
             backing box under the label.
         color: Color of the arrow. None uses `rcParams["text.color"]`.
-        offset_pt: Distance from the midpoint to the label, in points.
+        offset_pt: Gap between the arrow's midpoint and the label, in points,
+            measured to the edge of the backing box when there is one.
         head_scale: Head size relative to a full-size phasor head. 0 draws
             a plain line with no heads.
         arrow_kw: Extra kwargs for the `FancyArrowPatch` (for example `lw`,
@@ -1368,10 +1369,15 @@ def ruler(
             **({"bbox": _style.backing()} if backing else {}),
             **(text_kw or {}),
         }
-        offset = (ux * float(offset_pt), uy * float(offset_pt))
         label = ax.annotate(
-            text, _midpoint(state), xytext=offset, textcoords="offset points", **tkw
+            text, _midpoint(state), xytext=(0.0, 0.0), textcoords="offset points", **tkw
         )
+        # The gap is measured to the backing box's edge, so the box never
+        # reaches the arrow, whatever the font size.
+        gap = float(offset_pt)
+        if backing and "bbox" not in (text_kw or {}):
+            gap += _style.BACKING_PAD * label.get_size()
+        label.xyann = (ux * gap, uy * gap)
         artists["text"] = label
 
     def update(p0=None, p1=None, text=None):

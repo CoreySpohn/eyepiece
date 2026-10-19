@@ -329,6 +329,10 @@ def neutral(level):
     return tuple(b + (f - b) * frac for b, f in zip(back, front, strict=True))
 
 
+# Padding of the backing box around a label, as a fraction of its font size.
+BACKING_PAD = 0.15
+
+
 def backing(alpha=0.85):
     """A `bbox` dict for a label that sits over marks or pixels.
 
@@ -350,7 +354,7 @@ def backing(alpha=0.85):
     """
     face = to_rgba(matplotlib.rcParams["axes.facecolor"], alpha)
     return {
-        "boxstyle": "round,pad=0.15,rounding_size=0.25",
+        "boxstyle": f"round,pad={BACKING_PAD},rounding_size=0.25",
         "facecolor": face,
         "edgecolor": "none",
     }

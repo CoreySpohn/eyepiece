@@ -68,7 +68,29 @@ def test_side_places_the_label(side, ha, va, sign):
     res = ep.ruler(ax, (0, 0), (0, 1), "h", side=side, offset_pt=5.0)
     text = res.artists["text"]
     assert (text.get_ha(), text.get_va()) == (ha, va)
-    np.testing.assert_allclose(text.get_position(), 5.0 * np.array(sign), atol=1e-12)
+    # The gap is measured to the backing box's edge, not to the glyphs.
+    gap = 5.0 + ep._style.BACKING_PAD * text.get_size()
+    np.testing.assert_allclose(text.get_position(), gap * np.array(sign), atol=1e-12)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("fontsize", [8.0, 30.0, 60.0])
+def test_the_backing_box_keeps_its_gap_from_the_arrow(fontsize):
+    fig, ax = plt.subplots(dpi=100)
+    ax.set(xlim=(-1, 1), ylim=(-1, 1))
+    res = ep.ruler(
+        ax,
+        (-0.5, 0.0),
+        (0.5, 0.0),
+        "r = 0.65",
+        offset_pt=3.0,
+        text_kw={"fontsize": fontsize},
+    )
+    fig.canvas.draw()
+    box = res.artists["text"].get_bbox_patch().get_window_extent()
+    y_line = ax.transData.transform((0.0, 0.0))[1]
+    gap_px = box.y0 - y_line
+    assert gap_px == pytest.approx(3.0 * fig.dpi / 72.0, abs=1.0)
     plt.close(fig)
 
 
