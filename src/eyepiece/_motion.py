@@ -28,6 +28,7 @@ import numpy as np
 _SNAP = 1e-9
 _EASINGS = (
     "linear",
+    "smooth",
     "smoothstep",
     "smootherstep",
     "cosine",
@@ -37,6 +38,9 @@ _EASINGS = (
 _STRENGTH_KINDS = ("back_out", "running_start")
 _SPACES = ("linear", "log")
 _SQRT2 = math.sqrt(2.0)
+_SMOOTH_INFLECTION = 10.0
+# The curve a move, an entrance or an exit takes when none is named.
+DEFAULT_EASE = "smoothstep"
 
 
 def frame_count(seconds, fps):
@@ -115,13 +119,22 @@ def _pull_curve(t, pull):
     )
 
 
-def ease(u, kind="smoothstep", strength=None):
+def _sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def ease(u, kind=DEFAULT_EASE, strength=None):
     """Eased progress for progress `u`; the input is clipped to [0, 1].
 
     Every curve fixes both ends exactly (0 at 0, 1 at 1). ``smoothstep`` and
     ``cosine`` start and stop with zero slope and pass through 0.5 at the
-    midpoint; ``smootherstep`` also has zero curvature at the ends. Bound
-    with `functools.partial` to a kind, it is a valid Manim ``rate_func``.
+    midpoint; ``smootherstep`` also has zero curvature at the ends.
+    ``smooth`` is Manim's default rate function, a logistic sigmoid with
+    inflection 10 rescaled to fix both ends: it passes through 0.5 at the
+    midpoint, dwells longer near both ends than ``smoothstep`` (slope about
+    0.067 there) and is steeper in the middle (slope about 2.5 against 1.5).
+    Bound with `functools.partial` to a kind, it is a valid Manim
+    ``rate_func``.
 
     ``"back_out"`` overshoots 1 and then settles back onto it, and
     ``"running_start"`` first pulls back below 0 and then goes,
@@ -134,8 +147,9 @@ def ease(u, kind="smoothstep", strength=None):
 
     Args:
         u: Progress, a float or an array; values outside [0, 1] are clipped.
-        kind: One of ``"linear"``, ``"smoothstep"``, ``"smootherstep"``,
-            ``"cosine"``, ``"back_out"``, or ``"running_start"``.
+        kind: One of ``"linear"``, ``"smooth"``, ``"smoothstep"``,
+            ``"smootherstep"``, ``"cosine"``, ``"back_out"``, or
+            ``"running_start"``; default `DEFAULT_EASE`.
         strength: For ``"back_out"``, the peak overshoot beyond 1 as a
             fraction of the move (default 0.1, the classic back curve). For
             ``"running_start"``, the depth of the pull-back below 0 as a
@@ -161,6 +175,11 @@ def ease(u, kind="smoothstep", strength=None):
     a = np.clip(np.asarray(u, dtype=float), 0.0, 1.0)
     if kind == "linear":
         out = a
+    elif kind == "smooth":
+        k = _SMOOTH_INFLECTION
+        floor = _sigmoid(-0.5 * k)
+        out = (_sigmoid(k * (a - 0.5)) - floor) / (1.0 - 2.0 * floor)
+        out = np.where(a >= 1.0, 1.0, out)
     elif kind == "smoothstep":
         out = a * a * (3.0 - 2.0 * a)
     elif kind == "smootherstep":
