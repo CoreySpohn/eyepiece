@@ -799,8 +799,9 @@ class RawSink:
     `record` grabs frames from a figure; a `RawSink` takes frames from
     anywhere, such as `PageCamera.render`, which crops a figure in ways a
     movie writer cannot. Frames go to ffmpeg as raw RGBA and encode as H.264
-    in yuv420p at constant quality, with no metadata and bit-exact encoder
-    flags, so the same frames always give the same file. The movie is
+    in the profile's pixel format (yuv420p by default) at constant quality,
+    with no metadata and bit-exact encoder flags, so the same frames always
+    give the same file. The movie is
     written beside `path` and moved into place only when it finishes, so a
     failed run never replaces a good file with a broken one.
 
@@ -849,7 +850,7 @@ class RawSink:
             _resolve_ffmpeg(), "-y", "-loglevel", "error",
             "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{width}x{height}",
             "-r", str(fps), "-i", "-", "-an",
-            "-vcodec", "libx264", "-pix_fmt", "yuv420p",
+            "-vcodec", "libx264",
             *filters, *encoder_args(fps, encoder), *_BITEXACT,
             *(extra_ffmpeg_args or ()), str(self._partial),
         ]  # fmt: skip

@@ -54,6 +54,7 @@ ENCODER_PROFILE = {
     "keyframe_s": 2.0,
     "colorspace": "bt709",
     "faststart": True,
+    "pix_fmt": "yuv420p",
 }
 """The H.264 settings every eyepiece movie is encoded with.
 
@@ -64,7 +65,10 @@ moves a saturated brand color by up to 19 levels. ``crf`` and ``tune`` set
 quality; ``keyframe_s`` puts a keyframe at least that often so a reader
 scrubbing a clip lands quickly; ``faststart`` moves the index to the front
 so playback starts before the download ends. ``colorspace`` is ``"bt709"``
-or None, which leaves the conversion and tags to ffmpeg. Override any key
+or None, which leaves the conversion and tags to ffmpeg. ``pix_fmt`` is the
+chroma layout: ``"yuv444p"`` keeps full-resolution color and sharper colored
+edges, for local and web files only, since QuickTime and Safari do not play
+it; the default ``"yuv420p"`` plays everywhere. Override any key
 with ``encoder={...}`` on `record`, `RawSink` or `narration.mux`.
 """
 
@@ -90,11 +94,11 @@ def with_caller_pixels(encoder, extra_args):
     pixel format, and a BT.709 yuv conversion or tag would corrupt it.
 
     Returns:
-        `encoder` with ``colorspace`` set to None when `extra_args` holds a
-        ``-pix_fmt``, else `encoder` unchanged.
+        `encoder` with ``colorspace`` and ``pix_fmt`` set to None when
+        `extra_args` holds a ``-pix_fmt``, else `encoder` unchanged.
     """
     if extra_args and "-pix_fmt" in list(extra_args):
-        return {**(encoder or {}), "colorspace": None}
+        return {**(encoder or {}), "colorspace": None, "pix_fmt": None}
     return encoder
 
 
@@ -120,13 +124,15 @@ def encoder_args(fps, encoder=None):
         encoder: Mapping of `ENCODER_PROFILE` keys to replace, or None.
 
     Returns:
-        A list of ffmpeg arguments, quality and tags, then the movie flags.
+        A list of ffmpeg arguments: pixel format, quality and tags, then
+        the movie flags.
 
     Raises:
         ValueError: If `encoder` has a key the profile does not.
     """
     profile = _merged_profile(encoder)
-    args = ["-crf", str(profile["crf"])]
+    args = ["-pix_fmt", profile["pix_fmt"]] if profile["pix_fmt"] else []
+    args += ["-crf", str(profile["crf"])]
     if profile["tune"]:
         args += ["-tune", profile["tune"]]
     if profile["keyframe_s"]:

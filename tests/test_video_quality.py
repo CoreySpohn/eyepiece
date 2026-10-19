@@ -67,6 +67,7 @@ def test_profile_arguments_follow_the_profile_and_its_overrides():
     assert args[args.index("-g") + 1] == "60"
     assert args[args.index("-colorspace") + 1] == "bt709"
     assert "+faststart" in args
+    assert args[args.index("-pix_fmt") + 1] == "yuv420p"
     assert ep.ENCODER_PROFILE is ENCODER_PROFILE
     mine = encoder_args(60, {"crf": 23, "tune": None, "colorspace": None})
     assert mine[mine.index("-crf") + 1] == "23"
@@ -74,6 +75,27 @@ def test_profile_arguments_follow_the_profile_and_its_overrides():
     assert "-tune" not in mine and "-colorspace" not in mine
     with pytest.raises(ValueError, match="unknown encoder keys"):
         encoder_args(30, {"crf_value": 1})
+
+
+@needs_ffmpeg
+def test_yuv444p_is_an_opt_in_pixel_format_for_both_writers(tmp_path):
+    size = (64, 48)
+    for name, encoder, want in (
+        ("default", None, "yuv420p"),
+        ("full", {"pix_fmt": "yuv444p"}, "yuv444p"),
+    ):
+        raw = tmp_path / f"raw-{name}.mp4"
+        with ep.RawSink(raw, size, fps=30, encoder=encoder) as sink:
+            for frame in _flat_frames(3, size):
+                sink.write(frame)
+        fig, _ax = plt.subplots(figsize=(0.64, 0.48))
+        recorded = tmp_path / f"rec-{name}.mp4"
+        with ep.record(fig, recorded, fps=30, dpi=100, encoder=encoder) as rec:
+            rec.hold(3)
+        plt.close(fig)
+        for path in (raw, recorded):
+            line = _info(path)
+            assert want in line and "bt709" in line, (name, line)
 
 
 @needs_ffmpeg
