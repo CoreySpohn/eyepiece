@@ -120,6 +120,7 @@ _EXPECTED_ALL = [
     "ENCODER_PROFILE",
     "GLYPHS",
     "PRESETS",
+    "VIDEO_RC",
     "Anchor",
     "Animation",
     "AttentionFault",

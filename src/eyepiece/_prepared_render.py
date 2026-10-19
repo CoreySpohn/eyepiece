@@ -27,13 +27,15 @@ LEAF_TYPES = (ImageView, CurveView, TrackView)
 VIEW_TYPES = (*LEAF_TYPES, PanelGroup)
 
 # Fill opacity of a Region's interior on a coordinate panel (a shaded IWA);
-# its outline is drawn fully opaque. See `region_fill_opacity`.
+# its outline is drawn fully opaque. On a dark background a 0.2 fill nearly
+# disappears, so it takes the higher value. See `region_fill_opacity`.
 REGION_FILL_OPACITY = 0.2
+REGION_FILL_OPACITY_DARK = 0.35
 
 # Total width of the halo stroked behind a label drawn over an image, as a
 # fraction of the text size; half of it extends past each glyph edge. See
 # `label_halo`.
-LABEL_HALO_EM = 0.25
+LABEL_HALO_EM = 0.08
 
 _SUPPORTED_ROLES = ("reference",)
 
@@ -152,15 +154,24 @@ def resolve_styles(view, cast, profile, *, renderer, leaf_parts=()):
     return styles
 
 
-def region_fill_opacity(leaf):
+def region_fill_opacity(leaf, background_rgb=(1.0, 1.0, 1.0)):
     """Fill opacity for a Region drawn on `leaf`.
 
     On an `ImageView` a Region is an outline only: a translucent fill
     would change the colors of the measured pixels under it, so they would
     no longer read against the colorbar. On a `CurveView` or `TrackView`
-    the interior is shaded at `REGION_FILL_OPACITY`.
+    the interior is shaded at `REGION_FILL_OPACITY`, or at
+    `REGION_FILL_OPACITY_DARK` on a dark background (luminance below 0.5).
+
+    Args:
+        leaf: The view the Region is drawn on.
+        background_rgb: The panel background as RGB floats in [0, 1].
     """
-    return 0.0 if isinstance(leaf, ImageView) else REGION_FILL_OPACITY
+    if isinstance(leaf, ImageView):
+        return 0.0
+    r, g, b = background_rgb[:3]
+    dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.5
+    return REGION_FILL_OPACITY_DARK if dark else REGION_FILL_OPACITY
 
 
 def label_halo(leaf):

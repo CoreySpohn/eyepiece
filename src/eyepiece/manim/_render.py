@@ -555,7 +555,9 @@ def _draw_panel(view, styles, rgba, profile, parts):
         elif isinstance(mark, Region):
             mob = manim.VMobject(
                 fill_color=style["color"],
-                fill_opacity=region_fill_opacity(view),
+                fill_opacity=region_fill_opacity(
+                    view, manim.ManimColor(profile.background_color).to_rgb()
+                ),
                 stroke_color=style["color"],
                 stroke_width=stroke,
                 stroke_opacity=1.0,

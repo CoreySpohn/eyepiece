@@ -218,6 +218,20 @@ def test_record_leaves_the_callers_snapping_as_it_was(tmp_path):
     plt.close(fig)
 
 
+def test_video_rc_gives_lines_butt_caps_and_round_joins(tmp_path):
+    assert ep.VIDEO_RC["lines.solid_capstyle"] == "butt"
+    assert ep.VIDEO_RC["lines.solid_joinstyle"] == "round"
+    fig, ax = plt.subplots(figsize=(1, 1))
+    before = plt.rcParams["lines.solid_capstyle"]
+    with ep.record(fig, fps=10, stills={tmp_path / "s.png": 0}) as rec:
+        (made,) = ax.plot([0, 1], [0, 1])
+        rec.frame()
+    assert made.get_solid_capstyle() == "butt"
+    assert made.get_solid_joinstyle() == "round"
+    assert plt.rcParams["lines.solid_capstyle"] == before
+    plt.close(fig)
+
+
 def test_unsnapped_lets_a_slow_mark_glide_outside_a_recording():
     fig, line, dot = _vline_scene()
     assert ep.unsnapped([line, dot]) == [line, dot]

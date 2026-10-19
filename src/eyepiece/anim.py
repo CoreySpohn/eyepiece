@@ -31,7 +31,8 @@ The mechanics this module does own, each closing a specific trap:
   scoped to the recording and never leaks into the caller's rcParams.
   `path.snap` is turned off the same way unless `record(snap=True)`: Agg
   snaps markers and axis-aligned edges to whole pixels, which crisps a still
-  and makes a slow move stall, then jump a pixel.
+  and makes a slow move stall, then jump a pixel. `VIDEO_RC` (butt caps,
+  round joins) holds the same way for lines made during the recording.
 - A constrained-layout figure has its layout engine frozen on the first
   `frame()` call, before that frame is grabbed, and the freeze is scoped to
   the recording exactly like the `savefig.bbox` override: `record` restores
@@ -106,6 +107,18 @@ PRESETS = {
     "doc_hd": {"fps": 30, "dpi": 200},
 }
 
+# Line ends and corners for video: butt caps, so a line is exactly as long as
+# it is measured (a projecting cap adds half the width at each end), and round
+# joins. Line2D reads these when it is made, so `record` applies them to
+# artists made during a recording; build a clip's figure under
+# ``matplotlib.rc_context(VIDEO_RC)`` for the rest.
+VIDEO_RC = {
+    "lines.solid_capstyle": "butt",
+    "lines.dash_capstyle": "butt",
+    "lines.solid_joinstyle": "round",
+    "lines.dash_joinstyle": "round",
+}
+
 _SUFFIX_PRESET = {".mp4": "talk", ".gif": "gif", ".html": "jshtml"}
 
 
@@ -177,10 +190,11 @@ def _rc_overrides(paths, snap=True):
     change between frames, which a writer's fixed-size pipe cannot take.
     The ffmpeg path is resolved here, before any writer is opened, so a
     missing ffmpeg fails with an actionable error instead of a bare
-    FileNotFoundError from a subprocess launch. Without `snap`,
+    FileNotFoundError from a subprocess launch. `VIDEO_RC` sets the caps
+    and joins of lines made during the recording. Without `snap`,
     `path.snap` is off, which unsnaps every artist, whatever its own setting.
     """
-    overrides = {"savefig.bbox": None}
+    overrides = {**VIDEO_RC, "savefig.bbox": None}
     if not snap:
         overrides["path.snap"] = False
     if any(Path(p).suffix.lower() == ".mp4" for p in paths):
