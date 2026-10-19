@@ -11,6 +11,7 @@ clip, not a model.
 
 import dataclasses
 import itertools
+import warnings
 from collections.abc import Callable
 from statistics import NormalDist
 
@@ -21,6 +22,9 @@ from eyepiece._result import MotionContract, PlotResult
 # Fastest draw rate the eye follows as separate draws: past about eight a
 # second, successive draws average into a band and the run reads as a blur.
 MAX_RATE = 8.0
+# The band that reads as separate draws at a comfortable pace: slower drags,
+# faster is still legible but close to the blur.
+READABLE_RATES = (3.0, 6.0)
 
 # Tolerance on the knob at a window boundary, so a knob sampled at exactly
 # ``i / n`` (up to rounding) shows draw ``i`` rather than the next one.
@@ -127,7 +131,8 @@ def hop(
         ax: Axes for the draws, or None for a new figure. Its limits are set
             once from every draw, so they never change during the run.
         rate: Draws per second, in (0, 8]. Three to six reads as separate
-            draws; past eight, draws average into a band.
+            draws; past eight, draws average into a band. A rate outside
+            three to six warns.
         ghosts: How many earlier draws stay on screen, a non-negative
             integer.
         ghost_alpha: Opacity of the newest ghost, in (0, 1].
@@ -219,6 +224,13 @@ def hop(
         raise ValueError(
             f"hop rate must be in (0, {MAX_RATE:g}] draws per second, got {rate:g}; "
             "past eight a second the draws average into a band"
+        )
+    if not READABLE_RATES[0] <= rate <= READABLE_RATES[1]:
+        warnings.warn(
+            f"hop rate {rate:g} draws per second is outside the {READABLE_RATES[0]:g} "
+            f"to {READABLE_RATES[1]:g} that reads as separate draws at an easy pace",
+            UserWarning,
+            stacklevel=2,
         )
     if int(ghosts) != ghosts or ghosts < 0:
         raise ValueError(f"hop ghosts must be a non-negative integer, got {ghosts}")
