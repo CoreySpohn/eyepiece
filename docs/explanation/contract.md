@@ -283,6 +283,13 @@ contracts rather than the mechanism behind them.
   for every value along the path when it is bound). At `u = 1` the head is at
   the path's end, the ruler at full length and the counter at the exact end
   value: the still of the final quantities.
+- `Stage.weigh(..., lift_pt=)`: a label arrives attached to its mark. Only
+  the lifted texts and their boxes move, straight up into place, by at most
+  10 display pixels over the whole arrival, on the same eased presence as
+  their fade, so they land as they finish fading in. Their colors are their
+  own, the ink of the mark they name. At presence 1 every label is exactly in
+  place, so the rest state is the still. Labels and callouts only: a group
+  holding a data mark raises, because a data mark never drifts.
 
 ## Style resolves at call time
 

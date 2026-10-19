@@ -47,8 +47,13 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, PathPatch, Rectangle
 from matplotlib.path import Path
 from matplotlib.spines import Spine
-from matplotlib.text import Text
-from matplotlib.transforms import Affine2D, Bbox, IdentityTransform
+from matplotlib.text import Annotation, Text
+from matplotlib.transforms import (
+    Affine2D,
+    Bbox,
+    IdentityTransform,
+    ScaledTranslation,
+)
 
 from eyepiece import _style
 from eyepiece._motion import DEFAULT_EASE, _unsnapped
@@ -1536,6 +1541,50 @@ def _looks(target, background, seen, out):
                 _looks(part, background, seen, out)
 
 
+# The farthest an attached label drifts into place, in display pixels.
+_LIFT_MAX_PX = 10.0
+
+
+class _Lift:
+    """A label's place, offset straight down by a number of points and back."""
+
+    def __init__(self, text):
+        self.text = text
+        self.kind = "plain"
+        if isinstance(text, _AnchoredText):
+            self.kind = "callout"
+        elif isinstance(text, Annotation):
+            coords = text.anncoords
+            if coords not in ("offset points", "offset pixels"):
+                raise ValueError(
+                    f"lift_pt needs an annotation placed in offset points or "
+                    f"offset pixels, got textcoords={coords!r}"
+                )
+            self.kind = coords
+            self.base = tuple(text.xyann)
+        else:
+            self.base = text.get_transform()
+
+    def set(self, lift_pt):
+        """Place the label `lift_pt` points below its own place (0: in place)."""
+        text = self.text
+        if self.kind == "callout":
+            text._lift_pt = lift_pt
+        elif self.kind == "plain":
+            if lift_pt == 0.0:
+                text.set_transform(self.base)
+            else:
+                fig = text.get_figure(root=True)
+                shift = ScaledTranslation(0.0, -lift_pt / 72.0, fig.dpi_scale_trans)
+                text.set_transform(self.base + shift)
+        else:
+            dy = lift_pt
+            if self.kind == "offset pixels":
+                dy = lift_pt * text.get_figure(root=True).dpi / 72.0
+            text.xyann = (self.base[0], self.base[1] - dy)
+        text.stale = True
+
+
 class Stage:
     """Groups of drawn artists set to absolute levels: shown, dimmed, or absent.
 
@@ -1590,9 +1639,12 @@ class Stage:
             raise ValueError(f"dim must be in [0, 1], got {dim}")
         self.dim = dim
         self._looks = {}
+        self._items = {}
+        self._lifts = {}
         seen = set()
         for name, members in dict(groups).items():
             items = [members] if isinstance(members, Artist) else list(members)
+            self._items[name] = items
             looks = []
             for item in items:
                 _looks(item, background, seen, looks)
@@ -1618,7 +1670,22 @@ class Stage:
                 if isinstance(artist, Text) and not artist.get_text().strip():
                     continue
                 rest.append(artist)
-        self.contract = MotionContract(rest=tuple(rest))
+        self._rest = tuple(rest)
+
+    @property
+    def contract(self):
+        """Geometry the stage promises: still, but for the labels it lifts."""
+        lifted = {lift.text for lifts in self._lifts.values() for lift in lifts}
+        moving = set(lifted)
+        for text in lifted:
+            moving.update(getattr(text, "_pieces", ()))
+            patch = text.get_bbox_patch()
+            if patch is not None:
+                moving.add(patch)
+        return MotionContract(
+            moves=tuple(a for a in self._rest if a in moving),
+            rest=tuple(a for a in self._rest if a not in moving),
+        )
 
     @property
     def names(self):
@@ -1655,12 +1722,24 @@ class Stage:
                 out[name] = (0.0, 1.0)
         return out
 
-    def weigh(self, levels, *, ease=None):
+    def weigh(self, levels, *, ease=None, lift_pt=None):
         """Set the named groups to absolute levels; leave the others alone.
 
         A group not named keeps whatever its artists show, so a group can be
         handed back to another move (an axis build, say) while the stage
         sets the rest; `rest` returns every group to how it was made.
+
+        With `lift_pt`, a label arrives attached: each named group, which
+        must hold only labels and callouts (texts), also drifts up into its
+        place from `lift_pt` below it while it fades in, on the same eased
+        presence, so it lands with the fade. Motion contract: only the
+        lifted texts (with their boxes) move, straight up, by at most
+        10 display pixels over the whole arrival, and their
+        colors are their own, which for a label is the ink of the mark it
+        names; at presence 1 every lifted label is exactly in place, so the
+        rest state is the still. A call without `lift_pt` puts the named
+        groups' labels back in place. A data mark never drifts: a group
+        holding anything but texts raises.
 
         Args:
             levels: Mapping of group name to a presence in [0, 1], or to a
@@ -1675,11 +1754,20 @@ class Stage:
                 `eyepiece.ease` to its own progress. Pass the uneased
                 progress, never a value `weigh` or `ease` has already shaped,
                 or the curve is applied twice.
+            lift_pt: How far below its place, in points, a label starts its
+                arrival, or None for no drift. At the figure's dpi it may be
+                at most 10 pixels.
 
         Raises:
             KeyError: If a name is not a group of the stage.
-            ValueError: If ``ease`` is not an easing kind.
+            ValueError: If ``ease`` is not an easing kind, `lift_pt` is
+                negative or more than 10 pixels, or a lifted
+                group holds an artist that is not a text.
         """
+        if lift_pt is not None:
+            lift_pt = float(lift_pt)
+            if lift_pt < 0.0:
+                raise ValueError(f"lift_pt must be at least 0, got {lift_pt}")
         for name, level in levels.items():
             if name not in self._looks:
                 raise KeyError(f"no stage group {name!r}; groups are {self.names}")
@@ -1688,8 +1776,36 @@ class Stage:
             presence, contrast = (_check_u(v) for v in level)
             if ease is not None:
                 presence = min(1.0, max(0.0, _ease(presence, ease)))
+            if lift_pt is not None:
+                self._lift(name, lift_pt)  # validate before any write
             for look in self._looks[name]:
                 look.set(presence, contrast)
+            if lift_pt is not None:
+                for lift in self._lifts[name]:
+                    lift.set(lift_pt * (1.0 - presence))
+            else:
+                for lift in self._lifts.get(name, ()):
+                    lift.set(0.0)
+
+    def _lift(self, name, lift_pt):
+        """The lifts of a group of labels, made on first use and checked."""
+        if name not in self._lifts:
+            for item in self._items[name]:
+                if not isinstance(item, Text):
+                    raise ValueError(
+                        f"lift_pt moves labels and callouts only; stage group "
+                        f"{name!r} holds a {type(item).__name__}, and a data "
+                        f"mark never drifts"
+                    )
+            self._lifts[name] = [_Lift(item) for item in self._items[name]]
+        for lift in self._lifts[name]:
+            dpi = lift.text.get_figure(root=True).dpi
+            if lift_pt * dpi / 72.0 > _LIFT_MAX_PX + 1e-9:
+                raise ValueError(
+                    f"lift_pt={lift_pt} is {lift_pt * dpi / 72.0:.1f} px at "
+                    f"{dpi:g} dpi; a label drifts at most {_LIFT_MAX_PX:g} px"
+                )
+        return self._lifts[name]
 
     def set(self, shown=None, dimmed=(), *, start=None, u=1.0, ease=DEFAULT_EASE):
         """Go to a state, or part of the way there from another.
