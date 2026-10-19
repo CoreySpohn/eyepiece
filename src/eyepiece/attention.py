@@ -35,7 +35,7 @@ check of the leaders and links.
 import math
 import re
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 import matplotlib
@@ -2805,6 +2805,35 @@ class _HeadDraw(_DrawOn):
         self.set_solid_joinstyle(joinstyle)
 
 
+class _BehindDraw(_DrawOn):
+    """A line drawn under a head-drawn path, cut where that path's body ends."""
+
+    def __init__(self, source, owner):
+        super().__init__(source)
+        self._owner = owner
+
+    def cut(self, pixels_per_point):
+        """The fraction of this line to draw: the owner's body end, less the cap."""
+        owner = self._owner
+        glow = owner.glow()
+        body = max(0.0, owner._fraction - _HEAD_FRACTION * glow)
+        source = self._source
+        path = source.get_transform().transform_path(source.get_path())
+        total = sum(
+            float(np.hypot(*np.diff(points, axis=0).T).sum())
+            for points, _ in _line_parts(path.vertices, False)
+        )
+        cap = 0.0
+        if source.get_solid_capstyle() != "butt":
+            cap = 0.5 * pixels_per_point * source.get_linewidth()
+        return max(0.0, body - cap * glow / total) if total else body
+
+    def draw(self, renderer):
+        """Draw the prefix of this line up to where the owner's body ends."""
+        self._fraction = self.cut(renderer.points_to_pixels(1.0))
+        super().draw(renderer)
+
+
 @dataclass(frozen=True, eq=False)
 class _HeadDrawResult(PlotResult):
     """A `PlotResult` that also reports where each head is."""
@@ -2826,7 +2855,9 @@ def _head_point(line, fraction):
     return (float(x), float(y))
 
 
-def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResult:
+def head_draw(
+    lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None, behind=None
+) -> PlotResult:
     """Draw lines on at constant arc-length speed with a bright head on the tip.
 
     The signature reveal of a path. The drawn length grows at one speed in
@@ -2854,6 +2885,16 @@ def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResu
     the axes edge shows half a dot there; leave a margin, and
     `eyepiece.testing.motion_faults` reports the cut as ``outside``.
 
+    Lines drawn under a path, such as a halo that backs a ring or a backing
+    line under a ruler, go in ``behind``. Each is cut on every frame to the
+    same fraction of its own arc length as the path's body, which ends where
+    the head begins, and its cap is kept inside that cut while the head
+    shows, so nothing behind the path leads the head. As the head dissolves
+    the cut follows the body to the end of the path, and at rest the behind
+    line draws itself. A behind line never shows more past the drawn tip
+    than it shows past the line's end in the still. Each behind line and its
+    path are declared free to overlap while moving.
+
     With several lines, ``lag`` staggers them as Manim's ``lag_ratio``
     does: each line takes a window of ``1 / (1 + (n - 1) lag)`` of the beat
     and the next starts ``lag`` of a window after it, so 0 draws all of them
@@ -2869,10 +2910,14 @@ def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResu
             [0, 1].
         head_color: Color of the head and the tip dot. None uses the text
             color, read now.
+        behind: Lines drawn under the paths, as a mapping from a line in
+            `lines` to one `Line2D` or an iterable of them. With a single
+            line a bare `Line2D` or an iterable is taken as behind it.
 
     Returns:
         A `PlotResult` on the first line's axes, with the source lines and
-        their drawing copies in ``artists["lines"]``, the copies declared in
+        their drawing copies in ``artists["lines"]`` and the behind lines
+        and their copies in ``artists["behind"]``, the copies declared in
         ``contract.moves``, and ``update(u, level=1.0)``. Progress and level
         are clipped to [0, 1]; ``level`` multiplies opacity only. Its
         ``head(i=0, fraction=None)`` returns line `i`'s head as a data point
@@ -2883,11 +2928,12 @@ def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResu
     Raises:
         TypeError: If an item is not a `Line2D`.
         ValueError: If there are no lines, a line has no axes, a line uses a
-            stepped drawstyle, or `lag` is outside [0, 1].
+            stepped drawstyle, `lag` is outside [0, 1], or `behind` names a
+            line not in `lines` or is not a mapping with several lines.
 
     Example::
 
-        reveal = ep.head_draw([ring, curve], lag=0.4)
+        reveal = ep.head_draw([ring, curve], lag=0.4, behind={ring: halo})
         for u in np.linspace(0.0, 1.0, 84):
             reveal.update(u)
             rec.frame()
@@ -2910,6 +2956,18 @@ def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResu
     states = [(line.get_visible(), line.get_alpha()) for line in items]
     for line, copy in zip(items, copies, strict=True):
         line.axes.add_artist(copy)
+    backs = [
+        (
+            i,
+            extra,
+            _BehindDraw(extra, copies[i]),
+            (extra.get_visible(), extra.get_alpha()),
+        )
+        for i, extras in enumerate(_behind_lines(items, behind))
+        for extra in extras
+    ]
+    for _, extra, copy, _ in backs:
+        extra.axes.add_artist(copy)
     n = len(items)
     span = 1.0 / (1.0 + (n - 1) * lag)
     ranks = np.linspace(0.0, 1.0, n) if n > 1 else np.zeros(1)
@@ -2928,18 +2986,62 @@ def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResu
             copy._fraction = fraction
             copy.set_zorder(line.get_zorder())
             copy.set_visible(visible and 0.0 < fraction and v < 1.0)
+        for i, extra, copy, (visible, alpha) in backs:
+            v = float(local[i])
+            base = 1.0 if alpha is None else alpha
+            extra.set_alpha(alpha if level == 1.0 else level * base)
+            extra.set_visible(visible and v >= 1.0)
+            copy.set_zorder(extra.get_zorder())
+            copy._fraction = copy.cut(_root_figure(extra).dpi / 72.0)
+            copy.set_visible(visible and 0.0 < copy._fraction and v < 1.0)
 
     def head(i=0, fraction=None):
         f = copies[i]._fraction if fraction is None else _check_u(fraction)
         return _head_point(items[i], f)
 
+    behind_copies = [copy for _, _, copy, _ in backs]
+    artists = {"lines": [*items, *copies]}
+    if backs:
+        artists["behind"] = [*(extra for _, extra, _, _ in backs), *behind_copies]
     return _HeadDrawResult(
         ax=items[0].axes,
-        artists={"lines": [*items, *copies]},
+        artists=artists,
         update=update,
-        contract=MotionContract(moves=tuple(copies)),
+        contract=MotionContract(
+            moves=(*copies, *behind_copies),
+            may_overlap=tuple((copies[i], copy) for i, _, copy, _ in backs),
+        ),
         head=head,
     )
+
+
+def _behind_lines(items, behind):
+    """The lines drawn under each of `items`, validated, in `items` order."""
+    under = [[] for _ in items]
+    if behind is None:
+        return under
+    if isinstance(behind, Mapping):
+        pairs = list(behind.items())
+    elif len(items) == 1:
+        pairs = [(items[0], behind)]
+    else:
+        raise ValueError("head_draw behind must map lines to the lines under them")
+    for key, extras in pairs:
+        match = [i for i, line in enumerate(items) if line is key]
+        if not match:
+            raise ValueError("head_draw behind names a line that is not drawn")
+        extras = [extras] if isinstance(extras, Line2D) else list(extras)
+        for extra in extras:
+            if not isinstance(extra, Line2D):
+                raise TypeError(
+                    f"head_draw behind needs a Line2D, got {type(extra).__name__}"
+                )
+            if extra.axes is None:
+                raise ValueError("head_draw needs lines attached to axes")
+            if extra.get_drawstyle() != "default":
+                raise ValueError("head_draw does not support stepped drawstyles")
+        under[match[0]].extend(extras)
+    return under
 
 
 class _Outline(Line2D):

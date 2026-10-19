@@ -273,7 +273,15 @@ contracts rather than the mechanism behind them.
   never changed. At `u = 0` nothing is drawn and at `u = 1` the source draws
   itself, so the rest frame equals the plain still (pixel-exact outside a
   recording, within half a pixel inside an unsnapped one). Several lines
-  stagger with `lag=`, as Manim's `lag_ratio`.
+  stagger with `lag=`, as Manim's `lag_ratio`. Lines drawn under a path (a
+  halo behind a ring, a backing line under a ruler) go in `behind=`: each is
+  cut to the path's body, which ends where the head begins, with its cap kept
+  inside the cut while the head shows, so nothing behind the path leads the
+  head. As the head dissolves the cut follows the body to the end, and at rest
+  the behind line draws itself; it never shows more past the drawn tip than it
+  shows past the line's end in the still. A halo revealed beside the path with
+  its own `draw_on` runs to the tip and its cap leads the head; the tests pin
+  that this is caught.
 - `ruler_readout`: one knob drives a `head_draw` head, a ruler and a
   counter. The ruler and the counter are read off the head after it is posed,
   never interpolated beside it, so on every frame the counter shows the value
