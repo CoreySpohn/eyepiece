@@ -105,3 +105,29 @@ def test_gallery_quad_image_unroll_settles_continuously():
     ept.assert_motion(
         fig, lambda t: move.update(quads=ns["unroll"](t / 2)), ept.Span(0, 2)
     )
+
+
+def test_gallery_orbit_draws_pass_check_clip():
+    pytest.importorskip("orbix")
+    jax = pytest.importorskip("jax")
+    hwostyle.use("dark")
+    ns = {"np": np, "plt": plt, "ep": ep, "jax": jax, "jnp": jax.numpy}
+    exec(_gallery_cell("motion-clock", "KeplerianOrbit"), ns)
+    # The figure cell up to its timeline; the player that encodes it is left out.
+    figure = _gallery_cell("motion-clock", "ep.hop(")
+    exec(figure.split("plan = tl.at_fps(30)")[0] + "plan = tl.at_fps(30)\n", ns)
+    mark, plan = ns["mark"], ns["plan"]
+    ns["fig"].set_dpi(200)  # the page encodes the clip at dpi=200
+    steps = mark.steps([plan.value(k, "u") for k in range(plan.n_frames)])
+    assert len(steps) == mark.n - 1
+    report = ept.check_clip(
+        ns["fig"],
+        lambda k: ns["draw_orbits"](k, plan),
+        plan,
+        moves=[mark],
+        steps=steps,
+    )
+    assert report.ok, report.faults
+    est, lo, hi = mark.tally()
+    assert est == pytest.approx(23 / 40)
+    assert lo <= ns["p_ref"] <= hi
