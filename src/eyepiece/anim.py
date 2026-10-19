@@ -29,6 +29,9 @@ The mechanics this module does own, each closing a specific trap:
   bbox varies the frame size from frame to frame, which breaks a writer's
   fixed-size pipe. It is applied through `matplotlib.rc_context`, so it is
   scoped to the recording and never leaks into the caller's rcParams.
+  `path.snap` is turned off the same way unless `record(snap=True)`: Agg
+  snaps markers and axis-aligned edges to whole pixels, which crisps a still
+  and makes a slow move stall, then jump a pixel.
 - A constrained-layout figure has its layout engine frozen on the first
   `frame()` call, before that frame is grabbed, and the freeze is scoped to
   the recording exactly like the `savefig.bbox` override: `record` restores
@@ -167,16 +170,19 @@ def _sink_dpi(path, dpi):
     return PRESETS[_SUFFIX_PRESET[Path(path).suffix.lower()]]["dpi"]
 
 
-def _rc_overrides(paths):
+def _rc_overrides(paths, snap=True):
     """The rcParams overrides that must hold for the duration of a recording.
 
     `savefig.bbox` is disabled because a tight bbox lets the frame size
     change between frames, which a writer's fixed-size pipe cannot take.
     The ffmpeg path is resolved here, before any writer is opened, so a
     missing ffmpeg fails with an actionable error instead of a bare
-    FileNotFoundError from a subprocess launch.
+    FileNotFoundError from a subprocess launch. Without `snap`,
+    `path.snap` is off, which unsnaps every artist, whatever its own setting.
     """
     overrides = {"savefig.bbox": None}
+    if not snap:
+        overrides["path.snap"] = False
     if any(Path(p).suffix.lower() == ".mp4" for p in paths):
         overrides["animation.ffmpeg_path"] = _resolve_ffmpeg()
     return overrides
@@ -501,6 +507,7 @@ def record(
     stills=None,
     plan=None,
     stills_dpi=None,
+    snap=False,
     allow_rescale=None,
 ):
     """Open every output file at once and record `fig` frame by frame.
@@ -582,6 +589,12 @@ def record(
             that moves. The ``pulse.*`` and ``ring.*`` knobs are exempt.
         stills_dpi: Dpi of the stills; None uses the first sink's dpi, which
             makes a still pixel-identical to that sink's frame.
+        snap: Whether Agg snaps markers, axis-aligned lines and rectilinear
+            patch edges to whole pixels. The default False draws every frame
+            at sub-pixel positions, so a slow move glides instead of stalling
+            and jumping a pixel; a frame then matches a snapped still of the
+            same state only to within half a pixel. True keeps the snapping
+            of a still.
         allow_rescale: Deprecated; `True` means ``on_rescale="ignore"``. It
             warns with a `DeprecationWarning` and will be removed in a later
             release.
@@ -639,7 +652,7 @@ def record(
     try:
         with ExitStack() as stack:
             stack.callback(restore_engine)
-            stack.enter_context(matplotlib.rc_context(_rc_overrides(paths)))
+            stack.enter_context(matplotlib.rc_context(_rc_overrides(paths, snap)))
             stack.enter_context(_agg_canvas(fig))
             writers = [_make_writer(p, fps, extra_ffmpeg_args, encoder) for p in paths]
             for writer, path in zip(writers, paths, strict=True):

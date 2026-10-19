@@ -175,6 +175,62 @@ def test_a_warped_rectangle_moves_a_tenth_of_a_pixel_per_frame_without_snapping(
     plt.close(fig2)
 
 
+def _vline_scene():
+    """A vertical line and a square marker on a one-pixel-per-unit axes."""
+    fig = plt.figure(figsize=(1.0, 0.5), dpi=100)
+    ax = fig.add_axes((0, 0, 1, 1))
+    ax.set_axis_off()
+    ax.set(xlim=(0, 100), ylim=(0, 50))
+    line = ax.axvline(40.0, color="k", lw=3)
+    (dot,) = ax.plot([60.0], [25.0], "s", color="k", ms=6)
+    return fig, line, dot
+
+
+def _slow_stills(tmp_path, steps, **kwargs):
+    """Stills of the scene moved a tenth of a pixel per frame inside `record`."""
+    fig, line, dot = _vline_scene()
+    stills = {tmp_path / f"s{k:02d}.png": k / 10 for k in range(steps)}
+    with ep.record(fig, fps=10, dpi=100, stills=stills, **kwargs) as rec:
+        for k in range(steps):
+            line.set_xdata([40.0 + k / 10] * 2)
+            dot.set_xdata([60.0 + k / 10])
+            rec.frame()
+    plt.close(fig)
+    return [plt.imread(path) for path in sorted(stills)]
+
+
+def test_record_draws_frames_unsnapped_by_default(tmp_path):
+    steps = 12
+    glide = _slow_stills(tmp_path / "glide", steps)
+    assert all(not np.array_equal(a, b) for a, b in itertools.pairwise(glide))
+    crisp = _slow_stills(tmp_path / "crisp", steps, snap=True)
+    stalls = sum(np.array_equal(a, b) for a, b in itertools.pairwise(crisp))
+    assert stalls >= steps // 2
+
+
+def test_record_leaves_the_callers_snapping_as_it_was(tmp_path):
+    before = plt.rcParams["path.snap"]
+    fig, line, _dot = _vline_scene()
+    with ep.record(fig, fps=10, stills={tmp_path / "s.png": 0}) as rec:
+        rec.frame()
+    assert plt.rcParams["path.snap"] == before
+    assert line.get_snap() is None
+    plt.close(fig)
+
+
+def test_unsnapped_lets_a_slow_mark_glide_outside_a_recording():
+    fig, line, dot = _vline_scene()
+    assert ep.unsnapped([line, dot]) == [line, dot]
+    assert ep.unsnapped(line) is line
+    frames = []
+    for k in range(12):
+        line.set_xdata([40.0 + k / 10] * 2)
+        dot.set_xdata([60.0 + k / 10])
+        frames.append(_gray(fig))
+    assert all(not np.array_equal(a, b) for a, b in itertools.pairwise(frames))
+    plt.close(fig)
+
+
 def test_the_rest_state_after_a_warp_is_pixel_exact_against_the_snapped_still():
     fig, _ax, box = _box_scene()
     move = ep.warp(box, lambda p: p + np.array([3.0, 0.0]))

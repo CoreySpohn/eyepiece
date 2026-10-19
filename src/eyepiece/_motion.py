@@ -355,8 +355,10 @@ class _Unsnap:
     Agg snaps axis-aligned lines and patch edges to whole pixels, which crisps
     a still and turns a slow move into one-pixel jumps. A move calls
     `moving(True)` on the frames between its ends and `moving(False)` at the
-    ends, so the rest state is the snapped figure exactly. Each artist's own
-    snap setting is read once, here, and put back as it was.
+    ends, so outside a recording the rest state is the snapped figure exactly.
+    Inside `eyepiece.record`, which draws every frame unsnapped by default,
+    the rest frame matches a snapped still only to within half a pixel. Each
+    artist's own snap setting is read once, here, and put back as it was.
 
     Args:
         artists: The artists the move reshapes or displaces.
@@ -369,6 +371,25 @@ class _Unsnap:
         """Unsnap every artist when `flag` is true, else restore its setting."""
         for artist, snap in self._saved:
             artist.set_snap(False if flag else snap)
+
+
+def unsnapped(artists):
+    """Switch pixel snapping off on artists, so slow moves glide.
+
+    Agg snaps markers, axis-aligned lines and rectilinear patch edges to whole
+    pixels: a mark moved a tenth of a pixel per frame stalls, then jumps. An
+    unsnapped artist lands at its sub-pixel position on every frame. Use it on
+    artists drawn outside `eyepiece.record`, which unsnaps a whole recording.
+
+    Args:
+        artists: One artist or an iterable of artists.
+
+    Returns:
+        The same argument, for chaining.
+    """
+    for artist in [artists] if hasattr(artists, "set_snap") else artists:
+        artist.set_snap(False)
+    return artists
 
 
 def _unsnapped(artist):
