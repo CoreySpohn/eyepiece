@@ -434,10 +434,20 @@ invented spreads, so it is no forecast for any real planet. Offsets are in
 mas because the star's distance turns AU into angle (1 AU at 10 pc is 100
 mas). Every orbit, the draws, the nominal orbit and the reference, is computed with orbix's `KeplerianOrbit`, vmapped over the draws. Draws
 with an eccentricity outside [0, 1) are left out: none of the 40 in the
-clip, 2 of the 20,000 in the reference. The axes are orbix's: `position_arcsec`
-returns (RA, Dec) offsets with the node angle measured from its RA axis
-(astrometric fits usually measure it from north), drawn with RA increasing to
-the left as orbix's sky plots draw it.
+clip, 2 of the 20,000 in the reference.
+
+The figure follows orbix's sky convention, which is not the astrometric one.
+An astrometric fit measures the node angle from north through east, and its
+Thiele-Innes projection gives the planet's offsets north (Dec) and east (RA).
+For the same elements, the coordinate orbix's `position_arcsec` returns as RA
+is that projection's Dec, and the one it returns as Dec is its RA: orbix's
+(RA, Dec) is the astrometric (Dec, RA). That is a reflection about the
+diagonal, not a rotation, so the drawn orbit's orientation and its sense of
+motion both differ from those of the orbit a published fit describes, and
+elements taken from such a fit need converting before they are drawn this
+way. The tally does not depend on it: a reflection keeps every distance, so
+the fraction of draws within 30 mas is the same in either convention. RA
+increases to the left, as orbix's sky plots draw it.
 
 ```{code-cell} python
 from hwoutils.constants import G, Msun2kg
