@@ -143,6 +143,8 @@ class Span:
         text: Caption text, else None.
         read_s: Seconds the text needs to be read, else None.
         with_: Names of spans it may overlap (for the arrival checks).
+        names: The move a text or caption explains, else None; it may arrive
+            over that move's last quarter.
         extends: Whether it holds its section open.
         collapsed: Rounded up to one frame at this frame rate.
         clamped: Its cue fell before its line, so it starts at the line.
@@ -160,6 +162,7 @@ class Span:
     text: str | None = None
     read_s: float | None = None
     with_: tuple = ()
+    names: str | None = None
     extends: bool = True
     collapsed: bool = False
     clamped: bool = False
@@ -672,9 +675,15 @@ class Timeline:
         text=None,
         read_s=None,
         with_=(),
+        names=None,
         clamped=False,
         owner=None,
     ):
+        if names is not None and names not in self._spans:
+            raise ValueError(
+                f"names names {names!r}, which is not an earlier span; spans "
+                f"are {sorted(self._spans)}"
+            )
         for other in with_:
             if other not in self._spans:
                 raise ValueError(
@@ -695,6 +704,7 @@ class Timeline:
             text=text,
             read_s=read_s,
             with_=tuple(with_),
+            names=names,
             extends=extends,
             clamped=clamped,
             _t0=start,
@@ -873,8 +883,11 @@ class Timeline:
             advance=advance, with_=with_, clamped=clamped, owner=name,
         )  # fmt: skip
 
-    def text(self, name, seconds=None, *, also=(), at=None, cue=None):
+    def text(self, name, seconds=None, *, also=(), at=None, cue=None, names=None):
         """Text arrives: knob `name` (and `also`) ramps from 0 to 1.
+
+        Text arrives before motion, except that text naming a move may start
+        over that move's last quarter, so the label lands as the move settles.
 
         Args:
             name: The text and the knob; the cue target by default.
@@ -882,6 +895,7 @@ class Timeline:
             also: More knobs that arrive with it.
             at: Start time in seconds or a `Time`.
             cue: A full ``"kind:target"`` mark that overrides ``show:name``.
+            names: The earlier move this text explains, or None.
 
         Returns:
             The `Span`.
@@ -890,11 +904,12 @@ class Timeline:
         start, advance, _, clamped, _ = self._start_for("text", at, cue, name)
         secs = self._secs(seconds, True) if seconds is not None else Fraction(CAPTION_S)
         return self._add(
-            name, "text", start, secs, writes, advance=advance, clamped=clamped
-        )
+            name, "text", start, secs, writes, advance=advance, clamped=clamped,
+            names=names,
+        )  # fmt: skip
 
     def _caption_span(self, name, text, start, policy, *, owner=None, advance=False,
-                      clamped=False):  # fmt: skip
+                      clamped=False, names=None):  # fmt: skip
         if not isinstance(text, str):
             text = "".join(p if isinstance(p, str) else str(p[0]) for p in text)
         knob = f"caption.{name}"
@@ -904,6 +919,7 @@ class Timeline:
         span = self._add(
             name, "caption", start, Fraction(CAPTION_S), [_Write(knob, 1.0)],
             advance=advance, text=text, read_s=read, clamped=clamped, owner=owner,
+            names=names,
         )  # fmt: skip
         if policy is None:
             policy = "next" if self._source is not None else "read"
@@ -947,7 +963,7 @@ class Timeline:
                 lst.remove(cap)
         return span
 
-    def caption(self, name, text, *, leaves=None, at=None, cue=None):
+    def caption(self, name, text, *, leaves=None, at=None, cue=None, names=None):
         """A caption arrives over 0.4 s: knob ``caption.<name>`` ramps 0 to 1.
 
         It leaves once read (arrival plus `Tempo.read_s`), when the next
@@ -960,6 +976,8 @@ class Timeline:
             leaves: ``"read"``, ``"next"`` or ``"never"``; None picks by mode.
             at: Start time in seconds or a `Time`.
             cue: A full ``"kind:target"`` mark that overrides ``show:name``.
+            names: The earlier move this caption explains, or None; it may
+                then arrive over that move's last quarter (see `text`).
 
         Returns:
             The `Span`.
@@ -968,8 +986,9 @@ class Timeline:
             raise ValueError(f"leaves is read, next or never, got {leaves!r}")
         start, advance, _, clamped, _ = self._start_for("caption", at, cue, name)
         return self._caption_span(
-            name, text, start, leaves, advance=advance, clamped=clamped
-        )
+            name, text, start, leaves, advance=advance, clamped=clamped,
+            names=names,
+        )  # fmt: skip
 
     def clear_caption(self, *, at=None):
         """Take down every caption on screen, now or at `at`.
@@ -1397,17 +1416,27 @@ class Timeline:
         def paired(a, b):
             return b.name in a.with_ or a.name in b.with_
 
+        def settling(a, b):
+            # text naming move b may start over its last quarter
+            return a.names == b.name and 4 * (a.k0 - b.k0) >= 3 * (b.k1 - b.k0)
+
         for a in items:
             if a.kind in _ARRIVAL:
                 for b in items:
-                    if b.kind in _MOTION and hit(a, b) and not paired(a, b):
+                    if (
+                        b.kind in _MOTION
+                        and hit(a, b)
+                        and not paired(a, b)
+                        and not settling(a, b)
+                    ):
                         out.append(
                             Fault(
                                 "text-over-motion",
                                 "error",
                                 f"{a.kind} {a.name!r} arrives while {b.kind} "
-                                f"{b.name!r} moves; text arrives before motion "
-                                "(declare the pair with with_= to allow it)",
+                                f"{b.name!r} moves; text arrives before motion, "
+                                "or over the last quarter of the move it names "
+                                "(names=), or as a declared pair (with_=)",
                                 (a.name, b.name),
                             )
                         )

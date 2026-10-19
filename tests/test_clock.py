@@ -439,6 +439,46 @@ def test_a_caption_arriving_over_a_move_raises_unless_the_pair_is_declared():
     assert set(plan.faults[0].spans) == {"c", "m"}
 
 
+def test_text_naming_a_move_may_arrive_over_its_last_quarter_only():
+    def plan(start_frac, kind="text", names="m"):
+        tl = ep.Timeline({"x": 0.0, "y": 0.0}, strict=False)
+        m = tl.move("m", 2.0, to={"x": 1.0})
+        at = m.start_s + start_frac * (m.end_s - m.start_s)
+        if kind == "text":
+            tl.text("label", at=at, names=names)
+        else:
+            tl.caption("label", "two words", at=at, names=names)
+        return tl.at_fps(30)
+
+    for kind in ("text", "caption"):
+        assert _codes(plan(0.75, kind)) == []
+        assert _codes(plan(0.9, kind)) == []
+        assert _codes(plan(0.6, kind)) == ["text-over-motion"]
+        assert _codes(plan(0.75, kind, names=None)) == ["text-over-motion"]
+
+
+def test_named_text_still_may_not_arrive_over_an_unrelated_move():
+    tl = ep.Timeline({"x": 0.0, "y": 0.0}, strict=False)
+    m = tl.move("m", 2.0, to={"x": 1.0})
+    tl.move("other", 2.0, to={"y": 1.0}, at=m.start_s)
+    tl.text("label", at=m.start_s + 0.8 * (m.end_s - m.start_s), names="m")
+    plan = tl.at_fps(30)
+    assert _codes(plan) == ["text-over-motion"]
+    assert set(plan.faults[0].spans) == {"label", "other"}
+
+
+def test_the_reviewed_tempo_keeps_its_factor_with_overlapped_text():
+    # Overlap shortens a clip without speeding its moves, so the pace stays.
+    assert ep.Tempo().factor == 1.35
+    assert ep.Tempo().seconds(1.0) == pytest.approx(1.35)
+
+
+def test_names_must_be_an_earlier_span():
+    tl = ep.Timeline({"x": 0.0})
+    with pytest.raises(ValueError, match="names 'later'"):
+        tl.text("label", names="later")
+
+
 def test_a_caption_declared_with_its_subject_arrives_before_it_in_a_silent_clip():
     tl = ep.Timeline(tempo=ep.Tempo())
     tl.enter("subject", 0.5, caption="two words")
