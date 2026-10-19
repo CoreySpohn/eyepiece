@@ -274,6 +274,15 @@ contracts rather than the mechanism behind them.
   itself, so the rest frame equals the plain still (pixel-exact outside a
   recording, within half a pixel inside an unsnapped one). Several lines
   stagger with `lag=`, as Manim's `lag_ratio`.
+- `ruler_readout`: one knob drives a `head_draw` head, a ruler and a
+  counter. The ruler and the counter are read off the head after it is posed,
+  never interpolated beside it, so on every frame the counter shows the value
+  at the drawn tip and the ruler's far end sits at the quantity of the tip.
+  Only the head's prefix, the ruler's far end and the ruler's label move; the
+  ruler's near end and the counter's slots stay still (the slots are reserved
+  for every value along the path when it is bound). At `u = 1` the head is at
+  the path's end, the ruler at full length and the counter at the exact end
+  value: the still of the final quantities.
 
 ## Style resolves at call time
 

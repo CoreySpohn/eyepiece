@@ -216,6 +216,7 @@ _EXPECTED_ALL = [
     "ref_line",
     "role",
     "ruler",
+    "ruler_readout",
     "save_fig",
     "scatter_values",
     "schematic",

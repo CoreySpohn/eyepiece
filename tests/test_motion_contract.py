@@ -59,6 +59,14 @@ def _clip(name):
     elif name == "head_draw":
         (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
         result = ep.head_draw(line)
+    elif name == "ruler_readout":
+        (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
+        result = ep.ruler_readout(
+            ep.head_draw(line),
+            readout=ep.readout(anchor((0.1, 0.9)), 0.0, fmt=".2f"),
+            ruler=ep.ruler(ax, (0.1, 0.1), (0.1, 0.1), "x", head_scale=0),
+            ruler_to=lambda x, y: (x, 0.1),
+        )
     elif name == "morph":
         (a,) = ax.plot([0.2, 0.4, 0.5], [0.3, 0.6, 0.3])
         (b,) = ax.plot([0.3, 0.5, 0.7], [0.3, 0.7, 0.3])
@@ -155,6 +163,7 @@ def _members(contract):
         "write",
         "draw_on",
         "head_draw",
+        "ruler_readout",
         "morph",
         "flight",
         "collapse",

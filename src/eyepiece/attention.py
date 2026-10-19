@@ -2557,6 +2557,27 @@ class _HeadDraw(_DrawOn):
         self.set_solid_joinstyle(joinstyle)
 
 
+@dataclass(frozen=True, eq=False)
+class _HeadDrawResult(PlotResult):
+    """A `PlotResult` that also reports where each head is."""
+
+    head: Callable | None = None
+
+
+def _head_point(line, fraction):
+    """The data point `fraction` of the way along a line's display arc length."""
+    transform = line.get_transform()
+    path = transform.transform_path(line.get_path())
+    parts = [points for points, _ in _line_parts(path.vertices, False)]
+    if not parts:
+        return (math.nan, math.nan)
+    lengths = [float(np.hypot(*np.diff(p, axis=0).T).sum()) for p in parts]
+    reached = _arc_slice(parts, lengths, 0.0, fraction * sum(lengths))
+    point = reached[-1] if len(reached) else parts[0][0]
+    x, y = transform.inverted().transform(point)
+    return (float(x), float(y))
+
+
 def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResult:
     """Draw lines on at constant arc-length speed with a bright head on the tip.
 
@@ -2605,7 +2626,11 @@ def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResu
         A `PlotResult` on the first line's axes, with the source lines and
         their drawing copies in ``artists["lines"]``, the copies declared in
         ``contract.moves``, and ``update(u, level=1.0)``. Progress and level
-        are clipped to [0, 1]; ``level`` multiplies opacity only.
+        are clipped to [0, 1]; ``level`` multiplies opacity only. Its
+        ``head(i=0, fraction=None)`` returns line `i`'s head as a data point
+        ``(x, y)``, at the fraction last set by ``update`` (the path end
+        before any update) or at `fraction`, measured on the figure as it is
+        now; a readout that reads it agrees with the drawn tip.
 
     Raises:
         TypeError: If an item is not a `Line2D`.
@@ -2656,11 +2681,16 @@ def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResu
             copy.set_zorder(line.get_zorder())
             copy.set_visible(visible and 0.0 < fraction and v < 1.0)
 
-    return PlotResult(
+    def head(i=0, fraction=None):
+        f = copies[i]._fraction if fraction is None else _check_u(fraction)
+        return _head_point(items[i], f)
+
+    return _HeadDrawResult(
         ax=items[0].axes,
         artists={"lines": [*items, *copies]},
         update=update,
         contract=MotionContract(moves=tuple(copies)),
+        head=head,
     )
 
 
@@ -3925,9 +3955,10 @@ class _ReadoutPart(Text):
 
 @dataclass(frozen=True, eq=False)
 class _ReadoutResult(PlotResult):
-    """A `PlotResult` that also holds the readout's `set`."""
+    """A `PlotResult` that also holds the readout's `set` and `show`."""
 
     set: Callable | None = None
+    show: Callable | None = None
 
 
 def readout(
@@ -4017,7 +4048,10 @@ def readout(
         figure), with ``artists["text"]``, the parts left to right (prefix,
         integer part, fraction, tail; the empty ones are left out),
         ``update(u, level=1.0)`` as above, where ``level`` dims the whole
-        readout, and ``set(value)``, which starts the next move.
+        readout, ``set(value)``, which starts the next move, and
+        ``show(value)``, which shows `value` now, as read off a mark,
+        without interpolating; the value shown becomes both ends of the
+        current move.
 
     Raises:
         TypeError: If `at` is neither an `Anchor` nor an artist.
@@ -4085,12 +4119,130 @@ def readout(
         state.target = float(new)
         update(0.0, state.level)
 
+    def show(new):
+        state.reserve(new)
+        state.start = state.target = float(new)
+        update(1.0, state.level)
+
     return _ReadoutResult(
         ax=at.axes,
         artists={"text": parts},
         update=update,
         set=set_value,
+        show=show,
         contract=MotionContract(rest=tuple(parts)),
+    )
+
+
+# Points along a head's path sampled to reserve a bound readout's slots.
+_RESERVE_SAMPLES = 65
+
+
+def ruler_readout(
+    head,
+    *,
+    readout=None,
+    value=None,
+    ruler=None,
+    ruler_to=None,
+    ruler_text=None,
+    line=0,
+) -> PlotResult:
+    r"""Bind a ruler and a counter to a drawing head: one knob, every mark.
+
+    The measuring beat of a talk: a curve draws on with `head_draw`, a ruler
+    extends on an image to the quantity at the head, and a counter in fixed
+    slots shows the value at the head. ``update(u)`` sets the head's
+    progress and then reads the head back, so the ruler and the counter are
+    read off the mark, never interpolated beside it, and the three cannot
+    disagree on any frame.
+
+    Motion contract: the head's drawn prefix moves as `head_draw` promises,
+    and the ruler's far end moves to ``ruler_to(x, y)`` of the head, its
+    label riding the ruler's midpoint; the ruler's near end and the
+    counter's slots stay still while its digits change (the counter's slots
+    are reserved for every value along the path when it is bound, so the
+    layout never moves during the count). At ``u = 1``, the rest state, the
+    head is at the end of its path, the ruler at its full length and the
+    counter at the exact value of the path's end, which is the still a
+    figure of the same quantities shows.
+
+    Args:
+        head: A `head_draw` result; its ``update`` is called with ``u``.
+        readout: A `readout` to show the value at the head, or None.
+        value: Callable ``value(x, y)`` from the head's data point to the
+            counter's value. None shows ``y``.
+        ruler: An `eyepiece.ruler` result whose far end follows the head, or
+            None. Its near end stays where it was drawn.
+        ruler_to: Callable ``ruler_to(x, y)`` from the head's data point to
+            the ruler's far end in the ruler's axes. Required with `ruler`.
+        ruler_text: Callable ``ruler_text(x, y)`` returning the ruler's
+            label, or None to keep the label as drawn.
+        line: Which of the head's lines is read.
+
+    Returns:
+        A `PlotResult` on the head's axes with ``update(u, level=1.0)``,
+        where ``level`` dims the ruler and the counter (not the head), and
+        a contract declaring the head's copies and the ruler's artists as
+        moving and the counter's parts at rest.
+
+    Raises:
+        ValueError: If neither a readout nor a ruler is given, or a ruler is
+            given without `ruler_to`.
+
+    Example::
+
+        curve_head = ep.head_draw(curve)
+        count = ep.readout(ep.Anchor.from_data(ax_c, (0.05, 0.9)), 0, fmt=",d")
+        rule = ep.ruler(ax_img, (0, 0), (0, 0), "r = 0.00", head_scale=0)
+        knob = ep.ruler_readout(
+            curve_head, readout=count, value=lambda r, n: n,
+            ruler=rule, ruler_to=lambda r, n: (-r, 0.0),
+            ruler_text=lambda r, n: f"r = {r:.2f}",
+        )
+        knob.update(0.5)
+    """
+    if readout is None and ruler is None:
+        raise ValueError("ruler_readout needs a readout, a ruler, or both")
+    if ruler is not None and ruler_to is None:
+        raise ValueError("ruler_readout needs ruler_to with a ruler")
+    read = (lambda x, y: y) if value is None else value
+    if readout is not None:
+        for f in np.linspace(0.0, 1.0, _RESERVE_SAMPLES):
+            readout.show(read(*head.head(line, f)))
+    ruler_parts, fades, alphas = [], [], []
+    if ruler is not None:
+        ruler_parts = [*ruler.artists.get("lines", []), ruler.artists["arrow"]]
+        alphas = [a.get_alpha() for a in ruler_parts]
+        if "text" in ruler.artists:
+            fades.append((ruler.artists["text"], _TextFade(ruler.artists["text"])))
+    counter = [] if readout is None else list(readout.artists["text"])
+
+    def update(u, level=1.0):
+        u, level = _check_u(u), _check_u(level)
+        head.update(u)
+        x, y = head.head(line)
+        if readout is not None:
+            readout.show(read(x, y))
+            readout.update(1.0, level)
+        if ruler is not None:
+            label = None if ruler_text is None else ruler_text(x, y)
+            ruler.update(p1=ruler_to(x, y), text=label)
+            for artist, alpha in zip(ruler_parts, alphas, strict=True):
+                artist.set_alpha(alpha if level >= 1.0 else level * (alpha or 1.0))
+                artist.set_visible(level > 0.0)
+            for text, fade in fades:
+                fade.set(level)
+                text.set_visible(level > 0.0)
+
+    moving = [*head.contract.moves, *ruler_parts]
+    if ruler is not None and "text" in ruler.artists:
+        moving.append(ruler.artists["text"])
+    return PlotResult(
+        ax=head.ax,
+        artists={"lines": list(head.artists["lines"]), "text": counter},
+        update=update,
+        contract=MotionContract(moves=tuple(moving), rest=tuple(counter)),
     )
 
 
