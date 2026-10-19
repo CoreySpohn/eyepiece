@@ -294,7 +294,8 @@ picture. Inside the group's boxes, which for a run of curves can cover most
 of an axes, the pixel baseline is blind at the group's cuts, so there every
 artist outside the group is followed on its own and one that jumps on the
 cut is reported. What stays unseen is a change there that moves no artist's
-box, such as a line outside the group redrawn within its old extent. The call restores the figure's dpi and
+box, such as an artist outside the group that changes color or alpha in
+place, or a line redrawn within its old extent (a test marks this gap). The call restores the figure's dpi and
 canvas and is deterministic. It costs the draw time of each frame plus a
 little; the frames are kept only for `jump` and `dead`. `assert_motion` raises
 `MotionError` with the report.

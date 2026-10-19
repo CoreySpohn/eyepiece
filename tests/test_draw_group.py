@@ -169,3 +169,38 @@ def test_a_cut_inside_the_group_boxes_is_still_reported():
     jumps = [f for f in faults if f.kind == "jump"]
     assert [f.artist for f in jumps] == [inside]
     assert jumps[0].time == pytest.approx(cuts[3])
+
+
+def _recolored(where):
+    """A clip whose square in `where` axes turns from dark to light at a cut."""
+    fig, mark, times, cuts, _, marker = _run(glide=True)
+    host = mark.ax if where == "group" else fig.axes[1]
+    square = plt.Rectangle(
+        (0.4, 0.4), 0.2, 0.2, transform=host.transAxes, color="0.1", zorder=0
+    )
+    host.add_patch(square)
+
+    def at(t):
+        _poser(mark, marker=marker)(t)
+        square.set_color("0.9" if t >= cuts[3] - 1e-9 else "0.1")
+
+    faults = ept.motion_faults(
+        fig, at, times, moves=[mark, {"artists": [marker]}], steps=cuts
+    )
+    return [f for f in faults if f.kind == "jump"], cuts
+
+
+def test_a_recolor_outside_the_group_boxes_is_reported():
+    jumps, cuts = _recolored("side")
+    assert [f.time for f in jumps] == [pytest.approx(cuts[3])]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="known gap: inside the group's boxes the pixel baseline is masked at "
+    "a cut, and an artist that changes color or alpha without moving its box "
+    "is not followed on its own",
+)
+def test_a_recolor_inside_the_group_boxes_is_reported():
+    jumps, cuts = _recolored("group")
+    assert [f.time for f in jumps] == [pytest.approx(cuts[3])]
