@@ -193,15 +193,16 @@ vet every leader and link of the clip.
 ## Write: a label put down by hand
 
 `write` is for a label or a short equation that should arrive the way a hand
-would put it on a board. A ghost traces the outline of each glyph in reading
-order, each glyph starting before the one before it has finished, and then the
-fill fades in as the stroke fades out. The outlines come from the font the text
-itself uses, so the ghost sits exactly on the text, and mathtext works through
-the mathtext parser: every symbol is a glyph, and a fraction bar counts as one.
-The real text is hidden while the ghost is drawn and shown at ``u = 1``, so the
-last frame is the text as drawn. `draw` sets how much of the progress is spent
-tracing, `overlap` how early the fill starts, and `lag` how much the glyphs
-overlap one another.
+would put it on a board. A thin pen traces the outline of each glyph in reading
+order, then the glyph fills while the pen thins away; each glyph starts before
+the one before it has finished, so a short front of a few glyphs is in flux at
+once. The outlines come from the font the text itself uses, placed where the
+renderer lays the text out, so the ghost sits on the text, and mathtext works
+through the mathtext parser: every symbol is a glyph, and a fraction bar counts
+as one. The filled glyphs cross-fade into the real text after `draw` of the
+progress, so the last frame is the text as drawn. `lag` sets how much the
+glyphs overlap one another and `lw` the pen width.
+`equation(...).update(u, reveal="write")` writes an equation the same way.
 
 ```{code-cell} python
 import eyepiece.testing as ept

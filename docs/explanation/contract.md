@@ -257,6 +257,98 @@ within half a pixel, and a held frame's axes and spines are drawn unsnapped
 too. `record(snap=True)` restores the per-move snapping above, and with it
 the pixel-exact rest state.
 
+## Signature moves keep a motion contract
+
+Each signature move states what it lets move, what it must not touch, how it
+arrives at rest, and the rest state it ends in. The tests pin these
+contracts rather than the mechanism behind them.
+
+- `head_draw`: only the drawn prefix of each path changes. It grows from the
+  start of the path at the eased progress, and its tip moves at constant
+  speed in display arc length for a linear ease, whatever the vertex spacing
+  or axis scale. The last tenth of the drawn length brightens toward the text
+  ink with a dot on the tip; over the last eighth of the path the head
+  dissolves into the body color, so the move arrives at the plain line with
+  no step in color or width. The source line's data, style and markers are
+  never changed. At `u = 0` nothing is drawn and at `u = 1` the source draws
+  itself, so the rest frame equals the plain still (pixel-exact outside a
+  recording, within half a pixel inside an unsnapped one). Several lines
+  stagger with `lag=`, as Manim's `lag_ratio`.
+- `ruler_readout`: one knob drives a `head_draw` head, a ruler and a
+  counter. The ruler and the counter are read off the head after it is posed,
+  never interpolated beside it, so on every frame the counter shows the value
+  at the drawn tip and the ruler's far end sits at the quantity of the tip.
+  Only the head's prefix, the ruler's far end and the ruler's label move; the
+  ruler's near end and the counter's slots stay still (the slots are reserved
+  for every value along the path when it is bound). At `u = 1` the head is at
+  the path's end, the ruler at full length and the counter at the exact end
+  value: the still of the final quantities.
+- `Stage.weigh(..., lift_pt=)`: a label arrives attached to its mark. Only
+  the lifted texts and their boxes move, straight up into place, by at most
+  10 display pixels over the whole arrival, on the same eased presence as
+  their fade, so they land as they finish fading in. Their colors are their
+  own, the ink of the mark they name. At presence 1 every label is exactly in
+  place, so the rest state is the still. Labels and callouts only: a group
+  holding a data mark raises, because a data mark never drifts.
+- `write` and `equation(...).update(reveal="write")`: ink is laid down glyph
+  by glyph in reading order. Each glyph first traces its outline with a thin
+  pen (0.75 pt by default), then fills; progress is linear inside each
+  glyph's window, the easing lives only in when the windows open, and a
+  short front of four to seven glyphs is in flux at once. The filled glyphs
+  sit on the text as Agg lays it out (hinted advances), so the hand-off into
+  the real text is a cross-fade with no frame lighter than both its ends.
+  Nothing outside the text moves. At `u = 1` the text, or the equation as
+  made, draws itself: the rest state is the still.
+- `circumscribe(style="flash")`: a comet `time_width` of the perimeter long
+  passes once round the outline, from the top and clockwise, on the eased
+  progress. Its head runs from the start of the outline to `time_width` past
+  the end, so it grows out of the top, flies round at constant length, and
+  shrinks back into the top, leaving nothing behind. It tapers from full
+  width and opacity at the head to 40% width at the tail and adds no hue.
+  Only the comet moves; the target is never touched. At `u = 0` and `u = 1`
+  the frame is the still.
+- `indicate(shape="plateau")`: the pulse rises on the ease over the first
+  35% of the progress, holds its peak through the middle 30%, and falls
+  symmetrically, so the emphasis is read at its peak. Only widths, sizes and
+  the tint toward the text ink move, never positions or hue, and at both ends
+  the artist is exactly as it was. Lines, patches and collections swell
+  smoothly; a text swells in whole-pixel steps, because Agg hints and places
+  text on the pixel grid.
+- `click` and `Timeline.click`: a composite lands in one beat of 0.6 s on
+  screen at any tempo, followed by at least 1.5 s of stillness the tempo
+  never shortens. Over the beat the geometry's width swells by 1.55 on a
+  plateau (up over 35%, held over 30%, down over 35%), the end dot grows from
+  nothing over the first half, the number turns bold over a fifth of the beat
+  from the start of the plateau (a cross-fade to a bold copy in place, never
+  a step), and the ruler recedes from there to the end. Nothing changes
+  position and no hue is added. At `u = 0` the figure is as it was; at
+  `u = 1` it is the landed still, whatever path the knob took: the geometry
+  at its own width, the dot set, the number bold and the ruler gone.
+- `arrow(grow="scaled")`: the arrow grows as the drawn arrow scaled by `u`
+  about its tail (about its middle for the two-headed kinds): line width and
+  head size are `u` times their drawn values, so the shape is the same at
+  every `u`. The ends move along the line from tail to head and nothing else
+  moves. At `u = 0` nothing is drawn and at `u = 1` the arrow is exactly as
+  made.
+- `build_axes(style="staccato")`: the build is a sequence of small events.
+  The spine draws on over the first 40% of each axis's build, then each tick
+  appears in turn along the axis and then each number, every one eased in its
+  own window of equal length, so at most one of them is part way in at a
+  time; a tick outside the view limits or a number with no text takes no
+  window. The axis label is then written glyph by glyph by `write`. Nothing
+  moves and no limit changes; only furniture is faded, clipped or written.
+  The spine has a longer window than a tick because, in an equal one, it
+  swept across in a frame or two and the clip read as a jump. At `u = 1` the
+  axes are exactly as made.
+- `transform(fade_toward=True)`: glyphs with no counterpart fade while they
+  drift, at the same time as the matched glyphs move, instead of fading in
+  place before and after the motion. The leaving glyphs move together toward
+  the center of the arriving ones (of the whole target when none arrive) and
+  fade out; the arriving ones come from the center of the leaving ones and
+  fade in; each side moves rigidly and only the two sides may overlap. The
+  rest states are those of the plain transform: `eq_a` at `u = 0` and `eq_b`
+  at `u = 1`.
+
 ## Style resolves at call time
 
 Color, colormap, and savefig policy come from hwostyle, and every lookup
@@ -294,6 +386,20 @@ and probability to inference figures. `cmaps.high_dynamic_range` and
 `roles.envelope` are deprecated and warn, so new code uses `intensity` or
 `readouts`. When the installed hwostyle predates a role, eyepiece falls back to a
 plain matplotlib map for `statistic` and `pupil`, and nothing else.
+
+Video gets one derived variant of the dark roles. `eyepiece.use_video()`, after
+`hwostyle.use("dark")`, makes `role` and the motif colors resolve from the
+``"dark-video"`` table (`eyepiece.video_roles()`), and `motif_faults` accepts the
+mode by name. The table is computed from the dark roles, never picked: each role
+keeps its Oklab hue, its BT.709 chroma (the length of Cb and Cr in 8-bit code
+values, the part 4:2:0 encoding halves in resolution) is capped at 75, and a dim
+role is lifted to a contrast of 5 on black. `alert` keeps a cap of 85 and `disk`
+and `prior` a floor of 4.5, because at the plain limits they fall within the
+`motif_faults` fault distance of `posterior` and `positive` for a color-vision
+deficiency; the tests hold the variant to adding no motif fault or warning that
+the dark mode does not have. The palette cycle, the colormaps, the neutrals and
+the light and paper modes are unchanged, and nothing changes until
+`use_video` is called.
 
 A primitive called with no style applied at all still produces a sensible
 figure. Colormaps fall back to the light-mode definitions, and palette

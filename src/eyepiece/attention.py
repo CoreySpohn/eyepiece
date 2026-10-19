@@ -47,12 +47,18 @@ from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, PathPatch, Rectangle
 from matplotlib.path import Path
 from matplotlib.spines import Spine
-from matplotlib.text import Text
-from matplotlib.transforms import Affine2D, Bbox, IdentityTransform
+from matplotlib.text import Annotation, Text
+from matplotlib.transforms import (
+    Affine2D,
+    Bbox,
+    IdentityTransform,
+    ScaledTranslation,
+)
 
 from eyepiece import _style
 from eyepiece._motion import DEFAULT_EASE, _unsnapped
 from eyepiece._motion import _apply_ease as _ease
+from eyepiece._motion import stagger as _stagger
 from eyepiece._result import MosaicResult, MotionContract, PlotResult
 from eyepiece.emphasis import _own_background, _resolve_background
 
@@ -1535,6 +1541,50 @@ def _looks(target, background, seen, out):
                 _looks(part, background, seen, out)
 
 
+# The farthest an attached label drifts into place, in display pixels.
+_LIFT_MAX_PX = 10.0
+
+
+class _Lift:
+    """A label's place, offset straight down by a number of points and back."""
+
+    def __init__(self, text):
+        self.text = text
+        self.kind = "plain"
+        if isinstance(text, _AnchoredText):
+            self.kind = "callout"
+        elif isinstance(text, Annotation):
+            coords = text.anncoords
+            if coords not in ("offset points", "offset pixels"):
+                raise ValueError(
+                    f"lift_pt needs an annotation placed in offset points or "
+                    f"offset pixels, got textcoords={coords!r}"
+                )
+            self.kind = coords
+            self.base = tuple(text.xyann)
+        else:
+            self.base = text.get_transform()
+
+    def set(self, lift_pt):
+        """Place the label `lift_pt` points below its own place (0: in place)."""
+        text = self.text
+        if self.kind == "callout":
+            text._lift_pt = lift_pt
+        elif self.kind == "plain":
+            if lift_pt == 0.0:
+                text.set_transform(self.base)
+            else:
+                fig = text.get_figure(root=True)
+                shift = ScaledTranslation(0.0, -lift_pt / 72.0, fig.dpi_scale_trans)
+                text.set_transform(self.base + shift)
+        else:
+            dy = lift_pt
+            if self.kind == "offset pixels":
+                dy = lift_pt * text.get_figure(root=True).dpi / 72.0
+            text.xyann = (self.base[0], self.base[1] - dy)
+        text.stale = True
+
+
 class Stage:
     """Groups of drawn artists set to absolute levels: shown, dimmed, or absent.
 
@@ -1589,9 +1639,12 @@ class Stage:
             raise ValueError(f"dim must be in [0, 1], got {dim}")
         self.dim = dim
         self._looks = {}
+        self._items = {}
+        self._lifts = {}
         seen = set()
         for name, members in dict(groups).items():
             items = [members] if isinstance(members, Artist) else list(members)
+            self._items[name] = items
             looks = []
             for item in items:
                 _looks(item, background, seen, looks)
@@ -1617,7 +1670,22 @@ class Stage:
                 if isinstance(artist, Text) and not artist.get_text().strip():
                     continue
                 rest.append(artist)
-        self.contract = MotionContract(rest=tuple(rest))
+        self._rest = tuple(rest)
+
+    @property
+    def contract(self):
+        """Geometry the stage promises: still, but for the labels it lifts."""
+        lifted = {lift.text for lifts in self._lifts.values() for lift in lifts}
+        moving = set(lifted)
+        for text in lifted:
+            moving.update(getattr(text, "_pieces", ()))
+            patch = text.get_bbox_patch()
+            if patch is not None:
+                moving.add(patch)
+        return MotionContract(
+            moves=tuple(a for a in self._rest if a in moving),
+            rest=tuple(a for a in self._rest if a not in moving),
+        )
 
     @property
     def names(self):
@@ -1654,12 +1722,24 @@ class Stage:
                 out[name] = (0.0, 1.0)
         return out
 
-    def weigh(self, levels, *, ease=None):
+    def weigh(self, levels, *, ease=None, lift_pt=None):
         """Set the named groups to absolute levels; leave the others alone.
 
         A group not named keeps whatever its artists show, so a group can be
         handed back to another move (an axis build, say) while the stage
         sets the rest; `rest` returns every group to how it was made.
+
+        With `lift_pt`, a label arrives attached: each named group, which
+        must hold only labels and callouts (texts), also drifts up into its
+        place from `lift_pt` below it while it fades in, on the same eased
+        presence, so it lands with the fade. Motion contract: only the
+        lifted texts (with their boxes) move, straight up, by at most
+        10 display pixels over the whole arrival, and their
+        colors are their own, which for a label is the ink of the mark it
+        names; at presence 1 every lifted label is exactly in place, so the
+        rest state is the still. A call without `lift_pt` puts the named
+        groups' labels back in place. A data mark never drifts: a group
+        holding anything but texts raises.
 
         Args:
             levels: Mapping of group name to a presence in [0, 1], or to a
@@ -1674,11 +1754,20 @@ class Stage:
                 `eyepiece.ease` to its own progress. Pass the uneased
                 progress, never a value `weigh` or `ease` has already shaped,
                 or the curve is applied twice.
+            lift_pt: How far below its place, in points, a label starts its
+                arrival, or None for no drift. At the figure's dpi it may be
+                at most 10 pixels.
 
         Raises:
             KeyError: If a name is not a group of the stage.
-            ValueError: If ``ease`` is not an easing kind.
+            ValueError: If ``ease`` is not an easing kind, `lift_pt` is
+                negative or more than 10 pixels, or a lifted
+                group holds an artist that is not a text.
         """
+        if lift_pt is not None:
+            lift_pt = float(lift_pt)
+            if lift_pt < 0.0:
+                raise ValueError(f"lift_pt must be at least 0, got {lift_pt}")
         for name, level in levels.items():
             if name not in self._looks:
                 raise KeyError(f"no stage group {name!r}; groups are {self.names}")
@@ -1687,8 +1776,36 @@ class Stage:
             presence, contrast = (_check_u(v) for v in level)
             if ease is not None:
                 presence = min(1.0, max(0.0, _ease(presence, ease)))
+            if lift_pt is not None:
+                self._lift(name, lift_pt)  # validate before any write
             for look in self._looks[name]:
                 look.set(presence, contrast)
+            if lift_pt is not None:
+                for lift in self._lifts[name]:
+                    lift.set(lift_pt * (1.0 - presence))
+            else:
+                for lift in self._lifts.get(name, ()):
+                    lift.set(0.0)
+
+    def _lift(self, name, lift_pt):
+        """The lifts of a group of labels, made on first use and checked."""
+        if name not in self._lifts:
+            for item in self._items[name]:
+                if not isinstance(item, Text):
+                    raise ValueError(
+                        f"lift_pt moves labels and callouts only; stage group "
+                        f"{name!r} holds a {type(item).__name__}, and a data "
+                        f"mark never drifts"
+                    )
+            self._lifts[name] = [_Lift(item) for item in self._items[name]]
+        for lift in self._lifts[name]:
+            dpi = lift.text.get_figure(root=True).dpi
+            if lift_pt * dpi / 72.0 > _LIFT_MAX_PX + 1e-9:
+                raise ValueError(
+                    f"lift_pt={lift_pt} is {lift_pt * dpi / 72.0:.1f} px at "
+                    f"{dpi:g} dpi; a label drifts at most {_LIFT_MAX_PX:g} px"
+                )
+        return self._lifts[name]
 
     def set(self, shown=None, dimmed=(), *, start=None, u=1.0, ease=DEFAULT_EASE):
         """Go to a state, or part of the way there from another.
@@ -1769,12 +1886,21 @@ def _renderer(figure):
 
 _SPINES = {"x": ("bottom", "top"), "y": ("left", "right")}
 
+# Share of a staccato axis build the spine takes, before the tick and number
+# beats: an equal beat would sweep the spine across in a frame or two.
+_STACCATO_SPINE = 0.4
+
 
 class _AxisBuild:
     """The build of one axis of an axes: spine, ticks, tick labels, label."""
 
-    def __init__(self, ax, which, *, label, spine_end, tick_fade, label_lag):
+    def __init__(
+        self, ax, which, *, label, spine_end, tick_fade, label_lag, staccato=False
+    ):
         self.ax = ax
+        self.staccato = staccato
+        self._events = None
+        self._writer = None
         self.which = which
         self.axis = ax.xaxis if which == "x" else ax.yaxis
         self.spine_end = spine_end
@@ -1817,6 +1943,74 @@ class _AxisBuild:
             frac = to_axes.transform(np.array([point], dtype=float))[0]
         return float(frac[0] if self.which == "x" else frac[1])
 
+    def _beats(self):
+        """The staccato order: the spine, each tick, each number, along the axis.
+
+        Only what the axes draws counts: a tick outside the view limits, and
+        a number with no text, take no beat.
+        """
+        if self._events is None:
+            inside = sorted(
+                (
+                    (f, marks, texts, grid)
+                    for f, (_loc, marks, texts, grid) in (
+                        (self._fraction(t[0]), t) for t in self.ticks
+                    )
+                    if -1e-9 <= f <= 1.0 + 1e-9
+                ),
+                key=lambda event: event[0],
+            )
+            self._events = (
+                [self.spines]
+                + [[*marks, grid] for _f, marks, _texts, grid in inside]
+                + [
+                    texts
+                    for _f, _marks, texts, _grid in inside
+                    if any(t.artist.get_text() for t in texts)
+                ]
+            )
+        return self._events
+
+    def _write(self, progress):
+        """Write the axis label with `write`; False when it has no outline."""
+        if self._writer is None:
+            try:
+                self._writer = write(self.axis.label)
+            except ValueError:
+                self._writer = False
+        if self._writer:
+            self._writer.update(progress)
+        return bool(self._writer)
+
+    def _staccato(self, u):
+        """The spine draws on, then one beat per tick and number, each eased."""
+        beats = self._beats()
+        n = len(beats) - 1
+        g = min(1.0, u / self.spine_end)
+        line = _STACCATO_SPINE if n else 1.0
+        s = max(0.0, g - line) / (1.0 - line) * n if n else 0.0
+        for _loc, marks, texts, grid in self.ticks:
+            for part in (*marks, *texts, grid):
+                part.fade(0.0)
+        for i, parts in enumerate(beats):
+            if i == 0:
+                w = _ease(min(1.0, g / line))
+                big = 1e3
+                if self.which == "x":
+                    self._spine_clip.set_bounds(-big, -big, big + w, 3.0 * big)
+                else:
+                    self._spine_clip.set_bounds(-big, -big, 3.0 * big, big + w)
+                for part in parts:
+                    part.clip(self._spine_clip)
+                    part.fade(1.0 if w > 0.0 else 0.0)
+                continue
+            w = _ease(min(1.0, max(0.0, s - (i - 1))))
+            for part in parts:
+                part.fade(w)
+        self.label.restore()
+        if self.write_label:
+            self._write(max(0.0, (u - self.spine_end) / (1.0 - self.spine_end)))
+
     def update(self, u):
         if u >= 1.0:
             for part in [*self.spines, self.label]:
@@ -1824,6 +2018,11 @@ class _AxisBuild:
             for _loc, marks, texts, grid in self.ticks:
                 for part in (*marks, *texts, grid):
                     part.restore()
+            if self._writer:
+                self._writer.update(1.0)
+            return
+        if self.staccato:
+            self._staccato(u)
             return
         # The front runs from the origin to past the far end, so the last
         # tick label has finished fading in when the spine is drawn.
@@ -1865,7 +2064,9 @@ class _AxisBuild:
         self.label.clip(self._label_clip)
 
 
-def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
+def build_axes(
+    ax, *, axis="both", label=True, spine_end=0.7, title=False, style="sweep"
+):
     """Build an axes the way a teacher draws one: line, ticks, numbers, name.
 
     An explanation that introduces a quantity draws its axis in front of
@@ -1874,6 +2075,18 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
     just after, and the axis label writes on last, from its first letter.
     One axis at a time keeps one new quantity at a time; ``axis="both"``
     builds the horizontal axis and then the vertical one.
+
+    ``style="staccato"`` builds with the rhythm of Manim's ``Create(axes)``:
+    the spine draws on, then each tick appears in turn along the axis, then
+    each number, every one in its own eased window of equal length, so the
+    build is a sequence of small events rather than one sweep; the label is
+    then written by `write`, glyph by glyph.
+
+    Motion contract: nothing moves; the build only clips, fades and writes
+    in place. In the default sweep a tick appears when the spine's front
+    reaches it; in the staccato build the spine is complete before the
+    first tick. At ``u = 1``, the rest state, the axes are drawn exactly as
+    made.
 
     Nothing about the axes' limits, ticks, or layout changes: the build only
     clips and fades what the axes already draws, so it moves no data limit
@@ -1891,6 +2104,9 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
         title: Fade the center, left, and right axes titles in with the last
             axis label. False leaves the titles as made throughout. True
             uses the final label stage even when `label` is False.
+        style: ``"sweep"`` (one front along each axis, the label wiped on)
+            or ``"staccato"`` (one beat per spine, tick and number, the
+            label written with `write`).
 
     Returns:
         A `PlotResult` on `ax` with ``update(u)``, `u` from 0 (nothing of
@@ -1898,7 +2114,8 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
         The result is made in its rest state.
 
     Raises:
-        ValueError: If `axis` is unknown or `spine_end` is outside (0, 1).
+        ValueError: If `axis` or `style` is unknown or `spine_end` is outside
+            (0, 1).
 
     Example::
 
@@ -1912,6 +2129,8 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
     spine_end = float(spine_end)
     if not 0.0 < spine_end < 1.0:
         raise ValueError(f"spine_end must be in (0, 1), got {spine_end}")
+    if style not in ("sweep", "staccato"):
+        raise ValueError(f"unknown style: {style!r}; known: ['staccato', 'sweep']")
     which = ("x", "y") if axis == "both" else (axis,)
     parts = [
         _AxisBuild(
@@ -1921,6 +2140,7 @@ def build_axes(ax, *, axis="both", label=True, spine_end=0.7, title=False):
             spine_end=spine_end,
             tick_fade=0.25,
             label_lag=0.05,
+            staccato=style == "staccato",
         )
         for w in which
     ]
@@ -2236,18 +2456,35 @@ def _pulse_parts(artist):
     return [artist, *getattr(artist, "_pieces", ())]
 
 
-def indicate(artists, *, scale=1.15, strength=0.6):
+_PLATEAU_RISE = 0.35
+
+
+def _pulse(u, shape):
+    """Pulse strength at progress `u`: 0 at both ends, 1 at the peak."""
+    if u <= 0.0 or u >= 1.0:
+        return 0.0
+    if shape == "plateau":
+        # Up on the ease over the first `_PLATEAU_RISE`, hold, and back down.
+        edge = min(u, 1.0 - u) / _PLATEAU_RISE
+        return 1.0 if edge >= 1.0 else float(_ease(edge, DEFAULT_EASE))
+    return math.sin(math.pi * u) ** 2
+
+
+def indicate(artists, *, scale=1.15, strength=0.6, shape="sine"):
     """Say "this one": swell an artist and tint it toward the text color, then return.
 
     A pulse is a transient emphasis. For its duration the artist's line
     width, marker size or font size grows by `scale` and its colors move
     toward the text color by `strength`, both peaking half way through, and
-    then everything returns. It adds no hue: a tint toward the text color is
-    a darker mark on a light figure and a lighter one on a dark figure, so
-    the pulse reads on either. It works on lines, texts (a callout or a
-    label with a backing box swells with its box), patches, and collections
-    (a colormapped collection swells only, since its colors come from its
-    data).
+    then everything returns. ``shape="plateau"`` holds the peak instead: the
+    pulse rises on the ease over the first 35% of the progress, holds full
+    strength through the middle 30%, and falls over the last 35%, so the
+    emphasis is read at its peak rather than passed through. It adds no
+    hue: a tint toward the text color is a darker mark on a light figure and
+    a lighter one on a dark figure, so the pulse reads on either. It works on
+    lines, texts (a callout or a label with a backing box swells with its
+    box), patches, and collections (a colormapped collection swells only,
+    since its colors come from its data).
 
     ``update(u)`` is absolute. At ``u = 0`` and ``u = 1``, the rest state
     in which the move is made, the artist is exactly as it was and the frame
@@ -2262,6 +2499,11 @@ def indicate(artists, *, scale=1.15, strength=0.6):
     is set after the pulse in a frame it overwrites the tint, so the pulse is
     seen only in size. Do not run two pulses on one artist at once.
 
+    A pulsed text swells in whole-pixel steps: the Agg renderer hints a text
+    at its size and places it on the pixel grid, so its extent moves a pixel
+    or two every other frame and `motion_faults` reports the steps as jumps.
+    Lines, patches and collections swell smoothly.
+
     Args:
         artists: An artist, or an iterable of them (`Line2D`, `Text`,
             `Patch`, `Collection`).
@@ -2270,6 +2512,8 @@ def indicate(artists, *, scale=1.15, strength=0.6):
             emphasis without moving the layout.
         strength: Peak fraction of the way from the artist's color to the
             text color, in [0, 1].
+        shape: ``"sine"``, a ``sin^2`` swell peaking half way, or
+            ``"plateau"``, which holds its peak through the middle.
 
     Returns:
         A `PlotResult` on the first artist's axes (None if it has none) with
@@ -2279,8 +2523,8 @@ def indicate(artists, *, scale=1.15, strength=0.6):
 
     Raises:
         TypeError: If an artist is not a line, text, patch, or collection.
-        ValueError: If `scale` is below 1, `strength` is outside [0, 1], or
-            there is nothing to pulse.
+        ValueError: If `scale` is below 1, `strength` is outside [0, 1],
+            `shape` is unknown, or there is nothing to pulse.
 
     Example::
 
@@ -2294,6 +2538,8 @@ def indicate(artists, *, scale=1.15, strength=0.6):
         raise ValueError(f"indicate scale must be at least 1, got {scale}")
     if not 0.0 <= strength <= 1.0:
         raise ValueError(f"indicate strength must be in [0, 1], got {strength}")
+    if shape not in ("sine", "plateau"):
+        raise ValueError(f"unknown shape: {shape!r}; known: ['sine', 'plateau']")
     items = [artists] if isinstance(artists, Artist) else list(artists)
     if not items:
         raise ValueError("indicate has no artist to pulse")
@@ -2319,7 +2565,7 @@ def indicate(artists, *, scale=1.15, strength=0.6):
 
     def update(u):
         u = _check_u(u)
-        k = 0.0 if u <= 0.0 or u >= 1.0 else math.sin(math.pi * u) ** 2
+        k = _pulse(u, shape)
         for channel in channels:
             channel.apply(k)
 
@@ -2329,6 +2575,8 @@ def indicate(artists, *, scale=1.15, strength=0.6):
 # Circumscribe
 
 _ELLIPSE_STEPS = 160
+_COMET_STEPS = 8
+_COMET_TAIL_LW = 0.4
 
 
 def _cut(vertices, fraction):
@@ -2455,6 +2703,244 @@ def draw_on(lines, *, ease="linear") -> PlotResult:
     )
 
 
+# The head of `head_draw`: the last tenth of the drawn length, in steps of
+# color from the body toward the text ink, and how much of the remaining
+# path it takes to dissolve into the body color.
+_HEAD_FRACTION = 0.10
+_HEAD_STEPS = 4
+_HEAD_SWELL = 0.3
+_HEAD_DISSOLVE = 0.12
+_HEAD_DOT = 2.2
+
+
+def _arc_slice(parts, lengths, lo, hi):
+    """The stretch of a multi-part polyline from length `lo` to `hi`, NaN-split."""
+    shown, start = [], 0.0
+    for points, length in zip(parts, lengths, strict=True):
+        a, b = max(lo, start), min(hi, start + length)
+        if b > a and length > 0.0:
+            steps = np.hypot(*np.diff(points, axis=0).T)
+            done = np.concatenate([[0.0], np.cumsum(steps)])
+            ends = [
+                np.array([np.interp(s, done, points[:, i]) for i in (0, 1)])
+                for s in (a - start, b - start)
+            ]
+            inside = points[(done > a - start) & (done < b - start)]
+            if shown:
+                shown.append(np.full((1, 2), np.nan))
+            shown.append(np.vstack([ends[0], inside, ends[1]]))
+        start += length
+    return np.vstack(shown) if shown else np.empty((0, 2))
+
+
+class _HeadDraw(_DrawOn):
+    """A line's current path cut by arc length, with a bright head on the cut."""
+
+    def __init__(self, source, head_color):
+        super().__init__(source)
+        self._head_color = np.asarray(to_rgb(head_color))
+        self._level = 1.0
+
+    def glow(self):
+        """How present the head is: 1 while drawing, 0 as the path completes."""
+        f = self._fraction
+        if f <= 0.0:
+            return 0.0
+        return float(_ease(min(1.0, (1.0 - f) / _HEAD_DISSOLVE), DEFAULT_EASE))
+
+    def draw(self, renderer):
+        """Draw the body, the head steps and the tip dot from the current path."""
+        if not self.get_visible() or self._fraction <= 0.0:
+            return
+        source = self._source
+        path = source.get_transform().transform_path(source.get_path())
+        parts = [points for points, _ in _line_parts(path.vertices, False)]
+        lengths = [float(np.hypot(*np.diff(p, axis=0).T).sum()) for p in parts]
+        total = sum(lengths)
+        reach = self._fraction * total
+        glow = self.glow()
+        head = _HEAD_FRACTION * total * glow
+        self.update_from(source)
+        self.set_visible(True)  # update_from copied the hidden source's flag
+        self.set_transform(IdentityTransform())
+        self.set_drawstyle("default")
+        self.set_antialiased(source.get_antialiased())
+        self.set_snap(source.get_snap())
+        self.set_label("_nolegend_")
+        self.set_marker("None")
+        base = to_rgba(source.get_color(), source.get_alpha())
+        lw = source.get_linewidth()
+        body = _arc_slice(parts, lengths, 0.0, max(0.0, reach - head))
+        self.set_data(body[:, 0], body[:, 1])
+        Line2D.draw(self, renderer)
+        if glow <= 0.0:
+            return
+        capstyle, joinstyle = self.get_solid_capstyle(), self.get_solid_joinstyle()
+        self.set_solid_capstyle("round")
+        self.set_solid_joinstyle("round")
+        self.set_linestyle("-")
+        for j in range(_HEAD_STEPS):
+            lo = reach - head * (_HEAD_STEPS - j) / _HEAD_STEPS
+            hi = reach - head * (_HEAD_STEPS - 1 - j) / _HEAD_STEPS
+            piece = _arc_slice(parts, lengths, max(0.0, lo), hi)
+            if len(piece) < 2:
+                continue
+            m = (j + 1) / _HEAD_STEPS * glow
+            rgb = np.asarray(base[:3]) * (1.0 - m) + self._head_color * m
+            self.set_color((*rgb, base[3]))
+            self.set_linewidth(lw * (1.0 + _HEAD_SWELL * m))
+            self.set_data(piece[:, 0], piece[:, 1])
+            Line2D.draw(self, renderer)
+        tip = _arc_slice(parts, lengths, 0.0, reach)
+        if len(tip):
+            self.set_linestyle("None")
+            self.set_marker("o")
+            self.set_markersize(lw * _HEAD_DOT)
+            self.set_markeredgecolor("none")
+            self.set_markerfacecolor((*self._head_color, base[3] * glow))
+            self.set_data(tip[-1:, 0], tip[-1:, 1])
+            Line2D.draw(self, renderer)
+        self.set_solid_capstyle(capstyle)
+        self.set_solid_joinstyle(joinstyle)
+
+
+@dataclass(frozen=True, eq=False)
+class _HeadDrawResult(PlotResult):
+    """A `PlotResult` that also reports where each head is."""
+
+    head: Callable | None = None
+
+
+def _head_point(line, fraction):
+    """The data point `fraction` of the way along a line's display arc length."""
+    transform = line.get_transform()
+    path = transform.transform_path(line.get_path())
+    parts = [points for points, _ in _line_parts(path.vertices, False)]
+    if not parts:
+        return (math.nan, math.nan)
+    lengths = [float(np.hypot(*np.diff(p, axis=0).T).sum()) for p in parts]
+    reached = _arc_slice(parts, lengths, 0.0, fraction * sum(lengths))
+    point = reached[-1] if len(reached) else parts[0][0]
+    x, y = transform.inverted().transform(point)
+    return (float(x), float(y))
+
+
+def head_draw(lines, *, ease=DEFAULT_EASE, lag=0.0, head_color=None) -> PlotResult:
+    """Draw lines on at constant arc-length speed with a bright head on the tip.
+
+    The signature reveal of a path. The drawn length grows at one speed in
+    display pixels along the path, whatever its vertex spacing, its segment
+    lengths or its axes scales, so a curve sampled densely in one place and
+    sparsely in another, or a rectangle with a short side, draws evenly. The
+    last tenth of the drawn length brightens in four steps from the line's
+    own color toward the text ink and swells slightly, and a dot in the text
+    ink rides the tip. Over the last part of the path the head dissolves into
+    the body color, so the move arrives at the plain line with no change of
+    color or width at the end.
+
+    Motion contract: only the drawn prefix of each path changes; it grows
+    monotonically from the start of the path, at the eased progress, and its
+    tip moves along the path at constant speed in arc length for a linear
+    ease. The source line's data, transform, style and markers are never
+    changed. The head and the tip dot exist only strictly between the ends;
+    at ``u = 0`` nothing is drawn, and at ``u = 1``, the rest state, the
+    source line draws itself, so the rest frame equals the plain still
+    (pixel-identical outside a recording, within half a pixel inside an
+    unsnapped one). The head color and width are continuous into rest: they
+    return to the body's own as the path completes. Markers and dashes of
+    the source appear only at rest; while drawing the path is solid. The
+    head and the dot are clipped like their line, so a path that starts on
+    the axes edge shows half a dot there; leave a margin, and
+    `eyepiece.testing.motion_faults` reports the cut as ``outside``.
+
+    With several lines, ``lag`` staggers them as Manim's ``lag_ratio``
+    does: each line takes a window of ``1 / (1 + (n - 1) lag)`` of the beat
+    and the next starts ``lag`` of a window after it, so 0 draws all of them
+    together and 1 draws them one after another. The ease applies inside
+    each line's window.
+
+    Args:
+        lines: One `Line2D` or an iterable of lines attached to axes.
+        ease: An easing kind for `eyepiece.ease`, or a callable mapping
+            progress to eased progress. The default is the library's
+            reveal ease.
+        lag: Fraction of a line's window before the next line starts, in
+            [0, 1].
+        head_color: Color of the head and the tip dot. None uses the text
+            color, read now.
+
+    Returns:
+        A `PlotResult` on the first line's axes, with the source lines and
+        their drawing copies in ``artists["lines"]``, the copies declared in
+        ``contract.moves``, and ``update(u, level=1.0)``. Progress and level
+        are clipped to [0, 1]; ``level`` multiplies opacity only. Its
+        ``head(i=0, fraction=None)`` returns line `i`'s head as a data point
+        ``(x, y)``, at the fraction last set by ``update`` (the path end
+        before any update) or at `fraction`, measured on the figure as it is
+        now; a readout that reads it agrees with the drawn tip.
+
+    Raises:
+        TypeError: If an item is not a `Line2D`.
+        ValueError: If there are no lines, a line has no axes, a line uses a
+            stepped drawstyle, or `lag` is outside [0, 1].
+
+    Example::
+
+        reveal = ep.head_draw([ring, curve], lag=0.4)
+        for u in np.linspace(0.0, 1.0, 84):
+            reveal.update(u)
+            rec.frame()
+    """
+    lag = float(lag)
+    if not 0.0 <= lag <= 1.0:
+        raise ValueError(f"head_draw lag must be in [0, 1], got {lag}")
+    items = [lines] if isinstance(lines, Line2D) else list(lines)
+    if not items:
+        raise ValueError("head_draw needs at least one line")
+    for line in items:
+        if not isinstance(line, Line2D):
+            raise TypeError(f"head_draw needs a Line2D, got {type(line).__name__}")
+        if line.axes is None:
+            raise ValueError("head_draw needs lines attached to axes")
+        if line.get_drawstyle() != "default":
+            raise ValueError("head_draw does not support stepped drawstyles")
+    ink = _style.neutral(1.0) if head_color is None else head_color
+    copies = [_HeadDraw(line, ink) for line in items]
+    states = [(line.get_visible(), line.get_alpha()) for line in items]
+    for line, copy in zip(items, copies, strict=True):
+        line.axes.add_artist(copy)
+    n = len(items)
+    span = 1.0 / (1.0 + (n - 1) * lag)
+    ranks = np.linspace(0.0, 1.0, n) if n > 1 else np.zeros(1)
+
+    def update(u, level=1.0):
+        u, level = _check_u(u), _check_u(level)
+        local = _stagger(u, ranks, span=span) if n > 1 else np.array([u])
+        for line, copy, (visible, alpha), v in zip(
+            items, copies, states, local, strict=True
+        ):
+            v = float(v)
+            fraction = v if v in (0.0, 1.0) else _check_u(_ease(v, ease))
+            base = 1.0 if alpha is None else alpha
+            line.set_alpha(alpha if level == 1.0 else level * base)
+            line.set_visible(visible and v >= 1.0)
+            copy._fraction = fraction
+            copy.set_zorder(line.get_zorder())
+            copy.set_visible(visible and 0.0 < fraction and v < 1.0)
+
+    def head(i=0, fraction=None):
+        f = copies[i]._fraction if fraction is None else _check_u(fraction)
+        return _head_point(items[i], f)
+
+    return _HeadDrawResult(
+        ax=items[0].axes,
+        artists={"lines": [*items, *copies]},
+        update=update,
+        contract=MotionContract(moves=tuple(copies)),
+        head=head,
+    )
+
+
 class _Outline(Line2D):
     """A closed outline around a target's box that draws on around its perimeter."""
 
@@ -2464,6 +2950,7 @@ class _Outline(Line2D):
         self._shape = shape
         self._pad_pt = float(pad_pt)
         self._fraction = 1.0
+        self._window = None
 
     def outline(self, renderer=None):
         """The whole outline, closed, in display pixels, as the figure is now."""
@@ -2484,11 +2971,40 @@ class _Outline(Line2D):
 
     def draw(self, renderer):
         """Draw the first part of the outline, from the top, clockwise."""
-        if not self.get_visible() or self._fraction <= 0.0:
+        if not self.get_visible():
+            return
+        if self._window is not None:
+            self._draw_comet(renderer)
+            return
+        if self._fraction <= 0.0:
             return
         points = _cut(self.outline(renderer), self._fraction)
         self.set_data(points[:, 0], points[:, 1])
         super().draw(renderer)
+
+    def _draw_comet(self, renderer):
+        """Draw the window of the outline as a comet that tapers to its tail."""
+        points = self.outline(renderer)
+        length = float(np.hypot(*np.diff(points, axis=0).T).sum())
+        lo, hi = self._window
+        if hi <= lo or length <= 0.0:
+            return
+        lw, alpha = self.get_linewidth(), self.get_alpha()
+        for j in range(_COMET_STEPS):
+            # Step j covers its share of the full comet, tail (j = 0) to head.
+            a = hi - (hi - lo) * (_COMET_STEPS - j) / _COMET_STEPS
+            b = hi - (hi - lo) * (_COMET_STEPS - 1 - j) / _COMET_STEPS
+            a, b = max(0.0, a), min(1.0, b)
+            if b <= a:
+                continue
+            piece = _arc_slice([points], [length], a * length, b * length)
+            m = (j + 1) / _COMET_STEPS
+            self.set_linewidth(lw * (_COMET_TAIL_LW + (1.0 - _COMET_TAIL_LW) * m))
+            self.set_alpha((1.0 if alpha is None else alpha) * m)
+            self.set_data(piece[:, 0], piece[:, 1])
+            super().draw(renderer)
+        self.set_linewidth(lw)
+        self.set_alpha(alpha)
 
 
 def circumscribe(
@@ -2502,6 +3018,8 @@ def circumscribe(
     ease=DEFAULT_EASE,
     zorder=21,
     line_kw=None,
+    style="trace",
+    time_width=0.3,
 ):
     """Draw an outline around a thing, then let it go.
 
@@ -2516,6 +3034,16 @@ def circumscribe(
     draws on, and over the rest it fades. At ``u = 0`` and ``u = 1``, the
     rest state, nothing is drawn and the frame is pixel-identical to the
     frame without the move.
+
+    ``style="flash"`` passes a comet around the outline instead and leaves
+    nothing behind, as Manim's `ShowPassingFlash`. A window `time_width` of
+    the perimeter long runs from the top, clockwise, from empty to empty:
+    its head moves from the start of the outline to `time_width` past its
+    end on the eased progress, so the comet grows out of the top, flies
+    round at full length, and shrinks back into the top. It tapers from the
+    full width and opacity at its head to 40% width and nearly clear at its
+    tail. `draw` is not used. Only the comet moves; the target is never
+    touched, and at ``u = 0`` and ``u = 1`` the frame is the still.
 
     Args:
         target: The thing to outline: an `Anchor` (a data point, or a part
@@ -2533,6 +3061,10 @@ def circumscribe(
             to the fade.
         zorder: Drawing order among the figure's children.
         line_kw: Extra kwargs for the `Line2D`, applied last.
+        style: ``"trace"`` draws the outline on and fades it; ``"flash"``
+            passes a comet around it.
+        time_width: Length of the flash comet, a fraction of the perimeter
+            in (0, 1]. Used by ``style="flash"`` only.
 
     Returns:
         A `PlotResult` on the target's axes (None for a target drawn on the
@@ -2541,7 +3073,8 @@ def circumscribe(
 
     Raises:
         TypeError: If `target` is neither an `Anchor` nor an artist.
-        ValueError: If `shape` is unknown or `draw` is outside (0, 1).
+        ValueError: If `shape` or `style` is unknown, `draw` is outside
+            (0, 1), or `time_width` is outside (0, 1].
 
     Example::
 
@@ -2555,6 +3088,11 @@ def circumscribe(
     draw = float(draw)
     if not 0.0 < draw < 1.0:
         raise ValueError(f"circumscribe draw must be in (0, 1), got {draw}")
+    if style not in ("trace", "flash"):
+        raise ValueError(f"unknown style: {style!r}; known: ['trace', 'flash']")
+    time_width = float(time_width)
+    if not 0.0 < time_width <= 1.0:
+        raise ValueError(f"circumscribe time_width must be in (0, 1], got {time_width}")
     target = _as_anchor(target, "target")
     rc = matplotlib.rcParams
     kw = {
@@ -2577,6 +3115,10 @@ def circumscribe(
             line.set_visible(False)
             return
         line.set_visible(True)
+        if style == "flash":
+            head = (1.0 + time_width) * min(1.0, max(0.0, _ease(u, ease)))
+            line._window = (head - time_width, head)
+            return
         if u < draw:
             line._fraction = min(1.0, max(0.0, _ease(u / draw, ease)))
             line.set_alpha(alpha)
@@ -2990,7 +3532,8 @@ def morph(
 
 # Write
 
-_WRITE_LW_EM = 0.06
+# The pen of a write, in points: thin, about a pixel on a talk frame.
+_WRITE_PEN_PT = 0.75
 
 
 def _glyph_outlines(text, renderer):
@@ -3024,6 +3567,7 @@ def _glyph_outlines(text, renderer):
             glyph_info, glyph_map, rects = text_to_path.get_glyphs_with_font(
                 font, clean
             )
+            glyph_info = _hinted_advances(glyph_info, clean, prop, figure.dpi)
         moves = (
             Affine2D()
             .scale(size_px / text_to_path.FONT_SCALE)
@@ -3048,6 +3592,37 @@ def _glyph_outlines(text, renderer):
     return glyphs
 
 
+def _hinted_advances(glyph_info, string, prop, dpi):
+    """Glyph x positions as the Agg renderer lays the string out.
+
+    `text_to_path` lays glyphs out unhinted at a reference size, while Agg
+    draws text with hinted advances at the real size, so unhinted outlines
+    drift from the drawn text by a fraction of a pixel per glyph. The
+    outlines keep their shapes and take Agg's positions, so a filled glyph
+    sits on the text it hands over to.
+    """
+    from matplotlib.backends.backend_agg import get_hinting_flag
+    from matplotlib.font_manager import fontManager, get_font
+    from matplotlib.textpath import text_to_path
+
+    font = get_font(fontManager._find_fonts_by_props(prop))
+    font.clear()
+    size = prop.get_size_in_points()
+    font.set_size(size, dpi)
+    try:
+        items = list(font._layout(string, get_hinting_flag()))
+    except (AttributeError, TypeError):
+        return glyph_info
+    if len(items) != len(glyph_info):
+        return glyph_info
+    # Positions in pixels at `dpi`, back to the reference size the outlines use.
+    to_ref = text_to_path.FONT_SCALE / (size * dpi / 72.0)
+    return [
+        (glyph_id, item.x * to_ref, gy, scale)
+        for (glyph_id, _, gy, scale), item in zip(glyph_info, items, strict=True)
+    ]
+
+
 def _left_edge(item):
     verts, codes = item
     return float(verts[np.asarray(codes) != Path.CLOSEPOLY, 0].min())
@@ -3061,14 +3636,101 @@ def _ring(vertices, closed):
     return np.vstack([vertices, vertices[:1]]) if closed else vertices
 
 
-class _GhostWrite(Artist):
-    """The ghost of a write: glyph outlines traced, then the text faded in."""
+def _write_lag(n, lag):
+    """Manim's Write lag for `n` glyphs, unless one is given."""
+    return min(4.0 / max(1, n), 0.2) if lag is None else float(lag)
 
-    def __init__(self, text, *, draw, overlap, lag, lw, ease):
+
+def _write_windows(g, n, lag):
+    """Per-glyph ``(trace, fill)`` at writing progress `g`, linear in each window.
+
+    Glyph `i` has a window of ``span = 1 / (1 + (n - 1) lag)`` of the writing,
+    starting ``i lag span`` in. Over the first half of its window its outline
+    is traced; over the second half it fills while the pen thins away.
+    """
+    span = 1.0 / (1.0 + (n - 1) * lag)
+    w = np.clip((g - np.arange(n) * lag * span) / span, 0.0, 1.0)
+    if g >= 1.0:  # the last window closes exactly, so the rest takes no alpha
+        w = np.ones(n)
+    return np.minimum(1.0, 2.0 * w), np.clip(2.0 * w - 1.0, 0.0, 1.0)
+
+
+def _traced(glyph, length, fraction):
+    """The first `fraction` of a glyph's outline, contour after contour."""
+    reach, lines = fraction * length, []
+    for vertices, closed in glyph:
+        ring = _ring(vertices, closed)
+        seg = float(np.hypot(*np.diff(ring, axis=0).T).sum())
+        if reach > 0.0 and seg > 0.0:
+            lines.append(_cut(ring, min(1.0, reach / seg)))
+        reach = max(0.0, reach - seg)
+    return lines
+
+
+def _lines_path(lines):
+    verts, codes = [], []
+    for line in lines:
+        verts.append(line)
+        codes += [Path.MOVETO, *[Path.LINETO] * (len(line) - 1)]
+    return Path(np.vstack(verts), codes)
+
+
+def _glyph_path(glyph):
+    """A glyph's contours as one fillable path (holes by winding)."""
+    verts, codes = [], []
+    for vertices, closed in glyph:
+        verts.append(vertices)
+        codes += [Path.MOVETO, *[Path.LINETO] * (len(vertices) - 1)]
+        if closed:
+            verts.append(vertices[:1])
+            codes.append(Path.CLOSEPOLY)
+    return Path(np.vstack(verts), codes)
+
+
+class _GlyphPen(Artist):
+    """The pen of a write: each glyph's traced outline at its own width.
+
+    `source(renderer)` returns ``[(lines, lw, rgba), ...]`` as the figure is
+    when it is drawn.
+    """
+
+    def __init__(self, figure, zorder, source):
+        super().__init__()
+        self._source = source
+        self._patch = PathPatch(
+            Path(np.zeros((1, 2)), [Path.MOVETO]),
+            fill=False,
+            capstyle="round",
+            joinstyle="round",
+            transform=IdentityTransform(),
+            clip_on=False,
+        )
+        self.set_zorder(zorder)
+        self.set_in_layout(False)
+        figure.add_artist(self)
+
+    def draw(self, renderer):
+        """Stroke every glyph's traced outline at its width and color."""
+        if not self.get_visible():
+            return
+        patch = self._patch
+        patch.set_figure(self.get_figure(root=False))
+        for lines, lw, rgba in self._source(renderer):
+            if not lines or lw <= 0.0 or rgba[3] <= 0.0:
+                continue
+            patch.set_path(_lines_path(lines))
+            patch.set_linewidth(lw)
+            patch.set_edgecolor(rgba)
+            patch.draw(renderer)
+
+
+class _GhostWrite(Artist):
+    """The ghost of a write: each glyph traced with a thin pen, then filled."""
+
+    def __init__(self, text, *, draw, lag, lw, ease):
         super().__init__()
         self._text = text
         self._draw = draw
-        self._overlap = overlap
         self._lag = lag
         self._lw = lw
         self._ease = ease
@@ -3084,6 +3746,9 @@ class _GhostWrite(Artist):
             capstyle="round",
             joinstyle="round",
             **kw,
+        )
+        self._fill = PathPatch(
+            Path(np.zeros((1, 2)), [Path.MOVETO]), edgecolor="none", lw=0.0, **kw
         )
 
     def glyphs(self, renderer=None):
@@ -3110,33 +3775,27 @@ class _GhostWrite(Artist):
             self._key = key
         return self._glyphs
 
-    def times(self, u):
-        """``(traced, fill)`` at progress `u`.
+    def lag(self):
+        """The lag between glyph starts, as a fraction of a glyph's window."""
+        n = len(self._glyphs) if self._glyphs is not None else 1
+        return _write_lag(n, self._lag)
 
-        `traced` holds the eased fraction of each glyph's outline that is
-        drawn, in reading order; `fill` is the eased opacity of the fill.
+    def times(self, u):
+        """``(traced, fill)`` at progress `u`, one value per glyph in reading order.
+
+        `traced` is the fraction of each glyph's outline drawn and `fill` its
+        fill opacity; both are linear inside the glyph's own window.
         """
         u = _check_u(u)
         n = len(self._glyphs) if self._glyphs is not None else 1
-        span = 1.0 / (1.0 + (n - 1) * self._lag)
-        g = min(1.0, u / self._draw)
-        traced = [
-            min(
-                1.0,
-                max(
-                    0.0,
-                    _ease(
-                        min(1.0, max(0.0, (g - i * self._lag * span) / span)),
-                        self._ease,
-                    ),
-                ),
-            )
-            for i in range(n)
-        ]
-        start = self._draw - self._overlap
-        fill = _ease(min(1.0, max(0.0, (u - start) / (1.0 - start))), self._ease)
-        fill = min(1.0, max(0.0, fill))
-        return traced, fill
+        g = min(1.0, max(0.0, _ease(min(1.0, u / self._draw), self._ease)))
+        trace, fill = _write_windows(g, n, self.lag())
+        return [float(t) for t in trace], [float(f) for f in fill]
+
+    def handoff(self, u):
+        """How far the glyph fills have handed over to the text itself, 0 to 1."""
+        u = _check_u(u)
+        return min(1.0, max(0.0, (u - self._draw) / (1.0 - self._draw)))
 
     def strokes(self, u, renderer=None):
         """The traced part of every glyph at progress `u`, in display pixels.
@@ -3147,111 +3806,107 @@ class _GhostWrite(Artist):
         """
         glyphs = self.glyphs(renderer)
         traced, _ = self.times(u)
-        out = []
-        for glyph, length, frac in zip(glyphs, self._lengths, traced, strict=True):
-            reach, lines = frac * length, []
-            for vertices, closed in glyph:
-                ring = _ring(vertices, closed)
-                seg = float(np.hypot(*np.diff(ring, axis=0).T).sum())
-                if reach > 0.0 and seg > 0.0:
-                    lines.append(_cut(ring, min(1.0, reach / seg)))
-                reach = max(0.0, reach - seg)
-            out.append(lines)
-        return out
+        return [
+            _traced(glyph, length, frac)
+            for glyph, length, frac in zip(glyphs, self._lengths, traced, strict=True)
+        ]
 
     def draw(self, renderer):
-        """Trace and fill the glyphs at the current progress."""
+        """Trace and fill the glyphs, then hand over to the text at the end."""
         if not self.get_visible():
             return
         text = self._text
         color = to_rgb(text.get_color())
         alpha = 1.0 if text.get_alpha() is None else float(text.get_alpha())
         alpha *= self._level
-        _, fill = self.times(self._u)
-        verts, codes = [], []
-        for lines in self.strokes(self._u, renderer):
-            for line in lines:
-                verts.append(line)
-                codes += [Path.MOVETO, *[Path.LINETO] * (len(line) - 1)]
+        glyphs = self.glyphs(renderer)
+        traced, fill = self.times(self._u)
+        h = self.handoff(self._u)
+        # The text comes in under the finished glyphs before they leave, so
+        # no frame shows a gap between the two rasterizations.
+        text_level, glyph_level = min(1.0, 2.0 * h), min(1.0, 2.0 * (1.0 - h))
         figure = _root_figure(text)
-        size = text.get_fontproperties().get_size_in_points()
-        lw = _WRITE_LW_EM * size if self._lw is None else self._lw
-        for patch in (self._stroke,):
+        for patch in (self._stroke, self._fill):
             patch.set_figure(figure)
             patch.set_clip_box(text.get_clip_box())
             patch.set_clip_path(text.get_clip_path())
             patch.set_clip_on(text.get_clip_on())
-        if verts:
-            self._stroke.set_path(Path(np.vstack(verts), codes))
-            self._stroke.set_edgecolor((*color, alpha * (1.0 - fill)))
-            self._stroke.set_linewidth(lw)
-            self._stroke.draw(renderer)
-        if fill > 0.0:
-            # The text itself fades in, so the last frames are its own
-            # rasterization. Its alpha and visibility are restored exactly.
+        if text_level > 0.0:
             was_alpha, was_visible = text.get_alpha(), text.get_visible()
-            text.set_alpha(alpha * fill)
+            text.set_alpha(alpha * text_level)
             text.set_visible(True)
             try:
                 text.draw(renderer)
             finally:
                 text.set_alpha(was_alpha)
                 text.set_visible(was_visible)
+        pen = _WRITE_PEN_PT if self._lw is None else self._lw
+        for glyph, length, t, f in zip(
+            glyphs, self._lengths, traced, fill, strict=True
+        ):
+            if f > 0.0:
+                self._fill.set_path(_glyph_path(glyph))
+                self._fill.set_facecolor((*color, alpha * f * glyph_level))
+                self._fill.draw(renderer)
+            if t > 0.0 and f < 1.0:
+                self._stroke.set_path(_lines_path(_traced(glyph, length, t)))
+                self._stroke.set_linewidth(pen * (1.0 - f))
+                self._stroke.set_edgecolor((*color, alpha * glyph_level))
+                self._stroke.draw(renderer)
 
 
 def write(
     text,
     *,
-    draw=0.7,
-    overlap=0.1,
-    lag=0.5,
+    draw=0.9,
+    lag=None,
     lw=None,
-    ease=DEFAULT_EASE,
+    ease="linear",
     zorder=20,
 ):
-    """Write a text out by hand: trace its glyph outlines, then fill them.
+    """Write a text out by hand: each glyph traced with a thin pen, then filled.
 
     Its ghost traces changing outlines and cannot be traced by the checker; the
     real text is hidden until the end, so the contract declares nothing.
 
     The move is for a label or a short equation that should arrive the way
-    a hand would put it on a board, so the eye follows the writing. A ghost
-    traces the outline of each glyph in reading order, one glyph starting
-    before the one before it has finished, and then the text itself fades in
-    as the stroke fades out. The outlines come from the font the text itself uses
-    (its `FontProperties`, size, rotation, alignment and transform, laid out
-    as the text lays itself out), so the ghost sits on the text. Mathtext
-    works through the mathtext parser: every symbol is a glyph, and a
-    fraction bar or a radical's overline counts as one. Several lines are
-    written one after the other, top down.
+    a hand would put it on a board, so the eye follows the writing. Each
+    glyph, in reading order, has its own window: over its first half a thin
+    pen traces the glyph's outline, and over its second half the glyph fills
+    while the pen thins away. The next glyph starts `lag` of a window after
+    the one before it, so a short front of glyphs is in flux while the ones
+    behind it are finished, as Manim's ``Write`` does. The outlines come
+    from the font the text itself uses (its `FontProperties`, size,
+    rotation, alignment and transform, laid out as the text lays itself
+    out), so the ghost sits on the text. Mathtext works through the
+    mathtext parser: every symbol is a glyph, and a fraction bar or a
+    radical's overline counts as one. Several lines are written one after
+    the other, top down.
 
-    The real `Text` is hidden while the ghost is drawn and shown again at
-    the end, so the rest state is the text as drawn, with its own colors,
-    opacity and visibility. The ghost reads the text's color and opacity
-    each time it is drawn, so a `Stage` that owns the text weighs it too.
-
-    ``update(u, level=1.0)`` is absolute. Over ``0 < u < draw`` the strokes
-    are traced; the fill starts at ``draw - overlap`` and is complete at
-    ``u = 1``. At ``u = 0`` nothing is drawn, and at ``u = 1`` the text is
-    drawn as it is without the move. The fill is the real text drawn at a
-    fractional opacity, so the last frames converge on its rasterization
-    and the swap at ``u = 1`` does not jump; the strokes are gone by then.
+    Motion contract: nothing moves; outlines are traced along the glyphs and
+    filled in place. Progress is linear inside each glyph's window (the
+    `ease` shapes the beat as a whole, linear by default). Over the last
+    ``1 - draw`` of the beat the real text comes in under the filled glyphs
+    and then the glyphs leave, so the last frames converge on the text's own
+    rasterization. At ``u = 0`` nothing is drawn, and at ``u = 1``, the rest
+    state, the text is drawn as it is without the move, with its own
+    colors, opacity and visibility. The ghost reads the text's color and
+    opacity each time it is drawn, so a `Stage` that owns the text weighs it
+    too.
 
     Args:
         text: The `Text` artist to write. It must stay in its figure, and
             while the move is in use it should not be hidden or shown by
             hand.
-        draw: Fraction of the progress spent tracing, in (0, 1).
-        overlap: How much of that tracing the fill overlaps, as a fraction
-            of the progress, in [0, draw): the fill starts at
-            ``draw - overlap``. Zero starts the fill when the tracing ends.
+        draw: Fraction of the progress spent writing the glyphs, in (0, 1);
+            the rest hands over to the text itself.
         lag: How far a glyph's start is offset from the one before it, as a
-            fraction of its own tracing time, in [0, 1]: 0 traces every
-            glyph at once and 1 one after another.
-        lw: Stroke width in points. None uses six hundredths of the font
-            size.
-        ease: An easing kind for `eyepiece.ease`, applied to each glyph's
-            tracing and to the fill.
+            fraction of its own window, in [0, 1]: 0 writes every glyph at
+            once and 1 one after another. None uses ``min(4 / n, 0.2)`` for
+            `n` glyphs, which keeps about six glyphs in flux.
+        lw: Pen width in points. None uses a thin pen of 0.75 pt.
+        ease: An easing kind for `eyepiece.ease` for the beat as a whole.
+            Inside each glyph's window progress is linear.
         zorder: Drawing order of the ghost among the figure's children.
 
     Returns:
@@ -3260,13 +3915,14 @@ def write(
         and ``update(u, level=1.0)``, `u` from 0 to 1 (values outside are
         clipped) and `level` the opacity of the ghost as a fraction of the
         text's own. ``artists["fill"].glyphs()`` returns every glyph as
-        ``[(vertices, closed), ...]`` in display pixels, and
-        ``artists["fill"].strokes(u)`` the traced part of each at `u`.
+        ``[(vertices, closed), ...]`` in display pixels,
+        ``artists["fill"].strokes(u)`` the traced part of each at `u`, and
+        ``artists["fill"].times(u)`` each glyph's traced fraction and fill.
 
     Raises:
         TypeError: If `text` is not a `Text`.
         ValueError: If the text has no outline to trace (empty or only
-            spaces), uses TeX, or `draw`, `overlap` or `lag` is out of range.
+            spaces), uses TeX, or `draw` or `lag` is out of range.
 
     Example::
 
@@ -3278,17 +3934,16 @@ def write(
     """
     if not isinstance(text, Text):
         raise TypeError(f"write takes a Text artist, got {type(text).__name__}")
-    draw, overlap, lag = float(draw), float(overlap), float(lag)
+    draw = float(draw)
     if not 0.0 < draw < 1.0:
         raise ValueError(f"write draw must be in (0, 1), got {draw}")
-    if not 0.0 <= overlap < draw:
-        raise ValueError(f"write overlap must be in [0, draw), got {overlap}")
-    if not 0.0 <= lag <= 1.0:
+    if lag is not None and not 0.0 <= float(lag) <= 1.0:
         raise ValueError(f"write lag must be in [0, 1], got {lag}")
     if text.get_usetex():
         raise ValueError("write does not trace usetex text")
+    _ease(0.5, ease)
     figure = _root_figure(text)
-    ghost = _GhostWrite(text, draw=draw, overlap=overlap, lag=lag, lw=lw, ease=ease)
+    ghost = _GhostWrite(text, draw=draw, lag=lag, lw=lw, ease=ease)
     if not ghost.glyphs():
         raise ValueError(f"write found no outline to trace in {text.get_text()!r}")
     ghost.set_zorder(zorder)
@@ -3716,9 +4371,10 @@ class _ReadoutPart(Text):
 
 @dataclass(frozen=True, eq=False)
 class _ReadoutResult(PlotResult):
-    """A `PlotResult` that also holds the readout's `set`."""
+    """A `PlotResult` that also holds the readout's `set` and `show`."""
 
     set: Callable | None = None
+    show: Callable | None = None
 
 
 def readout(
@@ -3808,7 +4464,10 @@ def readout(
         figure), with ``artists["text"]``, the parts left to right (prefix,
         integer part, fraction, tail; the empty ones are left out),
         ``update(u, level=1.0)`` as above, where ``level`` dims the whole
-        readout, and ``set(value)``, which starts the next move.
+        readout, ``set(value)``, which starts the next move, and
+        ``show(value)``, which shows `value` now, as read off a mark,
+        without interpolating; the value shown becomes both ends of the
+        current move.
 
     Raises:
         TypeError: If `at` is neither an `Anchor` nor an artist.
@@ -3876,12 +4535,327 @@ def readout(
         state.target = float(new)
         update(0.0, state.level)
 
+    def show(new):
+        state.reserve(new)
+        state.start = state.target = float(new)
+        update(1.0, state.level)
+
     return _ReadoutResult(
         ax=at.axes,
         artists={"text": parts},
         update=update,
         set=set_value,
+        show=show,
         contract=MotionContract(rest=tuple(parts)),
+    )
+
+
+# Points along a head's path sampled to reserve a bound readout's slots.
+_RESERVE_SAMPLES = 65
+
+
+def ruler_readout(
+    head,
+    *,
+    readout=None,
+    value=None,
+    ruler=None,
+    ruler_to=None,
+    ruler_text=None,
+    line=0,
+) -> PlotResult:
+    r"""Bind a ruler and a counter to a drawing head: one knob, every mark.
+
+    The measuring beat of a talk: a curve draws on with `head_draw`, a ruler
+    extends on an image to the quantity at the head, and a counter in fixed
+    slots shows the value at the head. ``update(u)`` sets the head's
+    progress and then reads the head back, so the ruler and the counter are
+    read off the mark, never interpolated beside it, and the three cannot
+    disagree on any frame.
+
+    Motion contract: the head's drawn prefix moves as `head_draw` promises,
+    and the ruler's far end moves to ``ruler_to(x, y)`` of the head, its
+    label riding the ruler's midpoint; the ruler's near end and the
+    counter's slots stay still while its digits change (the counter's slots
+    are reserved for every value along the path when it is bound, so the
+    layout never moves during the count). At ``u = 1``, the rest state, the
+    head is at the end of its path, the ruler at its full length and the
+    counter at the exact value of the path's end, which is the still a
+    figure of the same quantities shows.
+
+    Args:
+        head: A `head_draw` result; its ``update`` is called with ``u``.
+        readout: A `readout` to show the value at the head, or None.
+        value: Callable ``value(x, y)`` from the head's data point to the
+            counter's value. None shows ``y``.
+        ruler: An `eyepiece.ruler` result whose far end follows the head, or
+            None. Its near end stays where it was drawn.
+        ruler_to: Callable ``ruler_to(x, y)`` from the head's data point to
+            the ruler's far end in the ruler's axes. Required with `ruler`.
+        ruler_text: Callable ``ruler_text(x, y)`` returning the ruler's
+            label, or None to keep the label as drawn.
+        line: Which of the head's lines is read.
+
+    Returns:
+        A `PlotResult` on the head's axes with ``update(u, level=1.0)``,
+        where ``level`` dims the ruler and the counter (not the head), and
+        a contract declaring the head's copies and the ruler's artists as
+        moving and the counter's parts at rest.
+
+    Raises:
+        ValueError: If neither a readout nor a ruler is given, or a ruler is
+            given without `ruler_to`.
+
+    Example::
+
+        curve_head = ep.head_draw(curve)
+        count = ep.readout(ep.Anchor.from_data(ax_c, (0.05, 0.9)), 0, fmt=",d")
+        rule = ep.ruler(ax_img, (0, 0), (0, 0), "r = 0.00", head_scale=0)
+        knob = ep.ruler_readout(
+            curve_head, readout=count, value=lambda r, n: n,
+            ruler=rule, ruler_to=lambda r, n: (-r, 0.0),
+            ruler_text=lambda r, n: f"r = {r:.2f}",
+        )
+        knob.update(0.5)
+    """
+    if readout is None and ruler is None:
+        raise ValueError("ruler_readout needs a readout, a ruler, or both")
+    if ruler is not None and ruler_to is None:
+        raise ValueError("ruler_readout needs ruler_to with a ruler")
+    read = (lambda x, y: y) if value is None else value
+    if readout is not None:
+        for f in np.linspace(0.0, 1.0, _RESERVE_SAMPLES):
+            readout.show(read(*head.head(line, f)))
+    ruler_parts, fades, alphas = [], [], []
+    if ruler is not None:
+        ruler_parts = [*ruler.artists.get("lines", []), ruler.artists["arrow"]]
+        alphas = [a.get_alpha() for a in ruler_parts]
+        if "text" in ruler.artists:
+            fades.append((ruler.artists["text"], _TextFade(ruler.artists["text"])))
+    counter = [] if readout is None else list(readout.artists["text"])
+
+    def update(u, level=1.0):
+        u, level = _check_u(u), _check_u(level)
+        head.update(u)
+        x, y = head.head(line)
+        if readout is not None:
+            readout.show(read(x, y))
+            readout.update(1.0, level)
+        if ruler is not None:
+            label = None if ruler_text is None else ruler_text(x, y)
+            ruler.update(p1=ruler_to(x, y), text=label)
+            for artist, alpha in zip(ruler_parts, alphas, strict=True):
+                artist.set_alpha(alpha if level >= 1.0 else level * (alpha or 1.0))
+                artist.set_visible(level > 0.0)
+            for text, fade in fades:
+                fade.set(level)
+                text.set_visible(level > 0.0)
+
+    moving = [*head.contract.moves, *ruler_parts]
+    if ruler is not None and "text" in ruler.artists:
+        moving.append(ruler.artists["text"])
+    return PlotResult(
+        ax=head.ax,
+        artists={"lines": list(head.artists["lines"]), "text": counter},
+        update=update,
+        contract=MotionContract(moves=tuple(moving), rest=tuple(counter)),
+    )
+
+
+# Click
+
+_CLICK_SWELL = 1.55
+_CLICK_DOT_GROW = 0.5  # the dot grows over the first half of the beat
+_CLICK_SET = _PLATEAU_RISE  # the number starts to set bold as the swell peaks
+_CLICK_SET_S = 0.2  # fraction of the beat over which the number turns bold
+_CLICK_DOT_LW = 3.2  # the dot's diameter in line widths of the geometry
+
+
+class _Dot(Line2D):
+    """A round dot at an anchor, resolved in display space when drawn."""
+
+    def __init__(self, target, **kw):
+        super().__init__([], [], transform=IdentityTransform(), linestyle="None",
+                         marker="o", **kw)  # fmt: skip
+        self._target = target
+
+    def draw(self, renderer):
+        if not self.get_visible():
+            return
+        x, y = self._target.display(renderer)
+        self.set_data([x], [y])
+        super().draw(renderer)
+
+
+class _BoldTwin(Artist):
+    """A bold copy of a text, drawn over it while the text turns bold.
+
+    It is a render step of the text's cross-fade, not a second label, so it
+    is a plain artist that draws a private bold `Text` in the text's place.
+    """
+
+    def __init__(self, source):
+        super().__init__()
+        self._source = source
+        self._copy = Text()
+        self.level = 0.0
+
+    def draw(self, renderer):
+        source, copy = self._source, self._copy
+        if self.level <= 0.0 or not source.get_visible():
+            return
+        copy.set_figure(source.get_figure(root=False))
+        copy.update_from(source)
+        copy.set_text(source.get_text())
+        copy.set_position(source.get_position())
+        copy.set_transform(source.get_transform())
+        copy.set_clip_on(False)
+        copy.set_fontweight("bold")
+        copy.set_alpha(self.level)
+        copy.draw(renderer)
+
+
+def click(lines, *, dot=None, readout=None, ruler=None, swell=_CLICK_SWELL,
+          color=None, zorder=22):  # fmt: skip
+    """Land a composite in one beat: the ink swells, a dot sets, the number locks.
+
+    The click is the moment a built-up figure arrives at its answer. Over one
+    beat (`CLICK_S`, 0.6 s, which `Timeline.click` places) the geometry's
+    line width swells by `swell` on a plateau pulse (up over the first 35%,
+    held through the middle 30%, down over the last 35%), an end `dot` grows
+    from nothing to its size over the first half, the `readout` sets bold as
+    the swell reaches its peak, and the `ruler` recedes from there to the end.
+    A hold of at least `CLICK_HOLD_S` (1.5 s) follows the beat: stillness
+    after a click is where the answer is read.
+
+    Motion contract: only the geometry's widths, the dot's size and the
+    ruler's opacity change; nothing moves position and no hue is added. The
+    number turns bold over a fifth of the beat as a cross-fade to a bold
+    copy in the same place, starting as the swell reaches its peak. At
+    ``u = 0`` the figure is as it was before the beat (no dot, regular
+    weight, ruler at full opacity). At ``u = 1`` it is the still of the
+    landed composite: the geometry at its own width, the dot at full size,
+    the number bold and the ruler gone. Update the click after the moves it
+    settles in the same frame, since it overrides the ruler's opacity and the
+    geometry's width.
+
+    Args:
+        lines: The geometry that swells: a `Line2D` or `Patch`, or an
+            iterable of them.
+        dot: An `Anchor` (or an artist, at its center) where the end dot
+            sets, or None for no dot.
+        readout: A `readout` result whose number sets bold, or None.
+        ruler: A `ruler` result that recedes, or None.
+        swell: Peak line-width factor, at least 1.
+        color: Dot color. None uses the first geometry's color.
+        zorder: Drawing order of the dot among the figure's children.
+
+    Returns:
+        A `PlotResult` with ``artists`` (``"lines"``, ``"dot"``, and the
+        bold copies of the number as ``"bold"``) and
+        ``update(u)``, `u` from 0 to 1 over the beat; values outside are
+        clipped. Its contract lists the geometry, the dot and the ruler's
+        parts as moving and the readout's parts at rest (the bold copies are
+        a render step of the cross-fade, drawn in the digits' places).
+
+    Raises:
+        TypeError: If a geometry artist is not a line or a patch.
+        ValueError: If there is no geometry or `swell` is below 1.
+
+    Example::
+
+        landed = ep.click(ring, dot=ep.Anchor.from_data(ax, end), readout=count,
+                          ruler=rule)
+        tl.click("ring")  # 0.6 s on knob "click.ring", then a 1.5 s hold
+        ...
+        landed.update(plan.value(k, "click.ring"))
+    """
+    items = [lines] if isinstance(lines, Artist) else list(lines)
+    if not items:
+        raise ValueError("click needs the geometry that lands")
+    for item in items:
+        if not isinstance(item, (Line2D, Patch)):
+            raise TypeError(
+                f"click swells a line or a patch, got {type(item).__name__}"
+            )
+    swell = float(swell)
+    if swell < 1.0:
+        raise ValueError(f"click swell must be at least 1, got {swell}")
+    widths = [_Channel(a.get_linewidth, a.set_linewidth,
+                       lambda v, k: float(v) * (1.0 + (swell - 1.0) * k))
+              for a in items]  # fmt: skip
+    marker = None
+    if dot is not None:
+        target = _as_anchor(dot, "dot")
+        first = items[0]
+        ink = first.get_color() if isinstance(first, Line2D) else first.get_edgecolor()
+        size = _CLICK_DOT_LW * first.get_linewidth()
+        marker = _Dot(target, color=ink if color is None else color,
+                      markeredgecolor="none", zorder=zorder)  # fmt: skip
+        marker.set_clip_on(False)
+        marker.set_in_layout(False)
+        target.figure.add_artist(marker)
+    digits = [] if readout is None else list(readout.artists["text"])
+    weights = [t.get_fontweight() for t in digits]
+    alphas_digits = [t.get_alpha() for t in digits]
+    twins = []
+    for text in digits:
+        twin = _BoldTwin(text)
+        twin.set_zorder(text.get_zorder())
+        twin.set_clip_on(False)
+        twin.set_in_layout(False)
+        text.figure.add_artist(twin)
+        twins.append(twin)
+    parts, fades, alphas = [], [], []
+    if ruler is not None:
+        parts = [*ruler.artists.get("lines", []), ruler.artists["arrow"]]
+        alphas = [a.get_alpha() for a in parts]
+        if "text" in ruler.artists:
+            fades.append((ruler.artists["text"], _TextFade(ruler.artists["text"])))
+
+    def update(u):
+        u = _check_u(u)
+        k = _pulse(u, "plateau")
+        for channel in widths:
+            channel.apply(k)
+        if marker is not None:
+            grow = min(
+                1.0, max(0.0, _ease(min(1.0, u / _CLICK_DOT_GROW), DEFAULT_EASE))
+            )
+            marker.set_markersize(size * grow)
+            marker.set_visible(grow > 0.0)
+        # The number turns bold as a short cross-fade to a bold twin, then
+        # the text itself is bold and the twin steps aside.
+        c = min(1.0, max(0.0, (u - _CLICK_SET) / _CLICK_SET_S))
+        for text, twin, weight, alpha in zip(
+            digits, twins, weights, alphas_digits, strict=True
+        ):
+            base = 1.0 if alpha is None else alpha
+            if c >= 1.0:
+                text.set_fontweight("bold")
+                text.set_alpha(alpha)
+                twin.level = 0.0
+            else:
+                text.set_fontweight(weight)
+                text.set_alpha(alpha if c <= 0.0 else base * (1.0 - c))
+                twin.level = base * c
+        r = min(1.0, max(0.0, (u - _CLICK_SET) / (1.0 - _CLICK_SET)))
+        level = 1.0 - min(1.0, max(0.0, _ease(r, DEFAULT_EASE)))
+        for artist, alpha in zip(parts, alphas, strict=True):
+            artist.set_alpha(alpha if level >= 1.0 else level * (alpha or 1.0))
+            artist.set_visible(level > 0.0)
+        for text, fade in fades:
+            fade.set(level)
+            text.set_visible(level > 0.0)
+
+    update(0.0)
+    moving = [*items, *([] if marker is None else [marker]), *parts]
+    moving += [text for text, _ in fades]
+    return PlotResult(
+        ax=getattr(items[0], "axes", None),
+        artists={"lines": items, "dot": marker, "bold": twins},
+        update=update,
+        contract=MotionContract(moves=tuple(moving), rest=tuple(digits)),
     )
 
 

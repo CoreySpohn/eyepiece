@@ -43,6 +43,8 @@ from eyepiece._motion import (
 SHOW_LEAD_S = 0.1  # a subject starts arriving this long before its word
 PULSE_S = 0.9  # seconds on screen; the swell peaks half way through
 RING_S = 1.3  # seconds on screen; the outline draws on, then fades
+CLICK_S = 0.6  # seconds on screen for the click beat
+CLICK_HOLD_S = 1.5  # the least stillness after a click, never paced
 CAPTION_S = 0.4  # a caption takes this long to arrive
 LEAVE_S = 0.3  # nominal seconds a caption or subject takes to leave
 ENTER_S = 0.6  # nominal seconds a subject takes to arrive
@@ -1126,6 +1128,39 @@ class Timeline:
             The `Span`.
         """
         return self._attention("ring", target, RING_S, at, cue)
+
+    def click(self, target, *, at=None):
+        """A click on `target`: knob ``click.<target>`` runs 0 to 1 in 0.6 s.
+
+        The beat is followed by a hold of 1.5 s that the tempo never
+        shortens, so the landed composite is read in stillness. The click
+        is seconds on screen, like `run`, and advances the clock. A click
+        placed with `at` keeps its hold right after the beat and, like a
+        placed `run`, leaves the clock where it was.
+
+        Args:
+            target: What lands; the knob is ``click.<target>``.
+            at: Start time in seconds or a `Time`.
+
+        Returns:
+            The click's `Span`; the hold after it is its own span.
+        """
+        knob = f"click.{target}"
+        self._knob(knob)
+        span = self.run(knob, CLICK_S, to=1.0, at=at)
+        if at is None:
+            self._hold(CLICK_HOLD_S, None, None, paced=False)
+        else:
+            self._add(
+                self._fresh("hold"),
+                "hold",
+                span.end,
+                self._secs(CLICK_HOLD_S, False),
+                self._writes_of(None, None, step_only=True),
+                ease="linear",
+                advance=False,
+            )
+        return span
 
     def span(
         self, name, seconds, *, kind, to=None, paced=None, ease=None, extends=None,

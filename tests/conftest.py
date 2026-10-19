@@ -72,12 +72,16 @@ def restore_style_state():
     and which the zero-style fallback tests depend on, so the module state
     itself is snapshotted and put back.
     """
+    from eyepiece import _style
+
     saved = {name: getattr(hwostyle.core, name) for name in _STYLE_STATE}
     saved_rc = matplotlib.rcParams.copy()
+    saved_video = _style._VIDEO
     yield
     for name, value in saved.items():
         setattr(hwostyle.core, name, value)
     matplotlib.rcParams.update(saved_rc)
+    _style._VIDEO = saved_video
 
 
 def make_image_sequence():

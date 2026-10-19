@@ -40,12 +40,18 @@ from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import stagger as _stagger
 from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import (
+    _WRITE_PEN_PT,
     Anchor,
     _as_anchor,
     _check_u,
+    _glyph_length,
+    _GlyphPen,
     _morph_pairs,
     _path_parts,
     _pixels,
+    _traced,
+    _write_lag,
+    _write_windows,
 )
 
 # Mathtext is parsed at this size and the outlines scaled down, as TextPath
@@ -339,6 +345,9 @@ class _Glyph(PathPatch):
             return own
         if isinstance(pose, _MorphPose):
             return pose.job.map(pose.e, renderer)
+        if isinstance(pose, _DriftPose):
+            snap = _snap_shift(own, renderer.height, self.piece.draw_codes)
+            return own + pose.w * pose.shift(renderer) + snap
         if isinstance(pose, _BoxPose):
             v = pose.group.map(self, pose.side, pose.e, renderer)
             weight = 1.0 - pose.e if pose.side == "a" else pose.e
@@ -406,6 +415,15 @@ class _BoxPose:
     group: object
     side: str
     e: float
+    rule: object = None
+
+
+@dataclass
+class _DriftPose:
+    """An unmatched glyph shifted by `w` of the drift between the two sides."""
+
+    shift: object
+    w: float
     rule: object = None
 
 
@@ -645,10 +663,15 @@ def equation(
     for derivations that `transform` rearranges; `term_row` is for a running
     readout whose text changes while its structure does not.
 
-    ``update(u, level=1.0)`` writes the equation on, left to right: each term
-    (and each glyph that belongs to no term) arrives in turn, and `level` is
-    an opacity over all of it, never geometry. At ``u = 1``, the rest state,
-    the equation is drawn whole.
+    ``update(u, level=1.0, reveal="fade")`` brings the equation on, left to
+    right: each term (and each glyph that belongs to no term) fades in in
+    turn, and `level` is an opacity over all of it, never geometry. With
+    ``reveal="write"`` it is written as `write` writes a text: each glyph by
+    its left edge has a window, linear inside, whose first half traces the
+    glyph's outline with a thin pen and whose second half fills the glyph
+    while the pen thins away, about six glyphs in flux at once. Nothing
+    moves in either reveal. At ``u = 1``, the rest state, the equation is
+    drawn whole, its glyphs exactly as made.
 
     Not supported: ``usetex`` (mathtext only), several math spans or text
     outside the span in one string, escaped braces (``\{`` and ``\}``, which
@@ -716,9 +739,40 @@ def equation(
     items += [([g], g.piece.box[0]) for g in eq.glyphs if g.piece.tag is None]
     items.sort(key=lambda it: it[1])
 
-    def update(u, level=1.0):
+    # Write order: every glyph by its left edge, as a hand writes.
+    by_left = sorted(eq.glyphs, key=lambda g: g.piece.box[0])
+    pen = {"artist": None, "jobs": ()}
+
+    def strokes(renderer):
+        out = []
+        for glyph, t, f, level in pen["jobs"]:
+            if t <= 0.0 or f >= 1.0 or not glyph.get_figure(root=True):
+                continue
+            parts = _path_parts(Path(glyph.vertices(renderer), glyph.piece.draw_codes))
+            lines = _traced(parts, _glyph_length(parts), t)
+            out.append((lines, _WRITE_PEN_PT * (1.0 - f), (*glyph.rgb, level)))
+        return out
+
+    def update(u, level=1.0, reveal="fade"):
+        if reveal not in ("fade", "write"):
+            raise ValueError(f"unknown reveal: {reveal!r}; known: ['fade', 'write']")
         u = _check_u(u)
         level = min(1.0, max(0.0, float(level)))
+        if reveal == "write":
+            n = len(by_left)
+            trace, fill = _write_windows(u, n, _write_lag(n, None))
+            for glyph, f in zip(by_left, fill, strict=True):
+                _set_alpha(glyph, float(f) * level)
+            if pen["artist"] is None:
+                pen["artist"] = _GlyphPen(figure, zorder, strokes)
+            pen["jobs"] = [
+                (g, float(t), float(f), level)
+                for g, t, f in zip(by_left, trace, fill, strict=True)
+            ]
+            pen["artist"].set_visible(0.0 < u < 1.0)
+            return
+        if pen["artist"] is not None:
+            pen["artist"].set_visible(False)
         n = len(items)
         for i, (members, _) in enumerate(items):
             r = min(1.0, max(0.0, n * u - i))
@@ -920,6 +974,7 @@ def transform(
     fade=0.4,
     align="auto",
     replace="morph",
+    fade_toward=False,
 ):
     """Carry one equation into another, glyph by glyph.
 
@@ -963,6 +1018,15 @@ def transform(
     or fades in where it will stand in the last `fade` of the beat, after the
     motion has settled: when anything fades in, the motion takes the first
     ``1 - fade`` of the beat.
+
+    With ``fade_toward=True`` that material instead fades while it drifts,
+    at the same time as the matched glyphs move, as Manim's
+    ``TransformMatchingShapes`` does: the glyphs of `eq_a` with no
+    counterpart move together toward the center of the glyphs of `eq_b` with
+    none (of all of `eq_b` when it has none) and fade out, and those of
+    `eq_b` arrive the same way from the center of `eq_a`'s, fading in. Both
+    run on the eased beat, so the motion takes the whole beat and `fade` is
+    not used. A drifting side moves rigidly: its glyphs keep their spacing.
 
     `eq_b` is placed so that the aligned glyph keeps its place: `eq_b` takes
     on the position that puts `align`'s first matched glyph exactly where it is
@@ -1008,6 +1072,9 @@ def transform(
             outline, the default) or ``"fade"`` (a box that carries the old
             glyphs out as the new ones fade in). Matched glyphs and glyphs
             with no counterpart are the same either way.
+        fade_toward: Drift unmatched glyphs toward their counterpart while
+            they fade, concurrent with the motion, instead of fading them in
+            place before and after it.
 
     Returns:
         A `PlotResult` on `eq_a`'s axes with ``artists["glyphs"]`` (the glyphs
@@ -1104,12 +1171,31 @@ def transform(
     xs = np.array([source_x(unit) for unit in units])
     span = float(np.ptp(xs)) if len(xs) else 0.0
     ranks = (xs - xs.min()) / span if span > 0.0 else np.zeros(len(xs))
-    settle = 1.0 - fade if fades_in else 1.0
+    fade_toward = bool(fade_toward)
+    settle = 1.0 - fade if fades_in and not fade_toward else 1.0
+
+    def center(glyphs, renderer):
+        points = np.vstack([g.eq.place(g.piece.local, renderer) for g in glyphs])
+        return 0.5 * (points.min(axis=0) + points.max(axis=0))
+
+    leaving = [ea.glyphs[i] for i in fades_out]
+    arriving = [eb.glyphs[j] for j in fades_in]
+
+    def drift_out(renderer):
+        there = arriving or eb.glyphs
+        return center(there, renderer) - center(leaving, renderer)
+
+    def drift_in(renderer):
+        there = leaving or ea.glyphs
+        return center(there, renderer) - center(arriving, renderer)
+
     # Only glyphs that move are unsnapped; the ones that fade in place stay
     # snapped, as they are at rest.
     moving = {id(ea.glyphs[i]) for i, _ in pairs}
     for swap in swaps:
         moving.update(id(g) for g in (*swap.source, *swap.target))
+    if fade_toward:
+        moving.update(id(g) for g in (*leaving, *arriving))
     unsnap = _Unsnap([g for g in (*ea.glyphs, *eb.glyphs) if id(g) in moving])
 
     def update(u, level=1.0):
@@ -1161,6 +1247,15 @@ def transform(
             for g in item.target:
                 g.pose = _BoxPose(item, "b", e)
                 _set_alpha(g, float(enter) * level)
+        if fade_toward:
+            e = min(1.0, max(0.0, float(_ease(u, ease))))
+            for g in leaving:
+                g.pose = _DriftPose(drift_out, e)
+                _set_alpha(g, (1.0 - e) * level)
+            for g in arriving:
+                g.pose = _DriftPose(drift_in, 1.0 - e)
+                _set_alpha(g, e * level)
+            return
         out = 1.0 - min(1.0, max(0.0, _ease(min(1.0, u / fade), "smoothstep")))
         for i in fades_out:
             _set_alpha(ea.glyphs[i], out * level)
@@ -1195,6 +1290,9 @@ def transform(
             for a, b in members
         ):
             rigid.append(tuple(a for a, _ in members))
+    if fade_toward:
+        rigid += [tuple(side) for side in (leaving, arriving) if len(side) > 1]
+    still = [] if fade_toward else leaving + arriving
 
     update(1.0)
     return _TransformResult(
@@ -1207,11 +1305,13 @@ def transform(
         replaced=tuple((tuple(ia), tuple(ib)) for ia, ib in replaced),
         contract=MotionContract(
             moves=tuple(g for g in (*ea.glyphs, *eb.glyphs) if id(g) in moving),
-            rest=tuple(
-                [ea.glyphs[i] for i in fades_out] + [eb.glyphs[j] for j in fades_in]
-            ),
+            rest=tuple(still),
             groups=tuple(rigid),
+            # Drifting sides cross where each is headed, as a fade does.
             may_overlap=tuple(
+                itertools.product(leaving, arriving) if fade_toward else ()
+            )
+            + tuple(
                 pair
                 for swap in swaps
                 for pair in (

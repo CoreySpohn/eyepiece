@@ -2717,8 +2717,10 @@ def test_write_has_no_jump_into_the_rest_state():
     assert steps[-1] <= mid
     assert max(steps[-5:]) <= mid
     assert np.array_equal(frames[-1], final)
-    # The strokes are gone before the text takes over.
-    assert move.artists["fill"].times(0.999)[1] > 0.999
+    # Every glyph is filled and its pen gone before the text takes over.
+    ghost = move.artists["fill"]
+    assert min(ghost.times(0.9)[1]) == 1.0
+    assert ghost.handoff(0.999) > 0.98
     plt.close(fig)
 
 
@@ -2773,7 +2775,7 @@ def test_write_overshooting_ease_is_clamped():
     fig, text = _write_fig()
     move = ep.write(text, ease=lambda r: 1.4 * r - 0.2)
     traced, fill = move.artists["fill"].times(0.3)
-    assert all(0.0 <= t <= 1.0 for t in traced) and 0.0 <= fill <= 1.0
+    assert all(0.0 <= t <= 1.0 for t in [*traced, *fill])
     plt.close(fig)
 
 
@@ -2794,7 +2796,7 @@ def test_write_rejects_bad_input():
     with pytest.raises(ValueError):
         ep.write(text, draw=1.0)
     with pytest.raises(ValueError):
-        ep.write(text, draw=0.5, overlap=0.5)
+        ep.write(text, draw=0.0)
     with pytest.raises(ValueError):
         ep.write(text, lag=2.0)
     with pytest.raises(ValueError):
