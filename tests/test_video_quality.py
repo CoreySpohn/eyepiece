@@ -254,6 +254,33 @@ def test_video_rc_gives_lines_butt_caps_and_round_joins(tmp_path):
     plt.close(fig)
 
 
+def test_talk_rc_sizes_type_and_stroke_from_the_frame_height():
+    import matplotlib
+
+    rc = ep.talk_rc()  # 1080 px at the talk preset's 120 dpi
+    assert rc["font.size"] == pytest.approx(35.0, abs=0.1)
+    assert rc["axes.titlesize"] == pytest.approx(37.6, abs=0.1)
+    assert rc["axes.labelsize"] == pytest.approx(25.3, abs=0.1)
+    assert rc["xtick.labelsize"] == pytest.approx(22.0, abs=0.1)
+    assert rc["lines.linewidth"] == pytest.approx(3.24, abs=0.01)
+    assert rc["axes.linewidth"] == pytest.approx(1.94, abs=0.01)
+    assert rc["xtick.major.size"] == 0.0
+    assert rc["lines.solid_capstyle"] == "butt"
+    small = ep.talk_rc(720, dpi=100)
+    assert small["font.size"] == pytest.approx(28.0, abs=0.1)
+    assert small["lines.linewidth"] == pytest.approx(2.59, abs=0.01)
+    # one em of body text is 5.4 percent of the frame, at any frame size
+    for height, dpi in ((1080, 120), (720, 100)):
+        with matplotlib.rc_context(ep.talk_rc(height, dpi=dpi)):
+            fig = plt.figure(figsize=(height * 16 / 9 / dpi, height / dpi), dpi=dpi)
+            text = fig.text(0.5, 0.5, "x")
+            em_px = text.get_fontsize() * dpi / 72.0
+            plt.close(fig)
+        assert em_px / height == pytest.approx(0.054)
+    # the documentation sizes are untouched
+    assert plt.rcParams["font.size"] != rc["font.size"]
+
+
 def test_unsnapped_lets_a_slow_mark_glide_outside_a_recording():
     fig, line, dot = _vline_scene()
     assert ep.unsnapped([line, dot]) == [line, dot]

@@ -68,7 +68,8 @@ The mechanics this module does own, each closing a specific trap:
 60 fps: the default ease moves fastest at mid-move, and 30 fps still judders
 there on turns and camera moves. ``talk_60`` is the same pair under its old
 name. The documentation presets run at 30 fps, which keeps a slow move smooth
-and costs little in bytes for flat graphics.
+and costs little in bytes for flat graphics. `talk_rc` sizes type and strokes
+for a talk frame from its height; documentation figures keep their own sizes.
 ``doc_hd`` rasterizes at 200 dpi, the resolution of a documentation still,
 so a clip beside its still is not visibly softer on a 2x screen.
 
@@ -118,6 +119,69 @@ VIDEO_RC = {
     "lines.solid_joinstyle": "round",
     "lines.dash_joinstyle": "round",
 }
+
+# Type and stroke of a talk frame as fractions of the frame height: a frame
+# is read from across a room, so it is sized from the frame, not from a page.
+TALK_FRACTIONS = {
+    "title": 0.058,
+    "body": 0.054,
+    "axis_label": 0.039,
+    "tick": 0.034,
+    "data_stroke": 0.005,
+    "scenery_of_data": 0.6,
+    "margin": 0.04,
+}
+
+
+def talk_rc(height_px=1080, dpi=None):
+    """The rcParams of a talk frame, with type and strokes sized from its height.
+
+    An em of body text is 5.4 percent of the frame height, titles 5.8, axis
+    labels 3.9 and tick labels 3.4; a data stroke is 0.5 percent and scenery
+    (axes, grids, patch edges) 0.6 of that. At 1080 px and 120 dpi body text
+    is 35 pt and a data stroke 3.2 pt. Tick marks are dropped, and the
+    constrained-layout pads keep a 4 percent margin. `VIDEO_RC` is included.
+    Build the figure under it; the documentation sizes are left alone::
+
+        with matplotlib.rc_context(ep.talk_rc()):
+            fig, ax = plt.subplots(figsize=(16, 9), dpi=120)
+
+    Args:
+        height_px: Frame height in pixels.
+        dpi: Dots per inch of the frame; None uses the ``talk`` preset's.
+
+    Returns:
+        A dict of rcParams.
+    """
+    dpi = PRESETS["talk"]["dpi"] if dpi is None else dpi
+    frame_in = height_px / dpi
+    frame_pt = frame_in * 72.0
+    f = TALK_FRACTIONS
+    data = f["data_stroke"] * frame_pt
+    scenery = f["scenery_of_data"] * data
+    pad = f["margin"] * frame_in
+    return {
+        **VIDEO_RC,
+        "font.size": f["body"] * frame_pt,
+        "legend.fontsize": f["body"] * frame_pt,
+        "axes.titlesize": f["title"] * frame_pt,
+        "figure.titlesize": f["title"] * frame_pt,
+        "axes.labelsize": f["axis_label"] * frame_pt,
+        "xtick.labelsize": f["tick"] * frame_pt,
+        "ytick.labelsize": f["tick"] * frame_pt,
+        "lines.linewidth": data,
+        "lines.markersize": 3.0 * data,
+        "axes.linewidth": scenery,
+        "grid.linewidth": scenery,
+        "patch.linewidth": scenery,
+        "xtick.major.size": 0.0,
+        "xtick.minor.size": 0.0,
+        "ytick.major.size": 0.0,
+        "ytick.minor.size": 0.0,
+        "figure.constrained_layout.w_pad": pad,
+        "figure.constrained_layout.h_pad": pad,
+    }
+
 
 _SUFFIX_PRESET = {".mp4": "talk", ".gif": "gif", ".html": "jshtml"}
 
