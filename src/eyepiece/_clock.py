@@ -681,7 +681,7 @@ class Timeline:
     ):
         if names is not None and names not in self._spans:
             raise ValueError(
-                f"names names {names!r}, which is not an earlier span; spans "
+                f"names= refers to {names!r}, which is not an earlier span; spans "
                 f"are {sorted(self._spans)}"
             )
         for other in with_:

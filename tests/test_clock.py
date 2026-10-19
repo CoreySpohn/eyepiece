@@ -475,7 +475,7 @@ def test_the_reviewed_tempo_keeps_its_factor_with_overlapped_text():
 
 def test_names_must_be_an_earlier_span():
     tl = ep.Timeline({"x": 0.0})
-    with pytest.raises(ValueError, match="names 'later'"):
+    with pytest.raises(ValueError, match="names= refers to 'later'"):
         tl.text("label", names="later")
 
 
