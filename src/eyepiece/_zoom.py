@@ -25,6 +25,7 @@ from matplotlib.spines import Spine
 from matplotlib.transforms import Bbox, IdentityTransform
 
 from eyepiece import _style
+from eyepiece._motion import DEFAULT_EASE
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._result import MotionContract, PlotResult
 from eyepiece.attention import (
@@ -357,7 +358,7 @@ def follow_zoom(
     time=0.0,
     color=None,
     exclude=(),
-    ease="smoothstep",
+    ease=DEFAULT_EASE,
     avoid=None,
     strict=True,
     line_kw=None,

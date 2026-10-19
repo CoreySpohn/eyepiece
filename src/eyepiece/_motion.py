@@ -40,7 +40,7 @@ _SPACES = ("linear", "log")
 _SQRT2 = math.sqrt(2.0)
 _SMOOTH_INFLECTION = 10.0
 # The curve a move, an entrance or an exit takes when none is named.
-DEFAULT_EASE = "smoothstep"
+DEFAULT_EASE = "smooth"
 
 
 def frame_count(seconds, fps):
@@ -342,7 +342,7 @@ class Tempo:
 # Timeline
 
 
-def _apply_ease(r, how="smoothstep"):
+def _apply_ease(r, how=DEFAULT_EASE):
     """Eased progress for a kind name or a callable; the input is clipped first."""
     if callable(how):
         return float(how(min(1.0, max(0.0, float(r)))))

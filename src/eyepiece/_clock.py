@@ -32,6 +32,7 @@ from fractions import Fraction
 from eyepiece._motion import (
     _EASINGS,
     _SPACES,
+    DEFAULT_EASE,
     Tempo,
     _apply_ease,
     _interp,
@@ -665,7 +666,7 @@ class Timeline:
         seconds,
         writes,
         *,
-        ease="smoothstep",
+        ease=DEFAULT_EASE,
         extends=True,
         advance=False,
         text=None,
@@ -993,7 +994,7 @@ class Timeline:
         return span
 
     def move(
-        self, name, seconds, *, to=None, space="linear", ease="smoothstep",
+        self, name, seconds, *, to=None, space="linear", ease=DEFAULT_EASE,
         caption=None, at=None, cue=None, with_=(),
     ):  # fmt: skip
         """Knobs move to targets; without `to` it is a progress-only span.
@@ -1133,7 +1134,7 @@ class Timeline:
         if kind not in _KINDS or kind == "line":
             raise ValueError(f"unknown span kind {kind!r}; use one of {_KINDS[:-1]}")
         paced = (kind not in _UNPACED) if paced is None else paced
-        ease = ("linear" if kind in _LINEAR else "smoothstep") if ease is None else ease
+        ease = ("linear" if kind in _LINEAR else DEFAULT_EASE) if ease is None else ease
         extends = (kind not in _ATTENTION) if extends is None else extends
         writes = self._writes_of(to, name, step_only=(kind == "hold"))
         start, advance, _, clamped, _ = self._start_for(kind, at, cue, name)
