@@ -273,7 +273,15 @@ contracts rather than the mechanism behind them.
   never changed. At `u = 0` nothing is drawn and at `u = 1` the source draws
   itself, so the rest frame equals the plain still (pixel-exact outside a
   recording, within half a pixel inside an unsnapped one). Several lines
-  stagger with `lag=`, as Manim's `lag_ratio`.
+  stagger with `lag=`, as Manim's `lag_ratio`. Lines drawn under a path (a
+  halo behind a ring, a backing line under a ruler) go in `behind=`: each is
+  cut to the path's body, which ends where the head begins, with its cap kept
+  inside the cut while the head shows, so nothing behind the path leads the
+  head. As the head dissolves the cut follows the body to the end, and at rest
+  the behind line draws itself; it never shows more past the drawn tip than it
+  shows past the line's end in the still. A halo revealed beside the path with
+  its own `draw_on` runs to the tip and its cap leads the head; the tests pin
+  that this is caught.
 - `ruler_readout`: one knob drives a `head_draw` head, a ruler and a
   counter. The ruler and the counter are read off the head after it is posed,
   never interpolated beside it, so on every frame the counter shows the value
@@ -348,6 +356,24 @@ contracts rather than the mechanism behind them.
   fade in; each side moves rigidly and only the two sides may overlap. The
   rest states are those of the plain transform: `eq_a` at `u = 0` and `eq_b`
   at `u = 1`.
+- `photons` (exchangeable draws): an image develops from its own photons.
+  `arrivals(rate, exposure, seed=)` draws one seeded Poisson process per pixel
+  on the exposure clock: the counts never decrease, the arrivals between two
+  clock times are independent and Poisson with mean rate times the elapsed
+  exposure, and the same rate, clock and seed replay the same photons. The
+  final counts depend on the seed and the final exposure alone, so the last
+  frame equals the still at any frame rate. The mark shows the first clock
+  sample settled at `u = 0`, so a hold before the run is still, and gives
+  every later sample an equal window of `u`, cutting to it at the window's
+  start; only pixel values change, on one color scale fixed for the clip. The
+  photons of the current sample glow in the head color as bright as the rise
+  they gave the pixel's displayed value (a pixel's first photon fully) and
+  fade within the window. At `u = 1` the final counts show with no glow, the
+  plain still. The cuts are the draws: `steps(knob)` names their frames for
+  `check_clip`, and every other check runs as usual. `aperture_counts(mark,
+  aperture, leak=)` reads its numbers off the mark, the drawn pixels of the
+  sample shown, so a readout beside the image changes on the same frames and
+  never disagrees with it.
 
 ## Style resolves at call time
 
