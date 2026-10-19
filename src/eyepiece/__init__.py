@@ -112,6 +112,7 @@ __all__ = [
     "head_draw",
     "hist_fill",
     "hist_vs_pdf",
+    "hop",
     "imshow_diverging",
     "imshow_log",
     "indicate",
@@ -312,6 +313,7 @@ _LAZY_EXPORTS = {
     "arrivals": ("eyepiece._photons", "arrivals"),
     "exposure_text": ("eyepiece._photons", "exposure_text"),
     "photons": ("eyepiece._photons", "photons"),
+    "hop": ("eyepiece._hop", "hop"),
 }
 
 

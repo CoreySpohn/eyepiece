@@ -189,6 +189,7 @@ _EXPECTED_ALL = [
     "head_draw",
     "hist_fill",
     "hist_vs_pdf",
+    "hop",
     "imshow_diverging",
     "imshow_log",
     "indicate",

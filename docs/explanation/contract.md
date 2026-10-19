@@ -374,6 +374,17 @@ contracts rather than the mechanism behind them.
   aperture, leak=)` reads its numbers off the mark, the drawn pixels of the
   sample shown, so a readout beside the image changes on the same frames and
   never disagrees with it.
+- `hop` (exchangeable draws): the draws of a set, one after another. The draw
+  index is the knob: each draw owns an equal window of `u`, and a knob driven
+  linearly over `duration` plays `rate` draws a second, three to six for the
+  eye to see separate draws; a rate above eight raises, since the draws would
+  average into a band. The current draw is drawn in full, a bounded number of
+  earlier draws stay as ghosts that dim with age, and the counter reads
+  `draw i of n`. A tally of one quantity over the draws so far (a fraction,
+  with a Wilson interval, or a mean) runs on a `convergence` panel with its
+  interval at the current count. Nothing moves continuously; every change is
+  a cut at a draw, named by `steps(knob)`. The rest state, `u = 1`, is the
+  last draw, its ghosts and the final tally: the still.
 
 ## Style resolves at call time
 
