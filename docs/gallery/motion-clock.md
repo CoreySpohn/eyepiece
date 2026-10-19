@@ -521,17 +521,14 @@ shows how the tally settles, and the reference line is the answer a longer
 run would give.
 
 The seed is chosen on two criteria: an endpoint near the expectation and a
-trajectory that does not wander against the claim. Seeds 0 to 11 were run,
-and the rule taken is the first seed from 0 up whose final fraction is within
-one draw (1/40) of the reference and whose running interval contains the
-reference at every draw. Seeds 0 and 1 end at 60%, 1.8 draws above the
-reference of 55.6%; seed 2 ends at 57.5%, and its interval holds the
-reference throughout. The rule was set after seeing all twelve runs. Of the
-twelve, only seed 8 ever leaves the reference outside its interval, and
-seeds 2 and 9 both end at 57.5%. The rule takes the first seed that passes,
-not the best: seed 4 ends closer, 0.6 points under the reference, and its
-running fraction strays less from it. At one or two draws the interval spans
-most of the axis, so the second test bites only later in the run.
+trajectory that does not wander against the claim. Of seeds 0 to 11, the rule
+takes the first whose final fraction is within one draw (1/40) of the
+reference and whose running interval holds the reference at every draw, a
+rule set after seeing all twelve runs. Seeds 0 and 1 end at 60%, 1.8 draws
+above the reference of 55.6%, so seed 2, at 57.5%, is taken. It is the first
+that passes, not the best: seed 4 ends 0.6 points under the reference and
+strays less on the way, and only seed 8 ever leaves the reference outside its
+interval.
 The player ends on the still, the final tally.
 
 ```{code-cell} python
