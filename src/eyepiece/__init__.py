@@ -47,6 +47,7 @@ __all__ = [
     "VIDEO_RC",
     "Anchor",
     "Animation",
+    "Arrivals",
     "AttentionFault",
     "Event",
     "Fault",
@@ -69,6 +70,7 @@ __all__ = [
     "__version__",
     "angle_arc",
     "animate",
+    "arrivals",
     "arrow",
     "audit",
     "backing",
@@ -300,6 +302,8 @@ _LAZY_EXPORTS = {
     "transform": ("eyepiece._equation", "transform"),
     "write": ("eyepiece.attention", "write"),
     "quad_image": ("eyepiece._pixel_morph", "quad_image"),
+    "Arrivals": ("eyepiece._photons", "Arrivals"),
+    "arrivals": ("eyepiece._photons", "arrivals"),
 }
 
 
