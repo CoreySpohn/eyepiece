@@ -299,6 +299,21 @@ contracts rather than the mechanism behind them.
   the real text is a cross-fade with no frame lighter than both its ends.
   Nothing outside the text moves. At `u = 1` the text, or the equation as
   made, draws itself: the rest state is the still.
+- `circumscribe(style="flash")`: a comet `time_width` of the perimeter long
+  passes once round the outline, from the top and clockwise, on the eased
+  progress. Its head runs from the start of the outline to `time_width` past
+  the end, so it grows out of the top, flies round at constant length, and
+  shrinks back into the top, leaving nothing behind. It tapers from full
+  width and opacity at the head to 40% width at the tail and adds no hue.
+  Only the comet moves; the target is never touched. At `u = 0` and `u = 1`
+  the frame is the still.
+- `indicate(shape="plateau")`: the pulse rises on the ease over the first
+  35% of the progress, holds its peak through the middle 30%, and falls
+  symmetrically, so the emphasis is read at its peak. Only widths, sizes and
+  the tint toward the text ink move, never positions or hue, and at both ends
+  the artist is exactly as it was. Lines, patches and collections swell
+  smoothly; a text swells in whole-pixel steps, because Agg hints and places
+  text on the pixel grid.
 
 ## Style resolves at call time
 

@@ -2353,18 +2353,35 @@ def _pulse_parts(artist):
     return [artist, *getattr(artist, "_pieces", ())]
 
 
-def indicate(artists, *, scale=1.15, strength=0.6):
+_PLATEAU_RISE = 0.35
+
+
+def _pulse(u, shape):
+    """Pulse strength at progress `u`: 0 at both ends, 1 at the peak."""
+    if u <= 0.0 or u >= 1.0:
+        return 0.0
+    if shape == "plateau":
+        # Up on the ease over the first `_PLATEAU_RISE`, hold, and back down.
+        edge = min(u, 1.0 - u) / _PLATEAU_RISE
+        return 1.0 if edge >= 1.0 else float(_ease(edge, DEFAULT_EASE))
+    return math.sin(math.pi * u) ** 2
+
+
+def indicate(artists, *, scale=1.15, strength=0.6, shape="sine"):
     """Say "this one": swell an artist and tint it toward the text color, then return.
 
     A pulse is a transient emphasis. For its duration the artist's line
     width, marker size or font size grows by `scale` and its colors move
     toward the text color by `strength`, both peaking half way through, and
-    then everything returns. It adds no hue: a tint toward the text color is
-    a darker mark on a light figure and a lighter one on a dark figure, so
-    the pulse reads on either. It works on lines, texts (a callout or a
-    label with a backing box swells with its box), patches, and collections
-    (a colormapped collection swells only, since its colors come from its
-    data).
+    then everything returns. ``shape="plateau"`` holds the peak instead: the
+    pulse rises on the ease over the first 35% of the progress, holds full
+    strength through the middle 30%, and falls over the last 35%, so the
+    emphasis is read at its peak rather than passed through. It adds no
+    hue: a tint toward the text color is a darker mark on a light figure and
+    a lighter one on a dark figure, so the pulse reads on either. It works on
+    lines, texts (a callout or a label with a backing box swells with its
+    box), patches, and collections (a colormapped collection swells only,
+    since its colors come from its data).
 
     ``update(u)`` is absolute. At ``u = 0`` and ``u = 1``, the rest state
     in which the move is made, the artist is exactly as it was and the frame
@@ -2379,6 +2396,11 @@ def indicate(artists, *, scale=1.15, strength=0.6):
     is set after the pulse in a frame it overwrites the tint, so the pulse is
     seen only in size. Do not run two pulses on one artist at once.
 
+    A pulsed text swells in whole-pixel steps: the Agg renderer hints a text
+    at its size and places it on the pixel grid, so its extent moves a pixel
+    or two every other frame and `motion_faults` reports the steps as jumps.
+    Lines, patches and collections swell smoothly.
+
     Args:
         artists: An artist, or an iterable of them (`Line2D`, `Text`,
             `Patch`, `Collection`).
@@ -2387,6 +2409,8 @@ def indicate(artists, *, scale=1.15, strength=0.6):
             emphasis without moving the layout.
         strength: Peak fraction of the way from the artist's color to the
             text color, in [0, 1].
+        shape: ``"sine"``, a ``sin^2`` swell peaking half way, or
+            ``"plateau"``, which holds its peak through the middle.
 
     Returns:
         A `PlotResult` on the first artist's axes (None if it has none) with
@@ -2396,8 +2420,8 @@ def indicate(artists, *, scale=1.15, strength=0.6):
 
     Raises:
         TypeError: If an artist is not a line, text, patch, or collection.
-        ValueError: If `scale` is below 1, `strength` is outside [0, 1], or
-            there is nothing to pulse.
+        ValueError: If `scale` is below 1, `strength` is outside [0, 1],
+            `shape` is unknown, or there is nothing to pulse.
 
     Example::
 
@@ -2411,6 +2435,8 @@ def indicate(artists, *, scale=1.15, strength=0.6):
         raise ValueError(f"indicate scale must be at least 1, got {scale}")
     if not 0.0 <= strength <= 1.0:
         raise ValueError(f"indicate strength must be in [0, 1], got {strength}")
+    if shape not in ("sine", "plateau"):
+        raise ValueError(f"unknown shape: {shape!r}; known: ['sine', 'plateau']")
     items = [artists] if isinstance(artists, Artist) else list(artists)
     if not items:
         raise ValueError("indicate has no artist to pulse")
@@ -2436,7 +2462,7 @@ def indicate(artists, *, scale=1.15, strength=0.6):
 
     def update(u):
         u = _check_u(u)
-        k = 0.0 if u <= 0.0 or u >= 1.0 else math.sin(math.pi * u) ** 2
+        k = _pulse(u, shape)
         for channel in channels:
             channel.apply(k)
 
@@ -2446,6 +2472,8 @@ def indicate(artists, *, scale=1.15, strength=0.6):
 # Circumscribe
 
 _ELLIPSE_STEPS = 160
+_COMET_STEPS = 8
+_COMET_TAIL_LW = 0.4
 
 
 def _cut(vertices, fraction):
@@ -2819,6 +2847,7 @@ class _Outline(Line2D):
         self._shape = shape
         self._pad_pt = float(pad_pt)
         self._fraction = 1.0
+        self._window = None
 
     def outline(self, renderer=None):
         """The whole outline, closed, in display pixels, as the figure is now."""
@@ -2839,11 +2868,40 @@ class _Outline(Line2D):
 
     def draw(self, renderer):
         """Draw the first part of the outline, from the top, clockwise."""
-        if not self.get_visible() or self._fraction <= 0.0:
+        if not self.get_visible():
+            return
+        if self._window is not None:
+            self._draw_comet(renderer)
+            return
+        if self._fraction <= 0.0:
             return
         points = _cut(self.outline(renderer), self._fraction)
         self.set_data(points[:, 0], points[:, 1])
         super().draw(renderer)
+
+    def _draw_comet(self, renderer):
+        """Draw the window of the outline as a comet that tapers to its tail."""
+        points = self.outline(renderer)
+        length = float(np.hypot(*np.diff(points, axis=0).T).sum())
+        lo, hi = self._window
+        if hi <= lo or length <= 0.0:
+            return
+        lw, alpha = self.get_linewidth(), self.get_alpha()
+        for j in range(_COMET_STEPS):
+            # Step j covers its share of the full comet, tail (j = 0) to head.
+            a = hi - (hi - lo) * (_COMET_STEPS - j) / _COMET_STEPS
+            b = hi - (hi - lo) * (_COMET_STEPS - 1 - j) / _COMET_STEPS
+            a, b = max(0.0, a), min(1.0, b)
+            if b <= a:
+                continue
+            piece = _arc_slice([points], [length], a * length, b * length)
+            m = (j + 1) / _COMET_STEPS
+            self.set_linewidth(lw * (_COMET_TAIL_LW + (1.0 - _COMET_TAIL_LW) * m))
+            self.set_alpha((1.0 if alpha is None else alpha) * m)
+            self.set_data(piece[:, 0], piece[:, 1])
+            super().draw(renderer)
+        self.set_linewidth(lw)
+        self.set_alpha(alpha)
 
 
 def circumscribe(
@@ -2857,6 +2915,8 @@ def circumscribe(
     ease=DEFAULT_EASE,
     zorder=21,
     line_kw=None,
+    style="trace",
+    time_width=0.3,
 ):
     """Draw an outline around a thing, then let it go.
 
@@ -2871,6 +2931,16 @@ def circumscribe(
     draws on, and over the rest it fades. At ``u = 0`` and ``u = 1``, the
     rest state, nothing is drawn and the frame is pixel-identical to the
     frame without the move.
+
+    ``style="flash"`` passes a comet around the outline instead and leaves
+    nothing behind, as Manim's `ShowPassingFlash`. A window `time_width` of
+    the perimeter long runs from the top, clockwise, from empty to empty:
+    its head moves from the start of the outline to `time_width` past its
+    end on the eased progress, so the comet grows out of the top, flies
+    round at full length, and shrinks back into the top. It tapers from the
+    full width and opacity at its head to 40% width and nearly clear at its
+    tail. `draw` is not used. Only the comet moves; the target is never
+    touched, and at ``u = 0`` and ``u = 1`` the frame is the still.
 
     Args:
         target: The thing to outline: an `Anchor` (a data point, or a part
@@ -2888,6 +2958,10 @@ def circumscribe(
             to the fade.
         zorder: Drawing order among the figure's children.
         line_kw: Extra kwargs for the `Line2D`, applied last.
+        style: ``"trace"`` draws the outline on and fades it; ``"flash"``
+            passes a comet around it.
+        time_width: Length of the flash comet, a fraction of the perimeter
+            in (0, 1]. Used by ``style="flash"`` only.
 
     Returns:
         A `PlotResult` on the target's axes (None for a target drawn on the
@@ -2896,7 +2970,8 @@ def circumscribe(
 
     Raises:
         TypeError: If `target` is neither an `Anchor` nor an artist.
-        ValueError: If `shape` is unknown or `draw` is outside (0, 1).
+        ValueError: If `shape` or `style` is unknown, `draw` is outside
+            (0, 1), or `time_width` is outside (0, 1].
 
     Example::
 
@@ -2910,6 +2985,11 @@ def circumscribe(
     draw = float(draw)
     if not 0.0 < draw < 1.0:
         raise ValueError(f"circumscribe draw must be in (0, 1), got {draw}")
+    if style not in ("trace", "flash"):
+        raise ValueError(f"unknown style: {style!r}; known: ['trace', 'flash']")
+    time_width = float(time_width)
+    if not 0.0 < time_width <= 1.0:
+        raise ValueError(f"circumscribe time_width must be in (0, 1], got {time_width}")
     target = _as_anchor(target, "target")
     rc = matplotlib.rcParams
     kw = {
@@ -2932,6 +3012,10 @@ def circumscribe(
             line.set_visible(False)
             return
         line.set_visible(True)
+        if style == "flash":
+            head = (1.0 + time_width) * min(1.0, max(0.0, _ease(u, ease)))
+            line._window = (head - time_width, head)
+            return
         if u < draw:
             line._fraction = min(1.0, max(0.0, _ease(u / draw, ease)))
             line.set_alpha(alpha)
