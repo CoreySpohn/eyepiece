@@ -400,6 +400,7 @@ class Timeline:
         self._pending = []
         self._count = 0
         self._tails = []
+        self._heroes = []
 
     # -- small helpers ---------------------------------------------------
 
@@ -422,6 +423,28 @@ class Timeline:
         ends += [s._end for s in self._sections if s._end is not None]
         ends += self._tails
         return float(max(ends, default=Fraction(0)))
+
+    def hero(self, span):
+        """Declare a span as the clip's hero beat: stillness, one move, silence.
+
+        The narration lint (`eyepiece.narration.check_silence`) reads the
+        declaration from the plan: silence inside the span is declared, speech
+        over it is a finding, and a second hero span is a finding.
+
+        Args:
+            span: The `Span`, or its name.
+
+        Returns:
+            The span.
+
+        Raises:
+            KeyError: If no span has that name.
+        """
+        name = getattr(span, "name", span)
+        if name not in self._spans:
+            raise KeyError(f"no span named {name!r}")
+        self._heroes.append(name)
+        return self._spans[name]
 
     def _fault(self, code, message, spans=(), severity="error"):
         fault = Fault(code, severity, message, tuple(spans))
@@ -1390,7 +1413,8 @@ class Timeline:
                 (sec.name, sec.key, float(sec._start), float(sec._end), a, b)
             )
         return Plan(fps, n_frames, spans, knobs, tuple(sections),
-                    tuple(info + found), narration, steps=steps)  # fmt: skip
+                    tuple(info + found), narration, steps=steps,
+                    heroes=tuple(self._heroes))  # fmt: skip
 
     def _build_knobs(self, spans, n):
         by_knob = {}
@@ -1564,14 +1588,17 @@ class Plan:
         spans: Name to `Span`, in declaration order, with ``k0`` and ``k1``.
         faults: The `Fault` of every non-strict check, and the info findings.
         narration: The narration with the solved line ends, or None.
+        heroes: Names of the spans declared with `Timeline.hero`.
         frames: One dict per frame, each a fresh copy: the knob values plus
             ``index``, ``t`` (seconds at the start of the frame) and
             ``section``.
     """
 
     def __init__(
-        self, fps, n_frames, spans, knobs, sections, faults, narration, *, steps=()
-    ):
+        self, fps, n_frames, spans, knobs, sections, faults, narration, *, steps=(),
+        heroes=(),
+    ):  # fmt: skip
+        self.heroes = tuple(heroes)
         self.fps = fps
         self.n_frames = n_frames
         self.spans = spans
@@ -1588,6 +1615,10 @@ class Plan:
             for k in range(k0, min(k1, n_frames)):
                 labels[k] = name
         self._labels = labels
+
+    def hero_windows(self):
+        """The hero spans declared with `Timeline.hero`, as ``(start_s, end_s)``."""
+        return [(self.spans[n].start_s, self.spans[n].end_s) for n in self.heroes]
 
     @property
     def seconds(self):

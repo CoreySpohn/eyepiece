@@ -37,9 +37,11 @@ from ._script import (
     parse_cues,
 )
 from ._speech import (
+    SilenceFault,
     SpeechFault,
     SpeechTextError,
     check_script_speech,
+    check_silence,
     say,
     speech_faults,
 )
@@ -66,6 +68,7 @@ __all__ = [
     "NarrationBeat",
     "Pause",
     "Script",
+    "SilenceFault",
     "SpeechFault",
     "SpeechTextError",
     "Spoken",
@@ -74,6 +77,7 @@ __all__ = [
     "caption_at",
     "captions",
     "check_script_speech",
+    "check_silence",
     "estimate",
     "line_hash",
     "mux",
