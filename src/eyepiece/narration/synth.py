@@ -385,6 +385,16 @@ def main(argv=None):
         help="check speech and print estimated seconds without Kokoro or a cache",
     )
     args = parser.parse_args(argv)
+    if args.estimate:
+        cache_flags = [
+            f"--{name}"
+            for name in ("force", "respeak", "prune", "list")
+            if getattr(args, name)
+        ]
+        if cache_flags:
+            parser.error(
+                f"--estimate takes none of these cache flags: {', '.join(cache_flags)}"
+            )
     if args.cache_dir is None and not args.estimate:
         parser.error("cache_dir is required unless --estimate is set")
     script = _load_script(args.script)
