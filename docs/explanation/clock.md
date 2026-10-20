@@ -46,6 +46,16 @@ them and any other records them in `Plan.faults`, with information-level
 entries for what the clock did on its own (a skipped pulse, a span truncated
 at the end of the clip).
 
+The cursor moves only where the author says. `wait_until(t)` moves it without
+placing a span, to hold the picture until a time computed elsewhere, such as
+the moment a caption has been read: the open section or line ends no earlier
+than that time, with no tail, and the clip lasts at least that long, but no
+knob is written, so a wait shorter than a frame is not a fault. A span placed
+with `at=` does not move the cursor itself, but by default it holds its
+section open, and closing the section moves the cursor to its end; give it
+`extends=False` so that what follows keeps its time however late the placed
+span ends.
+
 Names live in two places. Span and knob names share one namespace, and a
 repeat raises. Sections and lines share a second one, so a span may carry the
 name of the line it sits in (the `square` line may hold the `square` entry),
