@@ -66,6 +66,7 @@ import numbers
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
@@ -140,6 +141,7 @@ __all__ = [
     "motion_faults",
     "motion_ink",
     "readability_faults",
+    "review_sheet",
     "speech_rate",
     "timing_faults",
 ]
@@ -2442,6 +2444,63 @@ def _timing_silence(narration, plan):
     ]
 
 
+def _source_frame(source, t):
+    """Read one RGB uint8 frame at t, using the last video frame past its end."""
+    if not isinstance(source, (str, os.PathLike)) and not callable(source):
+        raise TypeError("source must be a video path or a callable source(t)")
+    if callable(source) and not isinstance(source, (str, os.PathLike)):
+        frame = np.asarray(source(t))
+        if frame.ndim != 3 or frame.shape[2] not in (3, 4):
+            raise ValueError("source(t) must return an (H, W, 3) or (H, W, 4) image")
+        frame = frame[:, :, :3]
+        if np.issubdtype(frame.dtype, np.floating):
+            frame = np.rint(frame * 255).astype(np.uint8)
+        elif frame.dtype != np.uint8:
+            raise TypeError("source(t) must return uint8 or floating-point pixels")
+        return frame
+
+    import io
+    import subprocess
+    import tempfile
+
+    from PIL import Image
+
+    from eyepiece._ffmpeg import resolve_ffmpeg
+
+    command = [resolve_ffmpeg(), "-v", "error", "-nostdin"]
+    result = subprocess.run(
+        [
+            *command, "-ss", str(t),
+            "-i", os.fspath(source), "-map", "0:v:0", "-frames:v", "1",
+            "-c:v", "png", "-f", "image2pipe", "pipe:1",
+        ],
+        check=True,
+        capture_output=True,
+    )  # fmt: skip
+    if not result.stdout:
+        # A seek after the final frame can succeed without producing an image.
+        # Overwrite a single PNG while decoding the tail to retain its last frame.
+        with tempfile.TemporaryDirectory() as directory:
+            last = Path(directory) / "last.png"
+            # Sparse streams or a longer audio track can leave the tail empty.
+            for seek in (["-sseof", "-1"], []):
+                subprocess.run(
+                    [
+                        *command, *seek, "-i", os.fspath(source), "-map", "0:v:0",
+                        "-vsync", "0", "-c:v", "png",
+                        "-update", "1", "-y", str(last),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )  # fmt: skip
+                if last.exists():
+                    with Image.open(last) as image:
+                        return np.array(image.convert("RGB"))
+        raise RuntimeError("video contains no decodable frames")
+    with Image.open(io.BytesIO(result.stdout)) as image:
+        return np.array(image.convert("RGB"))
+
+
 def _source_frames(source, *, seconds, fps):
     """Yield (time, RGB uint8 frame) pairs from a callable or video path."""
     if not isinstance(source, (str, os.PathLike)) and not callable(source):
@@ -2453,36 +2512,17 @@ def _source_frames(source, *, seconds, fps):
             t = k / fps
             if t >= seconds:
                 break
-            frame = np.asarray(source(t))
-            if frame.ndim != 3 or frame.shape[2] not in (3, 4):
-                raise ValueError(
-                    "source(t) must return an (H, W, 3) or (H, W, 4) image"
-                )
-            frame = frame[:, :, :3]
-            if np.issubdtype(frame.dtype, np.floating):
-                frame = np.rint(frame * 255).astype(np.uint8)
-            elif frame.dtype != np.uint8:
-                raise TypeError("source(t) must return uint8 or floating-point pixels")
-            yield t, frame
+            yield t, _source_frame(source, t)
         return
 
-    import io
     import subprocess
     import tempfile
-
-    from PIL import Image
 
     from eyepiece._ffmpeg import resolve_ffmpeg
 
     args = [resolve_ffmpeg(), "-v", "error", "-nostdin", "-i", os.fspath(source)]
     args += ["-map", "0:v:0"]
-    first = subprocess.run(
-        [*args, "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "pipe:1"],
-        check=True,
-        capture_output=True,
-    )
-    with Image.open(io.BytesIO(first.stdout)) as image:
-        width, height = image.size
+    height, width = _source_frame(source, 0.0).shape[:2]
     if width > 1280:
         height = max(2, round(height * 1280 / width / 2) * 2)
         width = 1280
@@ -2514,6 +2554,272 @@ def _source_frames(source, *, seconds, fps):
                 if process.poll() is None:
                     process.terminate()
                 process.wait()
+
+
+def _sheet_events(narration, plan, events):
+    """Collect and merge tile labels without rounding the sampled time."""
+    if events is None:
+        if narration is None and plan is None:
+            raise ValueError("provide events, narration or plan")
+        events = []
+        if narration is not None:
+            events.extend((c.at_s, f"{c.kind}:{c.target}") for c in narration.cues())
+            events.extend(
+                (max(b.start_s, b.end_s - 0.001), "end") for b in narration.beats
+            )
+        if plan is not None:
+            events.extend(
+                (e.frame / plan.fps, e.name)
+                for e in plan.events()
+                if e.what in ("mid", "end") and e.kind not in ("hold", "line")
+            )
+    merged = {}
+    for t, label in sorted(events, key=lambda event: event[0]):
+        ms = round(t * 1000)
+        if ms not in merged:
+            merged[ms] = (t, [])
+        merged[ms][1].append(str(label))
+    if not merged:
+        raise ValueError("events must not be empty")
+    return [(t, ", ".join(labels)) for t, labels in merged.values()]
+
+
+def _sheet_audio(audio):
+    """Read PCM or numeric samples and average channels before normalizing."""
+    if isinstance(audio, (str, os.PathLike)):
+        import wave
+
+        with wave.open(os.fspath(audio), "rb") as wav:
+            if wav.getsampwidth() != 2 or wav.getcomptype() != "NONE":
+                raise ValueError("audio must be a 16-bit PCM WAV")
+            rate = wav.getframerate()
+            samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2")
+            samples = samples.reshape(-1, wav.getnchannels())
+    else:
+        samples, rate = audio
+    samples = np.asarray(samples, dtype=float)
+    if samples.ndim not in (1, 2):
+        raise ValueError("audio samples must be one- or two-dimensional")
+    if not math.isfinite(rate) or rate <= 0:
+        raise ValueError("audio rate must be finite and positive")
+    if samples.ndim == 2:
+        samples = samples.mean(axis=1)
+    peak = np.max(np.abs(samples), initial=0)
+    return samples / peak if peak else samples, rate
+
+
+def _sheet_waveform(ax, audio, start, end, times, pixels):
+    """Draw the linearly interpolated signal's min/max envelope and event ticks."""
+    samples, rate = audio
+    if start == end:
+        start, end = start - 0.5, end + 0.5
+    edges = np.linspace(start, end, max(2, int(pixels)) + 1)
+    indices = np.clip(np.ceil(edges * rate), 0, len(samples)).astype(int)
+    values = (
+        np.interp(edges * rate, np.arange(len(samples)), samples, left=0, right=0)
+        if len(samples)
+        else np.zeros_like(edges)
+    )
+    low = np.minimum(values[:-1], values[1:])
+    high = np.maximum(values[:-1], values[1:])
+    for i, (a, b) in enumerate(itertools.pairwise(indices)):
+        if b > a:
+            low[i] = min(low[i], samples[a:b].min())
+            high[i] = max(high[i], samples[a:b].max())
+    centers = (edges[:-1] + edges[1:]) / 2
+    ax.vlines(centers, low, high, color="#34495e", linewidth=0.8)
+    ax.axhline(0, color="#999999", linewidth=0.5)
+    for t in times:
+        ax.axvline(t, color="#b04b31", linewidth=0.8)
+    ax.set(xlim=(start, end), ylim=(-1.05, 1.05), yticks=[])
+    ax.set_xlabel("Time (s)", fontsize=9, color="#222222")
+    ax.tick_params(axis="x", labelsize=8, colors="#222222")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+
+def review_sheet(
+    path,
+    source,
+    *,
+    narration=None,
+    plan=None,
+    events=None,
+    audio=None,
+    columns=6,
+    width=320,
+) -> Path:
+    """A contact sheet shows a clip's frames at the moments that matter.
+
+    A review needs no hand-picked preview list.
+
+    Events default to every narration cue and each beat end minus 1 ms
+    (clamped to its start), plus plan mid and end frames excluding hold and
+    line spans. Times agreeing to the millisecond share a tile; a later cue
+    sheet can pass its own ``events`` as ``(seconds, label)`` pairs.
+
+    Args:
+        path: Output PNG path. Missing parent directories are created.
+        source: Video path decoded by ffmpeg, or a callable taking seconds
+            and returning an (H, W, 3) or (H, W, 4) image as uint8 or floats
+            in [0, 1]. Alpha is dropped. Times at or past the last decodable
+            video frame use that frame. Images are area-averaged to the tile
+            width before drawing, preserving aspect ratio to the nearest pixel.
+        narration: Optional laid-out `eyepiece.narration.Narration`. Each beat
+            gets a row with a header and active captions. Without narration,
+            rows contain time ranges and tiles.
+        plan: Optional `eyepiece.Plan` supplying default mid and end events.
+        events: Optional iterable of (seconds, label) pairs overriding default
+            events. Tiles are sorted by time and merged within a millisecond.
+        audio: Optional 16-bit PCM WAV path or (samples, rate) pair, with rate
+            in Hz and a one-dimensional or (samples, channels) numeric array.
+            Channels are averaged and normalized before drawing a waveform
+            and event ticks for each row's time range.
+        columns: Maximum tiles per row before wrapping, default 6.
+        width: Tile width in pixels, default 320.
+
+    Returns:
+        The output PNG path as a `pathlib.Path`.
+
+    Raises:
+        ValueError: If no events can be built, events are empty, or dimensions
+            are not positive integers; if a callable image has an invalid
+            shape; or if audio has an invalid shape, rate or WAV format.
+        TypeError: If source is neither a video path nor a callable, or
+            callable pixels are neither uint8 nor floating-point.
+        RuntimeError: If ffmpeg is unavailable or a video has no decodable frames.
+        subprocess.CalledProcessError: If ffmpeg cannot decode the video.
+    """
+    import textwrap
+    from bisect import bisect_right
+
+    from matplotlib.figure import Figure
+    from PIL import Image
+
+    from eyepiece.narration._mux import caption_at, captions
+
+    if any(not isinstance(n, numbers.Integral) or n <= 0 for n in (columns, width)):
+        raise ValueError("columns and width must be positive integers")
+    events = _sheet_events(narration, plan, events)
+    caption_cues = captions(narration) if narration is not None else []
+    sound = _sheet_audio(audio) if audio is not None else None
+    gap, margin, line_height = 16, 16, 16
+    sheet_width = 2 * margin + columns * width + (columns - 1) * gap
+    chars = max(1, int(width / 7.5))
+    tiles = []
+    for t, labels in events:
+        frame = _source_frame(source, t)
+        height = max(1, round(width * frame.shape[0] / frame.shape[1]))
+        frame = np.array(
+            Image.fromarray(frame).resize((width, height), Image.Resampling.BOX)
+        )
+        label = textwrap.fill(f"{t:.2f} s  {labels}", chars)
+        caption = textwrap.fill(caption_at(caption_cues, t), chars)
+        tiles.append(
+            {
+                "t": t,
+                "frame": frame,
+                "height": height,
+                "label": label,
+                "caption": caption,
+                "label_height": line_height * len(label.splitlines()),
+                "caption_height": line_height * len(caption.splitlines()),
+            }
+        )
+    if narration is not None and narration.beats:
+        rows = [dict(row, tiles=[]) for row in narration.audit()]
+        starts = [beat.start_s for beat in narration.beats]
+        for tile in tiles:
+            rows[max(0, bisect_right(starts, tile["t"]) - 1)]["tiles"].append(tile)
+    else:
+        rows = [
+            {
+                "start_s": group[0]["t"],
+                "end_s": group[-1]["t"],
+                "tiles": group,
+            }
+            for i in range(0, len(tiles), columns)
+            if (group := tiles[i : i + columns])
+        ]
+    # Lay out in pixels first so long captions and wrapped tiles reserve space.
+    y = margin
+    for row in rows:
+        row["top"] = y
+        y += 24
+        row["bands"] = []
+        for i in range(0, len(row["tiles"]), columns):
+            band = row["tiles"][i : i + columns]
+            label_height = max(tile["label_height"] for tile in band)
+            image_height = max(tile["height"] for tile in band)
+            caption_height = max(tile["caption_height"] for tile in band)
+            row["bands"].append((y, label_height, image_height, band))
+            y += label_height + image_height + caption_height + 12
+        if sound is not None:
+            row["wave_top"] = y
+            y += 100
+        y += gap
+    sheet_height = math.ceil(y)
+    fig = Figure(
+        figsize=(sheet_width / 100, sheet_height / 100), dpi=100, facecolor="white"
+    )
+    canvas = FigureCanvasAgg(fig)
+
+    def text(x, top, value, fontsize=9):
+        fig.text(
+            x / sheet_width,
+            1 - top / sheet_height,
+            value,
+            ha="left",
+            va="top",
+            fontsize=fontsize,
+            color="#222222",
+            fontfamily="DejaVu Sans Mono",
+            linespacing=1.28,
+            usetex=False,
+            parse_math=False,
+        )
+
+    def axes(x, top, w, h):
+        return fig.add_axes(
+            [
+                x / sheet_width,
+                1 - (top + h) / sheet_height,
+                w / sheet_width,
+                h / sheet_height,
+            ],
+            facecolor="white",
+        )
+
+    for row in rows:
+        header = f"{row['start_s']:.2f} - {row['end_s']:.2f} s"
+        if "key" in row:
+            header = f"{row['key']}  {header}  {row['text']}"
+        header = textwrap.shorten(
+            header, max(4, int((sheet_width - 2 * margin) / 8.4)), placeholder="..."
+        )
+        text(margin, row["top"], header, fontsize=10)
+        for top, label_height, image_height, band in row["bands"]:
+            for col, tile in enumerate(band):
+                x = margin + col * (width + gap)
+                text(x, top, tile["label"])
+                ax = axes(x, top + label_height, width, tile["height"])
+                ax.imshow(tile["frame"], interpolation="nearest", aspect="auto")
+                ax.set_axis_off()
+                text(x, top + label_height + image_height + 4, tile["caption"])
+        if sound is not None:
+            ax = axes(margin, row["wave_top"], sheet_width - 2 * margin, 60)
+            _sheet_waveform(
+                ax,
+                sound,
+                row["start_s"],
+                row["end_s"],
+                [tile["t"] for tile in row["tiles"]],
+                sheet_width - 2 * margin,
+            )
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.print_png(path)
+    return path
 
 
 def _timing_still_run(words, start, end, still_s):
