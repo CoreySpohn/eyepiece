@@ -39,10 +39,12 @@ from ._script import (
     parse_cues,
 )
 from ._speech import (
+    NumberSyncFault,
     ScriptFault,
     SilenceFault,
     SpeechFault,
     SpeechTextError,
+    check_number_sync,
     check_script_speech,
     check_silence,
     lint_script,
@@ -70,6 +72,7 @@ __all__ = [
     "MissingSynthesisError",
     "Narration",
     "NarrationBeat",
+    "NumberSyncFault",
     "Pause",
     "Script",
     "ScriptFault",
@@ -81,6 +84,7 @@ __all__ = [
     "audio_track",
     "caption_at",
     "captions",
+    "check_number_sync",
     "check_script_speech",
     "check_silence",
     "estimate",

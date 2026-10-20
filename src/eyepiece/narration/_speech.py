@@ -1,5 +1,6 @@
 """Standard-library wording and notation checks for spoken narration."""
 
+import itertools
 import math
 import re
 from dataclasses import dataclass
@@ -303,6 +304,224 @@ def check_script_speech(script: Script, *, rules: bool = False) -> None:
         raise SpeechTextError(
             "speech text needs wording changes; " + "; ".join(messages)
         )
+
+
+_VALUE_ONES = {w: float(i) for i, w in enumerate(_ONES)}
+_VALUE_TENS = {w: 10.0 * (i + 2) for i, w in enumerate(_TENS)}
+_VALUE_SCALES = {
+    "hundred": 1e2,
+    "thousand": 1e3,
+    "million": 1e6,
+    "billion": 1e9,
+    "trillion": 1e12,
+}
+
+
+def _spoken_value(words, index):
+    """The value of the number that starts at ``words[index]``.
+
+    Reads a token of digits (``96``, ``3.5``, ``1,000``, ``40%``) or a run of
+    number words (``twenty one``, ``one hundred and five``, ``three point
+    five``).
+
+    Raises:
+        ValueError: If the word does not start a number.
+    """
+    word = words[index]
+    if _DIGITS.match(word):
+        return float(word.strip(".,;:?!\"'()[]%").replace(",", ""))
+    total = current = 0.0
+    seen = False
+    i = index
+    while i < len(words):
+        bare = _bare(words[i])
+        if bare in _VALUE_ONES or bare in _VALUE_TENS:
+            current += _VALUE_ONES.get(bare, _VALUE_TENS.get(bare))
+        elif bare == "hundred":
+            current = max(current, 1.0) * 100.0
+        elif bare in _VALUE_SCALES:
+            total += max(current, 1.0) * _VALUE_SCALES[bare]
+            current = 0.0
+        elif (
+            seen
+            and bare == "and"
+            and i + 1 < len(words)
+            and _bare(words[i + 1]) in _NUMBER_WORDS
+        ):
+            i += 1
+            continue
+        elif seen and bare == "point":
+            digits = ""
+            for later in words[i + 1 :]:
+                got = _VALUE_ONES.get(_bare(later))
+                if got is None or got > 9:
+                    break
+                digits += str(int(got))
+            return total + current + (float("0." + digits) if digits else 0.0)
+        else:
+            break
+        seen = True
+        i += 1
+    if not seen:
+        raise ValueError(f"{word!r} is not a number")
+    return total + current
+
+
+@dataclass(frozen=True)
+class NumberSyncFault:
+    """One finding of `check_number_sync`.
+
+    Attributes:
+        code: ``"late-settle"`` or ``"contradicts"``.
+        message: What was found.
+        key: Key of the line.
+        word: Index of the number word in the line.
+        time_s: Time on the clip's clock the finding is at, or None.
+    """
+
+    code: str
+    message: str
+    key: str
+    word: int
+    time_s: float | None = None
+
+
+def check_number_sync(
+    narration, bindings, *, plan=None, settle_tol_s=0.0, value_tol=1e-9
+) -> list[NumberSyncFault]:
+    """Check that a counter or result lands on its spoken number.
+
+    Each binding ties a number word of the narration to the readout that
+    shows that number. A number lands on or before its word, so the readout
+    must have settled on the spoken value by the time the word starts. The
+    readout must also never show a value on the way that contradicts the
+    spoken number: a final value that is not the spoken one, a pass-through
+    that overshoots it, or a count that backs up.
+
+    Args:
+        narration: The `Narration`, with its measured per-word times.
+        bindings: Dicts with ``word_key``, the number word as
+            ``(line_key, word_index)`` or ``"line_key:word_index"``;
+            ``span``, the window in which the readout counts, as ``(start_s,
+            end_s)`` or the name of a plan span (with `plan`); and ``values``,
+            the readout's shown value as ``(time_s, value)`` pairs, one per
+            frame. Only samples inside the span and the line's beat count.
+        plan: A `Plan`, to resolve a span given by name.
+        settle_tol_s: Seconds after the word's start by which the readout may
+            settle. The default is zero: a number lands on or before its word.
+        value_tol: Largest difference, in the readout's units, between two
+            values that count as equal.
+
+    Returns:
+        The findings, in binding order; empty when every readout lands.
+
+    Raises:
+        KeyError: If a binding names a line the narration lacks.
+        ValueError: If a binding has no values, its word is not a number, or
+            a named span needs a plan.
+    """
+    faults = []
+    for binding in bindings:
+        key, index = _word_key(binding["word_key"])
+        beat = narration.beat(key)
+        words = narration.script.line(key).words
+        spoken = _spoken_value(words, index)
+        start = beat.words[index].start_s
+        lo, hi = _span_of(binding["span"], plan)
+        window = (max(lo, beat.start_s), min(hi, beat.end_s))
+        values = sorted(
+            (float(t), float(v))
+            for t, v in binding["values"]
+            if window[0] - 1e-9 <= t <= window[1] + 1e-9
+        )
+        if not values:
+            raise ValueError(
+                f"binding for {key!r} word {index} has no values inside the line "
+                "and the span"
+            )
+        label = f"line {key!r} says {words[index]!r} ({spoken:g})"
+
+        def off(a, b):
+            return abs(a - b) > value_tol
+
+        if off(values[-1][1], spoken):
+            faults.append(
+                NumberSyncFault(
+                    "contradicts",
+                    f"{label} but the readout ends on {values[-1][1]:g}",
+                    key,
+                    index,
+                    values[-1][0],
+                )
+            )
+        else:
+            wrong = [t for t, v in values if off(v, spoken)]
+            settled = values[0][0] if not wrong else _next_time(values, wrong[-1])
+            if settled - start > settle_tol_s + 1e-9:
+                faults.append(
+                    NumberSyncFault(
+                        "late-settle",
+                        f"{label} at {start:.2f} s but the readout settles at "
+                        f"{settled:.2f} s, {settled - start:.2f} s late",
+                        key,
+                        index,
+                        settled,
+                    )
+                )
+        faults += _path_faults(values, spoken, value_tol, label, key, index)
+    return faults
+
+
+def _next_time(values, t):
+    return next(u for u, _ in values if u > t)
+
+
+def _path_faults(values, spoken, tol, label, key, index):
+    """A shown value that is past the spoken number or backs away from it."""
+    gap = spoken - values[0][1]
+    if gap == 0:
+        return []
+    direction = math.copysign(1.0, gap)
+    for (_, a), (t, b) in itertools.pairwise(values):
+        if (b - spoken) * direction > tol:
+            return [
+                NumberSyncFault(
+                    "contradicts",
+                    f"{label} but the readout overshoots to {b:g} at {t:.2f} s",
+                    key,
+                    index,
+                    t,
+                )
+            ]
+        if (b - a) * direction < -tol:
+            return [
+                NumberSyncFault(
+                    "contradicts",
+                    f"{label} but the readout backs up from {a:g} to {b:g} "
+                    f"at {t:.2f} s",
+                    key,
+                    index,
+                    t,
+                )
+            ]
+    return []
+
+
+def _word_key(word_key):
+    if isinstance(word_key, str):
+        key, _, index = word_key.rpartition(":")
+        return key, int(index)
+    key, index = word_key
+    return key, int(index)
+
+
+def _span_of(span, plan):
+    if isinstance(span, str):
+        if plan is None:
+            raise ValueError(f"the span {span!r} is a name: pass the plan")
+        resolved = plan._span(span)
+        return float(resolved.start_s), float(resolved.end_s)
+    return float(span[0]), float(span[1])
 
 
 @dataclass(frozen=True)
