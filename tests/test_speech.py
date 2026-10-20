@@ -1,11 +1,13 @@
 """Number wording and checks for notation in spoken text."""
 
+import sys
 from dataclasses import FrozenInstanceError
 from decimal import Decimal
 
 import pytest
 
 from eyepiece import narration as nr
+from eyepiece.narration import synth
 
 
 @pytest.mark.parametrize(
@@ -163,6 +165,92 @@ def test_speech_faults_identifies_notation_and_offsets(text, token, kind):
 )
 def test_speech_faults_accepts_readable_forms(text):
     assert nr.speech_faults(text) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "and/or",
+        "keep this and/or that",
+        "24/7",
+        "open 24/7.",
+        "see http://example.org/a-b/c?d=1 now",
+        "see https://example.org/a-b/c?d=1 now",
+        "see example.org/docs/page-2 now",
+        "2026-10-20",
+        "on 2026-10-20, at noon",
+        "open 24/7, all year",
+        'a "24/7" service',
+        "2-4 hours",
+        "the clock -- in seconds -- runs",
+        "word--word",
+    ],
+)
+def test_speech_faults_accepts_unambiguous_slashes_and_hyphens(text):
+    assert nr.speech_faults(text) == []
+
+
+@pytest.mark.parametrize(
+    "text,kind",
+    [
+        ("5/3", "slash"),
+        ("10 - 3", "minus"),
+        ("x^2", "power"),
+        ("~5", "approximation"),
+        ("+/-", "plus_minus"),
+        ("3e-8", "exponent"),
+        ("5 um", "unit"),
+        ("example.org/x^2", "power"),
+        ("example.org/~5", "approximation"),
+        ("example.org/+/-", "plus_minus"),
+        ("example.org/3e-8", "exponent"),
+        ("example.org/5um", "unit"),
+        ("10-3 equals 7", "minus"),
+        ("x^2-4 hours", "minus"),
+        ("10^2-4 hours", "minus"),
+        ("0.2026-10-20", "minus"),
+        ("2026-10-20.5", "minus"),
+        ("24/7.5", "slash"),
+        ("0.24/7", "slash"),
+        (".24/7", "slash"),
+        ("124/7", "slash"),
+        ("x^(24/7)", "slash"),
+        ("x^(2026-10-20)", "minus"),
+        ("24/7.e3", "slash"),
+        ("2026-10-20.e3", "minus"),
+        ("The phase is sin(24/7).", "slash"),
+        ("(2-4) hours", "minus"),
+        ("The ratio is 24/7,000.", "slash"),
+        ("Due 2026-10-20,5 times.", "minus"),
+        ("The ratio is 24/7'000.", "slash"),
+        ("1'002-4 equals 998", "minus"),
+    ],
+)
+def test_speech_faults_keeps_ambiguous_notation(text, kind):
+    assert kind in [fault.kind for fault in nr.speech_faults(text)]
+
+
+@pytest.mark.parametrize(
+    "text,starts",
+    [("1-2-3 hours", [1, 3]), ("10-3-5 hours", [2, 4])],
+)
+def test_speech_faults_flags_every_minus_in_a_chain(text, starts):
+    faults = nr.speech_faults(text)
+    assert [fault.start for fault in faults if fault.kind == "minus"] == starts
+
+
+@pytest.mark.parametrize("flag", ["--force", "--respeak", "--prune", "--list"])
+def test_estimate_cli_rejects_cache_flags(tmp_path, monkeypatch, capsys, flag):
+    path = tmp_path / "script.json"
+    nr.Script((nr.Line("clean", "A clean line."),)).to_json(path)
+    monkeypatch.setitem(sys.modules, "kokoro", None)
+    with pytest.raises(SystemExit) as stopped:
+        synth.main([str(path), "--estimate", flag])
+    assert stopped.value.code == 2
+    captured = capsys.readouterr()
+    assert "--estimate takes none of" in captured.err
+    assert flag in captured.err
+    assert captured.out == ""
 
 
 def test_speech_faults_reports_every_occurrence_in_reading_order():

@@ -174,7 +174,8 @@ are the caller's contract, and pinning them from the union over all frames is
 part of building the figure rather than part of the frame loop. `record` warns
 when one drifts anyway.
 
-See {doc}`clock` for the motion contract and timing rules.
+See {doc}`../reference/motion-contract` for the motion contract and
+{doc}`clock` for timing rules.
 
 ## Routed keyword arguments
 

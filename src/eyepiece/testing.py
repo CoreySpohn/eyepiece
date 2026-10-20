@@ -455,10 +455,7 @@ def _protected(text):
     patch = text.get_bbox_patch()
     if patch is None or not patch.get_visible():
         return False
-    return (
-        to_rgba(patch.get_facecolor())[3] * (patch.get_alpha() or 1.0)
-        >= _OPAQUE_BACKING
-    )
+    return to_rgba(patch.get_facecolor())[3] >= _OPAQUE_BACKING
 
 
 def _on_marks(fig, texts, boxes, dpi):

@@ -164,6 +164,9 @@ count, the closest pair under every vision type, and how close the pair falls
 once the set is dimmed to the mode's level (0.35 in dark mode, 0.5 in light and
 paper).
 
+See {doc}`Declare a cast <../how-to/declare-a-cast>` to give labels their own
+ink and accept a close role pair only when its required channels differ.
+
 ```{code-cell} python
 import eyepiece.testing as ept
 

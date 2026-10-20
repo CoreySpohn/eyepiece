@@ -28,6 +28,22 @@ _FAULT = re.compile(
     r"|(?P<minus>-)"
     r"|(?<=\d)\s*(?P<unit>[u\u03bc\u00b5]m)\b"
 )
+# A date, a range or 24/7 stands alone: it starts the text or follows
+# whitespace or a double quote, and ends the text, meets whitespace, a closing
+# double quote or bracket, or punctuation that itself ends a clause, so a
+# digit run inside a longer expression (brackets, digit groups and apostrophe
+# separators included) is not one.
+_ALONE = r'(?<![^\s"])'
+_ENDS = r'(?=$|[\s)\]"]|[,;:.!?](?:[\s)\]"]|$))'
+_ACCEPTED = re.compile(
+    r"\bhttps?://\S+"
+    r"|\b(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}/\S*"
+    rf"|{_ALONE}\d{{4}}-\d{{2}}-\d{{2}}{_ENDS}"
+    r"|\b(?:S/N|and/or)\b"
+    rf"|{_ALONE}24/7{_ENDS}"
+    rf"|{_ALONE}(?P<range_start>\d+)-(?P<range_end>\d+)(?=\s+[A-Za-z])"
+    r"|--"
+)
 _DETAILS = {
     "exponent": "write the exponent as 'times ten to the' and its signed power",
     "power": "write powers and squared units in words",
@@ -112,15 +128,24 @@ def speech_faults(text: str) -> list[SpeechFault]:
         text: Spoken text, with cue marks already removed.
 
     Returns:
-        Faults with token offsets into ``text``. Plain numbers, leading
-        signs, word hyphens and the known abbreviation S/N are accepted.
+        Faults with token offsets into ``text``. Plain numbers and leading
+        signs are accepted. Word hyphens, S/N, and/or, 24/7, HTTP(S) URLs,
+        bare host/path URLs, ISO dates, ascending digit ranges before a word
+        and double hyphens excuse only slashes and hyphens.
     """
-    good_slashes = {match.start() + 1 for match in re.finditer(r"\bS/N\b", text)}
+    accepted = [
+        match.span()
+        for match in _ACCEPTED.finditer(text)
+        if match["range_start"] is None
+        or int(match["range_start"]) < int(match["range_end"])
+    ]
     faults = []
     for match in _FAULT.finditer(text):
         kind = match.lastgroup
         start, end = match.span(kind)
-        if kind == "slash" and start in good_slashes:
+        if kind in {"slash", "minus"} and any(
+            a <= start and end <= b for a, b in accepted
+        ):
             continue
         if kind == "minus":
             before, after = text[:start].rstrip(), text[end:].lstrip()

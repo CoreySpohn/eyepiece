@@ -810,6 +810,27 @@ def test_mux_reports_ffmpegs_own_message(tmp_path):
         nr.mux(tmp_path / "bad.mp4", wav, tmp_path / "out.mp4")
 
 
+@pytest.mark.parametrize("audio_s", [1.0, 3.0])
+@pytest.mark.parametrize("loudness", [None, -16.0])
+def test_mux_pads_or_trims_audio_to_the_video_length(tmp_path, audio_s, loudness):
+    ffmpeg = _ffmpeg_or_skip()
+    video = tmp_path / "v.mp4"
+    subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+         "color=c=white:s=64x64:r=30:d=2.1", "-pix_fmt", "yuv420p", str(video)],
+        check=True,
+    )  # fmt: skip
+    wav = tmp_path / "a.wav"
+    _write_clip(wav, audio_s)
+    out = nr.mux(video, wav, tmp_path / "out.mp4", loudness=loudness)
+    decoded = subprocess.run(
+        [ffmpeg, "-v", "error", "-i", str(out), "-f", "s16le", "-ac", "1",
+         "-ar", "48000", "-"],
+        capture_output=True, check=True,
+    )  # fmt: skip
+    assert len(decoded.stdout) / (2 * 48000) == pytest.approx(2.1, abs=1 / 30)
+
+
 # Audio finishing
 
 

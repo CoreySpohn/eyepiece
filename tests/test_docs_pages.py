@@ -15,10 +15,12 @@ EXPLANATION_NAMES = (
     "eyepiece-and-manim",
     "rendering-in-manim",
 )
+REFERENCE_NAMES = ("attention-moves", "clip-checks", "motion-contract")
 PAGES = [
     *sorted((DOCS / "tutorials").glob("*.md")),
     *sorted((DOCS / "how-to").glob("*.md")),
     *(DOCS / "explanation" / f"{name}.md" for name in EXPLANATION_NAMES),
+    *(DOCS / "reference" / f"{name}.md" for name in REFERENCE_NAMES),
 ]
 CONTRACTION = re.compile(
     r"\b\w+n't\b|\b(?:it|that|there|here|what|who)'s\b|\b\w+'(?:re|ve|ll|d|m)\b",
@@ -140,6 +142,42 @@ def test_explanation_toctree_order():
     assert entries == [f"explanation/{name}" for name in EXPLANATION_NAMES] + [
         "viz-convention"
     ]
+
+
+@pytest.mark.parametrize("name", REFERENCE_NAMES)
+def test_reference_page_links(name):
+    _, blocks = split_fences((DOCS / "index.md").read_text())
+    tree = next(
+        body
+        for info, body in blocks
+        if info == "{toctree}" and ":caption: Reference" in body
+    )
+    entries = [line for line in tree.splitlines() if line and not line.startswith(":")]
+    start = entries.index("reference/to-scrubber") + 1
+    assert entries[start + REFERENCE_NAMES.index(name)] == f"reference/{name}"
+    clock = (DOCS / "explanation" / "clock.md").read_text()
+    links = re.findall(r"\{doc\}`([^`]+)`", clock)
+    targets = [re.sub(r"^.*<([^>]+)>$", r"\1", link) for link in links]
+    assert f"../reference/{name}" in targets
+
+
+def test_clock_has_no_reference_lists():
+    clock = (DOCS / "explanation" / "clock.md").read_text()
+    assert "## Motion contract" not in clock
+    assert "## Two spans, two uses" not in clock
+    assert not re.search(r"^- `moves` is", clock, re.M)
+
+
+@pytest.mark.parametrize(
+    ("name", "anchor"),
+    [
+        ("attention-moves", "`follow_zoom`"),
+        ("clip-checks", "`shape-class`"),
+        ("motion-contract", "- `moves` is"),
+    ],
+)
+def test_reference_anchor_content(name, anchor):
+    assert anchor in (DOCS / "reference" / f"{name}.md").read_text()
 
 
 def test_manim_parity_cell_lists_all_rows():

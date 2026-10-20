@@ -1856,16 +1856,22 @@ class _BuildPart:
     def __init__(self, artist):
         self.artist = artist
         self.alpha = artist.get_alpha()
+        self._last_alpha = self.alpha
         self.clip_on = artist.get_clip_on()
         self.clip_path = artist.get_clip_path()
         self.clip_box = artist.clipbox
 
-    def fade(self, level):
+    def fade(self, level, *, live_alpha=False):
+        if live_alpha:
+            alpha = self.artist.get_alpha()
+            if alpha != self._last_alpha:
+                self.alpha = alpha
         if level >= 1.0:
             self.artist.set_alpha(self.alpha)
         else:
             base = 1.0 if self.alpha is None else self.alpha
             self.artist.set_alpha(base * level)
+        self._last_alpha = self.artist.get_alpha()
 
     def clip(self, patch):
         self.artist.set_clip_on(True)
@@ -2103,8 +2109,11 @@ def build_axes(
         spine_end: Fraction of each axis's progress the spine, ticks, and
             numbers take; the label writes on over the rest.
         title: Fade the center, left, and right axes titles in with the last
-            axis label. False leaves the titles as made throughout. True
-            uses the final label stage even when `label` is False.
+            axis label, including a title set or restyled after this call.
+            A restyle to the very alpha the build last drew leaves no trace
+            on the title and is not seen. False leaves the titles as made
+            throughout. True uses the final label stage even when `label` is
+            False.
         style: ``"sweep"`` (one front along each axis, the label wiped on)
             or ``"staccato"`` (one beat per spine, tick and number, the
             label written with `write`).
@@ -2145,11 +2154,7 @@ def build_axes(
         )
         for w in which
     ]
-    titles = (
-        [_BuildPart(text) for text in (ax.title, ax._left_title, ax._right_title)]
-        if title
-        else []
-    )
+    titles = {}
 
     def update(u):
         u = _check_u(u)
@@ -2158,11 +2163,11 @@ def build_axes(
             part.update(min(1.0, max(0.0, n * u - i)))
         last = max(0.0, n * u - (n - 1))
         reveal = _ease(max(0.0, (last - spine_end) / (1.0 - spine_end)))
-        for text in titles:
-            if u >= 1.0:
-                text.restore()
-            else:
-                text.fade(reveal)
+        if title:
+            for text in (ax.title, ax._left_title, ax._right_title):
+                if text not in titles:
+                    titles[text] = _BuildPart(text)
+                titles[text].fade(reveal, live_alpha=True)
 
     return PlotResult(
         ax=ax,
