@@ -72,15 +72,32 @@ def test_cues_keep_the_length_and_the_pitch(tmp_path):
     assert peak == pytest.approx(550.0, abs=20.0)
 
 
+def test_the_voice_drops_out_under_the_count(tmp_path):
+    events = nr.CueEvents(
+        count_times=(0.5, 1.8), count_values=(4.0, 4.0), reference=4.0
+    )
+    _, plain = _track(tmp_path, "plain.wav")
+    _, cued = _track(tmp_path, "cued.wav", cues=events)
+    # Speech spans 0 to 2.17 s, so it overlaps the whole count tone.
+    for t in (0.8, 1.5):
+        assert _magnitude(cued, t, VOICE_HZ) < 0.01 * _magnitude(plain, t, VOICE_HZ)
+        assert _magnitude(cued, t, 220.0) > 100.0 * _magnitude(plain, t, 220.0)
+    np.testing.assert_array_equal(cued[: round(0.3 * RATE)], plain[: round(0.3 * RATE)])
+
+
 def test_the_voice_drops_out_under_the_ticks_and_the_bed_stays(tmp_path):
     _, plain = _track(tmp_path, "plain.wav")
-    _, cued = _track(tmp_path, "cued.wav", cues=EVENTS)
+    events = nr.CueEvents(tick_times=(1.0, 1.25, 1.5, 2.4))
+    _, cued = _track(tmp_path, "cued.wav", cues=events)
     # Between ticks inside the tick window, the voice is gone.
     inside = _magnitude(cued, 1.125, VOICE_HZ)
     assert inside < 0.01 * _magnitude(plain, 1.125, VOICE_HZ)
     # Away from every cue, the voice and the bed are as they were.
     np.testing.assert_array_equal(cued[: round(0.8 * RATE)], plain[: round(0.8 * RATE)])
-    bed = slice(round(2.2 * RATE), round(2.45 * RATE))
+    # Inside the active tick run, after speech ends and between ticks,
+    # only the bed remains. Cue ducking must leave its samples untouched.
+    bed = slice(round(2.2 * RATE), round(2.35 * RATE))
+    np.testing.assert_array_equal(cued[bed], plain[bed])
     assert np.std(cued[bed]) == pytest.approx(np.std(plain[bed]), rel=0.02)
 
 

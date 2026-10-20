@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
@@ -89,7 +90,7 @@ def test_two_builds_have_the_same_audio_samples(built):
     assert _samples(built["a"]).tobytes() == _samples(built["b"]).tobytes()
 
 
-def test_one_tick_per_pixel_read(built):
+def test_one_tick_per_rendered_pixel_read(built):
     plan = SWEEP["make_plan"](DURATION_S)
     flashes = sum(
         round(max(plan.value(k, f"read.{name}") for k in range(plan.n_frames)))
@@ -103,6 +104,29 @@ def test_one_tick_per_pixel_read(built):
     # Each tick lands within one video frame (plus the 1 ms jitter) of its flash.
     lag = found / RATE - np.array(events.tick_times)
     assert np.max(np.abs(lag)) < 1.0 / SWEEP["FPS"] + 0.001
+    scene = SWEEP["Scene"](plan, dpi=80)
+    try:
+        for k in range(plan.n_frames):
+            scene.draw(k)
+            scene.fig.canvas.draw()
+            pixels = np.asarray(scene.fig.canvas.buffer_rgba())
+            for name, n in SWEEP["PIXELS"].items():
+                image = scene.rows[name][0]
+                # Read the rendered centers of every logical pixel, not
+                # the image's data array, to catch missing artist updates.
+                centers = (np.arange(n) + 0.5) * SWEEP["PIXELS"]["ifs"] / n
+                xy = image.axes.transData.transform(
+                    np.column_stack((centers, np.full(n, 0.5)))
+                )
+                x, y = np.rint(xy).astype(int).T
+                rendered = pixels[pixels.shape[0] - 1 - y, x, :3].mean(axis=1)
+                lit = rendered > 80.0
+                expected = plan.value(k, f"read.{name}") + 1e-9 >= np.arange(1, n + 1)
+                np.testing.assert_array_equal(
+                    lit, expected, err_msg=f"{name} pixel crossings at frame {k}"
+                )
+    finally:
+        plt.close(scene.fig)
 
 
 def test_the_silent_variant_has_the_same_picture_and_no_ticks(built):

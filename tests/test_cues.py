@@ -49,10 +49,14 @@ def test_four_to_sixteen_is_two_octaves():
 
 
 def test_the_tone_has_no_phase_jump():
-    x = nr.count_tone([0.0, 1.0], [4.0, 16.0], reference=4.0, duration_s=1.0)
+    x = nr.count_tone(
+        [0.0, 0.413, 1.0], [4.0, 9.0, 16.0], reference=4.0, duration_s=1.0
+    )
     # A continuous sine at most 880 Hz moves at most 2 pi f / rate per sample.
     step = 2 * np.pi * 880.0 / RATE * np.max(np.abs(x))
     assert np.max(np.abs(np.diff(x))) <= step * 1.01
+    knot = round(0.413 * RATE)
+    assert abs(x[knot] - x[knot - 1]) <= step * 1.01
 
 
 def test_tone_level_attack_and_decay():
