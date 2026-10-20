@@ -203,15 +203,14 @@ BAYES_A = (
 BAYES_B = (
     r"${{lhs:\mathrm{Pr}(H|E)=}}\frac{{num:0.24}}{{den:0.24+0.07}}{{res:=0.77}}$"
 )
-TERM_COLORS = {"lhs": "C0", "num": "C1", "den": "C3", "res": "C2"}
 
 fig = plt.figure(figsize=(7.6, 2.4))
 board = fig.add_axes([0, 0, 1, 1])
 board.set(xlim=(0, 1), ylim=(0, 1))
 board.axis("off")
 left = ep.Anchor.from_data(board, (0.06, 0.5))
-bayes_a = ep.equation(left, BAYES_A, fontsize=34, colors=TERM_COLORS, ha="left")
-bayes_b = ep.equation(left, BAYES_B, fontsize=34, colors=TERM_COLORS, ha="left")
+bayes_a = ep.equation(left, BAYES_A, fontsize=34, ha="left")
+bayes_b = ep.equation(left, BAYES_B, fontsize=34, ha="left")
 bayes = ep.transform(bayes_a, bayes_b, stagger=0.55)
 
 # A beat of A, the move, a beat of B; the move's progress is uneased.
@@ -250,8 +249,8 @@ def bayes_move(replace):
     board.set(xlim=(0, 1), ylim=(0, 1))
     board.axis("off")
     left = ep.Anchor.from_data(board, (0.06, 0.5))
-    eq_a = ep.equation(left, BAYES_A, fontsize=34, colors=TERM_COLORS, ha="left")
-    eq_b = ep.equation(left, BAYES_B, fontsize=34, colors=TERM_COLORS, ha="left")
+    eq_a = ep.equation(left, BAYES_A, fontsize=34, ha="left")
+    eq_b = ep.equation(left, BAYES_B, fontsize=34, ha="left")
     return fig, ep.transform(eq_a, eq_b, stagger=0.55, replace=replace)
 
 
@@ -267,10 +266,10 @@ for replace in ("fade", "morph"):
 Most rearrangements keep most glyphs, and then the move is mostly travel.
 Below, ``a^2 + b^2 = c^2`` becomes ``a^2 = c^2 - b^2``: every ``a``, ``c`` and
 square stays a glyph, ``a^2`` stays where it is, ``b^2`` crosses the equals sign
-rising on an arc while ``c^2`` dips under it, and only the plus and the minus fade. Without the tag on ``b^2`` the squares would
-pair by their order and the wrong ``2`` would travel, which is the reason to
-tag a piece that must stay together; a term of either equation is also an
-anchor, so a pulse can name the piece that moves.
+rising on an arc while ``c^2`` dips under it, and only the plus and the minus
+fade. The ``b`` tag keeps ``b^2`` together. Without it the squares would pair
+by their order and the wrong ``2`` would travel. A term of either equation is
+also an anchor, so a pulse can name the piece that moves.
 
 ```{code-cell} python
 fig = plt.figure(figsize=(6.4, 2.0))
@@ -278,8 +277,8 @@ board = fig.add_axes([0, 0, 1, 1])
 board.set(xlim=(0, 1), ylim=(0, 1))
 board.axis("off")
 middle = ep.Anchor.from_data(board, (0.5, 0.5))
-pyth_a = ep.equation(middle, r"$a^2+{{b:b^2}}=c^2$", fontsize=40, colors={"b": "C1"})
-pyth_b = ep.equation(middle, r"$a^2=c^2-{{b:b^2}}$", fontsize=40, colors={"b": "C1"})
+pyth_a = ep.equation(middle, r"$a^2+{{b:b^2}}=c^2$", fontsize=40)
+pyth_b = ep.equation(middle, r"$a^2=c^2-{{b:b^2}}$", fontsize=40)
 pyth = ep.transform(pyth_a, pyth_b, stagger=0.7, arc=0.7)
 N_PYTH = 60
 
