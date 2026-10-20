@@ -138,6 +138,35 @@ def test_text_on_marks_other_color_or_backed_passes():
     assert ept.readability_faults(fig, kinds=("on-marks",)) == []
 
 
+@pytest.mark.parametrize(
+    ("bbox", "expected_faults"),
+    [
+        pytest.param(dict(facecolor="white", alpha=0.85), 0, id="alpha-0.85"),
+        pytest.param(dict(facecolor="white", alpha=0.7), 1, id="alpha-0.7"),
+        pytest.param(dict(facecolor="white", alpha=1.0), 0, id="alpha-1.0"),
+        pytest.param(dict(facecolor=(1.0, 1.0, 1.0, 0.85)), 0, id="facecolor-alpha"),
+    ],
+)
+def test_text_on_marks_backing_opacity(bbox, expected_faults):
+    fig = _figure()
+    ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
+    ax.plot([0, 1], [0.5, 0.5], color="C0", lw=3)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.text(
+        0.5,
+        0.5,
+        "label",
+        color="C0",
+        ha="center",
+        va="center",
+        fontsize=16,
+        bbox=bbox,
+    )
+    found = ept.readability_faults(fig, kinds=("on-marks",))
+    assert [fault.kind for fault in found] == ["on-marks"] * expected_faults
+
+
 def test_text_on_filled_mark():
     fig = _figure()
     ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
