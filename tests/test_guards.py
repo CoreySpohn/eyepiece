@@ -239,6 +239,7 @@ _EXPECTED_ALL = [
     "strip",
     "talk_rc",
     "term_row",
+    "to_scrubber",
     "trail",
     "transform",
     "triptych",
