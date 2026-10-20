@@ -451,6 +451,24 @@ def _image(n=16):
     return rng.uniform(1e-10, 1e-6, (n, n))
 
 
+# The profile is a float32 scatter-add whose summation order is not fixed on
+# every backend (GPU atomics reorder it), so two equal calls can differ by a
+# few ulps; a reordered sum of n positive terms moves by under n eps relative.
+def _assert_same_profile(res, expected_sep, expected_profile, n):
+    expected_sep = np.asarray(expected_sep)
+    expected_profile = np.asarray(expected_profile)
+    np.testing.assert_allclose(
+        res.artists["line"].get_xdata(),
+        expected_sep,
+        rtol=4 * np.finfo(expected_sep.dtype).eps,
+    )
+    np.testing.assert_allclose(
+        res.artists["line"].get_ydata(),
+        expected_profile,
+        rtol=n * np.finfo(expected_profile.dtype).eps,
+    )
+
+
 def test_radial_profile_plot_computes_and_plots():
     try:
         import hwoutils  # noqa: F401
@@ -464,12 +482,7 @@ def test_radial_profile_plot_computes_and_plots():
         img = _image()
         expected_sep, expected_profile = radial.radial_profile(img, 1.0)
         res = radial_profile_plot(img, 1.0)
-        np.testing.assert_allclose(
-            res.artists["line"].get_xdata(), np.asarray(expected_sep)
-        )
-        np.testing.assert_allclose(
-            res.artists["line"].get_ydata(), np.asarray(expected_profile)
-        )
+        _assert_same_profile(res, expected_sep, expected_profile, img.size)
         plt.close(res.fig)
 
 
@@ -519,12 +532,7 @@ def test_radial_profile_plot_forwards_center_and_nbins():
         img, 1.0, center=(3.0, 3.0), nbins=5
     )
     res = radial_profile_plot(img, 1.0, center=(3.0, 3.0), nbins=5)
-    np.testing.assert_allclose(
-        res.artists["line"].get_xdata(), np.asarray(expected_sep)
-    )
-    np.testing.assert_allclose(
-        res.artists["line"].get_ydata(), np.asarray(expected_profile)
-    )
+    _assert_same_profile(res, expected_sep, expected_profile, img.size)
     plt.close(res.fig)
 
 
