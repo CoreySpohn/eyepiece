@@ -1,6 +1,6 @@
 # Clip checks
 
-This page lists the readability, meaning, motion, caption, and speech checks in
+This page lists the readability, meaning, motion, caption, speech and timing checks in
 `eyepiece.testing`. See {doc}`../explanation/clock` for the reasoning.
 
 ## readability_faults
@@ -165,3 +165,39 @@ over the span from the start of the first word to the end of the last in the
 cached word times, so padding and the pauses between lines do not count and a
 pause inside a line does. The result lists the lines strictly above the
 ceiling; `assert_speech_rate` raises `SpeechRateError` naming them.
+
+## timing_faults
+
+`timing_faults(narration, plan=None, source=None, at=None, readouts=None)`
+applies the timing rules of a narrated clip in one call and returns
+`TimingFault` records sorted by time; `assert_timing` raises `TimingError`.
+Each finding has one of the `TIMING_KINDS`:
+
+- `speech-rate`: a line faster than 160 words per minute, or 166 for a line of
+  at most 10 spoken words, compared in whole words per minute.
+- `line-gap`: less than 0.4 s of heard silence between the last word of one
+  spoken line and the first word of the next.
+- `late-first-cue`, `early-last-cue`, `undeclared-silence`, `multiple-hero`
+  and `speech-in-hero`: the findings of `eyepiece.narration.check_silence`,
+  passed through unchanged.
+- `still-speech` (with `source`, a video path or a callable returning an
+  image): a still run, in which fewer than 0.16 percent of the pixels change
+  against the run's first frame, under more than 2 s of speech; a silence of
+  2 s or more splits the speech.
+- `number-late` and `number-contradicts` (with `readouts` and `at`): a readout
+  does not show the spoken number by the start of its word (plus
+  `settle_tol_s`, at least one frame with a plan), or, once it has, shows a
+  different number while the line is still said. A readout shows a number when
+  its first whole number equals it and its ink is at least 90 percent of the
+  most it reaches during the line; a blank or hidden readout contradicts
+  nothing.
+
+## review_sheet
+
+`review_sheet(path, source, narration=None, plan=None, events=None,
+audio=None)` writes one PNG of a clip at its event times: every cue, every beat
+end and, with a plan, the middle and end of every move. With a narration each
+row is one beat,
+with its text, a frame per event, the caption under each frame and, with
+`audio`, the waveform with a tick at each event. `events=` takes any
+`(seconds, label)` list instead.
