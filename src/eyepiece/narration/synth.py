@@ -43,7 +43,7 @@ from pathlib import Path
 import numpy as np
 
 from ._align import align
-from ._script import KOKORO_VERSION, Script
+from ._script import KOKORO_VERSION, Pause, Script
 from ._speech import SpeechTextError, check_script_speech
 from ._timeline import MissingAudioError, Spoken, Word, estimate
 
@@ -172,6 +172,8 @@ def synthesize(
     write_audio = _write_compressed if write_audio is None else write_audio
     spoken_keys = []
     for line in script.lines:
+        if isinstance(line, Pause):
+            continue
         key = script.line_key(line)
         meta = cache_dir / f"{key}.json"
         if meta.exists() and not force:
@@ -230,7 +232,13 @@ def list_cache(script, cache_dir):
     ``line`` is the key of the script line that uses the entry, or None for
     an entry no line uses.
     """
-    by_key = dict(zip(script.cache_keys(), (x.key for x in script.lines), strict=True))
+    by_key = dict(
+        zip(
+            script.cache_keys(),
+            (x.key for x in script.lines if not isinstance(x, Pause)),
+            strict=True,
+        )
+    )
     rows = []
     for path in sorted(Path(cache_dir).glob("*.json")):
         record = json.loads(path.read_text())

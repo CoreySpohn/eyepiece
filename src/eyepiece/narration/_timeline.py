@@ -23,6 +23,8 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._script import Pause
+
 # A rough English speaking rate, checked against the cached narration fixture.
 _LETTERS_PER_S = 12.0
 _PAUSE_S = 0.25
@@ -151,8 +153,11 @@ def estimate(line):
     their English spoken words: 12 is "twelve", and 0.943 is "zero point
     nine four three". Each written token keeps one timing entry, so cue
     indices stay unchanged. It stands in for the cache in tests and in a
-    first layout, never in a published render.
+    first layout, never in a published render. A `Pause` has no words and
+    no speech.
     """
+    if isinstance(line, Pause):
+        return Spoken("pause", 0.0, ())
     t = 0.0
     words = []
     for text in line.words:
@@ -256,6 +261,9 @@ class Narration:
         self.beats = []
         self._asked = set()
         for line in script.lines:
+            if isinstance(line, Pause):
+                self.spoken[line.key] = estimate(line)
+                continue
             if line.key not in spoken:
                 raise KeyError(f"no timing for line {line.key!r}")
             timing = spoken[line.key]
@@ -302,6 +310,11 @@ class Narration:
         line = self.script.line(key)
         timing = self.spoken[key]
         start_s = float(start_s)
+        if isinstance(line, Pause):
+            end = start_s + line.duration_s
+            if end_s is not None:
+                end = max(end, float(end_s))
+            return NarrationBeat(line.key, start_s, start_s, start_s, end, (), ())
         on = start_s + line.pad_before_s
         words = tuple(Word(w.text, on + w.start_s, on + w.end_s) for w in timing.words)
         speech_end = on + timing.duration_s
@@ -330,6 +343,8 @@ class Narration:
         """
         spoken = {}
         for line in script.lines:
+            if isinstance(line, Pause):
+                continue
             key = script.line_key(line)
             path = Path(cache_dir) / f"{key}.json"
             if not path.exists():
@@ -355,6 +370,29 @@ class Narration:
         return cls(
             script, {line.key: estimate(line) for line in script.lines}, **kwargs
         )
+
+    def audit(self):
+        """One row per beat: what is heard, or what is silent on screen.
+
+        Returns:
+            A list of dicts with ``key``, ``kind`` (``"speech"`` or
+            ``"silent"``), ``start_s``, ``end_s`` and ``text`` (the spoken
+            text, or the pause's description of what is on screen).
+        """
+        rows = []
+        for beat in self.beats:
+            line = self.script.line(beat.key)
+            silent = isinstance(line, Pause)
+            rows.append(
+                {
+                    "key": beat.key,
+                    "kind": "silent" if silent else "speech",
+                    "start_s": beat.start_s,
+                    "end_s": beat.end_s,
+                    "text": line.description if silent else line.spoken,
+                }
+            )
+        return rows
 
     def beat(self, key):
         """The `NarrationBeat` named ``key``."""

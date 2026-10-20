@@ -146,6 +146,53 @@ class Line:
 
 
 @dataclass(frozen=True)
+class Pause:
+    """A silent beat of the clip: it never speaks and has no audio.
+
+    A pause sits in a `Script` among the lines. It enters the timing like a
+    line with no audio, so the clip's moves run inside it; it adds nothing to
+    the captions, and the audit lists it as a "silent" row naming what is on
+    screen. Use it for the stillness the design declares, never to patch a gap.
+
+    Attributes:
+        key: Name of the beat; unique among the keys of the script.
+        duration_s: Least length of the beat in seconds; motion that must
+            finish inside it can hold it longer.
+        description: One line saying what is on screen during the silence.
+    """
+
+    key: str
+    duration_s: float
+    description: str
+
+    def __post_init__(self):
+        """Check the duration and the description."""
+        if not self.duration_s > 0.0 or self.duration_s == float("inf"):
+            raise ValueError(
+                f"pause {self.key!r}: duration must be finite and positive, "
+                f"got {self.duration_s}"
+            )
+        if not self.description.strip():
+            raise ValueError(f"pause {self.key!r}: description is empty")
+
+    # The parts of a `Line` that the layout and the checks read.
+    spoken = ""
+    words = ()
+    cues = ()
+    display = None
+    pad_before_s = 0.0
+    pad_after_s = 0.0
+
+    def cue(self, kind, target):
+        """A pause has no cues.
+
+        Raises:
+            KeyError: Always.
+        """
+        raise KeyError(f"pause {self.key!r} has no cues")
+
+
+@dataclass(frozen=True)
 class Script:
     """The lines of one clip and the voice that speaks them.
 
@@ -154,7 +201,7 @@ class Script:
     lines again instead of reusing stale audio.
 
     Attributes:
-        lines: The `Line` in order; their keys are unique.
+        lines: The `Line` and `Pause` entries in order; their keys are unique.
         voice: Voice name of the engine. The default, ``bm_george``, is a
             British English Kokoro voice.
         speed: Speech speed factor (1.0 is the voice's natural rate).
@@ -192,7 +239,13 @@ class Script:
         )
 
     def line_key(self, line):
-        """Cache key of one line: its spoken text and everything that voices it."""
+        """Cache key of one line: its spoken text and everything that voices it.
+
+        Raises:
+            ValueError: If ``line`` is a `Pause`, which has no speech.
+        """
+        if isinstance(line, Pause):
+            raise ValueError(f"pause {line.key!r} has no speech and no cache key")
         return line_hash(
             line.spoken,
             self.voice,
@@ -204,8 +257,10 @@ class Script:
         )
 
     def cache_keys(self):
-        """The cache key of every line, in order."""
-        return tuple(self.line_key(line) for line in self.lines)
+        """The cache key of every spoken line, in order (pauses have none)."""
+        return tuple(
+            self.line_key(line) for line in self.lines if not isinstance(line, Pause)
+        )
 
     def to_json(self, path):
         """Write this script to JSON without importing its defining module.
@@ -222,6 +277,7 @@ class Script:
         record = {f.name: getattr(self, f.name) for f in fields(self)}
         record["lines"] = [
             {f.name: getattr(line, f.name) for f in fields(line) if f.init}
+            | ({"kind": "pause"} if isinstance(line, Pause) else {})
             for line in self.lines
         ]
         path = Path(path)
@@ -239,7 +295,12 @@ class Script:
             The script with its derived spoken text and cues restored.
         """
         record = json.loads(Path(path).read_text(encoding="utf-8"))
-        record["lines"] = tuple(Line(**line) for line in record["lines"])
+        record["lines"] = tuple(
+            Pause(**{k: v for k, v in line.items() if k != "kind"})
+            if line.get("kind") == "pause"
+            else Line(**line)
+            for line in record["lines"]
+        )
         return cls(**record)
 
 

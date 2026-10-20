@@ -21,6 +21,7 @@ import numpy as np
 
 from eyepiece._ffmpeg import _merged_profile, resolve_ffmpeg
 
+from ._script import Pause
 from ._timeline import MissingAudioError
 
 _SENTENCE_END = re.compile(r"[.?!]$")
@@ -153,8 +154,11 @@ def audio_track(
         raise ValueError(f"fade_s must not be negative, got {fade_s}")
     clips, out_rate = [], rate
     for beat in narration.beats:
+        line = narration.script.line(beat.key)
+        if isinstance(line, Pause):
+            continue
         spoken = narration.spoken[beat.key]
-        key = narration.script.line_key(narration.script.line(beat.key))
+        key = narration.script.line_key(line)
         file = _audio_file(audio_dir, key, spoken)
         if file is None:
             raise MissingAudioError(
