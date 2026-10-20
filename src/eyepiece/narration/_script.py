@@ -22,6 +22,11 @@ from pathlib import Path
 
 _MARK = re.compile(r"\{(?P<kind>[a-z_][a-z0-9_]*):(?P<target>[^{}\s:]+)\}")
 _STRAY = re.compile(r"[{}]")
+_SENTENCE_END = re.compile(r"[.?!][\"')\]]*$")
+_ABBREVIATIONS = frozenset(
+    "dr mr mrs ms prof st vs etc fig figs eq eqs approx cf al".split()
+)
+_INITIALS = re.compile(r"^(?:[A-Za-z]\.)+$")
 
 KOKORO_MODEL = "Kokoro-82M"
 KOKORO_VERSION = "0.9.4"
@@ -40,6 +45,36 @@ class Cue:
     kind: str
     target: str
     word: int
+
+
+def split_sentences(words):
+    """Split spoken words into sentences, as ``(first, stop)`` word indices.
+
+    A sentence ends at a word that ends in ``.``, ``?`` or ``!`` (with any
+    closing quote or bracket after it). A period inside a number (``3.5``)
+    never ends one, and neither does an abbreviation such as ``Dr.``, ``e.g.``
+    or an initial.
+
+    Args:
+        words: The spoken words, with their punctuation.
+
+    Returns:
+        A tuple of ``(first, stop)`` pairs that tile ``range(len(words))``.
+    """
+    spans, first = [], 0
+    for i, word in enumerate(words):
+        if not _SENTENCE_END.search(word):
+            continue
+        bare = word.rstrip(".?!\"')]").lower()
+        if word.rstrip("\"')]").endswith("."):
+            if bare in _ABBREVIATIONS or _INITIALS.match(word.rstrip("\"')]")):
+                if i + 1 < len(words):
+                    continue
+        spans.append((first, i + 1))
+        first = i + 1
+    if first < len(words):
+        spans.append((first, len(words)))
+    return tuple(spans)
 
 
 def parse_cues(text):
@@ -98,6 +133,13 @@ class Line:
             spoken words.
         speed: Speech speed factor of this line, or None for the script's
             speed. It enters the line's cache key as the script speed does.
+        sentence_gap_s: None speaks the line in one call. A number speaks it
+            one sentence at a time (see `split_sentences`) and joins the
+            sentences with that many seconds of silence, since the engine
+            does not pause reliably at punctuation inside one call. Cue marks
+            stay bound to their words, the timing reports each word on the
+            joined clock, and each sentence is cached under its own key. It
+            enters the line's cache key when set.
         spoken: The text with marks removed (set from `text`).
         cues: The marks, as `Cue` (set from `text`).
     """
@@ -108,6 +150,7 @@ class Line:
     pad_after_s: float = 0.5
     display: str | None = None
     speed: float | None = None
+    sentence_gap_s: float | None = None
     spoken: str = field(init=False, compare=False)
     cues: tuple = field(init=False, compare=False)
 
@@ -117,6 +160,8 @@ class Line:
             raise ValueError(f"line {self.key!r}: padding must not be negative")
         if self.speed is not None and not self.speed > 0.0:
             raise ValueError(f"line {self.key!r}: speed must be positive")
+        if self.sentence_gap_s is not None and not self.sentence_gap_s >= 0.0:
+            raise ValueError(f"line {self.key!r}: sentence_gap_s must not be negative")
         try:
             spoken, cues = parse_cues(self.text)
         except ValueError as err:
@@ -137,6 +182,12 @@ class Line:
     def words(self):
         """The spoken words, with their punctuation."""
         return tuple(self.spoken.split())
+
+    @property
+    def sentences(self):
+        """The spoken sentences, each the words of one sentence joined."""
+        words = self.words
+        return tuple(" ".join(words[a:b]) for a, b in split_sentences(words))
 
     def cue(self, kind, target):
         """The one cue of this line with this kind and target.
@@ -260,6 +311,29 @@ class Script:
             engine=self.engine,
             engine_version=self.engine_version,
             model=self.model,
+            gap=line.sentence_gap_s,
+        )
+
+    def sentence_keys(self, line):
+        """Cache keys of the sentences of a line that is spoken sentence by sentence.
+
+        Returns:
+            One key per sentence, each that of the sentence spoken alone; an
+            empty tuple for a line with no `sentence_gap_s`.
+        """
+        if isinstance(line, Pause) or line.sentence_gap_s is None:
+            return ()
+        return tuple(
+            line_hash(
+                text,
+                self.voice,
+                self.speed_of(line),
+                self.lang,
+                engine=self.engine,
+                engine_version=self.engine_version,
+                model=self.model,
+            )
+            for text in line.sentences
         )
 
     def speed_of(self, line):
@@ -267,10 +341,16 @@ class Script:
         return self.speed if line.speed is None else line.speed
 
     def cache_keys(self):
-        """The cache key of every spoken line, in order (pauses have none)."""
-        return tuple(
-            self.line_key(line) for line in self.lines if not isinstance(line, Pause)
-        )
+        """The cache key of every spoken line, in order (pauses have none).
+
+        A line spoken sentence by sentence is followed by its sentences' keys.
+        """
+        keys = []
+        for line in self.lines:
+            if not isinstance(line, Pause):
+                keys.append(self.line_key(line))
+                keys.extend(self.sentence_keys(line))
+        return tuple(keys)
 
     def to_json(self, path):
         """Write this script to JSON without importing its defining module.
@@ -289,7 +369,11 @@ class Script:
             {
                 f.name: getattr(line, f.name)
                 for f in fields(line)
-                if f.init and not (f.name == "speed" and getattr(line, f.name) is None)
+                if f.init
+                and not (
+                    f.name in ("speed", "sentence_gap_s")
+                    and getattr(line, f.name) is None
+                )
             }
             | ({"kind": "pause"} if isinstance(line, Pause) else {})
             for line in self.lines
@@ -327,6 +411,7 @@ def line_hash(
     engine="kokoro",
     engine_version=KOKORO_VERSION,
     model=KOKORO_MODEL,
+    gap=None,
 ):
     """Cache key of a spoken line, 16 hex digits.
 
@@ -338,11 +423,14 @@ def line_hash(
         engine: Name of the speech engine.
         engine_version: Version of the engine package.
         model: Model name.
+        gap: Seconds of silence between the sentences of a line spoken one
+            sentence at a time, or None; it enters the key only when set.
 
     Returns:
         The first 16 hex digits of the SHA-256 of the fields.
     """
-    payload = json.dumps(
-        [spoken, voice, float(speed), lang, engine, engine_version, model]
-    )
+    fields_ = [spoken, voice, float(speed), lang, engine, engine_version, model]
+    if gap is not None:
+        fields_.append(["sentence_gap_s", float(gap)])
+    payload = json.dumps(fields_)
     return hashlib.sha256(payload.encode()).hexdigest()[:16]

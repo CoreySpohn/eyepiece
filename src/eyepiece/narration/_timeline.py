@@ -23,7 +23,7 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._script import Pause
+from ._script import Pause, split_sentences
 
 # A rough English speaking rate, checked against the cached narration fixture.
 _LETTERS_PER_S = 12.0
@@ -160,11 +160,20 @@ def estimate(line):
         return Spoken("pause", 0.0, ())
     t = 0.0
     words = []
-    for text in line.words:
+    # A line spoken sentence by sentence holds its gap after each sentence.
+    stops = (
+        set()
+        if line.sentence_gap_s is None
+        else {b - 1 for _, b in split_sentences(line.words)[:-1]}
+    )
+    for i, text in enumerate(line.words):
         letters = sum(ch.isalnum() for ch in _NUMBER.sub(_number_words, text))
         end = t + max(1, letters) / _LETTERS_PER_S
         words.append(Word(text, t, end))
-        t = end + (_PAUSE_S if text[-1] in ".?!,;" else 0.0)
+        if i in stops:
+            t = end + line.sentence_gap_s
+        else:
+            t = end + (_PAUSE_S if text[-1] in ".?!,;" else 0.0)
     return Spoken("estimate", t, tuple(words))
 
 

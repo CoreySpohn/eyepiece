@@ -43,7 +43,7 @@ from pathlib import Path
 import numpy as np
 
 from ._align import align
-from ._script import KOKORO_VERSION, Pause, Script
+from ._script import KOKORO_VERSION, Line, Pause, Script, split_sentences
 from ._speech import SpeechTextError, check_script_speech
 from ._timeline import MissingAudioError, Spoken, Word, estimate
 
@@ -130,6 +130,84 @@ def _write_compressed(directory, key, audio, rate):
     return name
 
 
+def _read_audio(directory, name):
+    """Read a cached audio file back as float samples and their rate."""
+    try:
+        import soundfile as sf
+    except ImportError:
+        raise ImportError(_INSTALL % KOKORO_VERSION) from None
+    audio, rate = sf.read(Path(directory) / name, dtype="float32")
+    return audio, int(rate)
+
+
+def _speak_sentences(
+    script, line, speak, cache_dir, write_audio, read_audio, force, respeak
+):
+    """Speak a line one sentence at a time and join the sentences.
+
+    Each sentence is cached under its own key, spoken once however many lines
+    hold it. The joined timing puts every word on the line's clock.
+
+    Returns:
+        ``(audio, rate, words, keys)`` with the sentence cache keys.
+    """
+    keys = script.sentence_keys(line)
+    words = line.words
+    pieces, rates, offset, joined = [], set(), 0.0, []
+    for n, ((a, b), key) in enumerate(zip(split_sentences(words), keys, strict=True)):
+        text = " ".join(words[a:b])
+        meta = Path(cache_dir) / f"{key}.json"
+        timing = None
+        if meta.exists() and not force:
+            record = json.loads(meta.read_text())
+            name = record.get("audio")
+            if name and (Path(cache_dir) / name).exists():
+                timing = Spoken.from_json(record)
+                audio, rate = read_audio(cache_dir, name)
+            elif not respeak:
+                raise MissingAudioError(
+                    f"sentence {text!r} of line {line.key!r} has {meta.name} but "
+                    "no audio beside it; restore the audio from git, or pass "
+                    "respeak=True (--respeak) to speak it again"
+                )
+        if timing is None:
+            piece = Line(f"{line.key}~{n}", text, speed=line.speed)
+            audio, rate, sentence_words = speak(piece)
+            audio = np.asarray(audio, dtype=np.float32)
+            name = write_audio(cache_dir, key, audio, rate)
+            timing = Spoken(
+                key,
+                len(audio) / rate,
+                tuple(sentence_words),
+                text,
+                name,
+                rate,
+                len(audio),
+            )
+            record = timing.to_json()
+            record.update(
+                voice=script.voice,
+                speed=script.speed_of(line),
+                lang=script.lang,
+                engine=script.engine,
+                engine_version=script.engine_version,
+                model=script.model,
+            )
+            _write_json(meta, record)
+        rates.add(rate)
+        if len(rates) > 1:
+            raise RuntimeError(f"sentences of line {line.key!r} differ in sample rate")
+        gap = np.zeros(round(line.sentence_gap_s * rate), dtype=np.float32)
+        pieces += [np.asarray(audio, dtype=np.float32), gap]
+        joined += [
+            Word(w.text, w.start_s + offset, w.end_s + offset) for w in timing.words
+        ]
+        offset += (len(audio) + len(gap)) / rate
+    # No silence after the last sentence: the line's own padding follows it.
+    pieces.pop()
+    return np.concatenate(pieces), rates.pop(), tuple(joined), keys
+
+
 def _write_json(path, record):
     _replace(path, lambda tmp: tmp.write_text(json.dumps(record, indent=1) + "\n"))
 
@@ -140,6 +218,7 @@ def synthesize(
     *,
     speak=None,
     write_audio=None,
+    read_audio=None,
     force=False,
     respeak=False,
     prune=False,
@@ -154,6 +233,9 @@ def synthesize(
             line needs speaking.
         write_audio: ``write_audio(directory, key, audio, rate) -> name``;
             None writes Ogg Opus or FLAC.
+        read_audio: ``read_audio(directory, name) -> (audio, rate)``, used to
+            join cached sentences of a line with a `sentence_gap_s`; None
+            reads with soundfile.
         force: Speak every line again.
         respeak: Speak again a line whose JSON exists but whose audio does
             not. Without it that is an error.
@@ -172,6 +254,7 @@ def synthesize(
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     write_audio = _write_compressed if write_audio is None else write_audio
+    read_audio = _read_audio if read_audio is None else read_audio
     spoken_keys = []
     for line in script.lines:
         if isinstance(line, Pause):
@@ -191,7 +274,17 @@ def synthesize(
                 )
         if speak is None:
             speak = ENGINES[script.engine](script)
-        audio, rate, words = speak(line)
+        extra = {}
+        if line.sentence_gap_s is None:
+            audio, rate, words = speak(line)
+        else:
+            audio, rate, words, sentence_keys = _speak_sentences(
+                script, line, speak, cache_dir, write_audio, read_audio, force, respeak
+            )
+            extra = {
+                "sentence_gap_s": line.sentence_gap_s,
+                "sentences": list(sentence_keys),
+            }
         name = write_audio(cache_dir, key, audio, rate)
         spoken = Spoken(
             key, len(audio) / rate, tuple(words), line.spoken, name, rate, len(audio)
@@ -204,6 +297,7 @@ def synthesize(
             engine=script.engine,
             engine_version=script.engine_version,
             model=script.model,
+            **extra,
         )
         _write_json(meta, record)
         spoken_keys.append(line.key)
@@ -234,13 +328,11 @@ def list_cache(script, cache_dir):
     ``line`` is the key of the script line that uses the entry, or None for
     an entry no line uses.
     """
-    by_key = dict(
-        zip(
-            script.cache_keys(),
-            (x.key for x in script.lines if not isinstance(x, Pause)),
-            strict=True,
-        )
-    )
+    by_key = {}
+    for line in script.lines:
+        if not isinstance(line, Pause):
+            by_key[script.line_key(line)] = line.key
+            by_key.update(dict.fromkeys(script.sentence_keys(line), line.key))
     rows = []
     for path in sorted(Path(cache_dir).glob("*.json")):
         record = json.loads(path.read_text())
