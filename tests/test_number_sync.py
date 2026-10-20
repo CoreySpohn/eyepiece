@@ -97,3 +97,40 @@ def test_a_binding_for_no_line_or_with_no_values_is_refused():
         )
     with pytest.raises(ValueError, match="values"):
         nr.check_number_sync(TL, [{"word_key": ("a", 3), "span": SPAN, "values": []}])
+
+
+def _late(settle_after):
+    """A readout that keeps counting past the end of the line's beat."""
+    end = TL.beat("a").end_s
+    return _count(0.0, end + settle_after, 0.0, 96.0, until=end + settle_after + 0.5)
+
+
+def test_a_counter_that_settles_after_the_line_ends_is_late_not_contradicting():
+    end = TL.beat("a").end_s
+    (fault,) = _check(_late(1.0))
+    assert fault.code == "late-settle"
+    lag = float(fault.message.rsplit(", ", 1)[1].split(" s late")[0])
+    assert end + 1.0 - WORD <= lag <= end + 1.0 - WORD + 0.05
+
+
+def test_a_span_wholly_after_the_beat_still_measures_the_lag():
+    end = TL.beat("a").end_s
+    values = [(t, 96.0) for t in np.arange(end + 0.5, end + 1.0, 1 / 30)]
+    binding = {"word_key": ("a", 3), "span": (end + 0.5, end + 1.0), "values": values}
+    (fault,) = nr.check_number_sync(TL, [binding])
+    assert fault.code == "late-settle"
+
+
+def test_a_readout_that_starts_on_the_value_and_leaves_it_contradicts():
+    values = [(0.0, 96.0), (0.1, 96.0), (0.2, 50.0), (0.3, 96.0)]
+    (fault,) = _check(values)
+    assert fault.code == "contradicts" and "leaves" in fault.message
+
+
+def test_a_plan_floors_the_settle_tolerance_at_one_frame():
+    class _Plan:
+        fps = 30.0
+
+    values = _count(0.0, WORD + 0.03, 0.0, 96.0)
+    assert [f.code for f in _check(values)] == ["late-settle"]
+    assert _check(values, plan=_Plan()) == []

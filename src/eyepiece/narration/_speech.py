@@ -406,10 +406,13 @@ def check_number_sync(
             ``span``, the window in which the readout counts, as ``(start_s,
             end_s)`` or the name of a plan span (with `plan`); and ``values``,
             the readout's shown value as ``(time_s, value)`` pairs, one per
-            frame. Only samples inside the span and the line's beat count.
+            frame. Only samples inside the span count; the span may run past
+            the line's beat, so a counter that settles late is measured.
         plan: A `Plan`, to resolve a span given by name.
         settle_tol_s: Seconds after the word's start by which the readout may
             settle. The default is zero: a number lands on or before its word.
+            With a `plan` it is floored at one frame, so a readout drawn on
+            the word's frame does not flag.
         value_tol: Largest difference, in the readout's units, between two
             values that count as equal.
 
@@ -422,6 +425,8 @@ def check_number_sync(
             a named span needs a plan.
     """
     faults = []
+    if plan is not None:
+        settle_tol_s = max(settle_tol_s, 1.0 / plan.fps)
     for binding in bindings:
         key, index = _word_key(binding["word_key"])
         beat = narration.beat(key)
@@ -429,16 +434,14 @@ def check_number_sync(
         spoken = _spoken_value(words, index)
         start = beat.words[index].start_s
         lo, hi = _span_of(binding["span"], plan)
-        window = (max(lo, beat.start_s), min(hi, beat.end_s))
         values = sorted(
             (float(t), float(v))
             for t, v in binding["values"]
-            if window[0] - 1e-9 <= t <= window[1] + 1e-9
+            if lo - 1e-9 <= t <= hi + 1e-9
         )
         if not values:
             raise ValueError(
-                f"binding for {key!r} word {index} has no values inside the line "
-                "and the span"
+                f"binding for {key!r} word {index} has no values inside the span"
             )
         label = f"line {key!r} says {words[index]!r} ({spoken:g})"
 
@@ -481,6 +484,17 @@ def _path_faults(values, spoken, tol, label, key, index):
     """A shown value that is past the spoken number or backs away from it."""
     gap = spoken - values[0][1]
     if gap == 0:
+        for t, b in values[1:]:
+            if abs(b - spoken) > tol:
+                return [
+                    NumberSyncFault(
+                        "contradicts",
+                        f"{label} but the readout leaves it for {b:g} at {t:.2f} s",
+                        key,
+                        index,
+                        t,
+                    )
+                ]
         return []
     direction = math.copysign(1.0, gap)
     for (_, a), (t, b) in itertools.pairwise(values):
