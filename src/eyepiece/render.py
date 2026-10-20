@@ -10,6 +10,7 @@ import importlib.machinery
 import importlib.util
 import json
 import math
+import operator
 import os
 import pickle
 import re
@@ -17,6 +18,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -27,7 +29,7 @@ from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, fields, is_dataclass
 from functools import partial
-from numbers import Real
+from numbers import Integral, Real
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
@@ -35,6 +37,8 @@ from typing import NamedTuple
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib._pylab_helpers import Gcf
+from PIL import Image
 
 import eyepiece
 from eyepiece import _ffmpeg
@@ -645,7 +649,7 @@ class ClipSpec:
         encoder: Optional encoder profile overrides.
         extra_ffmpeg_args: Optional additional encoding arguments.
         extra: Additional content key inputs, including stamp text if needed.
-        poster: Reserved poster frame index.
+        poster: Optional frame index for each silent variant's PNG poster.
     """
 
     slug: str
@@ -725,9 +729,10 @@ def render_variants(
 ) -> list[VariantResult]:
     """Render each requested variant once, skipping current manifest entries.
 
-    All destinations, silent budgets, audio requirements, and keys are checked
-    before any figure is built. Output paths and implicit stamps never enter
-    keys. Duplicate requests are coalesced in their first occurrence's order.
+    All destinations, silent budgets, poster indices, audio requirements, and
+    keys are checked before any figure is built. Output paths and implicit
+    stamps never enter keys. Duplicate requests are coalesced in their first
+    occurrence's order. Silent variants also save the requested PNG poster.
     Completed entries are saved even if a later variant fails.
     A replaced variant's old entry is discarded before rendering, so failures
     cannot leave it marked current. Narrated variants are exempt from venue
@@ -736,7 +741,7 @@ def render_variants(
     Args:
         spec: Frozen ClipSpec describing explicit inputs and figure builders.
         variants: Iterable of Variant selections.
-        out_dir: Folder for videos, extra outputs, and per-variant chunks.
+        out_dir: Folder for videos, posters, extra outputs, and per-variant chunks.
         manifest: Manifest whose root contains all outputs.
         workers: Worker count forwarded to render_frames.
         force: Render even when the manifest entry is current.
@@ -747,7 +752,7 @@ def render_variants(
     Raises:
         ValueError: For duplicate or unknown venues, invalid modes or venue
             settings, exceeded silent frame budgets, missing narrated audio,
-            invalid frames, or outputs outside out_dir.
+            invalid frames or poster indices, or outputs outside out_dir.
         TypeError: If an explicit key input is unsupported.
         RuntimeError: If rendering or audio muxing fails.
     """
@@ -758,6 +763,10 @@ def render_variants(
     if len(venues) != len(spec.venues):
         raise ValueError("Venue names must be unique")
     count = _frame_source(spec.frames, spec.frame_at)
+    if spec.poster is not None and (
+        not isinstance(spec.poster, Integral) or not 0 <= spec.poster < count
+    ):
+        raise ValueError(f"poster must be a frame index in [0, {count})")
     for venue in venues.values():
         for name in ("dpi", "fps"):
             value = getattr(venue, name)
@@ -821,6 +830,7 @@ def render_variants(
                 "frame_at": spec.frame_at is not None,
                 "encoder": spec.encoder,
                 "extra_ffmpeg_args": spec.extra_ffmpeg_args,
+                **({"poster": spec.poster} if spec.poster is not None else {}),
             },
             extra=extra,
         )
@@ -833,8 +843,9 @@ def render_variants(
             entry = manifest.entry(spec.slug, variant.name)
             target = out_dir / f"{spec.slug}-{variant.name}.mp4"
             expected = [target]
-            if spec.poster is not None:
-                expected.append(target.with_suffix(".png"))
+            poster = out_dir / f"{spec.slug}-{variant.name}-poster.png"
+            if spec.poster is not None and not variant.narrated:
+                expected.append(poster)
             recorded = (
                 []
                 if entry is None
@@ -852,6 +863,19 @@ def render_variants(
                     spec, variant, venue, out_dir, key, hold, audio, workers
                 )
                 outputs = [target]
+                if spec.poster is not None and not variant.narrated:
+                    outputs.append(
+                        render_poster(
+                            partial(spec.build, venue, variant.mode),
+                            spec.frames,
+                            spec.poster,
+                            poster,
+                            dpi=venue.dpi,
+                            frame_at=spec.frame_at,
+                            setup=partial(hwostyle.use, variant.mode),
+                            rc=dict(venue.rc or {}),
+                        )
+                    )
             else:
                 frames = entry["frames"]
                 outputs = [
@@ -952,6 +976,13 @@ def _default_style():
         _style.use_video(video)
 
 
+def _close_new_figures(existing):
+    """Close pyplot figures created since the manager snapshot was taken."""
+    for manager in Gcf.get_all_fig_managers():
+        if manager not in existing:
+            plt.close(manager.canvas.figure)
+
+
 @contextmanager
 def _figure(build, frames, dpi, frame_at, setup, rc):
     """Build and freeze a figure under the same state in every process."""
@@ -961,6 +992,7 @@ def _figure(build, frames, dpi, frame_at, setup, rc):
         # Spawned interpreters start with defaults. Also reset the in-process
         # path so unpassed parent rc does not silently change its pixels.
         stack.enter_context(matplotlib.rc_context(matplotlib.rcParamsDefault))
+        stack.callback(_close_new_figures, set(Gcf.get_all_fig_managers()))
         if setup is not None:
             setup()
         stack.enter_context(matplotlib.rc_context(rc))
@@ -1001,6 +1033,125 @@ def _raster(state, index):
     fig.canvas.draw()
     width, height = state["size"]
     return np.asarray(fig.canvas.buffer_rgba())[:height, :width].copy()
+
+
+def render_poster(
+    build, frames, index, path, *, dpi, frame_at=None, setup=None, rc=None
+) -> Path:
+    """Atomically save a worker's even-cropped frame pixels as a PNG.
+
+    Layout is frozen after drawing frame zero, exactly as for a video worker.
+    The PNG contains RGBA pixels without metadata. Figure, style, and rc state
+    are restored even when drawing or writing fails.
+
+    Args:
+        build: Callable returning (fig, draw), as for render_frames.
+        frames: Frame item sequence or integer frame count.
+        index: Zero-based frame index before any video holds.
+        path: Destination PNG; parent directories are created as needed.
+        dpi: Rasterization dots per inch.
+        frame_at: Optional index-to-item callable for an integer frame count.
+        setup: Callable run before applying rc and building the figure.
+        rc: Matplotlib overrides held open during building and drawing.
+
+    Returns:
+        The destination Path.
+
+    Raises:
+        ValueError: For a non-PNG suffix, invalid frame source, or nonpositive dpi.
+        IndexError: If index lies outside the frame source.
+    """
+    path = Path(path)
+    if path.suffix.lower() != ".png":
+        raise ValueError("render_poster requires a .png path")
+    count = _frame_source(frames, frame_at)
+    index = operator.index(index)
+    if not 0 <= index < count:
+        raise IndexError(f"poster frame {index} outside [0, {count})")
+    if dpi <= 0:
+        raise ValueError("dpi must be positive")
+    with _figure(build, frames, dpi, frame_at, setup, rc) as state:
+        pixels = _raster(state, index)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp", delete=False
+    ) as stream:
+        temporary = Path(stream.name)
+    try:
+        Image.fromarray(pixels).save(temporary, format="PNG")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return path
+
+
+def render_still(build, path, *, dpi=None, setup=None, rc=None, metadata=None) -> Path:
+    """Build and save a deterministic still through eyepiece.save_fig.
+
+    Default style state, setup, and rc are applied in the same order as for
+    workers. The built figure is closed and the parent's state restored on exit.
+
+    Args:
+        build: Callable returning a matplotlib Figure.
+        path: Destination PNG, PDF, or SVG; parent directories are created.
+        dpi: PNG resolution override; ignored for vector formats.
+        setup: Callable run before applying rc and building the figure.
+        rc: Matplotlib overrides held open during building and saving.
+        metadata: Optional format-specific metadata passed to save_fig.
+
+    Returns:
+        The saved Path returned by save_fig.
+    """
+    path = Path(path)
+    with ExitStack() as stack:
+        stack.enter_context(matplotlib.rc_context())
+        stack.enter_context(_default_style())
+        stack.enter_context(matplotlib.rc_context(matplotlib.rcParamsDefault))
+        stack.callback(_close_new_figures, set(Gcf.get_all_fig_managers()))
+        if setup is not None:
+            setup()
+        stack.enter_context(matplotlib.rc_context(rc))
+        fig = build()
+        stack.callback(plt.close, fig)
+        overrides = {}
+        if dpi is not None and path.suffix.lower() in ("", ".png"):
+            overrides["dpi"] = dpi
+        if metadata is not None:
+            overrides["metadata"] = metadata
+        return eyepiece.save_fig(fig, path.name, dir=path.parent, **overrides)
+
+
+def same_picture(a, b, *, tol=2, ignore_bottom_px=0) -> bool:
+    """Compare PNG RGBA levels, excluding an optional bottom band.
+
+    Images without alpha are treated as fully opaque.
+
+    Args:
+        a: First PNG path.
+        b: Second PNG path.
+        tol: Maximum allowed absolute difference in any RGBA channel, inclusive.
+        ignore_bottom_px: Number of bottom rows excluded from comparison.
+
+    Returns:
+        Whether shapes match and every compared RGBA difference is within tol.
+
+    Raises:
+        ValueError: If either argument is negative or the bottom band excludes
+            the entire image.
+    """
+    if tol < 0 or ignore_bottom_px < 0:
+        raise ValueError("tol and ignore_bottom_px must be nonnegative")
+    with Image.open(a) as image:
+        first = np.array(image.convert("RGBA"))
+    with Image.open(b) as image:
+        second = np.array(image.convert("RGBA"))
+    if ignore_bottom_px >= min(first.shape[0], second.shape[0]):
+        raise ValueError("ignore_bottom_px must be less than the image height")
+    if first.shape != second.shape:
+        return False
+    rows = first.shape[0] - ignore_bottom_px
+    difference = first[:rows].astype(np.int16) - second[:rows].astype(np.int16)
+    return bool(np.max(np.abs(difference)) <= tol)
 
 
 def _identity(key, count, hold, dpi, size, fps, start, stop):

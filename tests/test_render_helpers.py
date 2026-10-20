@@ -172,3 +172,35 @@ def draw_clip(
         line.set_data([*old, x], [0] * (len(old) + 1))
     else:
         line.set_data([x], [0])
+
+
+def build_poster_clip():
+    """Build an odd-sized grayscale clip with a changing layout-sensitive label."""
+    fig, ax = plt.subplots(figsize=(3.21, 1.81), dpi=73, layout="constrained")
+    fig.set_facecolor("0.9")
+    ax.set_facecolor("0.8")
+    ax.set(xlim=(0, 1), ylim=(0, 1), xticks=[], yticks=[])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.set_ylabel("I", rotation=0, color="0.7", fontsize=8)
+    fig._poster_axes = ax
+    return fig, draw_poster_clip
+
+
+def draw_poster_clip(fig, frame):
+    """Change label width and a large flat region without accumulating state."""
+    ax = fig._poster_axes
+    ax.set_ylabel("I" if frame == 0 else "A much wider label")
+    ax.set_facecolor(str(0.8 - 0.1 * frame))
+
+
+def poster_frame_at(index):
+    return index / 2
+
+
+def build_still():
+    """Exercise rasterized artwork, text, and deterministic vector identifiers."""
+    fig, ax = plt.subplots(figsize=(2, 1), dpi=73)
+    ax.plot([0, 1], [0, 1], rasterized=True)
+    ax.set_title("A still")
+    return fig
