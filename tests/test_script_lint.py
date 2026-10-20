@@ -42,6 +42,12 @@ def test_more_than_one_number_in_a_line_is_flagged():
     one = nr.Line("c", "It takes {pulse:a}twenty one hours.")
     assert _codes(one) == []
     assert _codes(nr.Line("d", "One of them is {pulse:a}6.")) == []
+    # A bare "one" is a number only beside a word that makes it a quantity.
+    assert _codes(nr.Line("e", "It picks out one separation of the profile.")) == []
+    assert _codes(nr.Line("f", "Step one {pulse:a}starts here.")) == []
+    assert _codes(nr.Line("g", "Step one starts here.")) == [
+        ("number-without-cue", "g")
+    ]
 
 
 def test_a_number_needs_a_cue_within_two_words():

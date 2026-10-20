@@ -149,12 +149,11 @@ _TENS = "twenty thirty forty fifty sixty seventy eighty ninety".split()
 _SCALES = "hundred thousand million billion trillion".split()
 _NUMBER_WORDS = frozenset(_ONES + _TENS + _SCALES)
 _DIGITS = re.compile(r"^\W*[+-]?\d[\d,]*(?:\.\d+)?%?\W*$")
-# "one" is a pronoun more often than a number; it is a number unless its
-# neighbors say otherwise.
-_ONE_NOT_AFTER = frozenset("the no any each every this that which a an".split())
-_ONE_NOT_BEFORE = frozenset(
-    "of at another by can could is was that who must should more way thing".split()
-)
+# A bare "one" is a determiner or a pronoun more often than a number, and a
+# false alarm costs more than a miss: it counts only beside a word that makes
+# it a quantity, and always inside a run such as "twenty one".
+_ONE_AFTER = frozenset("step number plus minus times divided equals".split())
+_ONE_BEFORE = frozenset("percent times plus minus over point".split())
 
 
 @dataclass(frozen=True)
@@ -193,11 +192,13 @@ def _numbers(words):
             run = False
             continue
         is_number = bare in _NUMBER_WORDS
-        if bare == "one" and (
-            (i and _bare(words[i - 1]) in _ONE_NOT_AFTER)
-            or (i + 1 < len(words) and _bare(words[i + 1]) in _ONE_NOT_BEFORE)
-        ):
-            is_number = False
+        if bare == "one" and not run:
+            after = i and _bare(words[i - 1]) in _ONE_AFTER
+            before = i + 1 < len(words) and (
+                _bare(words[i + 1]) in _ONE_BEFORE
+                or _bare(words[i + 1]) in _NUMBER_WORDS
+            )
+            is_number = bool(after or before)
         joins = run and (
             bare in ("and", "point")
             and i + 1 < len(words)
