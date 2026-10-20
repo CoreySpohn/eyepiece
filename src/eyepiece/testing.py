@@ -129,6 +129,7 @@ __all__ = [
     "motif_faults",
     "motif_margins",
     "motion_faults",
+    "motion_ink",
     "readability_faults",
     "speech_rate",
 ]
@@ -688,6 +689,7 @@ MOTION_KINDS = (
 VENUE_FPS = {"video": 30.0, "phone": 30.0, "print": 30.0}
 
 _MAX_HOP_RATE = 8.0  # draws per second above which a hop group is a flicker
+_INK_LEVEL = 2  # levels (of 255) a channel must change to count as ink moving
 _STEP_FLOOR = 0.01  # mean pixel change (of 255) under which a step is a hold
 _PAIR_ISOLATION = 2.0  # a jump must also exceed its neighbouring steps by this
 _REST_STEP_RATIO = 0.5  # share of `jump_ratio` that flags a step into rest
@@ -1722,6 +1724,101 @@ def _sample_times(times, fps):
     return list(times)
 
 
+def _sample_trace(fig, at, samples, *, dpi, keep_frames, extra=(), shaped=()):
+    """Pose and draw the figure at each sample and return the `_Trace`."""
+    old_dpi, old_canvas = fig.dpi, fig.canvas
+    if dpi is not None:
+        fig.set_dpi(dpi)
+    if not hasattr(old_canvas, "buffer_rgba"):
+        FigureCanvasAgg(fig)  # a canvas that cannot hand back pixels
+    try:
+        trace = _Trace(samples, keep_frames=keep_frames)
+        for k, t in enumerate(samples):
+            at(t)
+            trace.add(k, fig, _renderer(fig), extra)
+            if shaped:
+                trace.add_shapes(k, shaped)
+    finally:
+        fig.set_canvas(old_canvas)
+        if dpi is not None:
+            fig.set_dpi(old_dpi)
+    return trace
+
+
+def motion_ink(fig, at, times, driven, *, venue=None, fps=None, dpi=None):
+    """The share of the clip's changed pixels that belong to the driven artists.
+
+    Each frame is compared with the one before it. A pixel counts as changed
+    when any channel moves by more than `_INK_LEVEL` levels, and as driven when
+    it lies within two pixels of the box of a driven artist, at either frame.
+    The ratio is the driven changed pixels over all changed pixels, summed
+    over the clip, so a frame that changes more weighs more. It says how much
+    of what moves is the quantity the clip is about, and how much is
+    furniture, arrivals and swaps. It is reported beside the motion checks
+    and is never a pass or a fail.
+
+    An artist is driven when the draw function sets it from the knob the clip
+    is about: the dot that travels, the bar that grows, the readout that
+    counts. Name them at the call site; the plan holds no artists.
+
+    Args:
+        fig: The figure of the clip.
+        at: Callable ``at(t)`` that poses the figure at time `t`.
+        times: Sample times, or a `Span` to sample at every frame.
+        driven: The artists the knob drives.
+        venue: Key of `VENUE_FPS` giving the frame rate of a `Span`.
+        fps: Frame rate of a `Span`; overrides `venue`.
+        dpi: Output dpi; None uses the figure's.
+
+    Returns:
+        A float in [0, 1], or None when no pixel changes.
+
+    Raises:
+        ValueError: If a driven artist is never visible, or there are fewer
+            than two samples.
+    """
+    driven = list(driven)
+    if fps is None:
+        venue = "video" if venue is None else venue
+        if venue not in VENUE_FPS:
+            raise ValueError(f"unknown venue {venue!r}; known: {sorted(VENUE_FPS)}")
+        fps = VENUE_FPS[venue]
+    samples = _sample_times(times, fps)
+    if len(samples) < 2:
+        raise ValueError("the motion ink needs at least two samples")
+    trace = _sample_trace(fig, at, samples, dpi=dpi, keep_frames=True)
+    for artist in driven:
+        if not trace.boxes.get(artist):
+            raise ValueError(f"driven artist {artist!r} is not visible at any sample")
+    changed = driving = 0
+    for k in range(1, len(samples)):
+        before = trace.frames[k - 1].astype(np.int16)
+        after = trace.frames[k].astype(np.int16)
+        moved = np.abs(after - before).max(axis=2) > _INK_LEVEL
+        if not moved.any():
+            continue
+        mask = _boxes_mask(trace, driven, k, moved.shape)
+        changed += int(moved.sum())
+        driving += int((moved & mask).sum())
+    return driving / changed if changed else None
+
+
+def _boxes_mask(trace, artists, k, shape):
+    """Boolean mask of the padded boxes of `artists` at samples ``k - 1`` and `k`."""
+    height = shape[0]
+    mask = np.zeros(shape, dtype=bool)
+    for artist in artists:
+        for j in (k - 1, k):
+            box = trace.box(artist, j)
+            if box is None:
+                continue
+            x0, y0, x1, y1 = box[0] - 2.0, box[1] - 2.0, box[2] + 2.0, box[3] + 2.0
+            rows = slice(max(int(height - y1), 0), max(int(height - y0) + 1, 0))
+            cols = slice(max(int(x0), 0), max(int(x1) + 1, 0))
+            mask[rows, cols] = True
+    return mask
+
+
 def motion_faults(
     fig,
     at,
@@ -1893,37 +1990,28 @@ def motion_faults(
     samples = _sample_times(times, fps)
     if len(samples) < 3:
         raise ValueError("a motion check needs at least three samples")
-    old_dpi, old_canvas = fig.dpi, fig.canvas
-    if dpi is not None:
-        fig.set_dpi(dpi)
-    if not hasattr(old_canvas, "buffer_rgba"):
-        FigureCanvasAgg(fig)  # a canvas that cannot hand back pixels
-    try:
-        trace = _Trace(
-            samples, keep_frames=bool({"jump", "dead", "hop-rate"} & set(kinds))
+    extra = [
+        a
+        for move in moves or ()
+        for a in (
+            *(_declared(move, "artists") or ()),
+            *(_declared(move, "rest") or ()),
         )
-        extra = [
-            a
-            for move in moves or ()
-            for a in (
-                *(_declared(move, "artists") or ()),
-                *(_declared(move, "rest") or ()),
-            )
-            if isinstance(a, AxesImage)
-        ]
-        shaped = [
-            *rectilinear,
-            *(a for move in moves or () for a in _declared(move, "rectilinear") or ()),
-        ]
-        for k, t in enumerate(samples):
-            at(t)
-            trace.add(k, fig, _renderer(fig), extra)
-            if "shape-class" in kinds:
-                trace.add_shapes(k, shaped)
-    finally:
-        fig.set_canvas(old_canvas)
-        if dpi is not None:
-            fig.set_dpi(old_dpi)
+        if isinstance(a, AxesImage)
+    ]
+    shaped = [
+        *rectilinear,
+        *(a for move in moves or () for a in _declared(move, "rectilinear") or ()),
+    ]
+    trace = _sample_trace(
+        fig,
+        at,
+        samples,
+        dpi=dpi,
+        keep_frames=bool({"jump", "dead", "hop-rate"} & set(kinds)),
+        extra=extra,
+        shaped=shaped if "shape-class" in kinds else (),
+    )
     return _analyze(
         trace,
         kinds=kinds,
@@ -2250,6 +2338,9 @@ class ClipReport:
         unread_knobs: List of knob names never read by the draw function.
             Constant knobs that were read do not count as unread.
         speech: List of ``(line_key, wpm)`` pairs above the speech ceiling.
+        motion_ink: The share of changed pixels that belong to the artists
+            named in ``driven`` (see `motion_ink`), or None when none were
+            named or nothing changes. It is reported, never a fault.
     """
 
     readability: list
@@ -2258,6 +2349,7 @@ class ClipReport:
     plan_faults: list
     unread_knobs: list
     speech: list
+    motion_ink: float | None = None
 
     @property
     def faults(self):
@@ -2288,11 +2380,16 @@ class ClipReport:
     def __str__(self):
         """Summarize the clip, naming every finding by kind."""
         found = self.faults
+        ink = (
+            []
+            if self.motion_ink is None
+            else [f"motion ink: {self.motion_ink:.2f} of changed pixels are driven"]
+        )
         if not found:
-            return "clip is clean"
+            return "\n".join(["clip is clean", *ink])
         lines = [f"{len(found)} clip fault(s):"]
         lines += [f"  {kind}: {detail}" for kind, detail in found]
-        return "\n".join(lines)
+        return "\n".join(lines + ink)
 
 
 class ClipError(AssertionError):
@@ -2343,6 +2440,7 @@ def check_clip(
     moves=None,
     steps=None,
     hops=None,
+    driven=None,
 ) -> ClipReport:
     """Re-render a plan-driven clip and collect its checks without writing files.
 
@@ -2379,6 +2477,8 @@ def check_clip(
             its group, as in `motion_faults`.
         hops: Hop groups, each ``{"artists": [...], "rate": draws_per_second}``,
             as in `motion_faults`; a declared move's ``hops`` adds to them.
+        driven: The artists the clip's knob drives, for the report's
+            ``motion_ink`` (see `motion_ink`). None leaves it None.
 
     Returns:
         A frozen `ClipReport` with the findings from each check.
@@ -2447,8 +2547,11 @@ def check_clip(
         speech = (
             [] if plan.narration is None else list(speech_rate(plan.narration).fast)
         )
+        ink = (
+            None if driven is None else motion_ink(fig, at, times, driven, fps=plan.fps)
+        )
         return ClipReport(
-            unique, meaning, motion, list(plan.faults), list(unread), speech
+            unique, meaning, motion, list(plan.faults), list(unread), speech, ink
         )
     finally:
         plan._read.clear()

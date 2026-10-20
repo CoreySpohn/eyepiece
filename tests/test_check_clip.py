@@ -61,7 +61,8 @@ def test_clean_clip_and_assertion_pass():
     report = ept.check_clip(fig, draw, plan, moves={dot: "slide"})
     assert isinstance(report, ept.ClipReport)
     assert report.ok and report.faults == []
-    assert all(value == [] for value in vars(report).values())
+    assert report.motion_ink is None
+    assert all(not value for value in vars(report).values())
     assert "clean" in str(report)
     assert dot.get_xdata() == [48.0]
     with pytest.raises(FrozenInstanceError):
