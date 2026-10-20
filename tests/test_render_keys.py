@@ -8,6 +8,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
+import hwostyle
 import matplotlib
 import numpy as np
 import pytest
@@ -322,7 +323,7 @@ def test_no_implicit_output_path_or_stamp_input(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.parametrize("package", [ep, matplotlib, np])
+@pytest.mark.parametrize("package", [ep, matplotlib, np, hwostyle])
 def test_package_versions_are_inputs(monkeypatch, package):
     original = content_key()
     monkeypatch.setattr(package, "__version__", "different-version")
@@ -335,6 +336,16 @@ def test_missing_eyepiece_version_is_supported(monkeypatch):
     absent = content_key()
     assert absent != present
     monkeypatch.delattr(ep, "__version__")
+    assert content_key() == absent
+
+
+def test_unimportable_hwostyle_version_is_none(monkeypatch):
+    present = content_key()
+    with monkeypatch.context() as patch:
+        patch.setattr(hwostyle, "__version__", None)
+        absent = content_key()
+    assert absent != present
+    monkeypatch.setitem(sys.modules, "hwostyle", None)
     assert content_key() == absent
 
 

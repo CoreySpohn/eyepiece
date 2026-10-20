@@ -82,6 +82,29 @@ def test_missing_manifest_and_unknown_entries(tmp_path):
     assert manifest.verify("missing", "doc-light") == []
 
 
+def test_discard_removes_only_requested_entry_and_persists(tmp_path):
+    (tmp_path / "clip.mp4").write_bytes(b"video")
+    manifest = Manifest(tmp_path / "manifest.json")
+    for slug, variant in (("clip", "light"), ("clip", "dark"), ("other", "light")):
+        manifest.record(slug, variant, key="key", outputs=["clip.mp4"])
+    manifest.save()
+    other = manifest.entry("other", "light")
+    dark = manifest.entry("clip", "dark")
+    assert manifest.discard("missing", "light") is False
+    assert manifest.discard("clip", "light") is True
+    assert manifest.discard("clip", "light") is False
+    assert manifest.entry("clip", "dark") == dark
+    assert manifest.entry("other", "light") == other
+    assert manifest.save() is True
+    loaded = Manifest.load(manifest.path)
+    assert loaded.entry("clip", "light") is None
+    assert loaded.entry("clip", "dark") == dark
+    assert loaded.entry("other", "light") == other
+    assert loaded.discard("clip", "dark") is True
+    loaded.save()
+    assert "clip" not in json.loads(loaded.path.read_text())["clips"]
+
+
 def test_unchanged_save_preserves_mtime_even_after_record(tmp_path):
     output = tmp_path / "clip.mp4"
     output.write_bytes(b"video")

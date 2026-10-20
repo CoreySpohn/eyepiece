@@ -10,6 +10,67 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 
+def build_variant_clip(
+    venue, mode, *, markers, fail_mode=None, data=None, failure_root=None
+):
+    """Count builds on disk, including builds in spawned workers."""
+    folder = Path(markers)
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / f"{venue.name}-{mode}").open("a") as stream:
+        stream.write(f"{os.getpid()}\n")
+    if mode == fail_mode:
+        raise RuntimeError("deliberate variant failure")
+    fig = plt.figure(figsize=(0.96, 0.54))
+    if data is not None:
+        fig.set_facecolor(data[mode])
+    ax = fig.add_axes((0.1, 0.1, 0.8, 0.8))
+    ax.set(xlim=(0, 7), ylim=(-1, 1), xticks=[], yticks=[])
+    (fig._variant_marker,) = ax.plot([], [], "o", markersize=3)
+    return fig, partial(
+        draw_variant_clip,
+        failure_dir=None if failure_root is None else failure_root / mode,
+    )
+
+
+def build_style_variant(venue, mode):
+    """Read both the active background and semantic video-style colors."""
+    import eyepiece as ep
+
+    fig = plt.figure(figsize=(0.96, 0.54))
+    ax = fig.add_axes((0.25, 0.25, 0.5, 0.5))
+    ax.set_facecolor(ep.role("planet"))
+    ax.set(xticks=[], yticks=[])
+    return fig, draw_style_variant
+
+
+def draw_style_variant(fig, frame):
+    """Keep the style probe static across frames."""
+
+
+def setup_video_style():
+    """Explicitly enable video colors for either rendering path."""
+    import hwostyle
+
+    import eyepiece as ep
+
+    hwostyle.use("dark")
+    ep.use_video(True)
+
+
+def draw_variant_clip(fig, frame, *, failure_dir=None):
+    if failure_dir is not None and frame == 3:
+        failure_dir.mkdir(parents=True, exist_ok=True)
+        marker = failure_dir / "failed"
+        if not marker.exists():
+            marker.touch()
+            raise RuntimeError("deliberate chunk failure")
+    fig._variant_marker.set_data([frame], [0])
+
+
+def variant_frame_at(index):
+    return index / 2
+
+
 def build_crashing_clip(*, killed=False, exitcode=7):
     fig, _ = build_clip()
     return fig, partial(draw_crashing_clip, killed=killed, exitcode=exitcode)

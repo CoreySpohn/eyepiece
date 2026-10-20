@@ -25,7 +25,9 @@ import zlib
 from collections.abc import Mapping
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
-from dataclasses import fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass
+from functools import partial
+from numbers import Real
 from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
@@ -36,6 +38,7 @@ import numpy as np
 
 import eyepiece
 from eyepiece import _ffmpeg
+from eyepiece._motion import frame_count
 from eyepiece.anim import RawSink, _agg_canvas, _rc_overrides, _Recorder
 
 _SCHEMA = 1
@@ -188,6 +191,15 @@ def _ffmpeg_version():
     return lines[0]
 
 
+def _hwostyle_version():
+    """Return the style package version, or None when unavailable."""
+    try:
+        import hwostyle
+    except ImportError:
+        return None
+    return getattr(hwostyle, "__version__", None)
+
+
 def content_key(
     *, script=None, clock=None, modules=(), data=(), settings=None, extra=()
 ) -> str:
@@ -217,8 +229,8 @@ def content_key(
         extra: List or tuple of additional canonical inputs such as stamp text.
 
     Returns:
-        A SHA-256 hex digest including eyepiece, matplotlib, numpy, and ffmpeg
-        versions. An unavailable eyepiece or ffmpeg version is recorded as None.
+        A SHA-256 hex digest including eyepiece, matplotlib, numpy, hwostyle,
+        and ffmpeg versions. Unavailable versions are recorded as None.
 
     Raises:
         TypeError: If a value is unsupported or an array has an object dtype.
@@ -241,6 +253,7 @@ def content_key(
             "eyepiece": getattr(eyepiece, "__version__", None),
             "matplotlib": matplotlib.__version__,
             "numpy": np.__version__,
+            "hwostyle": _hwostyle_version(),
             "ffmpeg": _ffmpeg_version(),
         },
     }
@@ -272,17 +285,11 @@ def _jsonable(value):
 
 def _manifest_versions():
     """Collect portable version strings using the content key's ffmpeg probe."""
-    try:
-        import hwostyle
-    except ImportError:
-        style_version = None
-    else:
-        style_version = getattr(hwostyle, "__version__", None)
     return {
         "eyepiece": getattr(eyepiece, "__version__", None),
         "matplotlib": matplotlib.__version__,
         "numpy": np.__version__,
-        "hwostyle": style_version,
+        "hwostyle": _hwostyle_version(),
         "ffmpeg": _ffmpeg_version(),
     }
 
@@ -403,6 +410,28 @@ class Manifest:
         """Return an independent copy of an entry, or None when absent."""
         return deepcopy(self._document["clips"].get(slug, {}).get(variant))
 
+    def discard(self, slug, variant) -> bool:
+        """Remove an entry, returning whether it existed.
+
+        Other variants are preserved. Empty clip groups are removed, and the
+        next save persists the deletion.
+
+        Args:
+            slug: Clip identifier.
+            variant: Variant identifier.
+
+        Returns:
+            True if an entry was removed, False if it was absent.
+        """
+        clips = self._document["clips"]
+        entries = clips.get(slug)
+        if entries is None or variant not in entries:
+            return False
+        del entries[variant]
+        if not entries:
+            del clips[slug]
+        return True
+
     def record(
         self,
         slug,
@@ -521,6 +550,335 @@ class Manifest:
         return not unchanged
 
 
+class Venue(NamedTuple):
+    """Rendering settings for an output destination.
+
+    The frame budget keeps silent clips short. Narrated clips are exempt
+    because speech determines their length.
+
+    Attributes:
+        name: Destination name used in variant filenames.
+        rc: Matplotlib overrides; None means an empty mapping.
+        dpi: Raster resolution, defaulting to 100 dots per inch.
+        fps: Video frame rate, defaulting to 30 frames per second.
+        frame_budget: Maximum silent frame source length, or None.
+    """
+
+    name: str
+    rc: dict | None = None
+    dpi: int = 100
+    fps: float = 30
+    frame_budget: int | None = None
+
+
+class Variant(NamedTuple):
+    """A destination, style mode, and optional narration track.
+
+    Attributes:
+        venue: Destination name matching a Venue.
+        mode: Style mode passed to hwostyle.use.
+        narrated: Whether to mux the spec's audio track.
+    """
+
+    venue: str
+    mode: str
+    narrated: bool = False
+
+    @property
+    def name(self) -> str:
+        """Return the filename and manifest identifier for this variant."""
+        suffix = "-narrated" if self.narrated else ""
+        return f"{self.venue}-{self.mode}{suffix}"
+
+
+def variants(venues, modes=("light", "dark"), narrated=()) -> list[Variant]:
+    """List silent variants in venue/mode order, then narrated variants.
+
+    Args:
+        venues: Ordered destination names.
+        modes: Ordered style modes, defaulting to light and dark.
+        narrated: Destination names also receiving narrated variants.
+
+    Returns:
+        The ordered list of variants.
+
+    Raises:
+        ValueError: If a narrated destination is absent from venues.
+    """
+    venues, modes, narrated = tuple(venues), tuple(modes), tuple(narrated)
+    for venue in narrated:
+        if venue not in venues:
+            raise ValueError(f"Unknown narrated venue: {venue}")
+    return [Variant(venue, mode) for venue in venues for mode in modes] + [
+        Variant(venue, mode, True)
+        for venue in venues
+        if venue in narrated
+        for mode in modes
+    ]
+
+
+@dataclass(frozen=True)
+class ClipSpec:
+    """Explicit inputs for key-driven rendering of a clip's variants.
+
+    Venue budgets apply only to silent variants; speech determines narrated
+    length. Each render starts from fresh default style state, then applies
+    the variant mode and venue rc. Parent toggles such as ep.use_video are not
+    inherited. For render_frames, pass style changes through setup and rc so
+    both the in-process and spawned paths receive them explicitly.
+
+    Attributes:
+        slug: Clip identifier and output filename prefix.
+        build: Picklable callable taking (venue, mode), returning (fig, draw).
+        frames: Frame item sequence or integer count.
+        venues: Tuple of destination settings.
+        frame_at: Optional picklable index-to-item callable. Its behavior must
+            be represented by clock or the named source inputs for keying.
+        hold_s: Extra first/last frame holds in seconds.
+        audio: Optional callable taking a Variant and returning an audio path.
+        after: Optional callable taking (variant, out_dir), returning extra
+            output paths. Runs for rendered and kept variants.
+        script: Script text or a Path to source bytes for the key.
+        modules: Module source inputs for the key.
+        data: Tuple of data inputs, or a callable returning one per Variant.
+        clock: Canonical clock inputs for the key.
+        encoder: Optional encoder profile overrides.
+        extra_ffmpeg_args: Optional additional encoding arguments.
+        extra: Additional content key inputs, including stamp text if needed.
+        poster: Reserved poster frame index.
+    """
+
+    slug: str
+    build: object
+    frames: object
+    venues: tuple[Venue, ...]
+    frame_at: object = None
+    hold_s: tuple[float, float] = (0.0, 0.0)
+    audio: object = None
+    after: object = None
+    script: str | Path | None = None
+    modules: tuple = ()
+    data: object = ()
+    clock: object = None
+    encoder: dict | None = None
+    extra_ffmpeg_args: object = None
+    extra: tuple = ()
+    poster: int | None = None
+
+
+class VariantResult(NamedTuple):
+    """One rendered or kept variant and its portable output identities.
+
+    Attributes:
+        variant: Destination, mode, and narration selection.
+        outputs: POSIX output paths relative to out_dir.
+        key: Content key computed before rendering.
+        rendered: True when the video was rendered during this call.
+        frames: Encoded frame count, including holds.
+    """
+
+    variant: Variant
+    outputs: list[str]
+    key: str
+    rendered: bool
+    frames: int
+
+
+def _variant_video(spec, variant, venue, out_dir, key, hold, audio, workers):
+    """Render once, atomically replacing a narrated target after mux succeeds."""
+    import hwostyle
+
+    target = out_dir / f"{spec.slug}-{variant.name}.mp4"
+    silent = out_dir / f".{target.stem}.silent.mp4" if variant.narrated else target
+    muxed = out_dir / f".{target.stem}.mux.mp4"
+    try:
+        result = render_frames(
+            partial(spec.build, venue, variant.mode),
+            spec.frames,
+            silent,
+            fps=venue.fps,
+            dpi=venue.dpi,
+            workers=workers,
+            frame_at=spec.frame_at,
+            hold=hold,
+            encoder=spec.encoder,
+            extra_ffmpeg_args=spec.extra_ffmpeg_args,
+            setup=partial(hwostyle.use, variant.mode),
+            rc=dict(venue.rc or {}),
+            work_dir=out_dir / f".chunks-{spec.slug}-{variant.name}",
+            key=key,
+        )
+        if variant.narrated:
+            from eyepiece import narration
+
+            narration.mux(silent, audio, muxed)
+            os.replace(muxed, target)
+        return target, result.frames
+    finally:
+        if variant.narrated:
+            silent.unlink(missing_ok=True)
+            muxed.unlink(missing_ok=True)
+
+
+def render_variants(
+    spec, variants, out_dir, *, manifest, workers=None, force=False
+) -> list[VariantResult]:
+    """Render each requested variant once, skipping current manifest entries.
+
+    All destinations, silent budgets, audio requirements, and keys are checked
+    before any figure is built. Output paths and implicit stamps never enter
+    keys. Duplicate requests are coalesced in their first occurrence's order.
+    Completed entries are saved even if a later variant fails.
+    A replaced variant's old entry is discarded before rendering, so failures
+    cannot leave it marked current. Narrated variants are exempt from venue
+    frame budgets because speech determines their length.
+
+    Args:
+        spec: Frozen ClipSpec describing explicit inputs and figure builders.
+        variants: Iterable of Variant selections.
+        out_dir: Folder for videos, extra outputs, and per-variant chunks.
+        manifest: Manifest whose root contains all outputs.
+        workers: Worker count forwarded to render_frames.
+        force: Render even when the manifest entry is current.
+
+    Returns:
+        Results in first-request order with paths relative to out_dir.
+
+    Raises:
+        ValueError: For duplicate or unknown venues, invalid modes or venue
+            settings, exceeded silent frame budgets, missing narrated audio,
+            invalid frames, or outputs outside out_dir.
+        TypeError: If an explicit key input is unsupported.
+        RuntimeError: If rendering or audio muxing fails.
+    """
+    import hwostyle
+
+    requested = list(dict.fromkeys(variants))
+    venues = {venue.name: venue for venue in spec.venues}
+    if len(venues) != len(spec.venues):
+        raise ValueError("Venue names must be unique")
+    count = _frame_source(spec.frames, spec.frame_at)
+    for venue in venues.values():
+        for name in ("dpi", "fps"):
+            value = getattr(venue, name)
+            if (
+                not isinstance(value, Real)
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ValueError(
+                    f"Venue {venue.name}: {name} must be positive and finite"
+                )
+        if venue.rc is not None and not isinstance(venue.rc, Mapping):
+            raise ValueError(f"Venue {venue.name}: rc must be a mapping or None")
+        try:
+            matplotlib.RcParams(venue.rc or {})
+        except (KeyError, ValueError, TypeError) as exc:
+            raise ValueError(f"Venue {venue.name}: invalid rc settings: {exc}") from exc
+    for variant in requested:
+        if (
+            not isinstance(variant.mode, str)
+            or not variant.mode
+            or variant.mode not in hwostyle.core.MODE_RC
+        ):
+            raise ValueError(f"Invalid style mode: {variant.mode}")
+        if variant.venue not in venues:
+            raise ValueError(f"Unknown venue: {variant.venue}")
+        venue = venues[variant.venue]
+        if (
+            not variant.narrated
+            and venue.frame_budget is not None
+            and count > venue.frame_budget
+        ):
+            raise ValueError(
+                f"{spec.slug} venue {venue.name}: {count} frames exceeds "
+                f"budget {venue.frame_budget}"
+            )
+        if variant.narrated and spec.audio is None:
+            raise ValueError(f"Narrated variant {variant.name} requires audio")
+    jobs = []
+    for variant in requested:
+        venue = venues[variant.venue]
+        hold = tuple(frame_count(seconds, venue.fps) for seconds in spec.hold_s)
+        audio = Path(spec.audio(variant)) if variant.narrated else None
+        extra = spec.extra
+        if audio is not None:
+            with audio.open("rb") as stream:
+                extra = (*extra, hashlib.file_digest(stream, "sha256").hexdigest())
+        key = content_key(
+            script=spec.script,
+            clock=spec.clock,
+            modules=spec.modules,
+            data=spec.data(variant) if callable(spec.data) else spec.data,
+            settings={
+                "variant": variant._asdict(),
+                "fps": venue.fps,
+                "dpi": venue.dpi,
+                "rc": dict(venue.rc or {}),
+                "hold": hold,
+                "frames": spec.frames,
+                "frame_at": spec.frame_at is not None,
+                "encoder": spec.encoder,
+                "extra_ffmpeg_args": spec.extra_ffmpeg_args,
+            },
+            extra=extra,
+        )
+        jobs.append((variant, venue, hold, audio, key))
+    out_dir = Path(out_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results = []
+    try:
+        for variant, venue, hold, audio, key in jobs:
+            entry = manifest.entry(spec.slug, variant.name)
+            target = out_dir / f"{spec.slug}-{variant.name}.mp4"
+            expected = [target]
+            if spec.poster is not None:
+                expected.append(target.with_suffix(".png"))
+            recorded = (
+                []
+                if entry is None
+                else [manifest.root / output["path"] for output in entry["outputs"]]
+            )
+            rendered = (
+                force
+                or recorded[: len(expected)] != expected
+                or any(not path.is_relative_to(out_dir) for path in recorded)
+                or not manifest.current(spec.slug, variant.name, key)
+            )
+            if rendered:
+                manifest.discard(spec.slug, variant.name)
+                target, frames = _variant_video(
+                    spec, variant, venue, out_dir, key, hold, audio, workers
+                )
+                outputs = [target]
+            else:
+                frames = entry["frames"]
+                outputs = [
+                    manifest.root / output["path"] for output in entry["outputs"]
+                ]
+            if spec.after is not None:
+                outputs.extend(
+                    path if path.is_absolute() else out_dir / path
+                    for path in map(Path, spec.after(variant, out_dir))
+                )
+            outputs = list(dict.fromkeys(path.resolve() for path in outputs))
+            relative = [path.relative_to(out_dir).as_posix() for path in outputs]
+            manifest.record(
+                spec.slug,
+                variant.name,
+                key=key,
+                outputs=outputs,
+                frames=frames,
+                fps=venue.fps,
+                dpi=venue.dpi,
+            )
+            results.append(VariantResult(variant, relative, key, rendered, frames))
+    finally:
+        manifest.save()
+    return results
+
+
 class RenderResult(NamedTuple):
     """An encoded clip and the work used to produce it.
 
@@ -564,9 +922,42 @@ def _item(state, index):
 
 
 @contextmanager
+def _default_style():
+    """Reset style globals to fresh-interpreter defaults and restore on exit."""
+    import hwostyle
+
+    from eyepiece import _style
+
+    # use() rebinds these globals. There is no public context manager that can
+    # restore the unactivated state or a caller's exact palette objects.
+    names = (
+        "_current_mode",
+        "_current_family",
+        "_activated",
+        "palette",
+        "cmaps",
+        "roles",
+    )
+    saved = {name: getattr(hwostyle.core, name) for name in names}
+    video = _style.use_video(False)
+    try:
+        # hwostyle initializes dark objects without activating a mode. The
+        # enclosing rc_context separately establishes default matplotlib rc.
+        hwostyle.use("dark")
+        hwostyle.core._activated = False
+        yield
+    finally:
+        for name, value in saved.items():
+            setattr(hwostyle.core, name, value)
+        _style.use_video(video)
+
+
+@contextmanager
 def _figure(build, frames, dpi, frame_at, setup, rc):
     """Build and freeze a figure under the same state in every process."""
     with ExitStack() as stack:
+        stack.enter_context(matplotlib.rc_context())
+        stack.enter_context(_default_style())
         # Spawned interpreters start with defaults. Also reset the in-process
         # path so unpassed parent rc does not silently change its pixels.
         stack.enter_context(matplotlib.rc_context(matplotlib.rcParamsDefault))
@@ -1071,6 +1462,11 @@ def render_frames(
     an item with ``draw(fig, item)``. Builders, setup, and frame_at must be
     picklable module-level callables (partials are supported). Each worker
     builds once, draws frame zero, and freezes the layout at the sink dpi.
+    A fresh worker starts from default style state. Parent toggles such as
+    ep.use_video are not inherited, including with workers=1. Pass style
+    changes through setup and rc to apply them identically in both paths.
+    The in-process path restores rcParams, hwostyle globals, and the video
+    style switch when it exits, including after a setup or build failure.
 
     Args:
         build: Deterministic figure and draw builder.
