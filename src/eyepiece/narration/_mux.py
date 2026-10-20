@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import warnings
 import wave
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
@@ -81,6 +82,50 @@ def _bed(size, level_db, seed):
     return np.random.default_rng(seed).normal(0.0, sigma, size)
 
 
+def _duck_gain(size, rate, windows, floor_gain, fade_s):
+    """Gain of the bed: 1 outside the windows, ``floor_gain`` inside.
+
+    Each window fades down over its first ``fade_s`` and back up over its last
+    ``fade_s`` (raised cosine), so the bed never steps.
+    """
+    gain = np.ones(size)
+    n = round(fade_s * rate)
+    for t0, t1 in windows:
+        i, j = round(t0 * rate), min(round(t1 * rate), size)
+        if i >= size:
+            continue
+        n_here = min(n, (j - i) // 2)
+        gain[i:j] = floor_gain
+        if n_here > 0:
+            ramp = 0.5 + 0.5 * np.cos(np.pi * np.arange(n_here) / n_here)
+            fall = floor_gain + (1.0 - floor_gain) * ramp
+            gain[i : i + n_here] = fall
+            gain[j - n_here : j] = fall[::-1]
+    return gain
+
+
+def _check_duck(duck):
+    """The sorted, validated duck windows as a list of ``(t0, t1)``."""
+    windows = sorted((float(a), float(b)) for a, b in (duck or ()))
+    for a, b in windows:
+        if not 0.0 <= a < b:
+            raise ValueError(f"duck windows need 0 <= t0 < t1, got ({a}, {b})")
+    for (_, end), (start, _) in pairwise(windows):
+        if start < end:
+            raise ValueError("duck windows must not overlap")
+    return windows
+
+
+def _bed_gain(size, rate, level_db, duck, floor_db, fade_s):
+    """The bed's per-sample gain for the duck windows, or None for no ducking."""
+    windows = _check_duck(duck)
+    if not windows:
+        return None
+    return _duck_gain(
+        size, rate, windows, 10.0 ** ((floor_db - level_db) / 20.0), fade_s
+    )
+
+
 def _write_wav(path, data, rate):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -114,6 +159,9 @@ def audio_track(
     room_tone_db=None,
     fade_s=0.008,
     seed=0,
+    duck=None,
+    duck_floor_db=-90.0,
+    duck_fade_s=0.05,
 ):
     """Write the whole clip's speech as one 16-bit mono WAV.
 
@@ -140,6 +188,11 @@ def audio_track(
             silence between the lines.
         fade_s: Length of the fade on each end of a line, in seconds.
         seed: Seed of the noise bed.
+        duck: Windows ``[(t0, t1), ...]`` in seconds inside which the room-tone
+            bed drops to ``duck_floor_db``; None or empty ducks nothing and
+            leaves the track byte-identical. Windows must not overlap.
+        duck_floor_db: RMS level of the bed inside a window, in dBFS.
+        duck_fade_s: Fade down at the start of a window and up at its end.
 
     Returns:
         The path written.
@@ -180,7 +233,9 @@ def audio_track(
     size = round((narration.total_s + tail_s) * out_rate)
     mix = np.zeros(size)
     if room_tone_db is not None:
-        mix += _bed(size, room_tone_db, seed)
+        bed = _bed(size, room_tone_db, seed)
+        gain = _bed_gain(size, out_rate, room_tone_db, duck, duck_floor_db, duck_fade_s)
+        mix += bed if gain is None else bed * gain
     for key, start, data in clips:
         i = round(start * out_rate)
         if i + len(data) > size + 2:
@@ -245,6 +300,9 @@ def mux(
     room_tone_db=-60.0,
     seed=0,
     encoder=None,
+    duck=None,
+    duck_floor_db=-90.0,
+    duck_fade_s=0.05,
 ):
     """Join a silent video and an audio track into one MP4.
 
@@ -280,6 +338,10 @@ def mux(
         seed: Seed of the noise bed.
         encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace; only the
             color tags and ``faststart`` apply to a copied picture.
+        duck: Windows ``[(t0, t1), ...]`` in seconds where the bed drops to
+            ``duck_floor_db``, as in `audio_track`; None ducks nothing.
+        duck_floor_db: RMS level of the bed inside a window, in dBFS.
+        duck_fade_s: Fade at each window edge, in seconds.
 
     Returns:
         The path written.
@@ -295,7 +357,11 @@ def mux(
         source = _finish_audio(ffmpeg, audio, Path(tmp), loudness, true_peak, lra, rate)
         if room_tone_db is not None:
             _, data = _decode(Path(source), rate, rate)
-            noisy = np.round(data + _bed(len(data), room_tone_db, seed))
+            bed = _bed(len(data), room_tone_db, seed)
+            gain = _bed_gain(
+                len(data), rate, room_tone_db, duck, duck_floor_db, duck_fade_s
+            )
+            noisy = np.round(data + (bed if gain is None else bed * gain))
             source = _write_wav(
                 Path(tmp) / "bed.wav", np.clip(noisy, -32768, 32767), rate
             )
