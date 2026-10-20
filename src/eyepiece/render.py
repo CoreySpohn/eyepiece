@@ -23,6 +23,7 @@ import threading
 import time
 import traceback
 import uuid
+import warnings
 import zlib
 from collections.abc import Mapping
 from contextlib import ExitStack, contextmanager
@@ -43,15 +44,24 @@ from PIL import Image
 import eyepiece
 from eyepiece import _ffmpeg
 from eyepiece._motion import frame_count
-from eyepiece.anim import RawSink, _agg_canvas, _rc_overrides, _Recorder
+from eyepiece.anim import (
+    RawSink,
+    ScaleDriftError,
+    _agg_canvas,
+    _drift_warnings,
+    _rc_overrides,
+    _Recorder,
+    _scale_signature,
+)
 
 _SCHEMA = 1
+_SCALE_SCHEMA = 1
 _MAGIC = b"EPCHUNK\0"
 _HEADER = struct.Struct("!8sI32sIII")
 _LENGTH = struct.Struct("!Q")
 _MARKER = ".eyepiece-render"
 _MARKER_TEXT = "eyepiece render chunks\n"
-_CHUNK_NAME = re.compile(r"chunk-[0-9]+\.(?:bin|part)\Z")
+_CHUNK_NAME = re.compile(r"chunk-[0-9]+\.(?:bin|part|warn(?:\.part)?)\Z")
 _LOCK_PART_NAME = re.compile(r"lock-([0-9]+)-[0-9a-f]+\.part\Z")
 _LOCK_GRACE_SECONDS = 5
 _FFMPEG_VERSIONS = {}
@@ -650,6 +660,8 @@ class ClipSpec:
         extra_ffmpeg_args: Optional additional encoding arguments.
         extra: Additional content key inputs, including stamp text if needed.
         poster: Optional frame index for each silent variant's PNG poster.
+        on_rescale: "warn", "raise", or "ignore" for data-scale drift, as in
+            record. Exporters that require fixed data scales set "raise".
     """
 
     slug: str
@@ -668,6 +680,7 @@ class ClipSpec:
     extra_ffmpeg_args: object = None
     extra: tuple = ()
     poster: int | None = None
+    on_rescale: str = "warn"
 
 
 class VariantResult(NamedTuple):
@@ -711,6 +724,7 @@ def _variant_video(spec, variant, venue, out_dir, key, hold, audio, workers):
             rc=dict(venue.rc or {}),
             work_dir=out_dir / f".chunks-{spec.slug}-{variant.name}",
             key=key,
+            on_rescale=spec.on_rescale,
         )
         if variant.narrated:
             from eyepiece import narration
@@ -752,12 +766,14 @@ def render_variants(
     Raises:
         ValueError: For duplicate or unknown venues, invalid modes or venue
             settings, exceeded silent frame budgets, missing narrated audio,
-            invalid frames or poster indices, or outputs outside out_dir.
+            invalid frames, poster indices, or on_rescale, or outputs outside out_dir.
         TypeError: If an explicit key input is unsupported.
         RuntimeError: If rendering or audio muxing fails.
+        ScaleDriftError: If a data scale drifts with spec.on_rescale="raise".
     """
     import hwostyle
 
+    _validate_on_rescale(spec.on_rescale)
     requested = list(dict.fromkeys(variants))
     venues = {venue.name: venue for venue in spec.venues}
     if len(venues) != len(spec.venues):
@@ -984,7 +1000,7 @@ def _close_new_figures(existing):
 
 
 @contextmanager
-def _figure(build, frames, dpi, frame_at, setup, rc):
+def _figure(build, frames, dpi, frame_at, setup, rc, on_rescale="ignore"):
     """Build and freeze a figure under the same state in every process."""
     with ExitStack() as stack:
         stack.enter_context(matplotlib.rc_context())
@@ -1003,7 +1019,13 @@ def _figure(build, frames, dpi, frame_at, setup, rc):
         state = dict(fig=fig, draw=draw, frames=frames, frame_at=frame_at)
         draw(fig, _item(state, 0))
         _Recorder(fig, [], {"frames": 0}, dpi)._freeze_layout()
+        state["on_rescale"] = on_rescale
         fig.dpi = dpi
+        if on_rescale != "ignore":
+            # Norm autoscaling and aspect adjustments settle during drawing.
+            # Take the baseline at the same point as every checked raster.
+            fig.canvas.draw()
+            state["first_scales"] = _scale_signature(fig)
         width, height = fig.canvas.get_width_height()
         state["size"] = (width // 2 * 2, height // 2 * 2)
         yield state
@@ -1031,6 +1053,7 @@ def _raster(state, index):
     fig = state["fig"]
     state["draw"](fig, _item(state, index))
     fig.canvas.draw()
+    _check_scales(state, index)
     width, height = state["size"]
     return np.asarray(fig.canvas.buffer_rgba())[:height, :width].copy()
 
@@ -1159,6 +1182,76 @@ def _identity(key, count, hold, dpi, size, fps, start, stop):
     return hashlib.sha256(json.dumps(values, separators=(",", ":")).encode()).digest()
 
 
+def _validate_on_rescale(on_rescale):
+    """Reject unsupported scale policies before creating any render state."""
+    if on_rescale not in ("warn", "raise", "ignore"):
+        raise ValueError(
+            f"on_rescale must be one of ('warn', 'raise', 'ignore'), got {on_rescale!r}"
+        )
+
+
+def _check_scales(state, index):
+    """Compare each chunk's frames against the frozen frame-zero data scales."""
+    if state["on_rescale"] == "ignore" or state.get("scale_warning"):
+        return
+    messages = _drift_warnings(state["first_scales"], _scale_signature(state["fig"]))
+    if not messages:
+        return
+    text = (
+        "data scales changed during recording, so a quantity is drawn at "
+        "a different size in different frames and the change will read as "
+        "a change in the data: "
+        + "; ".join(messages)
+        + ". Pin the limits from the union over all frames before the "
+        'frame loop, or pass on_rescale="ignore" if the rescaling is the '
+        f"point. (frame {index})"
+    )
+    if state["on_rescale"] == "raise":
+        raise ScaleDriftError(text)
+    state["scale_warning"] = text
+
+
+def _delete_chunk(path):
+    """Delete a reserved raster chunk together with its scale-check sidecar."""
+    path.unlink(missing_ok=True)
+    path.with_suffix(".warn").unlink(missing_ok=True)
+
+
+def _scale_diagnostic(identity, crc, message):
+    """Bind a checked chunk's diagnostic to its identity and raster payload."""
+    diagnostic = dict(
+        schema=_SCALE_SCHEMA, identity=identity.hex(), crc=crc, message=message
+    )
+    payload = json.dumps(diagnostic, sort_keys=True, separators=(",", ":")).encode(
+        "utf-8"
+    )
+    diagnostic["checksum"] = hashlib.sha256(payload).hexdigest()
+    return diagnostic
+
+
+def _read_scale_diagnostic(job):
+    """Return the checked message, or None for an invalid diagnostic pair."""
+    path, identity, start, stop = job
+    try:
+        with path.open("rb") as stream:
+            magic, schema, stored, count, crc, _ = _HEADER.unpack(
+                stream.read(_HEADER.size)
+            )
+        if (magic, schema, stored, count) != (_MAGIC, _SCHEMA, identity, stop - start):
+            return None
+        diagnostic = json.loads(path.with_suffix(".warn").read_text(encoding="utf-8"))
+        if not isinstance(diagnostic, dict) or not isinstance(
+            diagnostic.get("message"), str
+        ):
+            return None
+        message = diagnostic["message"]
+        return (
+            message if diagnostic == _scale_diagnostic(identity, crc, message) else None
+        )
+    except (FileNotFoundError, UnicodeError, json.JSONDecodeError, struct.error):
+        return None
+
+
 def _write_chunk(job, state):
     """Stream a chunk to a partial file and publish it only when complete."""
     path, identity, start, stop = job
@@ -1166,6 +1259,9 @@ def _write_chunk(job, state):
     partial = path.with_suffix(".part")
     lengths = []
     crc = 0
+    state["scale_warning"] = ""
+    warning = path.with_suffix(".warn")
+    warning_partial = path.with_suffix(".warn.part")
     try:
         with partial.open("wb") as stream:
             stream.write(bytes(_HEADER.size + _LENGTH.size * (stop - start)))
@@ -1188,9 +1284,19 @@ def _write_chunk(job, state):
             )
             stream.write(length_data)
         _check_parent(state)
+        if state["on_rescale"] != "ignore":
+            # Every checked chunk has a sidecar, with an empty message if its
+            # scales stayed fixed. Publish it before publishing the raster.
+            diagnostic = _scale_diagnostic(identity, crc, state["scale_warning"])
+            warning_partial.write_text(
+                json.dumps(diagnostic, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            warning_partial.replace(warning)
         partial.replace(path)
     except BaseException:
         partial.unlink(missing_ok=True)
+        warning_partial.unlink(missing_ok=True)
+        warning.unlink(missing_ok=True)
         raise
     return path
 
@@ -1315,7 +1421,16 @@ def _workspace(folder):
             lock_part = _LOCK_PART_NAME.fullmatch(path.name)
             if (
                 _PROTOCOL_NAME.fullmatch(path.name)
-                or (_CHUNK_NAME.fullmatch(path.name) and path.suffix == ".part")
+                or (
+                    _CHUNK_NAME.fullmatch(path.name)
+                    and (
+                        path.suffix == ".part"
+                        or (
+                            path.suffix == ".warn"
+                            and not path.with_suffix(".bin").exists()
+                        )
+                    )
+                )
                 or (lock_part is not None and not _pid_alive(int(lock_part[1])))
             ):
                 path.unlink()
@@ -1443,7 +1558,12 @@ class _Workers:
 
     def _failure(self, index, message):
         start, stop = self.jobs[index][2:] if self.jobs else (0, self.first_stop)
-        raise RuntimeError(f"Rendering chunk frames [{start}, {stop}):\n{message}")
+        error_type = (
+            ScaleDriftError
+            if re.search(r"(?m)^(?:eyepiece\.anim\.)?ScaleDriftError:", message)
+            else RuntimeError
+        )
+        raise error_type(f"Rendering chunk frames [{start}, {stop}):\n{message}")
 
     def check(self):
         """Surface errors promptly, including crashes without an error file."""
@@ -1480,6 +1600,10 @@ def _ordered_chunks(pool, jobs, reused, state):
             if job[0] not in reused:
                 try:
                     _write_chunk(job, state)
+                except ScaleDriftError as exc:
+                    raise ScaleDriftError(
+                        f"Rendering chunk frames [{job[2]}, {job[3]}): {exc}"
+                    ) from exc
                 except BaseException as exc:
                     exc.add_note(f"Rendering chunk frames [{job[2]}, {job[3]})")
                     raise
@@ -1555,6 +1679,7 @@ def _encode(
     keep_chunks,
     encoder,
     extra_ffmpeg_args,
+    on_rescale,
 ):
     count = _frame_source(frames, None)
     jobs = []
@@ -1565,14 +1690,36 @@ def _encode(
         identity = _identity(key, count, hold, dpi, size, fps, start, stop)
         job = (chunk_path, identity, start, stop)
         jobs.append(job)
-        if resume and _chunk_lengths(chunk_path, identity, stop - start) is not None:
+        if (
+            resume
+            and _chunk_lengths(chunk_path, identity, stop - start) is not None
+            and (on_rescale == "ignore" or _read_scale_diagnostic(job) is not None)
+        ):
             reused.add(chunk_path)
     # Delete only reserved files, including chunks from old partitions.
     for chunk_path in folder.iterdir():
-        if _CHUNK_NAME.fullmatch(chunk_path.name) and chunk_path not in reused:
-            chunk_path.unlink()
+        if (
+            _CHUNK_NAME.fullmatch(chunk_path.name)
+            and chunk_path.with_suffix(".bin") not in reused
+        ):
+            _delete_chunk(chunk_path)
+    warned = False
     with _encoding_sink(path, size, fps, encoder, extra_ffmpeg_args) as sink:
         for job in _ordered_chunks(pool, jobs, reused, state):
+            if on_rescale != "ignore":
+                message = _read_scale_diagnostic(job)
+                if message is None:
+                    raise RuntimeError(
+                        f"Invalid scale diagnostic for frames [{job[2]}, {job[3]})"
+                    )
+                if message:
+                    if on_rescale == "raise":
+                        raise ScaleDriftError(
+                            f"Rendering chunk frames [{job[2]}, {job[3]}): {message}"
+                        )
+                    if not warned:
+                        warnings.warn(message, RuntimeWarning, stacklevel=3)
+                        warned = True
             for index, pixels in enumerate(_read_chunk(job, size), start=job[2]):
                 sink.write(pixels)
                 repeats = hold[0] if index == 0 else 0
@@ -1580,10 +1727,10 @@ def _encode(
                 for _ in range(repeats):
                     sink.write(pixels)
             if not resume:
-                job[0].unlink()
+                _delete_chunk(job[0])
     if not keep_chunks or not resume:
         for job in jobs:
-            job[0].unlink(missing_ok=True)
+            _delete_chunk(job[0])
     return len(jobs), len(reused)
 
 
@@ -1606,6 +1753,7 @@ def render_frames(
     key=None,
     resume=True,
     keep_chunks=False,
+    on_rescale="warn",
 ) -> RenderResult:
     """Render independent frames in chunks and encode them in index order.
 
@@ -1643,6 +1791,11 @@ def render_frames(
         key: Caller input identity string; None disables chunk reuse.
         resume: Reuse complete chunks with matching identity and CRC.
         keep_chunks: Retain chunks after success when reuse is enabled.
+        on_rescale: "warn" emits one RuntimeWarning for data-scale drift,
+            "raise" raises ScaleDriftError, and "ignore" disables checks.
+            Every worker compares against frame zero after layout freeze.
+            Checked chunks retain their diagnostic for resume; the policy
+            does not affect raster identities or content keys.
 
     Returns:
         Output path, frame and chunk counts, reused chunks, workers, and time.
@@ -1653,7 +1806,10 @@ def render_frames(
         RuntimeError: If the chunk folder is unowned or locked, or a subprocess
             fails. Worker failures include their chunk range and traceback or
             stderr. Completed chunks remain available for resume.
+        ScaleDriftError: If a data scale drifts with on_rescale="raise".
+            The destination is preserved. New chunks that drift are not published.
     """
+    _validate_on_rescale(on_rescale)
     started = time.monotonic()
     path = Path(path)
     count = _frame_source(frames, frame_at)
@@ -1684,7 +1840,7 @@ def render_frames(
         try:
             if workers == 1:
                 state = stack.enter_context(
-                    _figure(build, frames, dpi, frame_at, setup, rc)
+                    _figure(build, frames, dpi, frame_at, setup, rc, on_rescale)
                 )
                 size = state["size"]
             else:
@@ -1699,6 +1855,7 @@ def render_frames(
                             frame_at=frame_at,
                             setup=setup,
                             rc=rc,
+                            on_rescale=on_rescale,
                         ),
                         min(count, chunk_frames),
                     )
@@ -1720,6 +1877,7 @@ def render_frames(
                 keep_chunks,
                 encoder,
                 extra_ffmpeg_args,
+                on_rescale,
             )
         except BaseException as exc:
             if "Rendering chunk" not in str(exc) and not any(

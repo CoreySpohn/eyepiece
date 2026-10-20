@@ -204,3 +204,30 @@ def build_still():
     ax.plot([0, 1], [0, 1], rasterized=True)
     ax.set_title("A still")
     return fig
+
+
+def build_rescale_clip(*, drift_at=1, fixed=False, observe=None):
+    """Build a tiny clip whose data limits optionally follow its changing data."""
+    if observe is not None:
+        observe.touch()
+    fig = plt.figure(figsize=(0.96, 0.54))
+    ax = fig.add_axes((0.1, 0.1, 0.8, 0.8))
+    (line,) = ax.plot([], [])
+    ax.set(xticks=[], yticks=[])
+    if fixed:
+        ax.set(xlim=(0, 1), ylim=(0, 2))
+    fig._rescale_line = line
+    return fig, partial(draw_rescale_clip, drift_at=drift_at)
+
+
+def draw_rescale_clip(fig, frame, *, drift_at):
+    """Overwrite the data and autoscale any limits left free by the builder."""
+    line = fig._rescale_line
+    line.set_data([0, 1], [0, 2 if frame >= drift_at else 1])
+    line.axes.relim()
+    line.axes.autoscale_view()
+
+
+def build_rescale_variant(venue, mode, **kwargs):
+    """Adapt the data-scale probe to the variant builder contract."""
+    return build_rescale_clip(**kwargs)
