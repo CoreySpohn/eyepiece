@@ -130,6 +130,7 @@ _EXPECTED_ALL = [
     "Event",
     "Fault",
     "Frame",
+    "Manifest",
     "MosaicResult",
     "Motif",
     "MotifSet",
