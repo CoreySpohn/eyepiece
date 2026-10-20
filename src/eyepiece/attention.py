@@ -2901,13 +2901,21 @@ def head_draw(
     together and 1 draws them one after another. The ease applies inside
     each line's window.
 
+    To stagger by coordinate, pass one offset per line as ``lag``: line ``i``
+    starts ``lag[i]`` windows after the earliest one, and every window is
+    ``1 / (1 + max offset)`` of the beat. Only the spacing of the offsets
+    matters, and the lines need not be in order. A scalar ``lag`` is the
+    offsets ``0, lag, 2 lag, ...``.
+
     Args:
         lines: One `Line2D` or an iterable of lines attached to axes.
         ease: An easing kind for `eyepiece.ease`, or a callable mapping
             progress to eased progress. The default is the library's
             reveal ease.
         lag: Fraction of a line's window before the next line starts, in
-            [0, 1].
+            [0, 1]; or one offset per line, in windows, finite and not
+            negative, for example the lines' x positions scaled to their
+            spread.
         head_color: Color of the head and the tip dot. None uses the text
             color, read now.
         behind: Lines drawn under the paths, as a mapping from a line in
@@ -2928,8 +2936,9 @@ def head_draw(
     Raises:
         TypeError: If an item is not a `Line2D`.
         ValueError: If there are no lines, a line has no axes, a line uses a
-            stepped drawstyle, `lag` is outside [0, 1], or `behind` names a
-            line not in `lines` or is not a mapping with several lines.
+            stepped drawstyle, a scalar `lag` is outside [0, 1], offsets are not
+            one per line, negative or not finite, or `behind` names a line
+            not in `lines` or is not a mapping with several lines.
 
     Example::
 
@@ -2938,12 +2947,10 @@ def head_draw(
             reveal.update(u)
             rec.frame()
     """
-    lag = float(lag)
-    if not 0.0 <= lag <= 1.0:
-        raise ValueError(f"head_draw lag must be in [0, 1], got {lag}")
     items = [lines] if isinstance(lines, Line2D) else list(lines)
     if not items:
         raise ValueError("head_draw needs at least one line")
+    offsets = _head_offsets(lag, len(items))
     for line in items:
         if not isinstance(line, Line2D):
             raise TypeError(f"head_draw needs a Line2D, got {type(line).__name__}")
@@ -2969,8 +2976,9 @@ def head_draw(
     for _, extra, copy, _ in backs:
         extra.axes.add_artist(copy)
     n = len(items)
-    span = 1.0 / (1.0 + (n - 1) * lag)
-    ranks = np.linspace(0.0, 1.0, n) if n > 1 else np.zeros(1)
+    reach = float(offsets.max())
+    span = 1.0 / (1.0 + reach)
+    ranks = offsets / reach if reach > 0.0 else np.zeros(n)
 
     def update(u, level=1.0):
         u, level = _check_u(u), _check_u(level)
@@ -3013,6 +3021,28 @@ def head_draw(
         ),
         head=head,
     )
+
+
+def _head_offsets(lag, n):
+    """Start offsets of `n` lines in window units, the earliest at zero.
+
+    A scalar `lag` starts line ``i`` at ``i lag``; a sequence gives each line's
+    offset.
+    """
+    if np.ndim(lag) == 0:
+        lag = float(lag)
+        if not 0.0 <= lag <= 1.0:
+            raise ValueError(f"head_draw lag must be in [0, 1], got {lag}")
+        return np.arange(n, dtype=float) * lag
+    offsets = np.asarray(lag, dtype=float)
+    if offsets.shape != (n,):
+        raise ValueError(
+            f"head_draw lag as offsets needs one per line ({n}), got shape "
+            f"{offsets.shape}"
+        )
+    if not np.all(np.isfinite(offsets)) or offsets.min() < 0.0:
+        raise ValueError("head_draw lag offsets must be finite and not negative")
+    return offsets - offsets.min()
 
 
 def _behind_lines(items, behind):
