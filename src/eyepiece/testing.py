@@ -43,6 +43,9 @@ word times of a `eyepiece.narration.Narration` and reports each line's words
 per minute and the lines faster than a ceiling. `assert_speech_rate` raises
 on them.
 
+`timing_faults` checks narration pace, the heard gaps between lines and
+undeclared silence. `assert_timing` raises with every timing finding.
+
 A clip is described by the figure and a callable `at` that poses it at a
 time; the times to sample (span ends, turn midpoints, cue times) are the
 caller's.
@@ -100,6 +103,7 @@ __all__ = [
     "MEANING_KINDS",
     "MOTIF_KINDS",
     "MOTION_KINDS",
+    "TIMING_KINDS",
     "VENUES",
     "VENUE_FPS",
     "ClipError",
@@ -115,12 +119,15 @@ __all__ = [
     "Span",
     "SpeechRate",
     "SpeechRateError",
+    "TimingError",
+    "TimingFault",
     "assert_clip",
     "assert_meaning",
     "assert_motifs",
     "assert_motion",
     "assert_readable",
     "assert_speech_rate",
+    "assert_timing",
     "caption_line",
     "check_clip",
     "meaning_faults",
@@ -132,6 +139,7 @@ __all__ = [
     "motion_ink",
     "readability_faults",
     "speech_rate",
+    "timing_faults",
 ]
 
 KINDS = ("overlap", "outside", "small", "on-marks")
@@ -2318,6 +2326,205 @@ def assert_speech_rate(narration, **kwargs):
     if result.fast:
         raise SpeechRateError(result)
     return result
+
+
+TIMING_KINDS = (
+    "speech-rate",
+    "line-gap",
+    "still-speech",
+    "number-late",
+    "number-contradicts",
+    "late-first-cue",
+    "early-last-cue",
+    "undeclared-silence",
+    "multiple-hero",
+    "speech-in-hero",
+)
+
+
+@dataclass(frozen=True)
+class TimingFault:
+    """One timing problem in a laid-out narration.
+
+    Attributes:
+        kind: One of `TIMING_KINDS`.
+        message: What was found, with times in seconds.
+        key: Key of the line involved, or None.
+        start_s: Start on the clip clock, in seconds, or None.
+        end_s: End on the clip clock, in seconds, or None.
+    """
+
+    kind: str
+    message: str
+    key: str | None = None
+    start_s: float | None = None
+    end_s: float | None = None
+
+
+class TimingError(AssertionError):
+    """A narration has timing problems.
+
+    Attributes:
+        faults: The list of `TimingFault` findings, one per message line.
+    """
+
+    def __init__(self, faults):
+        """Build a report listing every finding."""
+        self.faults = faults
+        lines = [f"{len(faults)} timing fault(s):"]
+        lines += [f"  {f.kind}: {f.message}" for f in faults]
+        super().__init__("\n".join(lines))
+
+
+def _timing_speech_rate(narration, ceiling, short_ceiling, short_words):
+    """Check whole-word pace, allowing noise in the rate of a short line."""
+    rates = dict(speech_rate(narration).rates)
+    found = []
+    for beat in narration.beats:
+        if beat.key not in rates:
+            continue
+        count = sum(any(ch.isalnum() for ch in w.text) for w in beat.words)
+        limit = short_ceiling if count <= short_words else ceiling
+        wpm = rates[beat.key]
+        rounded = round(wpm) if math.isfinite(wpm) else wpm
+        if rounded > limit:
+            start, end = beat.words[0].start_s, beat.words[-1].end_s
+            found.append(
+                TimingFault(
+                    "speech-rate",
+                    f"line {beat.key!r}: {count} words at {rounded:g} words/min "
+                    f"exceeds the {limit:g} words/min ceiling "
+                    f"from {start:g} to {end:g} s",
+                    beat.key,
+                    start,
+                    end,
+                )
+            )
+    return found
+
+
+def _timing_line_gap(narration, min_gap_s):
+    """Check heard silence between spoken lines, so sentences stay separate."""
+    from eyepiece.narration import Pause
+
+    spoken = [
+        b
+        for b in narration.beats
+        if b.words and not isinstance(narration.script.line(b.key), Pause)
+    ]
+    found = []
+    for first, second in itertools.pairwise(spoken):
+        start, end = first.words[-1].end_s, second.words[0].start_s
+        gap = end - start
+        if gap < min_gap_s:
+            found.append(
+                TimingFault(
+                    "line-gap",
+                    f"line {second.key!r}: {gap:g} s gap from {start:g} to "
+                    f"{end:g} s is below the {min_gap_s:g} s floor",
+                    second.key,
+                    start,
+                    end,
+                )
+            )
+    return found
+
+
+def _timing_silence(narration, plan):
+    """Keep the silence and cue findings, so silent stretches are declared."""
+    from eyepiece.narration import check_silence
+
+    return [
+        TimingFault(f.code, f.message, f.key, f.start_s, f.end_s)
+        for f in check_silence(narration, plan)
+    ]
+
+
+def timing_faults(
+    narration,
+    *,
+    plan=None,
+    source=None,
+    at=None,
+    readouts=None,
+    ceiling=160.0,
+    short_ceiling=166.0,
+    short_words=10,
+    min_gap_s=0.4,
+    still_s=2.0,
+    still_change=0.0016,
+    ignore_bottom=0.0,
+    fps=10.0,
+    settle_tol_s=0.0,
+) -> list[TimingFault]:
+    """Check narration pace, sentence gaps and declared silence.
+
+    Speech rates come from `speech_rate` and are compared in whole words per
+    minute: 160 wpm is the pace past which a viewer cannot follow a moving
+    figure. Lines of at most `short_words` use `short_ceiling`, because a
+    short line's rate is noisy. Set both ceilings equal to remove the allowance.
+
+    Consecutive spoken lines need at least `min_gap_s` of silence between
+    their words, because 0.4 s is the least pause that separates two sentences.
+    Audio tails count as silence; `Pause` beats and lines without words are
+    skipped when choosing the spoken pair.
+
+    `eyepiece.narration.check_silence` runs with its defaults to check cue
+    timing, undeclared silence and hero spans, so the screen and voice stay
+    together and long silent stretches have a declared purpose.
+
+    Args:
+        narration: A laid-out `eyepiece.narration.Narration`.
+        plan: A `eyepiece.Plan` whose hero annotations declare silent spans.
+        source: Reserved for still-screen checks; must be None for now.
+        at: Reserved callable that poses the source at a clip time.
+        readouts: Reserved for number checks; must be None for now.
+        ceiling: Fastest whole-word pace of a longer line, in words/min.
+        short_ceiling: Fastest whole-word pace of a short line, in words/min.
+        short_words: Largest spoken word count considered a short line.
+        min_gap_s: Least heard silence between spoken lines, in seconds.
+        still_s: Reserved still-screen duration, in seconds.
+        still_change: Reserved threshold for image change during stillness.
+        ignore_bottom: Reserved bottom fraction to omit from image checks.
+        fps: Reserved image sampling rate, in frames per second.
+        settle_tol_s: Reserved readout settling tolerance, in seconds.
+
+    Returns:
+        A list of `TimingFault`, sorted by start time with None last and
+        original rule order retained for equal times. Findings are not raised.
+
+    Raises:
+        NotImplementedError: If `source` or `readouts` is not None; the message
+            names the unsupported keyword.
+    """
+    if source is not None:
+        raise NotImplementedError("source is not implemented")
+    if readouts is not None:
+        raise NotImplementedError("readouts is not implemented")
+    found = _timing_speech_rate(narration, ceiling, short_ceiling, short_words)
+    found += _timing_line_gap(narration, min_gap_s)
+    found += _timing_silence(narration, plan)
+    return sorted(found, key=lambda f: (f.start_s is None, f.start_s or 0.0))
+
+
+def assert_timing(narration, **kwargs) -> list[TimingFault]:
+    """Raise `TimingError` if narration pace, gaps or silence break a rule.
+
+    Args:
+        narration: A laid-out `eyepiece.narration.Narration`.
+        **kwargs: Passed to `timing_faults`.
+
+    Returns:
+        An empty list when the narration has no timing findings.
+
+    Raises:
+        TimingError: If any finding is returned; its `faults` attribute holds
+            the list and its message lists every finding on its own line.
+    """
+    found = timing_faults(narration, **kwargs)
+    if found:
+        raise TimingError(found)
+    return found
 
 
 @dataclass(frozen=True)
