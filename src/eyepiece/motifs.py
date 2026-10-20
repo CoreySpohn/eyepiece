@@ -254,6 +254,7 @@ class AcceptedPair:
 # Row-for-row copy of hwostyle's ``ACCEPTED_PAIRS``, kept equal by the parity test.
 _FALLBACK_ACCEPTED = (
     AcceptedPair("reference", "alert", ("dark",), ("linestyle", "marker"), 7.3),
+    AcceptedPair("model", "negative", ("dark",), ("linestyle", "marker"), 9.6),
     AcceptedPair("reference", "negative", ("paper",), ("marker",), 6.6),
     AcceptedPair("disk", "positive", ("paper",), ("marker",), 7.7),
 )
