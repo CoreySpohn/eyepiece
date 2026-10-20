@@ -3,6 +3,7 @@
 import itertools
 import math
 from fractions import Fraction
+from types import MappingProxyType
 
 import pytest
 from hypothesis import assume, given, settings
@@ -176,6 +177,69 @@ def test_times_are_exact_sums_not_accumulated_floats():
     assert isinstance(t, ep.Time) and isinstance(0.5 + t, ep.Time)
     assert isinstance(t - 0.1, ep.Time) and isinstance(1.0 - t, ep.Time)
     assert ep.Time(1.0) - 0.25 == 0.75 and 1.0 - ep.Time(0.25) == 0.75
+
+
+def test_timeline_spans_lists_declared_records_in_declaration_order():
+    tl = ep.Timeline()
+    later = tl.move("later", 0.2, at=ep.Time(0.1) + 0.2)
+    earlier = tl.move("earlier", 0.1, at=0.0)
+    spans = tl.spans
+    assert isinstance(spans, MappingProxyType)
+    assert list(spans) == ["later", "earlier"]
+    for handle in (later, earlier):
+        record = spans[handle.name]
+        for actual, expected in (
+            (record.start, handle.start),
+            (record.end, handle.end),
+        ):
+            assert isinstance(actual, ep.Time)
+            assert actual == expected
+            assert actual.exact == expected.exact
+        assert record.k0 is None and record.k1 is None
+
+
+def test_timeline_spans_reflects_spans_declared_after_the_view_was_taken():
+    tl = ep.Timeline()
+    tl.hold(0.1, name="first")
+    spans = tl.spans
+    second = tl.hold(0.2, name="second")
+    assert list(spans) == ["first", "second"]
+    assert spans["second"] == second
+
+
+def test_timeline_spans_rejects_item_assignment_and_deletion():
+    tl = ep.Timeline()
+    span = tl.hold(0.1, name="stay")
+    spans = tl.spans
+    with pytest.raises(TypeError):
+        spans["stay"] = span
+    with pytest.raises(TypeError):
+        del spans["stay"]
+    assert spans["stay"] == span
+
+
+def test_timeline_spans_reflects_a_silent_captions_automatic_leave():
+    tl = ep.Timeline(tempo=TEMPO)
+    with tl.section("one"):
+        cap = tl.caption("label", "two words")
+        spans = tl.spans
+        assert list(spans) == ["label"]
+    assert list(spans) == ["label", "label.leave"]
+    leave = spans["label.leave"]
+    assert leave.kind == "leave"
+    assert isinstance(leave.start, ep.Time) and isinstance(leave.end, ep.Time)
+    assert leave.start.exact == (cap.end + TEMPO.read_s("two words")).exact
+    assert leave.k0 is None and leave.k1 is None
+
+
+def test_timeline_spans_reflects_a_paired_captions_updated_record():
+    tl = ep.Timeline()
+    spans = tl.spans
+    subject = tl.enter("subject", 0.5, caption="two words")
+    assert list(spans) == ["cap_subject", "subject"]
+    assert spans["cap_subject"].with_ == (subject.name,)
+    assert subject.with_ == ("cap_subject",)
+    assert all(span.k0 is None and span.k1 is None for span in spans.values())
 
 
 # ---------------------------------------------------------------------------

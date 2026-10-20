@@ -28,6 +28,7 @@ import itertools
 import math
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
+from types import MappingProxyType
 
 from eyepiece._motion import (
     _EASINGS,
@@ -409,6 +410,15 @@ class Timeline:
     def now(self):
         """The cursor, as a `Time`."""
         return Time(self._now)
+
+    @property
+    def spans(self):
+        """A live, read-only mapping of declared spans in declaration order.
+
+        The `MappingProxyType` reflects additions and replaced records. Each
+        span has exact `Time` start and end values, with ``k0`` and ``k1`` None.
+        """
+        return MappingProxyType(self._spans)
 
     @property
     def narration(self):
