@@ -257,6 +257,8 @@ _FALLBACK_ACCEPTED = (
     AcceptedPair("model", "negative", ("dark",), ("linestyle", "marker"), 9.6),
     AcceptedPair("reference", "negative", ("paper",), ("marker",), 6.6),
     AcceptedPair("disk", "positive", ("paper",), ("marker",), 7.7),
+    AcceptedPair("zodi", "negative", ("paper",), ("marker",), 6.6),
+    AcceptedPair("prior", "positive", ("paper",), ("marker",), 7.7),
 )
 
 

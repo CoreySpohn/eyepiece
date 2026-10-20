@@ -560,6 +560,20 @@ def test_model_and_negative_are_accepted_in_dark_with_line_and_marker(default_se
         assert not pair.accepts("model", "negative", mode)
 
 
+def test_zodi_negative_and_prior_positive_are_accepted_in_paper_with_a_marker(
+    default_set,
+):
+    hwostyle.use("paper")
+    for a, b in (("local_zodi", "negative"), ("prior", "positive")):
+        pair = default_set.only(a, b)
+        assert pair[a].marker != pair[b].marker
+        assert pair.accepts(a, b, "paper")
+        assert _cvd(pair, "paper") == []
+        same = pair.derive(a, marker=pair[b].marker)
+        assert not same.accepts(a, b, "paper")
+        assert len(_cvd(same, "paper")) == 1
+
+
 def test_disk_and_positive_are_accepted_in_paper_with_a_marker_difference(default_set):
     hwostyle.use("paper")
     pair = default_set.only("disk", "positive")
