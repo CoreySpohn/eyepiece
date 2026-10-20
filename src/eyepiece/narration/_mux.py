@@ -679,8 +679,8 @@ def write_vtt(narration, path, *, line=None, **limits):
 def write_chapters(narration, path, *, titles=None):
     """Write a WebVTT chapters file with one cue per beat.
 
-    Each cue spans its beat, from its start to the start of the next, and its
-    identifier is the line's key. A pause is a beat like any other. An HTML
+    Each cue spans its beat, from its start to its end, and its identifier is
+    the line's key. A pause is a beat like any other. An HTML
     ``<track kind="chapters">`` reads the file.
 
     Args:
@@ -693,7 +693,8 @@ def write_chapters(narration, path, *, titles=None):
         The path written.
 
     Raises:
-        ValueError: If `titles` names a key that is not a beat.
+        ValueError: If `titles` names a key that is not a beat, or a title is
+            empty once its whitespace is collapsed.
     """
     titles = {} if titles is None else dict(titles)
     unknown = sorted(set(titles) - {b.key for b in narration.beats})
@@ -702,6 +703,8 @@ def write_chapters(narration, path, *, titles=None):
     lines = ["WEBVTT", ""]
     for beat in narration.beats:
         title = " ".join(str(titles.get(beat.key, beat.key)).split())
+        if not title:
+            raise ValueError(f"the chapter title for {beat.key!r} is empty")
         lines += [
             beat.key,
             f"{_stamp(beat.start_s, '.')} --> {_stamp(beat.end_s, '.')}",
