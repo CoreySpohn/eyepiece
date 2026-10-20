@@ -268,6 +268,7 @@ how-to/publish-a-scrubber-page
 :caption: Reference
 
 autoapi/index
+reference/to-scrubber
 gallery/images
 gallery/stats
 gallery/intervals
