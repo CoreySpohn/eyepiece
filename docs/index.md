@@ -260,6 +260,7 @@ how-to/estimate-length-before-speaking
 how-to/speak-a-script
 how-to/write-numbers-for-speech
 how-to/check-narration-and-motion
+how-to/publish-a-scrubber-page
 ```
 
 ```{toctree}
