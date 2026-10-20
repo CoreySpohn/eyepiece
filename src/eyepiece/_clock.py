@@ -1844,9 +1844,15 @@ class Plan:
                 frames.add(e.frame)
         return tuple(sorted(frames))
 
-    def spans_json(self):
-        """Each span's ``[start_s, end_s]`` rounded to milliseconds, for a manifest."""
+    def spans_json(self, *, holds=True):
+        """Each span's ``[start_s, end_s]`` rounded to milliseconds, for a manifest.
+
+        Args:
+            holds: Include spans of kind ``"hold"`` (default True). False
+                omits holds, settles, reads and the hold after a click.
+        """
         return {
             name: [round(s.start_s, 3), round(s.end_s, 3)]
             for name, s in self.spans.items()
+            if holds or s.kind != "hold"
         }

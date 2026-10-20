@@ -163,6 +163,64 @@ def test_spans_json_is_the_manifest_of_rounded_start_and_end_times():
     assert tl.at_fps(30).spans_json() == {"a": [0.0, 0.333], "b": [0.333, 1.333]}
 
 
+@pytest.fixture
+def spans_json_plan():
+    tl = ep.Timeline({"x": 0.0}, tempo=TEMPO)
+    with tl.section("one"):
+        tl.hold(0.3333333, name="pause")
+        tl.enter("subject", 0.6111111)
+        tl.move("go", 0.7222222, to={"x": 1.0})
+        tl.settle()
+        reading = tl.read("three short words", name="reading")
+        tl.pulse("subject", at=reading.start)
+        tl.click("subject")
+        tl.caption("label", "two words")
+    return tl.at_fps(30)
+
+
+def test_spans_json_without_holds_keeps_every_other_span(spans_json_plan):
+    plan = spans_json_plan
+    expected_names = {
+        "subject",
+        "go",
+        "pulse.subject",
+        "click.subject",
+        "label",
+        "label.leave",
+    }
+    assert {s.kind for s in plan.spans.values()} == {
+        "hold",
+        "enter",
+        "move",
+        "pulse",
+        "run",
+        "caption",
+        "leave",
+    }
+    assert sum(s.kind == "hold" for s in plan.spans.values()) == 4
+    result = plan.spans_json(holds=False)
+    assert set(result) == expected_names
+    assert result == {
+        name: [round(plan.spans[name].start_s, 3), round(plan.spans[name].end_s, 3)]
+        for name in expected_names
+    }
+
+
+def test_spans_json_defaults_to_every_span_rounded_to_milliseconds(spans_json_plan):
+    plan = spans_json_plan
+    expected = {
+        name: [round(span.start_s, 3), round(span.end_s, 3)]
+        for name, span in plan.spans.items()
+    }
+    assert plan.spans_json() == expected
+    assert plan.spans_json(holds=True) == expected
+
+
+def test_spans_json_holds_is_keyword_only(spans_json_plan):
+    with pytest.raises(TypeError):
+        spans_json_plan.spans_json(False)
+
+
 # ---------------------------------------------------------------------------
 # Times
 
