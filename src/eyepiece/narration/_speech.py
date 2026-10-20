@@ -140,7 +140,143 @@ def speech_faults(text: str) -> list[SpeechFault]:
     return faults
 
 
-def check_script_speech(script: Script) -> None:
+_ONES = (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen "
+    "fourteen fifteen sixteen seventeen eighteen nineteen"
+).split()
+_TENS = "twenty thirty forty fifty sixty seventy eighty ninety".split()
+_SCALES = "hundred thousand million billion trillion".split()
+_NUMBER_WORDS = frozenset(_ONES + _TENS + _SCALES)
+_DIGITS = re.compile(r"^\W*[+-]?\d[\d,]*(?:\.\d+)?%?\W*$")
+# "one" is a pronoun more often than a number; it is a number unless its
+# neighbors say otherwise.
+_ONE_NOT_AFTER = frozenset("the no any each every this that which a an".split())
+_ONE_NOT_BEFORE = frozenset(
+    "of at another by can could is was that who must should more way thing".split()
+)
+
+
+@dataclass(frozen=True)
+class ScriptFault:
+    """One finding of `lint_script`.
+
+    Attributes:
+        code: ``"multi-sentence"``, ``"question-after-statement"``,
+            ``"many-numbers"`` or ``"number-without-cue"``.
+        message: What was found and how to fix it.
+        key: Key of the line.
+        word: Index of the word involved, or None for the whole line.
+    """
+
+    code: str
+    message: str
+    key: str
+    word: int | None = None
+
+
+def _bare(word):
+    return word.strip(".,;:?!\"'()[]").lower()
+
+
+def _numbers(words):
+    """The numbers a line says, as the index of the first word of each.
+
+    A run of number words (``twenty one``, ``one hundred and five``,
+    ``three point five``) is one number, as is each token of digits.
+    """
+    found, run = [], False
+    for i, word in enumerate(words):
+        bare = _bare(word)
+        if _DIGITS.match(word):
+            found.append(i)
+            run = False
+            continue
+        is_number = bare in _NUMBER_WORDS
+        if bare == "one" and (
+            (i and _bare(words[i - 1]) in _ONE_NOT_AFTER)
+            or (i + 1 < len(words) and _bare(words[i + 1]) in _ONE_NOT_BEFORE)
+        ):
+            is_number = False
+        joins = run and (
+            bare in ("and", "point")
+            and i + 1 < len(words)
+            and _bare(words[i + 1]) in _NUMBER_WORDS
+        )
+        if is_number and not run:
+            found.append(i)
+        run = is_number or joins
+    return found
+
+
+def lint_script(script: Script) -> list[ScriptFault]:
+    """Find wording that is hard to hear or to time, line by line.
+
+    The rules are: more than one sentence in a line without a
+    ``sentence_gap_s`` (the engine runs sentences together); a question that
+    follows a statement in the same line; more than one number in a line (a
+    number is a token of digits or a run of number words, and "one" counts
+    unless it reads as a pronoun); and a number with no cue mark within two
+    words of it, so nothing on screen lands with it.
+
+    Args:
+        script: The narration script to check.
+
+    Returns:
+        The findings in line order; empty when the script is clean. Display
+        text is never checked.
+    """
+    faults = []
+    for line in script.lines:
+        if isinstance(line, Pause):
+            continue
+        sentences = line.sentences
+        if len(sentences) > 1 and line.sentence_gap_s is None:
+            faults.append(
+                ScriptFault(
+                    "multi-sentence",
+                    f"line {line.key!r} holds {len(sentences)} sentences with no "
+                    "sentence_gap_s; set it, or split the line",
+                    line.key,
+                )
+            )
+        for i, text in enumerate(sentences[1:], start=1):
+            if text.endswith("?") and not all(
+                prior.endswith("?") for prior in sentences[:i]
+            ):
+                faults.append(
+                    ScriptFault(
+                        "question-after-statement",
+                        f"line {line.key!r}: {text!r} asks a question after a "
+                        "statement; give the question its own line",
+                        line.key,
+                    )
+                )
+                break
+        numbers = _numbers(line.words)
+        if len(numbers) > 1:
+            faults.append(
+                ScriptFault(
+                    "many-numbers",
+                    f"line {line.key!r} introduces {len(numbers)} numbers; "
+                    "introduce one number per line",
+                    line.key,
+                )
+            )
+        for index in numbers:
+            if not any(abs(cue.word - index) <= 2 for cue in line.cues):
+                faults.append(
+                    ScriptFault(
+                        "number-without-cue",
+                        f"line {line.key!r}: {line.words[index]!r} (word {index}) "
+                        "has no cue mark within two words",
+                        line.key,
+                        index,
+                    )
+                )
+    return faults
+
+
+def check_script_speech(script: Script, *, rules: bool = False) -> None:
     """Check all spoken lines without loading a speech engine.
 
     Callers can use this before synthesis or timing estimation. Display
@@ -148,16 +284,21 @@ def check_script_speech(script: Script) -> None:
 
     Args:
         script: The narration script to check.
+        rules: Also raise for the findings of `lint_script`. Off by default,
+            so a script written before those rules still synthesizes.
 
     Raises:
-        SpeechTextError: If any spoken line contains a speech fault. The
-            message names each line, offending token and suggested wording.
+        SpeechTextError: If any spoken line contains a speech fault, or with
+            `rules` a lint finding. The message names each line, offending
+            token and suggested wording.
     """
     messages = [
         f"line {line.key!r}: {fault.token!r} at {fault.start}: {fault.detail}"
         for line in script.lines
         for fault in speech_faults(line.spoken)
     ]
+    if rules:
+        messages += [f"{f.code}: {f.message}" for f in lint_script(script)]
     if messages:
         raise SpeechTextError(
             "speech text needs wording changes; " + "; ".join(messages)
