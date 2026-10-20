@@ -14,7 +14,7 @@ pass, and returns a `Narration` with those starts and ends as
 `write_vtt` then put the voice and the captions with the silent render;
 `write_chapters` writes one WebVTT chapter cue per beat.
 `cue_track` synthesizes cue sounds (a count heard as pitch, one tick per
-pixel read, a click sting) from numbers, as a prototype.
+pixel read, a click sting) from numbers shown in the clip.
 
 Importing this package loads neither matplotlib nor Kokoro.
 """

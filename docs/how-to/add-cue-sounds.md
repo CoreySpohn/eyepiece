@@ -12,11 +12,9 @@ kernelspec:
 
 # Add cue sounds
 
-```{warning}
-The cue sounds are a prototype. They wait on one keep-or-drop listening test
-of the sweep in `docs/narration/cues_sweep/sweep.py`, and the names below may
-be removed if they fail it.
-```
+`eyepiece.narration` supports cue sounds for counts, pixel reads and clicks.
+The sweep example in `docs/narration/cues_sweep/sweep.py` shows all three
+together.
 
 Cue sounds are a second encoding of numbers the picture already shows. A clip
 that uses them states its mapping in one sentence:
@@ -95,7 +93,7 @@ Drop a cue sound if either of these is true:
 - The mapping cannot be stated in one sentence.
 - A sound plays that matches no quantity on screen.
 
-## The prototype sweep
+## The sweep example
 
 `docs/narration/cues_sweep/sweep.py` builds a 20 s sweep, a count from 4 to 16
 as the square of a wavelength, with an imager that reads 4 pixels and a
@@ -106,5 +104,5 @@ only. Run it from the repository root (it needs ffmpeg):
 python docs/narration/cues_sweep/sweep.py /tmp/cues-sweep
 ```
 
-The test is one listen to `sweep-cues.mp4`: keep the cues if the mapping is
-obviously right within 10 s, otherwise drop them.
+Compare `sweep-cues.mp4` with `sweep-silent-cues.mp4` to hear how the mappings
+accompany the same picture.

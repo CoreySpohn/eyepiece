@@ -1,4 +1,4 @@
-"""The cue sounds prototype: a short sweep MP4 with its count heard."""
+"""The cue sounds sweep example: a short MP4 with its count heard."""
 
 import json
 import runpy
@@ -17,7 +17,7 @@ RATE = 48000
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="the prototype writes MP4s through ffmpeg, and ffprobe reads them",
+    reason="the example writes MP4s through ffmpeg, and ffprobe reads them",
 )
 
 

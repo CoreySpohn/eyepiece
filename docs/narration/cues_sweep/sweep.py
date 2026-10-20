@@ -1,4 +1,4 @@
-"""A 20 s wavelength sweep with its count heard: the cue sounds prototype.
+"""A 20 s wavelength sweep example with its count heard through cue sounds.
 
 Pitch is proportional to the count; one tick per pixel read; one two-note
 sting at the click.
