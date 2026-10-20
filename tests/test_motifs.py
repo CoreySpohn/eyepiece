@@ -542,3 +542,20 @@ def test_the_verdict_residual_is_accepted_in_paper_with_a_marker_difference(
         _m("ref", "reference", marker="s"), table_set["negative"]
     )
     assert not same_marker.accepts("ref", "negative", "paper")
+
+
+def test_disk_and_positive_are_accepted_in_paper_with_a_marker_difference(default_set):
+    hwostyle.use("paper")
+    pair = default_set.only("disk", "positive")
+    assert pair["disk"].marker != pair["positive"].marker
+    assert pair.accepts("disk", "positive", "paper")
+    assert pair.accepts("positive", "disk", "paper")
+    assert _cvd(pair, "paper") == []
+    same_marker = pair.derive("disk", marker=pair["positive"].marker)
+    assert not same_marker.accepts("disk", "positive", "paper")
+    assert not same_marker.accepts("positive", "disk", "paper")
+    (finding,) = _cvd(same_marker, "paper")
+    assert set(finding.keys) == {"disk", "positive"}
+    for mode in ("dark", "light"):
+        assert not pair.accepts("disk", "positive", mode)
+        assert not pair.accepts("positive", "disk", mode)
