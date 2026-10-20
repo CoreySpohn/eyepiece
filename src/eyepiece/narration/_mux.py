@@ -22,6 +22,7 @@ import numpy as np
 
 from eyepiece._ffmpeg import _merged_profile, resolve_ffmpeg
 
+from ._cues import TICK_JITTER_S, TICK_S, CueEvents, cue_track
 from ._script import Pause
 from ._timeline import MissingAudioError
 
@@ -32,6 +33,7 @@ _DEFAULT_RATE = 24000
 _CLAUSE_END = re.compile(r"(?:[,;:]|--|\u2013|\u2014)$")
 _MIN_BALANCE = 0.25
 _FULL_SCALE = 32767.0
+_TICK_RUN_GAP_S = 1.0
 
 
 def _read_wav(path):
@@ -126,6 +128,36 @@ def _bed_gain(size, rate, level_db, duck, floor_db, fade_s):
     )
 
 
+def _cue_windows(cues, fade_s, end_s):
+    """Where the voice yields to the cues: the tone, and each run of ticks.
+
+    Ticks less than a second apart form one run. Each window is widened by
+    the fade on both sides, so the voice is fully out while a cue plays, and
+    overlapping windows merge.
+    """
+    windows = []
+    if len(cues.count_times):
+        windows.append((cues.count_times[0], cues.count_times[-1]))
+    ticks = sorted(cues.tick_times)
+    if ticks:
+        first = last = ticks[0]
+        for t in ticks[1:]:
+            if t - last > _TICK_RUN_GAP_S:
+                windows.append((first - TICK_JITTER_S, last + TICK_S + TICK_JITTER_S))
+                first = t
+            last = t
+        windows.append((first - TICK_JITTER_S, last + TICK_S + TICK_JITTER_S))
+    merged = []
+    for a, b in sorted(
+        (max(a - fade_s, 0.0), min(b + fade_s, end_s)) for a, b in windows
+    ):
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        else:
+            merged.append((a, b))
+    return merged
+
+
 def _write_wav(path, data, rate):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -162,6 +194,7 @@ def audio_track(
     duck=None,
     duck_floor_db=-90.0,
     duck_fade_s=0.05,
+    cues=None,
 ):
     """Write the whole clip's speech as one 16-bit mono WAV.
 
@@ -193,18 +226,34 @@ def audio_track(
             leaves the track byte-identical. Windows must not overlap.
         duck_floor_db: RMS level of the bed inside a window, in dBFS.
         duck_fade_s: Fade down at the start of a window and up at its end.
+        cues: A `CueEvents`, whose `cue_track` (seeded with `seed`) is summed
+            into the track, or None (the default) for no cue sounds and a
+            byte-identical track. The voice yields to the cues: it fades
+            out, over ``duck_fade_s``, from the first to the last knot of
+            the count tone and over each run of ticks (ticks less than 1 s
+            apart), through the duck machinery the bed uses; the bed keeps
+            its level. The cues are summed before `mux` normalizes the
+            loudness, so the gain that brings the speech to its target moves
+            the cues with it, and a cue never exceeds the voice by more than
+            -12 dB after normalization when the speech files are at the
+            level of synthesized speech (peaks near full scale), against the
+            cues' -30 dBFS tone and -26 dBFS peaks.
 
     Returns:
         The path written.
 
     Raises:
+        TypeError: If `cues` is given and is not a `CueEvents`.
         MissingAudioError: If a line has no audio file.
         ValueError: If the files differ in sample rate (with ``rate=None``),
             a file's length does not match its recorded duration, a line
-            runs past the end of the track, or ``fade_s`` is negative.
+            runs past the end of the track, ``fade_s`` is negative, or a cue
+            lies past the end of the track.
     """
     if fade_s < 0.0:
         raise ValueError(f"fade_s must not be negative, got {fade_s}")
+    if cues is not None and not isinstance(cues, CueEvents):
+        raise TypeError(f"cues must be a CueEvents or None, got {type(cues).__name__}")
     clips, out_rate = [], rate
     for beat in narration.beats:
         line = narration.script.line(beat.key)
@@ -236,12 +285,18 @@ def audio_track(
         bed = _bed(size, room_tone_db, seed)
         gain = _bed_gain(size, out_rate, room_tone_db, duck, duck_floor_db, duck_fade_s)
         mix += bed if gain is None else bed * gain
+    speech = mix if cues is None else np.zeros(size)
     for key, start, data in clips:
         i = round(start * out_rate)
         if i + len(data) > size + 2:
             raise ValueError(f"line {key!r} runs past the end of the track")
         data = data[: size - i]
-        mix[i : i + len(data)] += _fade(data, round(fade_s * out_rate))
+        speech[i : i + len(data)] += _fade(data, round(fade_s * out_rate))
+    if cues is not None:
+        sound = cue_track(cues, size / out_rate, rate=out_rate, seed=seed)
+        windows = _cue_windows(cues, duck_fade_s, size / out_rate)
+        mix += speech * _duck_gain(size, out_rate, windows, 0.0, duck_fade_s)
+        mix += _FULL_SCALE * sound
     out = np.clip(np.round(mix), -32768, 32767).astype("<i2")
     return _write_wav(path, out, out_rate)
 
