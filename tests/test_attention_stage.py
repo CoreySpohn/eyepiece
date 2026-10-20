@@ -251,6 +251,105 @@ def test_axis_build_titles_arrive_last_only_when_requested(
     np.testing.assert_array_equal(_pixels(fig), plain)
 
 
+@pytest.mark.parametrize("loc", ["center", "left", "right"])
+def test_axis_build_includes_a_plain_title_set_after_the_call(loc):
+    _fig, (ax, reference) = plt.subplots(1, 2)
+    for axes in (ax, reference):
+        axes.plot([0.0, 1.0], [0.0, 1.0])
+    made = reference.set_title("late", loc=loc)
+    reference_build = ep.build_axes(reference, title=True)
+    build = ep.build_axes(ax, title=True)
+    text = ax.set_title("late", loc=loc)
+    position = text.get_position()
+    for u in np.linspace(0.0, 1.0, 11):
+        build.update(u)
+        reference_build.update(u)
+        assert text.get_position() == position
+        if u == 0.5:
+            assert (1.0 if text.get_alpha() is None else text.get_alpha()) < 1.0
+    assert text.get_alpha() == made.get_alpha()
+    assert text.get_color() == made.get_color()
+
+
+@pytest.mark.parametrize("loc", ["center", "left", "right"])
+def test_axis_build_includes_a_styled_title_set_after_the_call(loc):
+    _fig, ax = _axes()
+    ax.plot([0.0, 1.0], [0.5, 2.0])
+    build = ep.build_axes(ax, title=True)
+    text = ax.set_title("late", loc=loc, alpha=0.6)
+    position = text.get_position()
+    for u in np.linspace(0.0, 1.0, 11):
+        build.update(u)
+        assert text.get_position() == position
+        if u == 0.5:
+            assert text.get_alpha() < 0.6
+    assert text.get_alpha() == 0.6
+
+
+@pytest.mark.parametrize("loc", ["center", "left", "right"])
+def test_axis_build_adopts_a_title_restyled_between_frames(loc):
+    _fig, ax = _axes()
+    text = ax.set_title("old", loc=loc)
+    position = text.get_position()
+    build = ep.build_axes(ax, title=True)
+    build.update(0.5)
+    assert text.get_position() == position
+    ax.set_title("new", loc=loc, alpha=0.5)
+    for u in np.linspace(0.5, 1.0, 6):
+        build.update(u)
+        assert text.get_position() == position
+    assert text.get_alpha() == 0.5
+    assert text.get_text() == "new"
+
+
+@pytest.mark.parametrize("loc", ["center", "left", "right"])
+@pytest.mark.parametrize("alpha", [None, 0.6])
+def test_axis_build_preserves_a_title_set_before_the_call(loc, alpha):
+    _fig, ax = _axes()
+    text = ax.set_title("made", loc=loc, alpha=alpha)
+    position = text.get_position()
+    build = ep.build_axes(ax, title=True)
+    for u in np.linspace(0.0, 1.0, 11):
+        build.update(u)
+        assert text.get_position() == position
+        if u == 0.5:
+            assert text.get_alpha() < (1.0 if alpha is None else alpha)
+    assert text.get_alpha() == alpha
+    # Replaying the build must not adopt its own faded alpha as the made state.
+    build.update(0.9)
+    build.update(0.9)
+    build.update(1.0)
+    assert text.get_alpha() == alpha
+    assert text.get_position() == position
+
+
+@pytest.mark.parametrize("loc", ["center", "left", "right"])
+@pytest.mark.parametrize("alpha", [None, 0.6])
+def test_axis_build_leaves_late_titles_untouched_when_not_requested(loc, alpha):
+    _fig, ax = _axes()
+    build = ep.build_axes(ax, title=False)
+    text = ax.set_title("late", loc=loc, alpha=alpha)
+    position = text.get_position()
+    for u in np.linspace(0.0, 1.0, 11):
+        build.update(u)
+        assert text.get_alpha() == alpha
+        assert text.get_position() == position
+
+
+def test_axis_build_preserves_title_clipping_changed_between_frames():
+    _fig, ax = _axes()
+    text = ax.set_title("made")
+    build = ep.build_axes(ax, title=True)
+    build.update(0.5)
+    text.set_clip_on(not text.get_clip_on())
+    clip_on = text.get_clip_on()
+    text.set_clip_box(ax.bbox)
+    for u in np.linspace(0.5, 1.0, 6):
+        build.update(u)
+        assert text.get_clip_on() == clip_on
+        assert text.get_clip_box() is ax.bbox
+
+
 # Collapse
 
 
