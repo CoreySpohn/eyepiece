@@ -1,6 +1,6 @@
 # Clip checks
 
-This page lists the readability, meaning, motion, caption, and speech checks in
+This page lists the readability, meaning, motion, caption, speech and grounding checks in
 `eyepiece.testing`. See {doc}`../explanation/clock` for the reasoning.
 
 ## readability_faults
@@ -165,3 +165,18 @@ over the span from the start of the first word to the end of the last in the
 cached word times, so padding and the pauses between lines do not count and a
 pause inside a line does. The result lists the lines strictly above the
 ceiling; `assert_speech_rate` raises `SpeechRateError` naming them.
+
+## grounding_faults
+
+`grounding_faults(equations, at=None, times=None)` checks that each colored term
+of an `equation` is grounded in the mark it names, the binding made with
+`eq.bind(name, mark, motif=...)`. It returns `GroundingFault` records, one per
+term and kind at its first time; `assert_grounded` raises `GroundingError`.
+A term is colored when its ink is neither a gray nor a tone of the ramp from
+the axes background to the text color that `neutral` draws. The kinds are:
+
+- `no-referent`: a colored term on screen that is unbound, or whose mark is not
+  on screen.
+- `color-mismatch`: a bound term not in its motif's label ink (else its mark's
+  color), or a mark off its motif's color.
+- `symbol-first`: a bound term on screen before its mark, sampled over `times`.
