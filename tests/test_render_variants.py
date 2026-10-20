@@ -19,6 +19,7 @@ from test_render_helpers import (
 )
 
 import eyepiece as ep
+import eyepiece._render_variants as variant_driver
 import eyepiece.render as render
 from eyepiece._ffmpeg import resolve_ffmpeg
 from eyepiece.render import (
@@ -319,7 +320,7 @@ def test_mux_failure_preserves_target_and_cleans_scratch(clip, tmp_path, monkeyp
 
 
 def test_all_keys_precede_builds_and_ignore_destination(clip, tmp_path, monkeypatch):
-    original = render.content_key
+    original = variant_driver.content_key
     keys = []
 
     def keyed(**kwargs):
@@ -327,7 +328,7 @@ def test_all_keys_precede_builds_and_ignore_destination(clip, tmp_path, monkeypa
         keys.append(kwargs)
         return original(**kwargs)
 
-    monkeypatch.setattr(render, "content_key", keyed)
+    monkeypatch.setattr(variant_driver, "content_key", keyed)
     requested = variants(("doc",))
     first = render_variants(
         clip,
@@ -337,7 +338,7 @@ def test_all_keys_precede_builds_and_ignore_destination(clip, tmp_path, monkeypa
         workers=1,
     )
     assert len(keys) == len(requested)
-    monkeypatch.setattr(render, "content_key", original)
+    monkeypatch.setattr(variant_driver, "content_key", original)
     out = tmp_path / "elsewhere"
     relocated = replace(
         clip, build=partial(build_variant_clip, markers=tmp_path / "other-builds")
@@ -351,7 +352,9 @@ def test_all_keys_precede_builds_and_ignore_destination(clip, tmp_path, monkeypa
 def test_spawned_builder_venue_rc_and_frame_source(clip, tmp_path, monkeypatch):
     # Keep the clip tiny while exercising two fresh subprocesses.
     monkeypatch.setattr(
-        render, "render_frames", partial(render.render_frames, chunk_frames=3)
+        variant_driver,
+        "render_frames",
+        partial(variant_driver.render_frames, chunk_frames=3),
     )
     spec = replace(
         clip,
@@ -521,8 +524,10 @@ def test_worker_and_parent_style_match_despite_parent_toggles(
 ):
     from eyepiece import _style
 
-    original = render.render_frames
-    monkeypatch.setattr(render, "render_frames", partial(original, chunk_frames=3))
+    original = variant_driver.render_frames
+    monkeypatch.setattr(
+        variant_driver, "render_frames", partial(original, chunk_frames=3)
+    )
     hwostyle.use("paper")
     ep.use_video(not explicit_setup)
     saved_rc = dict(matplotlib.rcParams)
@@ -601,7 +606,7 @@ def test_stale_narrated_scratch_is_overwritten(clip, tmp_path):
 
 
 def test_variants_resume_their_own_chunks(clip, tmp_path, monkeypatch):
-    original = render.render_frames
+    original = variant_driver.render_frames
     resumed = []
 
     def recording(*args, **kwargs):
@@ -609,7 +614,7 @@ def test_variants_resume_their_own_chunks(clip, tmp_path, monkeypatch):
         resumed.append(result.resumed)
         return result
 
-    monkeypatch.setattr(render, "render_frames", recording)
+    monkeypatch.setattr(variant_driver, "render_frames", recording)
     spec = replace(
         clip,
         build=partial(

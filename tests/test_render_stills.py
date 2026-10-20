@@ -23,6 +23,8 @@ from test_render_variants import write_audio
 
 import eyepiece as ep
 import eyepiece.render as render
+from eyepiece import _render_chunks as chunk_protocol
+from eyepiece import _render_pool as pool
 from eyepiece._ffmpeg import resolve_ffmpeg
 from eyepiece.anim import _agg_canvas, _rc_overrides, _Recorder
 
@@ -103,10 +105,10 @@ def test_poster_matches_raster_and_decoded_video(tmp_path):
         encoder={"crf": 0},
     )
     assert result.workers == 2
-    identity = render._identity(
+    identity = chunk_protocol._identity(
         "poster-reference", 3, (0, 0), 100, (320, 180), 12, 2, 3
     )
-    (worker_pixels,) = render._read_chunk(
+    (worker_pixels,) = chunk_protocol._read_chunk(
         (chunks / "chunk-2.bin", identity, 2, 3), (320, 180)
     )
     np.testing.assert_array_equal(read_pixels(path), worker_pixels)
@@ -461,7 +463,7 @@ def test_variant_posters_manifest_skip_and_index_key(tmp_path):
         if not result.variant.narrated:
             expected.append(f"marker-{result.variant.name}-poster.png")
             venue = spec.venues[0]
-            with render._figure(
+            with pool._figure(
                 partial(spec.build, venue, result.variant.mode),
                 spec.frames,
                 venue.dpi,
@@ -469,7 +471,7 @@ def test_variant_posters_manifest_skip_and_index_key(tmp_path):
                 partial(hwostyle.use, result.variant.mode),
                 venue.rc,
             ) as state:
-                pixels = render._raster(state, spec.poster)
+                pixels = pool._raster(state, spec.poster)
             np.testing.assert_array_equal(read_pixels(out / expected[1]), pixels)
         assert result.outputs == expected
         assert [

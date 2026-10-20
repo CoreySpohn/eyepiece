@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import eyepiece as ep
-import eyepiece.render as render
+import eyepiece._render_manifest as render
 from eyepiece.render import Manifest
 
 

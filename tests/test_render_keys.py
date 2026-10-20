@@ -15,6 +15,7 @@ import pytest
 
 import eyepiece as ep
 import eyepiece._ffmpeg as ffmpeg
+import eyepiece._render_keys as render_keys
 import eyepiece.render as render
 from eyepiece.render import content_key
 
@@ -378,7 +379,7 @@ def test_switching_ffmpeg_executables_changes_key(tmp_path, monkeypatch, selecti
 def test_missing_ffmpeg_records_none_and_recovers(tmp_path, monkeypatch, failure):
     present = content_key()
     with monkeypatch.context() as patch:
-        patch.setattr(render, "_ffmpeg_version", lambda: None)
+        patch.setattr(render_keys, "_ffmpeg_version", lambda: None)
         absent = content_key()
     assert present != absent
     if failure == "resolve":

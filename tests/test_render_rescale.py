@@ -355,7 +355,7 @@ def test_variants_forward_rescale_and_discard_failed_entry(tmp_path, monkeypatch
         rendered.append(result)
         return result
 
-    monkeypatch.setattr("eyepiece.render.render_frames", observe_render)
+    monkeypatch.setattr("eyepiece._render_variants.render_frames", observe_render)
     assert spec.on_rescale == "warn"
     with pytest.warns(RuntimeWarning, match=DRIFT_MESSAGE):
         result = render_variants(

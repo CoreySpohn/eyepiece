@@ -13,7 +13,7 @@ from test_render_helpers import (
     write_render_audio,
 )
 
-import eyepiece.render as render
+import eyepiece._render_variants as variant_driver
 from eyepiece.render import ClipSpec, Manifest, Variant, Venue, render_variants
 
 
@@ -84,7 +84,9 @@ def test_parent_frame_callbacks_and_worker_mapping_match_explicit_frames(
     clip, tmp_path, monkeypatch
 ):
     monkeypatch.setattr(
-        render, "render_frames", partial(render.render_frames, chunk_frames=2)
+        variant_driver,
+        "render_frames",
+        partial(variant_driver.render_frames, chunk_frames=2),
     )
     parent = os.getpid()
     requested = [Variant("doc", "light"), Variant("doc", "dark")]

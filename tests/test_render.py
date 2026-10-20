@@ -21,7 +21,8 @@ from test_render_helpers import (
 )
 
 import eyepiece as ep
-import eyepiece.render as render
+import eyepiece._render_pool as render
+from eyepiece._render_chunks import _workspace
 from eyepiece.anim import _agg_canvas, _rc_overrides, _Recorder
 
 
@@ -79,7 +80,7 @@ import sys
 from functools import partial
 from pathlib import Path
 import eyepiece as ep
-import eyepiece.render as render
+import eyepiece._render_pool as render
 from test_render_helpers import build_waiting_clip, setup_style
 folder = Path(sys.argv[1])
 worker_fds = iter(map(int, sys.argv[2:]))
@@ -203,7 +204,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from eyepiece.render import _workspace
+from eyepiece._render_chunks import _workspace
 folder, signal = map(Path, sys.argv[1:])
 original_open, original_link = os.open, os.link
 def published(path):
@@ -233,7 +234,7 @@ with _workspace(folder):
         parent.kill()
         parent.wait(timeout=10)
         assert (folder / "render.lock").read_text() == str(parent.pid)
-        with render._workspace(folder):
+        with _workspace(folder):
             assert (folder / "render.lock").read_text() == str(os.getpid())
         assert not list(folder.glob("*.part"))
         assert not (folder / "render.lock").exists()
@@ -245,16 +246,16 @@ with _workspace(folder):
 
 def test_unreadable_lock_blocks_when_fresh_and_is_reclaimed_when_old(tmp_path):
     folder = tmp_path / "chunks"
-    with render._workspace(folder):
+    with _workspace(folder):
         pass
     lock = folder / "render.lock"
     lock.touch()
     with pytest.raises(RuntimeError, match="lock"):
-        with render._workspace(folder):
+        with _workspace(folder):
             pytest.fail("fresh unreadable lock was taken over")
     old = time.time() - 60
     os.utime(lock, (old, old))
-    with render._workspace(folder):
+    with _workspace(folder):
         assert lock.read_text() == str(os.getpid())
     assert not lock.exists()
 
