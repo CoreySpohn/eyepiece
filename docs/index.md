@@ -270,6 +270,9 @@ how-to/add-cue-sounds
 
 autoapi/index
 reference/to-scrubber
+reference/attention-moves
+reference/clip-checks
+reference/motion-contract
 gallery/images
 gallery/stats
 gallery/intervals
