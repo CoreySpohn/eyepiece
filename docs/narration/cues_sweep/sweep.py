@@ -30,7 +30,6 @@ import json
 import re
 import subprocess
 import tempfile
-import wave
 from pathlib import Path
 
 import hwostyle
@@ -39,6 +38,7 @@ import numpy as np
 
 import eyepiece as ep
 from eyepiece import narration as nr
+from eyepiece.narration._mux import _write_wav
 
 FPS = 30
 LAMBDA_NM = (500.0, 1000.0)
@@ -198,14 +198,11 @@ def _audio(plan, path, cues):
     beat = narration.beat("sweep")
     n = round((beat.speech_end_s - beat.speech_start_s) * 48000)
     lines = path.parent / "lines"
-    lines.mkdir(exist_ok=True)
-    with wave.open(
-        str(lines / f"{script.line_key(script.line('sweep'))}.wav"), "wb"
-    ) as w:
-        w.setnchannels(1)
-        w.setsampwidth(2)
-        w.setframerate(48000)
-        w.writeframes(np.zeros(n, dtype="<i2").tobytes())
+    _write_wav(
+        lines / f"{script.line_key(script.line('sweep'))}.wav",
+        np.zeros(n, dtype="<i2"),
+        48000,
+    )
     return nr.audio_track(
         narration, lines, path, tail_s=tail, rate=48000,
         cues=cue_events(plan) if cues else None,
