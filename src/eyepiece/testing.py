@@ -38,10 +38,16 @@ rendered frames, and reports eight kinds of fault: ``"jump"``, ``"dead"``,
 ``"shape-class"``.
 `assert_motion` raises `MotionError` naming every fault.
 
+`grounding_faults` checks that colored equation terms name visible marks,
+share their expected colors, and appear after their concrete referents.
+
 `speech_rate` is the check on the voice rather than the picture: it reads the
 word times of a `eyepiece.narration.Narration` and reports each line's words
 per minute and the lines faster than a ceiling. `assert_speech_rate` raises
 on them.
+
+`timing_faults` checks narration pace, the heard gaps between lines and
+undeclared silence. `assert_timing` raises with every timing finding.
 
 A clip is described by the figure and a callable `at` that poses it at a
 time; the times to sample (span ends, turn midpoints, cue times) are the
@@ -60,14 +66,18 @@ Example::
 import itertools
 import math
 import numbers
+import os
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
+from matplotlib import rcParams
 from matplotlib.axis import Axis
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import Collection, LineCollection, PathCollection
-from matplotlib.colors import to_rgba
+from matplotlib.colors import to_hex, to_rgb, to_rgba
 from matplotlib.image import AxesImage
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
@@ -75,6 +85,7 @@ from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
+from eyepiece._equation import _binding_rgb
 from eyepiece._meaning import (
     MEANING_KINDS,
     MeaningError,
@@ -96,14 +107,18 @@ from eyepiece._motion import frame_count
 from eyepiece.attention import _data_colors, _default_avoid, _renderer
 
 __all__ = [
+    "GROUNDING_KINDS",
     "KINDS",
     "MEANING_KINDS",
     "MOTIF_KINDS",
     "MOTION_KINDS",
+    "TIMING_KINDS",
     "VENUES",
     "VENUE_FPS",
     "ClipError",
     "ClipReport",
+    "GroundingError",
+    "GroundingFault",
     "MeaningError",
     "MeaningFault",
     "MotifError",
@@ -115,14 +130,19 @@ __all__ = [
     "Span",
     "SpeechRate",
     "SpeechRateError",
+    "TimingError",
+    "TimingFault",
     "assert_clip",
+    "assert_grounded",
     "assert_meaning",
     "assert_motifs",
     "assert_motion",
     "assert_readable",
     "assert_speech_rate",
+    "assert_timing",
     "caption_line",
     "check_clip",
+    "grounding_faults",
     "meaning_faults",
     "meaning_faults_chain",
     "meaning_report",
@@ -131,7 +151,9 @@ __all__ = [
     "motion_faults",
     "motion_ink",
     "readability_faults",
+    "review_sheet",
     "speech_rate",
+    "timing_faults",
 ]
 
 KINDS = ("overlap", "outside", "small", "on-marks")
@@ -800,6 +822,246 @@ def _ink(artist):
                 top = max(top, float(np.max(np.asarray(colors)[:, 3])))
         return top
     return 0.0
+
+
+GROUNDING_KINDS = ("no-referent", "color-mismatch", "symbol-first")
+
+
+@dataclass(frozen=True)
+class GroundingFault:
+    """One equation term's grounding problem at its first sample time.
+
+    Attributes:
+        kind: One of `GROUNDING_KINDS`.
+        term: The term name within its equation.
+        time_s: Sample time in seconds, or None for the current state.
+        detail: A plain sentence describing the finding.
+    """
+
+    kind: str
+    term: str
+    time_s: float | None
+    detail: str
+
+
+class GroundingError(AssertionError):
+    """An equation has grounding problems; `faults` holds their list."""
+
+    def __init__(self, faults):
+        """Build a report with each term and kind on its own line."""
+        self.faults = list(faults)
+        lines = [f"{len(self.faults)} grounding fault(s):"]
+        lines += [f"  {f.term}: {f.kind}: {f.detail}" for f in self.faults]
+        super().__init__("\n".join(lines))
+
+
+def _grounding_colored(rgb, tol):
+    """Whether RGB spends a hue outside text ink and the neutral ramp."""
+    text = to_rgb(rcParams["text.color"])
+    if max(rgb) - min(rgb) <= tol or rgb == text:
+        return False
+    back = np.asarray(to_rgb(rcParams["axes.facecolor"]))
+    ramp = np.asarray(text) - back
+    length_sq = float(ramp @ ramp)
+    level = (
+        np.clip(float((np.asarray(rgb) - back) @ ramp) / length_sq, 0, 1)
+        if length_sq
+        else 0
+    )
+    neutral = np.allclose(rgb, back + level * ramp, rtol=0, atol=tol)
+    return not neutral
+
+
+def _grounding_mark_shown(mark):
+    """Whether a bound mark currently paints ink in a visible axes or figure."""
+    return (
+        mark.get_visible()
+        and (mark.axes is None or mark.axes.get_visible())
+        and mark.get_figure() is not None
+        and _ink(mark) >= _SHOWN
+    )
+
+
+def grounding_faults(
+    equations, *, at=None, times=None, tol=0.08
+) -> list[GroundingFault]:
+    """Check equation terms for missing referents, wrong colors and early symbols.
+
+    A term is shown when any glyph is visible with effective opacity at least
+    0.05. Its first glyph in `term._pieces` order decides its color. A bound
+    mark is shown when it is visible, belongs to a figure, has a visible axes
+    if it has an axes, and has effective ink opacity at least 0.05.
+
+    Text-colored terms and neutral tones, the ramp from the axes background to
+    the text color that `ep.neutral` draws, are never colored. A color within
+    `tol` per channel of the nearest point on that ramp, or whose channel
+    spread is at most `tol`, is neutral; other colors are colored.
+
+    A shown, colored term reports ``"no-referent"`` if it is unbound or its
+    mark is not shown. A shown, bound term reports ``"color-mismatch"`` if
+    its color differs from the mark's color by more than `tol` per channel.
+    With a motif, the term must match the motif's label ink, and a mark with
+    a readable color must match the motif's mark color instead.
+
+    With at least two samples, a bound term reports ``"symbol-first"`` if it
+    is first shown before its mark is first shown, including a mark never
+    shown. A term carried from its mark by a flight passes this ordering
+    check, because its mark is on screen when the flight starts. Colors are
+    resolved at check time. A pulse in flight tints colors, so sample rest
+    times.
+
+    Args:
+        equations: One equation result or an iterable of equation results.
+        at: Callable ``at(t)`` that poses the scene at time `t`. Supply with
+            `times`, or omit both to check the current state once.
+        times: Sample times in seconds, checked in sorted order.
+        tol: Largest allowed per-channel RGB difference, also used for
+            neutral tones and gray channel spread.
+
+    Returns:
+        A list of `GroundingFault` objects, each equation, term and kind
+        reported only at its first sample time. Results are sorted by time
+        (None for the current state first), then term name.
+
+    Raises:
+        ValueError: If only one of `at` and `times` is supplied.
+    """
+    if (at is None) != (times is None):
+        raise ValueError("at and times must be supplied together")
+    samples = [None] if times is None else sorted(float(t) for t in times)
+    equations = [equations] if hasattr(equations, "bindings") else list(equations)
+    terms = [
+        (i, name, term, equation.bindings.get(name))
+        for i, equation in enumerate(equations)
+        for name, term in equation.artists["terms"].items()
+    ]
+    found = {}
+    first_term = {}
+    first_mark = {}
+
+    def record(i, name, kind, time_s, detail):
+        when = "in the current state" if time_s is None else f"at {time_s:g} s"
+        found.setdefault(
+            (i, name, kind),
+            GroundingFault(
+                kind, name, time_s, f"Term {name!r} in equation {i} {detail} {when}."
+            ),
+        )
+
+    def differs(a, b):
+        return any(abs(x - y) > tol for x, y in zip(a, b, strict=True))
+
+    for k, time_s in enumerate(samples):
+        if at is not None:
+            at(time_s)
+        for i, name, term, binding in terms:
+            key = (i, name)
+            mark_shown = binding is not None and _grounding_mark_shown(binding.mark)
+            if mark_shown:
+                first_mark.setdefault(key, k)
+            glyphs = term._pieces
+            shown = any(
+                g.get_visible() and _alpha(g, g.get_facecolor()) >= _SHOWN
+                for g in glyphs
+            )
+            if not shown:
+                continue
+            first_term.setdefault(key, k)
+            rgb = to_rgb(glyphs[0].get_facecolor())
+            colored = _grounding_colored(rgb, tol)
+            if colored and not mark_shown:
+                detail = (
+                    "is colored but unbound"
+                    if binding is None
+                    else "names a mark that is not shown"
+                )
+                record(i, name, "no-referent", time_s, detail)
+            if binding is None:
+                continue
+            motif = binding.motif
+            expected = (
+                to_rgb(motif.resolve_label())
+                if motif is not None
+                else _binding_rgb(binding.mark)
+            )
+            mismatches = []
+            if differs(rgb, expected):
+                mismatches.append(
+                    f"has color {to_hex(rgb)} instead of {to_hex(expected)}"
+                )
+            if motif is not None:
+                # A motif also permits marks that have no readable color.
+                try:
+                    mark_rgb = _binding_rgb(binding.mark)
+                except ValueError:
+                    mark_rgb = None
+                if mark_rgb is not None:
+                    expected_mark = to_rgb(motif.resolve())
+                    if differs(mark_rgb, expected_mark):
+                        label = binding.mark.get_label() or type(binding.mark).__name__
+                        mismatches.append(
+                            f"names mark {label!r} with color {to_hex(mark_rgb)} "
+                            f"instead of {to_hex(expected_mark)}"
+                        )
+            if mismatches:
+                record(i, name, "color-mismatch", time_s, " and ".join(mismatches))
+
+    if len(samples) >= 2:
+        for i, name, _, binding in terms:
+            key = (i, name)
+            if binding is not None and key in first_term:
+                k = first_term[key]
+                if k < first_mark.get(key, len(samples)):
+                    record(
+                        i,
+                        name,
+                        "symbol-first",
+                        samples[k],
+                        "is shown before its mark is first shown",
+                    )
+    return sorted(
+        found.values(),
+        key=lambda f: (
+            f.time_s is not None,
+            0 if f.time_s is None else f.time_s,
+            f.term,
+        ),
+    )
+
+
+def assert_grounded(equations, **kwargs) -> list:
+    """Return [] when grounded, otherwise raise `GroundingError` with all faults.
+
+    Apply the rules of `grounding_faults`: a term is shown when any glyph is
+    visible with effective opacity at least 0.05; its first glyph decides
+    its color. Text-colored terms and neutral tones, the ramp from the axes
+    background to the text color that `ep.neutral` draws, are never colored.
+    Neutral tones include colors within `tol` per channel of the ramp and
+    grays whose channel spread is at most `tol`.
+
+    A shown, colored term without a shown bound mark reports no-referent.
+    A shown, bound term whose color differs from its expected mark color or
+    motif label ink reports color-mismatch, as does a readable mark color
+    that differs from its motif color. With at least two samples, a bound
+    term first shown before its mark reports symbol-first, including a mark
+    never shown.
+
+    Args:
+        equations: One equation result or an iterable of equation results.
+        **kwargs: Passed to `grounding_faults`.
+
+    Returns:
+        An empty list when no grounding faults are found.
+
+    Raises:
+        GroundingError: If any fault is found; its `faults` attribute holds
+            the list and its message names every term and kind.
+        ValueError: If only one of `at` and `times` is supplied.
+    """
+    found = grounding_faults(equations, **kwargs)
+    if found:
+        raise GroundingError(found)
+    return found
 
 
 def _traced(fig, extra=()):
@@ -2318,6 +2580,776 @@ def assert_speech_rate(narration, **kwargs):
     if result.fast:
         raise SpeechRateError(result)
     return result
+
+
+TIMING_KINDS = (
+    "speech-rate",
+    "line-gap",
+    "still-speech",
+    "number-late",
+    "number-contradicts",
+    "late-first-cue",
+    "early-last-cue",
+    "undeclared-silence",
+    "multiple-hero",
+    "speech-in-hero",
+)
+
+
+@dataclass(frozen=True)
+class TimingFault:
+    """One timing problem in a laid-out narration.
+
+    Attributes:
+        kind: One of `TIMING_KINDS`.
+        message: What was found, with times in seconds.
+        key: Key of the line involved, or None.
+        start_s: Start on the clip clock, in seconds, or None.
+        end_s: End on the clip clock, in seconds, or None.
+    """
+
+    kind: str
+    message: str
+    key: str | None = None
+    start_s: float | None = None
+    end_s: float | None = None
+
+
+class TimingError(AssertionError):
+    """A narration has timing problems.
+
+    Attributes:
+        faults: The list of `TimingFault` findings, one per message line.
+    """
+
+    def __init__(self, faults):
+        """Build a report listing every finding."""
+        self.faults = faults
+        lines = [f"{len(faults)} timing fault(s):"]
+        lines += [f"  {f.kind}: {f.message}" for f in faults]
+        super().__init__("\n".join(lines))
+
+
+def _timing_speech_rate(narration, ceiling, short_ceiling, short_words):
+    """Check whole-word pace, allowing noise in the rate of a short line."""
+    rates = dict(speech_rate(narration).rates)
+    found = []
+    for beat in narration.beats:
+        if beat.key not in rates:
+            continue
+        count = sum(any(ch.isalnum() for ch in w.text) for w in beat.words)
+        limit = short_ceiling if count <= short_words else ceiling
+        wpm = rates[beat.key]
+        rounded = round(wpm) if math.isfinite(wpm) else wpm
+        if rounded > limit:
+            start, end = beat.words[0].start_s, beat.words[-1].end_s
+            found.append(
+                TimingFault(
+                    "speech-rate",
+                    f"line {beat.key!r}: {count} words at {rounded:g} words/min "
+                    f"exceeds the {limit:g} words/min ceiling "
+                    f"from {start:g} to {end:g} s",
+                    beat.key,
+                    start,
+                    end,
+                )
+            )
+    return found
+
+
+def _timing_line_gap(narration, min_gap_s):
+    """Check heard silence between spoken lines, so sentences stay separate."""
+    from eyepiece.narration import Pause
+
+    spoken = [
+        b
+        for b in narration.beats
+        if b.words and not isinstance(narration.script.line(b.key), Pause)
+    ]
+    found = []
+    for first, second in itertools.pairwise(spoken):
+        start, end = first.words[-1].end_s, second.words[0].start_s
+        gap = end - start
+        if gap < min_gap_s:
+            found.append(
+                TimingFault(
+                    "line-gap",
+                    f"line {second.key!r}: {gap:g} s gap from {start:g} to "
+                    f"{end:g} s is below the {min_gap_s:g} s floor",
+                    second.key,
+                    start,
+                    end,
+                )
+            )
+    return found
+
+
+def _timing_silence(narration, plan):
+    """Keep the silence and cue findings, so silent stretches are declared."""
+    from eyepiece.narration import check_silence
+
+    return [
+        TimingFault(f.code, f.message, f.key, f.start_s, f.end_s)
+        for f in check_silence(narration, plan)
+    ]
+
+
+def _source_frame(source, t):
+    """Read one RGB uint8 frame at t, using the last video frame past its end."""
+    if not isinstance(source, (str, os.PathLike)) and not callable(source):
+        raise TypeError("source must be a video path or a callable source(t)")
+    if callable(source) and not isinstance(source, (str, os.PathLike)):
+        frame = np.asarray(source(t))
+        if frame.ndim != 3 or frame.shape[2] not in (3, 4):
+            raise ValueError("source(t) must return an (H, W, 3) or (H, W, 4) image")
+        frame = frame[:, :, :3]
+        if np.issubdtype(frame.dtype, np.floating):
+            frame = np.rint(frame * 255).astype(np.uint8)
+        elif frame.dtype != np.uint8:
+            raise TypeError("source(t) must return uint8 or floating-point pixels")
+        return frame
+
+    import io
+    import subprocess
+    import tempfile
+
+    from PIL import Image
+
+    from eyepiece._ffmpeg import resolve_ffmpeg
+
+    command = [resolve_ffmpeg(), "-v", "error", "-nostdin"]
+    result = subprocess.run(
+        [
+            *command, "-ss", str(t),
+            "-i", os.fspath(source), "-map", "0:v:0", "-frames:v", "1",
+            "-c:v", "png", "-f", "image2pipe", "pipe:1",
+        ],
+        check=True,
+        capture_output=True,
+    )  # fmt: skip
+    if not result.stdout:
+        # A seek after the final frame can succeed without producing an image.
+        # Overwrite a single PNG while decoding the tail to retain its last frame.
+        with tempfile.TemporaryDirectory() as directory:
+            last = Path(directory) / "last.png"
+            # Sparse streams or a longer audio track can leave the tail empty.
+            for seek in (["-sseof", "-1"], []):
+                subprocess.run(
+                    [
+                        *command, *seek, "-i", os.fspath(source), "-map", "0:v:0",
+                        "-vsync", "0", "-c:v", "png",
+                        "-update", "1", "-y", str(last),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )  # fmt: skip
+                if last.exists():
+                    with Image.open(last) as image:
+                        return np.array(image.convert("RGB"))
+        raise RuntimeError("video contains no decodable frames")
+    with Image.open(io.BytesIO(result.stdout)) as image:
+        return np.array(image.convert("RGB"))
+
+
+def _source_frames(source, *, seconds, fps):
+    """Yield (time, RGB uint8 frame) pairs from a callable or video path."""
+    if not isinstance(source, (str, os.PathLike)) and not callable(source):
+        raise TypeError("source must be a video path or a callable source(t)")
+    if not math.isfinite(fps) or fps <= 0:
+        raise ValueError("fps must be finite and positive")
+    if not isinstance(source, (str, os.PathLike)):
+        for k in itertools.count():
+            t = k / fps
+            if t >= seconds:
+                break
+            yield t, _source_frame(source, t)
+        return
+
+    import subprocess
+    import tempfile
+
+    from eyepiece._ffmpeg import resolve_ffmpeg
+
+    args = [resolve_ffmpeg(), "-v", "error", "-nostdin", "-i", os.fspath(source)]
+    args += ["-map", "0:v:0"]
+    height, width = _source_frame(source, 0.0).shape[:2]
+    if width > 1280:
+        height = max(2, round(height * 1280 / width / 2) * 2)
+        width = 1280
+    args += [
+        "-vf", f"fps={fps},scale={width}:{height}",
+        "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
+    ]  # fmt: skip
+    # A file for stderr avoids blocking the frame pipe on decoder diagnostics.
+    with tempfile.TemporaryFile() as errors:
+        with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errors) as process:
+            try:
+                size = height * width * 3
+                for k in itertools.count():
+                    data = process.stdout.read(size)
+                    if not data:
+                        break
+                    if len(data) != size:
+                        raise RuntimeError("ffmpeg returned an incomplete RGB frame")
+                    yield (
+                        k / fps,
+                        np.frombuffer(data, dtype=np.uint8).reshape(height, width, 3),
+                    )
+                if process.wait():
+                    errors.seek(0)
+                    raise subprocess.CalledProcessError(
+                        process.returncode, args, stderr=errors.read()
+                    )
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                process.wait()
+
+
+def _sheet_events(narration, plan, events):
+    """Collect and merge tile labels without rounding the sampled time."""
+    if events is None:
+        if narration is None and plan is None:
+            raise ValueError("provide events, narration or plan")
+        events = []
+        if narration is not None:
+            events.extend((c.at_s, f"{c.kind}:{c.target}") for c in narration.cues())
+            events.extend(
+                (max(b.start_s, b.end_s - 0.001), "end") for b in narration.beats
+            )
+        if plan is not None:
+            events.extend(
+                (e.frame / plan.fps, e.name)
+                for e in plan.events()
+                if e.what in ("mid", "end") and e.kind not in ("hold", "line")
+            )
+    merged = {}
+    for t, label in sorted(events, key=lambda event: event[0]):
+        ms = round(t * 1000)
+        if ms not in merged:
+            merged[ms] = (t, [])
+        merged[ms][1].append(str(label))
+    if not merged:
+        raise ValueError("events must not be empty")
+    return [(t, ", ".join(labels)) for t, labels in merged.values()]
+
+
+def _sheet_audio(audio):
+    """Read PCM or numeric samples and average channels before normalizing."""
+    if isinstance(audio, (str, os.PathLike)):
+        import wave
+
+        with wave.open(os.fspath(audio), "rb") as wav:
+            if wav.getsampwidth() != 2 or wav.getcomptype() != "NONE":
+                raise ValueError("audio must be a 16-bit PCM WAV")
+            rate = wav.getframerate()
+            samples = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2")
+            samples = samples.reshape(-1, wav.getnchannels())
+    else:
+        samples, rate = audio
+    samples = np.asarray(samples, dtype=float)
+    if samples.ndim not in (1, 2):
+        raise ValueError("audio samples must be one- or two-dimensional")
+    if not math.isfinite(rate) or rate <= 0:
+        raise ValueError("audio rate must be finite and positive")
+    if samples.ndim == 2:
+        samples = samples.mean(axis=1)
+    peak = np.max(np.abs(samples), initial=0)
+    return samples / peak if peak else samples, rate
+
+
+def _sheet_waveform(ax, audio, start, end, times, pixels):
+    """Draw the linearly interpolated signal's min/max envelope and event ticks."""
+    samples, rate = audio
+    if start == end:
+        start, end = start - 0.5, end + 0.5
+    edges = np.linspace(start, end, max(2, int(pixels)) + 1)
+    indices = np.clip(np.ceil(edges * rate), 0, len(samples)).astype(int)
+    values = (
+        np.interp(edges * rate, np.arange(len(samples)), samples, left=0, right=0)
+        if len(samples)
+        else np.zeros_like(edges)
+    )
+    low = np.minimum(values[:-1], values[1:])
+    high = np.maximum(values[:-1], values[1:])
+    for i, (a, b) in enumerate(itertools.pairwise(indices)):
+        if b > a:
+            low[i] = min(low[i], samples[a:b].min())
+            high[i] = max(high[i], samples[a:b].max())
+    centers = (edges[:-1] + edges[1:]) / 2
+    ax.vlines(centers, low, high, color="#34495e", linewidth=0.8)
+    ax.axhline(0, color="#999999", linewidth=0.5)
+    for t in times:
+        ax.axvline(t, color="#b04b31", linewidth=0.8)
+    ax.set(xlim=(start, end), ylim=(-1.05, 1.05), yticks=[])
+    ax.set_xlabel("Time (s)", fontsize=9, color="#222222")
+    ax.tick_params(axis="x", labelsize=8, colors="#222222")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+
+def review_sheet(
+    path,
+    source,
+    *,
+    narration=None,
+    plan=None,
+    events=None,
+    audio=None,
+    columns=6,
+    width=320,
+) -> Path:
+    """A contact sheet shows a clip's frames at the moments that matter.
+
+    A review needs no hand-picked preview list.
+
+    Events default to every narration cue and each beat end minus 1 ms
+    (clamped to its start), plus plan mid and end frames excluding hold and
+    line spans. Times agreeing to the millisecond share a tile; a later cue
+    sheet can pass its own ``events`` as ``(seconds, label)`` pairs.
+
+    Args:
+        path: Output PNG path. Missing parent directories are created.
+        source: Video path decoded by ffmpeg, or a callable taking seconds
+            and returning an (H, W, 3) or (H, W, 4) image as uint8 or floats
+            in [0, 1]. Alpha is dropped. Times at or past the last decodable
+            video frame use that frame. Images are area-averaged to the tile
+            width before drawing, preserving aspect ratio to the nearest pixel.
+        narration: Optional laid-out `eyepiece.narration.Narration`. Each beat
+            gets a row with a header and active captions. Without narration,
+            rows contain time ranges and tiles.
+        plan: Optional `eyepiece.Plan` supplying default mid and end events.
+        events: Optional iterable of (seconds, label) pairs overriding default
+            events. Tiles are sorted by time and merged within a millisecond.
+        audio: Optional 16-bit PCM WAV path or (samples, rate) pair, with rate
+            in Hz and a one-dimensional or (samples, channels) numeric array.
+            Channels are averaged and normalized before drawing a waveform
+            and event ticks for each row's time range.
+        columns: Maximum tiles per row before wrapping, default 6.
+        width: Tile width in pixels, default 320.
+
+    Returns:
+        The output PNG path as a `pathlib.Path`.
+
+    Raises:
+        ValueError: If no events can be built, events are empty, or dimensions
+            are not positive integers; if a callable image has an invalid
+            shape; or if audio has an invalid shape, rate or WAV format.
+        TypeError: If source is neither a video path nor a callable, or
+            callable pixels are neither uint8 nor floating-point.
+        RuntimeError: If ffmpeg is unavailable or a video has no decodable frames.
+        subprocess.CalledProcessError: If ffmpeg cannot decode the video.
+    """
+    import textwrap
+    from bisect import bisect_right
+
+    from matplotlib.figure import Figure
+    from PIL import Image
+
+    from eyepiece.narration._mux import caption_at, captions
+
+    if any(not isinstance(n, numbers.Integral) or n <= 0 for n in (columns, width)):
+        raise ValueError("columns and width must be positive integers")
+    events = _sheet_events(narration, plan, events)
+    caption_cues = captions(narration) if narration is not None else []
+    sound = _sheet_audio(audio) if audio is not None else None
+    gap, margin, line_height = 16, 16, 16
+    sheet_width = 2 * margin + columns * width + (columns - 1) * gap
+    chars = max(1, int(width / 7.5))
+    tiles = []
+    for t, labels in events:
+        frame = _source_frame(source, t)
+        height = max(1, round(width * frame.shape[0] / frame.shape[1]))
+        frame = np.array(
+            Image.fromarray(frame).resize((width, height), Image.Resampling.BOX)
+        )
+        label = textwrap.fill(f"{t:.2f} s  {labels}", chars)
+        caption = textwrap.fill(caption_at(caption_cues, t), chars)
+        tiles.append(
+            {
+                "t": t,
+                "frame": frame,
+                "height": height,
+                "label": label,
+                "caption": caption,
+                "label_height": line_height * len(label.splitlines()),
+                "caption_height": line_height * len(caption.splitlines()),
+            }
+        )
+    if narration is not None and narration.beats:
+        rows = [dict(row, tiles=[]) for row in narration.audit()]
+        starts = [beat.start_s for beat in narration.beats]
+        for tile in tiles:
+            rows[max(0, bisect_right(starts, tile["t"]) - 1)]["tiles"].append(tile)
+    else:
+        rows = [
+            {
+                "start_s": group[0]["t"],
+                "end_s": group[-1]["t"],
+                "tiles": group,
+            }
+            for i in range(0, len(tiles), columns)
+            if (group := tiles[i : i + columns])
+        ]
+    # Lay out in pixels first so long captions and wrapped tiles reserve space.
+    y = margin
+    for row in rows:
+        row["top"] = y
+        y += 24
+        row["bands"] = []
+        for i in range(0, len(row["tiles"]), columns):
+            band = row["tiles"][i : i + columns]
+            label_height = max(tile["label_height"] for tile in band)
+            image_height = max(tile["height"] for tile in band)
+            caption_height = max(tile["caption_height"] for tile in band)
+            row["bands"].append((y, label_height, image_height, band))
+            y += label_height + image_height + caption_height + 12
+        if sound is not None:
+            row["wave_top"] = y
+            y += 100
+        y += gap
+    sheet_height = math.ceil(y)
+    fig = Figure(
+        figsize=(sheet_width / 100, sheet_height / 100), dpi=100, facecolor="white"
+    )
+    canvas = FigureCanvasAgg(fig)
+
+    def text(x, top, value, fontsize=9):
+        fig.text(
+            x / sheet_width,
+            1 - top / sheet_height,
+            value,
+            ha="left",
+            va="top",
+            fontsize=fontsize,
+            color="#222222",
+            fontfamily="DejaVu Sans Mono",
+            linespacing=1.28,
+            usetex=False,
+            parse_math=False,
+        )
+
+    def axes(x, top, w, h):
+        return fig.add_axes(
+            [
+                x / sheet_width,
+                1 - (top + h) / sheet_height,
+                w / sheet_width,
+                h / sheet_height,
+            ],
+            facecolor="white",
+        )
+
+    for row in rows:
+        header = f"{row['start_s']:.2f} - {row['end_s']:.2f} s"
+        if "key" in row:
+            header = f"{row['key']}  {header}  {row['text']}"
+        header = textwrap.shorten(
+            header, max(4, int((sheet_width - 2 * margin) / 8.4)), placeholder="..."
+        )
+        text(margin, row["top"], header, fontsize=10)
+        for top, label_height, image_height, band in row["bands"]:
+            for col, tile in enumerate(band):
+                x = margin + col * (width + gap)
+                text(x, top, tile["label"])
+                ax = axes(x, top + label_height, width, tile["height"])
+                ax.imshow(tile["frame"], interpolation="nearest", aspect="auto")
+                ax.set_axis_off()
+                text(x, top + label_height + image_height + 4, tile["caption"])
+        if sound is not None:
+            ax = axes(margin, row["wave_top"], sheet_width - 2 * margin, 60)
+            _sheet_waveform(
+                ax,
+                sound,
+                row["start_s"],
+                row["end_s"],
+                [tile["t"] for tile in row["tiles"]],
+                sheet_width - 2 * margin,
+            )
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    canvas.print_png(path)
+    return path
+
+
+def _timing_still_run(words, start, end, still_s):
+    """Find the longest speech group clipped to one still run."""
+    groups = []
+    for word_start, word_end, line_index, key in words:
+        if word_end <= start or word_start >= end:
+            continue
+        a, b = max(start, word_start), min(end, word_end)
+        if not groups or a - groups[-1][1] >= 2.0:
+            groups.append([a, b, {}])
+        group = groups[-1]
+        group[1] = max(group[1], b)
+        group[2][line_index] = key
+    if not groups:
+        return []
+    a, b, lines = max(groups, key=lambda g: g[1] - g[0])
+    speech = b - a
+    if speech <= still_s:
+        return []
+    keys = [lines[i] for i in sorted(lines)]
+    return [
+        TimingFault(
+            "still-speech",
+            f"still screen {start:.2f} to {end:.2f} s ({end - start:.1f} s) "
+            f"under {speech:.1f} s of speech ({', '.join(keys)})",
+            keys[0],
+            start,
+            end,
+        )
+    ]
+
+
+def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom, fps):
+    """Compare each sample with the first frame of its still run."""
+    words = sorted(
+        (w.start_s, w.end_s, i, beat.key)
+        for i, beat in enumerate(narration.beats)
+        for w in beat.words
+    )
+    seconds = plan.seconds if plan is not None else narration.total_s
+    reference = None
+    start = last = 0.0
+    found = []
+    for t, frame in _source_frames(source, seconds=seconds, fps=fps):
+        height, width = frame.shape[:2]
+        kept = frame[: int(height * (1 - ignore_bottom))].astype(np.int16)
+        if reference is None:
+            reference, start = kept, t
+        else:
+            changed = np.count_nonzero(np.any(np.abs(kept - reference) > 12, axis=2))
+            if changed >= still_change * height * width:
+                found += _timing_still_run(words, start, t, still_s)
+                reference, start = kept, t
+        last = t
+    if reference is not None:
+        found += _timing_still_run(words, start, last + 1 / fps, still_s)
+    return found
+
+
+_READOUT_NUMBER = re.compile(r"(?<![\d.])(?<!\d,)\d+(?:,\d{3})*(?:\.\d+)?(?!\d)")
+
+
+def _timing_numbers(narration, readouts, at, plan, settle_tol_s, fps):
+    """Check readout text and ink against the number on the speech clock."""
+    from eyepiece.narration._speech import _spoken_value, _word_key
+
+    if not math.isfinite(fps) or fps <= 0:
+        raise ValueError("fps must be finite and positive")
+    if plan is not None:
+        settle_tol_s = max(settle_tol_s, 1 / plan.fps)
+    found = []
+    for word_key, artist in readouts.items():
+        key, index = _word_key(word_key)
+        beat = narration.beat(key)
+        words = narration.script.line(key).words
+        try:
+            spoken = _spoken_value(words, index)
+        except ValueError as error:
+            raise ValueError(f"line {key!r} word {index}: {error}") from error
+        start, end = beat.words[index].start_s, beat.words[-1].end_s
+        judged = start + settle_tol_s
+        times = [judged]
+        for k in itertools.count():
+            t = start + k / fps
+            if t >= end:
+                break
+            times.append(t)
+        times.append(end)
+        samples = {}
+        for t in times:
+            at(t)
+            text = artist.get_text()
+            ink = _ink(artist) if artist.get_visible() else 0.0
+            token = _READOUT_NUMBER.search(text)
+            value = float(token.group().replace(",", "")) if token is not None else None
+            matches = value is not None and abs(value - spoken) <= 1e-9
+            samples[t] = (text, ink, value is not None, matches)
+        threshold = max(_SHOWN, 0.9 * max(s[1] for s in samples.values()))
+        landing = next(
+            (
+                t
+                for t in sorted(samples)
+                if t >= start and samples[t][1] >= threshold and samples[t][3]
+            ),
+            None,
+        )
+        label = f"line {key!r} says {words[index]!r} ({spoken:g})"
+        if samples[judged][1] < threshold or not samples[judged][3]:
+            text, ink, _, _ = samples[start]
+            shown = repr(text) if ink >= _SHOWN else "nothing"
+            detail = (
+                "does not show it during the line"
+                if landing is None
+                else f"lands at {landing:.2f} s, {landing - start:.2f} s late"
+            )
+            found.append(
+                TimingFault(
+                    "number-late",
+                    f"{label} at {start:.2f} s but the readout shows {shown}; {detail}",
+                    key,
+                    start,
+                    end if landing is None else landing,
+                )
+            )
+        if landing is not None:
+            for t in sorted(samples):
+                text, ink, has_number, matches = samples[t]
+                if landing < t <= end and ink >= _SHOWN and has_number and not matches:
+                    found.append(
+                        TimingFault(
+                            "number-contradicts",
+                            f"{label} but at {t:.2f} s the readout shows {text!r}, "
+                            f"contradicting the spoken number {spoken:g}",
+                            key,
+                            t,
+                        )
+                    )
+                    break
+    return found
+
+
+def timing_faults(
+    narration,
+    *,
+    plan=None,
+    source=None,
+    at=None,
+    readouts=None,
+    ceiling=160.0,
+    short_ceiling=166.0,
+    short_words=10,
+    min_gap_s=0.4,
+    still_s=2.0,
+    still_change=0.0016,
+    ignore_bottom=0.0,
+    fps=10.0,
+    settle_tol_s=0.0,
+) -> list[TimingFault]:
+    """Check narration pace, gaps, silence, still screens and shown numbers.
+
+    Speech rates come from `speech_rate` and are compared in whole words per
+    minute: 160 wpm is the pace past which a viewer cannot follow a moving
+    figure. Lines of at most `short_words` use `short_ceiling`, because a
+    short line's rate is noisy. Set both ceilings equal to remove the allowance.
+
+    Consecutive spoken lines need at least `min_gap_s` of silence between
+    their words, because 0.4 s is the least pause that separates two sentences.
+    Audio tails count as silence; `Pause` beats and lines without words are
+    skipped when choosing the spoken pair.
+
+    `eyepiece.narration.check_silence` runs with its defaults to check cue
+    timing, undeclared silence and hero spans, so the screen and voice stay
+    together and long silent stretches have a declared purpose.
+
+    With `source`, frames are compared with the first frame of each still run.
+    The bottom `ignore_bottom` fraction of rows is ignored. A pixel changes if
+    any RGB channel differs by more than 12 out of 255. A run continues while
+    fewer than `still_change` times the full frame's height times width pixels
+    change; the first frame at or above that count ends the run at its time
+    and starts the next. The final run ends one frame after the last sample.
+    Comparing with the run's first frame lets slow drift accumulate.
+
+    Every overlapping word is clipped to the run, and the words are ordered by time.
+    A silence of at least 2.0 s from the latest word end to the next word
+    start splits speech into groups. Speech is the longest group's span,
+    from its first word start to its last word end, including shorter gaps.
+    A run is reported only when that speech is strictly over `still_s`. The
+    finding names the group's lines in clip order and is keyed by the first line.
+
+    A 19 to 28 pt word changes about 900 to 2300 pixels of a 1280 x 720
+    frame. This catches a screen where nothing arrives, not a small swell;
+    a swell is the motion checks' job.
+
+    With `readouts`, each number's artist is posed at its word start plus
+    `settle_tol_s`, and at every 1 / `fps` from the word start through the
+    last word's end, including the end itself. A readout's value is the first
+    whole number in its text; numbers after it, such as a denominator or a
+    year, are context. Readouts are written with their value first. Thousands
+    commas and decimal parts are accepted. A whole numeric token is not
+    preceded by a digit, a decimal point or a digit-comma, and is not followed
+    by a digit. A readout shows its spoken number when its value matches with
+    absolute tolerance 1e-9 and its ink is at least 0.05 and at least 90 percent
+    of its largest ink over those poses. Invisible artists have no ink.
+    A number that misses the judged time is reported as `number-late`.
+    After landing and through the speech end, `number-contradicts` reports
+    the first sample with ink at least 0.05 and a first number that differs
+    from the spoken value beyond that tolerance. Text with no number is not
+    a contradiction. The figure is left posed at the last sample.
+
+    Args:
+        narration: A laid-out `eyepiece.narration.Narration`.
+        plan: A `eyepiece.Plan` whose hero annotations declare silent spans;
+            its `seconds` gives the clip length for a callable source.
+        source: Optional video path (str or os.PathLike), decoded by ffmpeg
+            through an RGB pipe until the stream ends, scaled to 1280 pixels
+            wide when wider, keeping aspect with an even height, else native
+            size. Or a callable source(t) returning an (H, W, 3) or (H, W, 4)
+            array: uint8 or float in [0, 1], scaled by 255 and rounded. Alpha
+            is dropped. Sample at t = k / fps, starting at zero, while t is
+            below plan.seconds or, without a plan, narration.total_s.
+        at: Callable that poses the figure at a clip time; required with `readouts`.
+        readouts: Mapping from a number word, ``(line_key, word_index)`` or
+            ``"line_key:word_index"``, to the `matplotlib.text.Text` showing it.
+        ceiling: Fastest whole-word pace of a longer line, in words/min.
+        short_ceiling: Fastest whole-word pace of a short line, in words/min.
+        short_words: Largest spoken word count considered a short line.
+        min_gap_s: Least heard silence between spoken lines, in seconds.
+        still_s: Maximum speech span over one still run, default 2.0 seconds.
+        still_change: Changed pixel fraction ending a run, default 0.0016
+            (0.16 percent of the full frame, including ignored rows).
+        ignore_bottom: Bottom fraction of rows to ignore, default 0.0; keep
+            rows from zero up to int(H * (1 - ignore_bottom)).
+        fps: Sampling rate, default 10 frames per second. Source frames start
+            at zero; readout scans start at the number word.
+        settle_tol_s: Seconds after the word start by which its readout must
+            land, default zero. With `plan`, floored at one frame, 1 / plan.fps.
+
+    Returns:
+        A list of `TimingFault`, sorted by start time with None last and
+        original rule order retained for equal times. Findings are not raised.
+
+    Raises:
+        TypeError: If `source` is neither a video path nor a callable.
+        ValueError: If `readouts` lacks `at`, a word does not start a number,
+            or a sampling rate is not finite and positive.
+        KeyError: If a readout names a line the narration lacks.
+    """
+    if readouts is not None and at is None:
+        raise ValueError("readouts requires at(t) to pose the figure")
+    found = _timing_speech_rate(narration, ceiling, short_ceiling, short_words)
+    found += _timing_line_gap(narration, min_gap_s)
+    found += _timing_silence(narration, plan)
+    if source is not None:
+        found += _timing_still(
+            narration, source, plan, still_s, still_change, ignore_bottom, fps
+        )
+    if readouts is not None:
+        found += _timing_numbers(narration, readouts, at, plan, settle_tol_s, fps)
+    return sorted(found, key=lambda f: (f.start_s is None, f.start_s or 0.0))
+
+
+def assert_timing(narration, **kwargs) -> list[TimingFault]:
+    """Raise `TimingError` if narration pace, gaps or silence break a rule.
+
+    Args:
+        narration: A laid-out `eyepiece.narration.Narration`.
+        **kwargs: Passed to `timing_faults`.
+
+    Returns:
+        An empty list when the narration has no timing findings.
+
+    Raises:
+        TimingError: If any finding is returned; its `faults` attribute holds
+            the list and its message lists every finding on its own line.
+    """
+    found = timing_faults(narration, **kwargs)
+    if found:
+        raise TimingError(found)
+    return found
 
 
 @dataclass(frozen=True)
