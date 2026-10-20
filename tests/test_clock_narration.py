@@ -560,6 +560,46 @@ def test_a_motion_longer_than_its_line_pushes_the_next_line_and_its_cues():
     assert plan.n_frames == ep.frame_count(leak.end_s, 30)
 
 
+@pytest.mark.parametrize("offset", [-1.0, -0.25, 2.0])
+def test_a_line_wait_has_no_tail_and_preserves_speech_and_padding(bayes, offset):
+    tl = ep.Timeline(narration=bayes)
+    sec = tl.line("question")
+    tl.hold(0.25)
+    padded_end = bayes.beat("question").end_s
+    waited = padded_end + offset
+    tl.wait_until(waited)
+    want = max(padded_end, waited)
+    assert tl.narration.beat("question").end_s == want
+    following = tl.line("square")
+    assert sec.end == following.start == want
+    assert tl.narration.beat("question").end_s == want
+
+
+@pytest.mark.parametrize("offset", [None, 1.5])
+def test_a_line_with_no_spans_ends_at_its_speech_or_its_wait(bayes, offset):
+    tl = ep.Timeline(narration=bayes)
+    sec = tl.line("question")
+    padded_end = bayes.beat("question").end_s
+    if offset is not None:
+        tl.wait_until(padded_end + offset)
+    want = padded_end + (offset or 0.0)
+    assert tl.narration.beat("question").end_s == want
+    following = tl.line("square")
+    assert sec.end == following.start == want
+
+
+def test_a_line_wait_keeps_the_tail_of_a_later_extending_span(bayes):
+    tl = ep.Timeline(narration=bayes)
+    sec = tl.line("question")
+    padded_end = bayes.beat("question").end_s
+    tl.wait_until(padded_end + 1.0)
+    held = tl.hold(1.0)
+    want = held.end + TAIL_S
+    assert tl.narration.beat("question").end_s == want
+    tl.line("square")
+    assert sec.end == want
+
+
 def test_the_rebuilt_narration_feeds_the_audio_track_with_the_solved_starts(tmp_path):
     small = nr.Narration.load(SMALL, DATA)
     tl = ep.Timeline(narration=small)

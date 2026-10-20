@@ -250,6 +250,7 @@ class _Section:
         self.beat = beat
         self.key = beat.key if beat is not None else None
         self.max_ext = None
+        self.wait_end = Fraction(0)
         self.pending = []
 
     @property
@@ -418,9 +419,10 @@ class Timeline:
 
     @property
     def seconds(self):
-        """Declared length so far: the latest end of any extending span."""
+        """Declared length so far, including extending spans and waited times."""
         ends = [s._t1 for s in self._spans.values() if s.extends]
         ends += [s._end for s in self._sections if s._end is not None]
+        ends += [s.wait_end for s in self._sections]
         ends += self._tails
         return float(max(ends, default=Fraction(0)))
 
@@ -515,7 +517,8 @@ class Timeline:
 
         Works as a plain call or a ``with`` block; a section also closes when
         the next section or line opens or the plan is built. It ends at its
-        last extending span (a caption read in silent mode included).
+        last extending span (a caption read in silent mode included) or its
+        latest waited time, whichever is later.
 
         Args:
             name: The section's name, unique among sections and lines.
@@ -533,8 +536,8 @@ class Timeline:
         """Open the narration line `key`, closing the one before it.
 
         Lines open in script order, one per line of the script. The line
-        ends at the later of its speech plus padding and its last extending
-        span plus a 0.6 s tail.
+        ends at the latest of its speech plus padding, its last extending
+        span plus a 0.6 s tail, and its waited time without a tail.
 
         Args:
             key: The key of the line in the narration's script.
@@ -576,14 +579,12 @@ class Timeline:
                 sec.max_ext = read
         for cap in reads:
             self._leave_caption(cap, sec.max_ext, False)
-        end = sec._start
+        end = max(sec._start, sec.wait_end)
         if sec.beat is not None:
-            need = None
+            need = sec.wait_end
             if sec.max_ext is not None:
-                need = sec.max_ext + Fraction(LINE_TAIL_S)
-            placed = self._source.place(
-                sec.key, float(sec._start), end_s=None if need is None else float(need)
-            )
+                need = max(need, sec.max_ext + Fraction(LINE_TAIL_S))
+            placed = self._source.place(sec.key, float(sec._start), end_s=float(need))
             sec.beat = placed
             end = Fraction(placed.end_s)
         elif sec.max_ext is not None:
@@ -753,6 +754,41 @@ class Timeline:
                     extends=False, _t0=t, _t1=t)  # fmt: skip
 
     # -- verbs -----------------------------------------------------------
+
+    def wait_until(self, *times):
+        """Hold the picture until a time computed elsewhere, without placing a span.
+
+        For example, wait until the moment a caption has been read. The latest
+        future time extends the section and clip without adding a tail, while
+        speech plus padding or extending spans plus their tails may end later.
+        Times at or before ``now`` leave the timeline unchanged.
+
+        Args:
+            *times: Absolute times in seconds, as numbers, `Fraction` or `Time`.
+
+        Returns:
+            The cursor as a `Time`, at the latest of ``now`` and the times.
+
+        Raises:
+            TypeError: If no times are given.
+            ValueError: If a time is non-finite or negative, or the call is
+                inside ``together()``.
+        """
+        if not times:
+            raise TypeError("wait_until() needs at least one time")
+        if self._together:
+            raise ValueError("wait_until() is not allowed inside together()")
+        try:
+            values = [_exact(t) for t in times]
+        except (ValueError, OverflowError) as err:
+            raise ValueError("wait times must be finite and nonnegative") from err
+        if any(t < 0 for t in values):
+            raise ValueError("wait times must be finite and nonnegative")
+        end = max(values)
+        if end > self._now:
+            self._ensure_open().wait_end = end
+            self._now = end
+        return self.now
 
     def hold(self, seconds, *, name=None, to=None):
         """A span in which nothing moves; ``to`` sets knobs when it starts.
@@ -1306,10 +1342,12 @@ class Timeline:
             starts[sec.key] = float(sec._start)
             end = sec._end
             if end is None:
-                need = None
+                need = sec.wait_end
                 if sec.max_ext is not None:
-                    need = float(sec.max_ext + Fraction(LINE_TAIL_S))
-                end = Fraction(src.place(sec.key, starts[sec.key], end_s=need).end_s)
+                    need = max(need, sec.max_ext + Fraction(LINE_TAIL_S))
+                end = Fraction(
+                    src.place(sec.key, starts[sec.key], end_s=float(need)).end_s
+                )
             ends[sec.key] = float(end)
         return type(src)(src.script, src.spoken, starts=starts, ends=ends)
 
