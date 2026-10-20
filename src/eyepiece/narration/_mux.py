@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import warnings
 import wave
+from fractions import Fraction
 from itertools import pairwise
 from pathlib import Path
 
@@ -340,6 +341,32 @@ def _finish_audio(ffmpeg, audio, tmp, loudness, true_peak, lra, rate):
     return out
 
 
+def _video_duration(ffmpeg, video):
+    """Read the picture's presentation end, without decoding or needing ffprobe.
+
+    The framecrc muxer reports packet PTS and duration in an exact time base.
+    Use presentation times: copied H.264's decode clock can end early because
+    of B-frame reordering. The human-readable input header rounds to 0.01 s.
+    """
+    cmd = [
+        ffmpeg, "-v", "error", "-i", str(video), "-map", "0:v:0",
+        "-c:v", "copy", "-f", "framecrc", "-",
+    ]  # fmt: skip
+    done = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if done.returncode:
+        raise RuntimeError(f"ffmpeg could not read {video}: {done.stderr}")
+    time_base, end = None, 0
+    for line in done.stdout.splitlines():
+        if line.startswith("#tb 0:"):
+            time_base = Fraction(line.split(":", 1)[1].strip())
+        elif line and not line.startswith("#"):
+            fields = line.split(",")
+            end = max(end, int(fields[2]) + int(fields[3]))
+    if time_base is None or end <= 0:
+        raise RuntimeError(f"ffmpeg could not determine the video duration of {video}")
+    return float(end * time_base)
+
+
 def mux(
     video,
     audio,
@@ -359,11 +386,12 @@ def mux(
 ):
     """Join a silent video and an audio track into one MP4.
 
-    The picture is copied, not re-encoded; the audio is AAC. The output ends
-    with the shorter of the two. The audio is normalized in two passes of
-    ffmpeg's ``loudnorm``: the first measures the track, the second applies a
-    linear gain from that measurement, so the speech keeps its dynamics. The
-    default, -16 LUFS with a -1 dBTP ceiling, is the usual target for spoken
+    The picture is copied, not re-encoded; the audio is AAC, padded with
+    silence or trimmed to the video's duration. The audio is normalized in
+    two passes of ffmpeg's ``loudnorm``: the first measures the track, the
+    second applies a linear gain from that measurement, so the speech keeps
+    its dynamics. The default, -16 LUFS with a -1 dBTP ceiling, is the usual
+    target for spoken
     web audio; broadcast uses -23 LUFS. A silent track is left as it is. The
     container follows the shared encoder profile (`eyepiece.ENCODER_PROFILE`):
     the BT.709 tags are written into the copied stream and the index moves to
@@ -406,6 +434,7 @@ def mux(
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = resolve_ffmpeg()
+    duration_s = _video_duration(ffmpeg, video)
     with tempfile.TemporaryDirectory() as tmp:
         source = _finish_audio(ffmpeg, audio, Path(tmp), loudness, true_peak, lra, rate)
         if room_tone_db is not None:
@@ -430,12 +459,15 @@ def mux(
             else []
         )
         faststart = ["-movflags", "+faststart"] if profile["faststart"] else []
+        # FFmpeg 4.4's -shortest stops AAC at the copied video's decode end,
+        # before its last B-frames are presented. Pad and use the presentation
+        # duration instead, allowing the AAC encoder to flush its final frames.
         cmd = [
             ffmpeg, "-y", "-loglevel", "error",
             "-i", str(video), "-i", str(source),
             "-map", "0:v:0", "-map", "1:a:0",
             "-c:v", "copy", *tags, "-c:a", "aac", "-b:a", bitrate, *audio_args,
-            *faststart, "-shortest", str(path),
+            "-af", "apad", *faststart, "-t", str(duration_s), str(path),
         ]  # fmt: skip
         done = subprocess.run(cmd, capture_output=True, text=True, check=False)
         if done.returncode:
