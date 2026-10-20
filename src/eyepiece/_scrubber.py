@@ -160,6 +160,7 @@ def to_scrubber(
     labels = [_label(knob, s, unit) for s in samples]
     page = _page(
         title if title is not None else knob,
+        f"{knob} ({unit})" if unit else knob,
         uris,
         start,
         labels,
@@ -296,7 +297,7 @@ def _label(knob, sample, unit):
     return f"{knob} = {value} {unit}".rstrip()
 
 
-def _page(title, uris, start, labels, chapters, transcript, active):
+def _page(title, slider, uris, start, labels, chapters, transcript, active):
     """The HTML text of the page."""
     esc = html.escape
     strip = [("" if i == start else u) for i, u in enumerate(uris)]
@@ -318,7 +319,7 @@ def _page(title, uris, start, labels, chapters, transcript, active):
         f'<img id="frame" alt="{esc(labels[start])}" src="{uris[start]}">',
         '<div class="knob">',
         f'<input id="knob" type="range" min="0" max="{len(uris) - 1}" step="1" '
-        f'value="{start}" aria-label="{esc(title)}">',
+        f'value="{start}" aria-label="{esc(slider)}">',
         f'<output id="value">{esc(labels[start])}</output>',
         "</div>",
     ]

@@ -137,6 +137,14 @@ def test_chapters_jump_to_their_cue_and_transcript_follows_the_line():
     assert re.findall(r'data-sample="(\d+)"', silent) == ["0", "1", "2"]
 
 
+def test_the_slider_is_labelled_with_the_knob():
+    plan = silent_plan()
+    page = scrub(plan, title="A page title", unit="m")
+    tag = re.search(r'<input[^>]*type="range"[^>]*>', page).group(0)
+    assert 'aria-label="u (m)"' in tag
+    assert "A page title" not in tag
+
+
 def test_one_range_input_steps_over_the_samples():
     page = scrub(silent_plan())
     inputs = re.findall(r"<input[^>]*>", page)
