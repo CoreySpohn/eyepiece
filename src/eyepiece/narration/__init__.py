@@ -11,7 +11,8 @@ said. A clip hands the `Narration` to ``eyepiece.Timeline(narration=...)``,
 which places every move on its word, solves the length of each line in one
 pass, and returns a `Narration` with those starts and ends as
 ``Timeline.narration``; `audio_track`, `mux`, `captions`, `write_srt` and
-`write_vtt` then put the voice and the captions with the silent render.
+`write_vtt` then put the voice and the captions with the silent render;
+`write_chapters` writes one WebVTT chapter cue per beat.
 
 Importing this package loads neither matplotlib nor Kokoro.
 """
@@ -23,6 +24,7 @@ from ._mux import (
     mux,
     sentences,
     write_captions,
+    write_chapters,
     write_srt,
     write_vtt,
 )
@@ -86,6 +88,7 @@ __all__ = [
     "sentences",
     "speech_faults",
     "write_captions",
+    "write_chapters",
     "write_srt",
     "write_vtt",
 ]

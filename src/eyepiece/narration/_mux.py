@@ -676,20 +676,60 @@ def write_vtt(narration, path, *, line=None, **limits):
     return _write(path, "\n".join(lines))
 
 
-def write_captions(narration, stem, *, line=None, **limits):
+def write_chapters(narration, path, *, titles=None):
+    """Write a WebVTT chapters file with one cue per beat.
+
+    Each cue spans its beat, from its start to the start of the next, and its
+    identifier is the line's key. A pause is a beat like any other. An HTML
+    ``<track kind="chapters">`` reads the file.
+
+    Args:
+        narration: The `Narration`.
+        path: Output path.
+        titles: Mapping from a line key to the chapter title shown for it.
+            A beat without an entry is titled with its key.
+
+    Returns:
+        The path written.
+
+    Raises:
+        ValueError: If `titles` names a key that is not a beat.
+    """
+    titles = {} if titles is None else dict(titles)
+    unknown = sorted(set(titles) - {b.key for b in narration.beats})
+    if unknown:
+        raise ValueError(f"chapter titles for lines not in the script: {unknown}")
+    lines = ["WEBVTT", ""]
+    for beat in narration.beats:
+        title = " ".join(str(titles.get(beat.key, beat.key)).split())
+        lines += [
+            beat.key,
+            f"{_stamp(beat.start_s, '.')} --> {_stamp(beat.end_s, '.')}",
+            title,
+            "",
+        ]
+    return _write(path, "\n".join(lines))
+
+
+def write_captions(narration, stem, *, line=None, chapters=False, **limits):
     """Write the captions as both WebVTT and SRT.
 
     Args:
         narration: The `Narration`.
         stem: Output path without a suffix; ``.vtt`` and ``.srt`` are added.
         line: The ``line:`` setting of the WebVTT file; see `write_vtt`.
+        chapters: Also write ``<stem>.chapters.vtt``, see `write_chapters`.
         **limits: Keyword limits of `captions`.
 
     Returns:
-        ``(vtt_path, srt_path)``.
+        ``(vtt_path, srt_path)``, with the chapters path added when
+        `chapters` is true.
     """
     stem = str(stem)
-    return (
+    paths = (
         write_vtt(narration, stem + ".vtt", line=line, **limits),
         write_srt(narration, stem + ".srt", **limits),
     )
+    if chapters:
+        paths += (write_chapters(narration, stem + ".chapters.vtt"),)
+    return paths
