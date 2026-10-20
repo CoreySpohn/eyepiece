@@ -262,6 +262,7 @@ how-to/write-numbers-for-speech
 how-to/check-narration-and-motion
 how-to/publish-a-scrubber-page
 how-to/add-cue-sounds
+how-to/render-a-clip-in-parallel
 ```
 
 ```{toctree}
