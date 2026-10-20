@@ -168,6 +168,7 @@ _EXPECTED_ALL = [
     "compare_grid",
     "compare_row",
     "compass",
+    "content_key",
     "convergence",
     "corner",
     "corner_overlay",
