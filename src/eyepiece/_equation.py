@@ -21,16 +21,21 @@ import re
 import warnings
 from collections import Counter
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import matplotlib
 import numpy as np
+from matplotlib.artist import Artist
 from matplotlib.axes import Axes
+from matplotlib.collections import Collection
 from matplotlib.colors import to_rgb
 from matplotlib.font_manager import FontProperties
 from matplotlib.ft2font import LoadFlags
+from matplotlib.lines import Line2D
 from matplotlib.mathtext import MathTextParser
-from matplotlib.patches import PathPatch
+from matplotlib.patches import Patch, PathPatch
 from matplotlib.path import Path
+from matplotlib.text import Text
 from matplotlib.textpath import text_to_path
 from matplotlib.transforms import Bbox, IdentityTransform
 
@@ -53,6 +58,7 @@ from eyepiece.attention import (
     _write_lag,
     _write_windows,
 )
+from eyepiece.motifs import Motif, MotifSet
 
 # Mathtext is parsed at this size and the outlines scaled down, as TextPath
 # does, so the rounding of rule positions does not depend on the font size.
@@ -617,12 +623,43 @@ class _Term(PathPatch):
         return f"<Term {self.name!r} of {len(self._pieces)} glyphs>"
 
 
+class Binding(NamedTuple):
+    """A term and the mark it names, with an optional motif for its label ink."""
+
+    term: _Term
+    mark: Artist
+    motif: Motif | None
+
+
 @dataclass(frozen=True, eq=False)
 class _EquationResult(PlotResult):
-    """A `PlotResult` of `equation`, which also holds ``term(name)``."""
+    """A `PlotResult` of `equation`, with term lookup and mark bindings."""
 
     term: object = None
     layout: object = None
+    bind: object = None
+    linked: object = None
+    bindings: object = None
+
+
+def _binding_rgb(mark):
+    """The visible ink of a mark whose equation term has no explicit motif."""
+    if isinstance(mark, (Line2D, Text)):
+        return to_rgb(mark.get_color())
+    if isinstance(mark, Patch):
+        edge = mark.get_edgecolor()
+        color = (
+            edge if mark.get_linewidth() > 0 and edge[3] > 0 else mark.get_facecolor()
+        )
+        return to_rgb(color)
+    if isinstance(mark, Collection):
+        face = mark.get_facecolor()
+        edge = mark.get_edgecolor()
+        if len(face):
+            return to_rgb(face[0])
+        if len(edge):
+            return to_rgb(edge[0])
+    raise ValueError(f"cannot read a color from {type(mark).__name__}; supply a motif")
 
 
 def _set_alpha(glyph, factor):
@@ -658,6 +695,13 @@ def equation(
     glyphs are figure-level patches in display pixels, like the terms of
     `term_row`, so they never join an axes' autoscaling. A term's box is its
     laid-out place and does not follow a glyph that a `transform` is moving.
+
+    ``result.bind(name, mark, motif=...)`` ties a term to the mark it names.
+    Its glyphs take the motif's label ink (a `Motif` or a key in
+    `MotifSet.default()`), or the mark's color when no motif is supplied.
+    Bind before building a `transform` or a `Stage` over the equation. A term
+    not bound keeps the color `colors=` gave it. ``result.linked(name)`` gives
+    ``[term, mark]`` to cue together with `indicate`, `circumscribe` or `Stage`.
 
     Which tool lays out math: `equation` is for fixed math with structure and
     for derivations that `transform` rearranges; `term_row` is for a running
@@ -695,7 +739,11 @@ def equation(
         A `PlotResult` on the anchor's axes (None for an anchor drawn on the
         figure), with ``artists["terms"]`` (name to term artist, in source
         order), ``artists["glyphs"]`` (every glyph and rule in layout order),
-        ``term(name)`` and ``update(u, level=1.0)``.
+        ``term(name)``, ``update(u, level=1.0, reveal="fade")``,
+        ``bind(name, mark, *, motif=None)`` (returns the term artist),
+        ``linked(target)`` (a fresh ``[term, mark]`` list for a bound name,
+        term artist or mark), and ``bindings`` (a dict in bind order from
+        term name to a `Binding` with ``term``, ``mark`` and ``motif`` fields).
 
     Raises:
         TypeError: If `at` is not an Anchor, an artist or an Axes.
@@ -710,6 +758,11 @@ def equation(
                          colors={"lhs": "C0", "rhs": "C1"})
         ep.indicate(eq.term("rhs"))  # a term is an artist
         eq.term("nope")  # KeyError naming the known terms
+
+        spread, = ax.plot([0.2, 0.8], [0.3, 0.3], color="C2")
+        eq = ep.equation(ax, r"${{sigma:\sigma}}$", fontsize=40)
+        eq.bind("sigma", spread, motif="planet")
+        pulse = ep.indicate(eq.linked("sigma"))
     """
     if ha not in ("left", "center", "right"):
         raise ValueError(f"unknown ha: {ha!r}; known: ['left', 'center', 'right']")
@@ -786,12 +839,67 @@ def equation(
         except KeyError:
             raise KeyError(f"no term {name!r}; terms are {list(eq.terms)}") from None
 
+    bindings = {}
+
+    def bind(name, mark, *, motif=None):
+        """Tie a term to its mark and return the term artist.
+
+        With a `Motif` or a key in `MotifSet.default()`, use its label ink
+        resolved now and set its key on glyphs without a gid. Otherwise use
+        the mark's color. Keep each glyph's current alpha.
+
+        Bind before building a `transform` or a `Stage` over the equation.
+        A term not bound keeps the color `colors=` gave it.
+
+        Raises:
+            KeyError: If the term name or motif key is unknown.
+            ValueError: If the term is already bound, or the mark's color
+                cannot be read without a motif.
+            TypeError: If the mark is not an Artist, or the motif is neither
+                a `Motif` nor a string key.
+        """
+        artist = term(name)
+        if name in bindings:
+            raise ValueError(f"term {name!r} is already bound")
+        if not isinstance(mark, Artist):
+            raise TypeError(f"bind needs an Artist mark, got {type(mark).__name__}")
+        if isinstance(motif, str):
+            motif = MotifSet.default()[motif]
+        if motif is not None and not isinstance(motif, Motif):
+            raise TypeError("motif must be a Motif or a string key")
+        rgb = to_rgb(motif.resolve_label()) if motif is not None else _binding_rgb(mark)
+        for glyph in artist._pieces:
+            glyph.set_facecolor((*rgb, glyph.get_facecolor()[3]))
+            glyph.rgb = rgb
+            if motif is not None and glyph.get_gid() is None:
+                glyph.set_gid(motif.key)
+        bindings[name] = Binding(artist, mark, motif)
+        return artist
+
+    def linked(target):
+        """Return a fresh [term, mark] for a bound name, term or mark.
+
+        Artists match by identity. Raise KeyError if nothing is bound to
+        the target. The list is ready for `indicate`, `circumscribe` or `Stage`.
+        """
+        for name, binding in bindings.items():
+            if (
+                (isinstance(target, str) and target == name)
+                or target is binding.term
+                or target is binding.mark
+            ):
+                return [binding.term, binding.mark]
+        raise KeyError(f"no binding for {target!r}; bound terms are {list(bindings)}")
+
     return _EquationResult(
         ax=anchor.axes,
         artists={"terms": eq.terms, "glyphs": eq.glyphs},
         update=update,
         term=term,
         layout=eq,
+        bind=bind,
+        linked=linked,
+        bindings=bindings,
     )
 
 
