@@ -38,6 +38,9 @@ rendered frames, and reports eight kinds of fault: ``"jump"``, ``"dead"``,
 ``"shape-class"``.
 `assert_motion` raises `MotionError` naming every fault.
 
+`grounding_faults` checks that colored equation terms name visible marks,
+share their expected colors, and appear after their concrete referents.
+
 `speech_rate` is the check on the voice rather than the picture: it reads the
 word times of a `eyepiece.narration.Narration` and reports each line's words
 per minute and the lines faster than a ceiling. `assert_speech_rate` raises
@@ -64,10 +67,11 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
+from matplotlib import rcParams
 from matplotlib.axis import Axis
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import Collection, LineCollection, PathCollection
-from matplotlib.colors import to_rgba
+from matplotlib.colors import to_hex, to_rgb, to_rgba
 from matplotlib.image import AxesImage
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
@@ -75,6 +79,7 @@ from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
+from eyepiece._equation import _binding_rgb
 from eyepiece._meaning import (
     MEANING_KINDS,
     MeaningError,
@@ -96,6 +101,7 @@ from eyepiece._motion import frame_count
 from eyepiece.attention import _data_colors, _default_avoid, _renderer
 
 __all__ = [
+    "GROUNDING_KINDS",
     "KINDS",
     "MEANING_KINDS",
     "MOTIF_KINDS",
@@ -104,6 +110,8 @@ __all__ = [
     "VENUE_FPS",
     "ClipError",
     "ClipReport",
+    "GroundingError",
+    "GroundingFault",
     "MeaningError",
     "MeaningFault",
     "MotifError",
@@ -116,6 +124,7 @@ __all__ = [
     "SpeechRate",
     "SpeechRateError",
     "assert_clip",
+    "assert_grounded",
     "assert_meaning",
     "assert_motifs",
     "assert_motion",
@@ -123,6 +132,7 @@ __all__ = [
     "assert_speech_rate",
     "caption_line",
     "check_clip",
+    "grounding_faults",
     "meaning_faults",
     "meaning_faults_chain",
     "meaning_report",
@@ -803,6 +813,246 @@ def _ink(artist):
                 top = max(top, float(np.max(np.asarray(colors)[:, 3])))
         return top
     return 0.0
+
+
+GROUNDING_KINDS = ("no-referent", "color-mismatch", "symbol-first")
+
+
+@dataclass(frozen=True)
+class GroundingFault:
+    """One equation term's grounding problem at its first sample time.
+
+    Attributes:
+        kind: One of `GROUNDING_KINDS`.
+        term: The term name within its equation.
+        time_s: Sample time in seconds, or None for the current state.
+        detail: A plain sentence describing the finding.
+    """
+
+    kind: str
+    term: str
+    time_s: float | None
+    detail: str
+
+
+class GroundingError(AssertionError):
+    """An equation has grounding problems; `faults` holds their list."""
+
+    def __init__(self, faults):
+        """Build a report with each term and kind on its own line."""
+        self.faults = list(faults)
+        lines = [f"{len(self.faults)} grounding fault(s):"]
+        lines += [f"  {f.term}: {f.kind}: {f.detail}" for f in self.faults]
+        super().__init__("\n".join(lines))
+
+
+def _grounding_colored(rgb, tol):
+    """Whether RGB spends a hue outside text ink and the neutral ramp."""
+    text = to_rgb(rcParams["text.color"])
+    if max(rgb) - min(rgb) <= tol or rgb == text:
+        return False
+    back = np.asarray(to_rgb(rcParams["axes.facecolor"]))
+    ramp = np.asarray(text) - back
+    length_sq = float(ramp @ ramp)
+    level = (
+        np.clip(float((np.asarray(rgb) - back) @ ramp) / length_sq, 0, 1)
+        if length_sq
+        else 0
+    )
+    neutral = np.allclose(rgb, back + level * ramp, rtol=0, atol=tol)
+    return not neutral
+
+
+def _grounding_mark_shown(mark):
+    """Whether a bound mark currently paints ink in a visible axes or figure."""
+    return (
+        mark.get_visible()
+        and (mark.axes is None or mark.axes.get_visible())
+        and mark.get_figure() is not None
+        and _ink(mark) >= _SHOWN
+    )
+
+
+def grounding_faults(
+    equations, *, at=None, times=None, tol=0.08
+) -> list[GroundingFault]:
+    """Check equation terms for missing referents, wrong colors and early symbols.
+
+    A term is shown when any glyph is visible with effective opacity at least
+    0.05. Its first glyph in `term._pieces` order decides its color. A bound
+    mark is shown when it is visible, belongs to a figure, has a visible axes
+    if it has an axes, and has effective ink opacity at least 0.05.
+
+    Text-colored terms and neutral tones, the ramp from the axes background to
+    the text color that `ep.neutral` draws, are never colored. A color within
+    `tol` per channel of the nearest point on that ramp, or whose channel
+    spread is at most `tol`, is neutral; other colors are colored.
+
+    A shown, colored term reports ``"no-referent"`` if it is unbound or its
+    mark is not shown. A shown, bound term reports ``"color-mismatch"`` if
+    its color differs from the mark's color by more than `tol` per channel.
+    With a motif, the term must match the motif's label ink, and a mark with
+    a readable color must match the motif's mark color instead.
+
+    With at least two samples, a bound term reports ``"symbol-first"`` if it
+    is first shown before its mark is first shown, including a mark never
+    shown. A term carried from its mark by a flight passes this ordering
+    check, because its mark is on screen when the flight starts. Colors are
+    resolved at check time. A pulse in flight tints colors, so sample rest
+    times.
+
+    Args:
+        equations: One equation result or an iterable of equation results.
+        at: Callable ``at(t)`` that poses the scene at time `t`. Supply with
+            `times`, or omit both to check the current state once.
+        times: Sample times in seconds, checked in sorted order.
+        tol: Largest allowed per-channel RGB difference, also used for
+            neutral tones and gray channel spread.
+
+    Returns:
+        A list of `GroundingFault` objects, each equation, term and kind
+        reported only at its first sample time. Results are sorted by time
+        (None for the current state first), then term name.
+
+    Raises:
+        ValueError: If only one of `at` and `times` is supplied.
+    """
+    if (at is None) != (times is None):
+        raise ValueError("at and times must be supplied together")
+    samples = [None] if times is None else sorted(float(t) for t in times)
+    equations = [equations] if hasattr(equations, "bindings") else list(equations)
+    terms = [
+        (i, name, term, equation.bindings.get(name))
+        for i, equation in enumerate(equations)
+        for name, term in equation.artists["terms"].items()
+    ]
+    found = {}
+    first_term = {}
+    first_mark = {}
+
+    def record(i, name, kind, time_s, detail):
+        when = "in the current state" if time_s is None else f"at {time_s:g} s"
+        found.setdefault(
+            (i, name, kind),
+            GroundingFault(
+                kind, name, time_s, f"Term {name!r} in equation {i} {detail} {when}."
+            ),
+        )
+
+    def differs(a, b):
+        return any(abs(x - y) > tol for x, y in zip(a, b, strict=True))
+
+    for k, time_s in enumerate(samples):
+        if at is not None:
+            at(time_s)
+        for i, name, term, binding in terms:
+            key = (i, name)
+            mark_shown = binding is not None and _grounding_mark_shown(binding.mark)
+            if mark_shown:
+                first_mark.setdefault(key, k)
+            glyphs = term._pieces
+            shown = any(
+                g.get_visible() and _alpha(g, g.get_facecolor()) >= _SHOWN
+                for g in glyphs
+            )
+            if not shown:
+                continue
+            first_term.setdefault(key, k)
+            rgb = to_rgb(glyphs[0].get_facecolor())
+            colored = _grounding_colored(rgb, tol)
+            if colored and not mark_shown:
+                detail = (
+                    "is colored but unbound"
+                    if binding is None
+                    else "names a mark that is not shown"
+                )
+                record(i, name, "no-referent", time_s, detail)
+            if binding is None:
+                continue
+            motif = binding.motif
+            expected = (
+                to_rgb(motif.resolve_label())
+                if motif is not None
+                else _binding_rgb(binding.mark)
+            )
+            mismatches = []
+            if differs(rgb, expected):
+                mismatches.append(
+                    f"has color {to_hex(rgb)} instead of {to_hex(expected)}"
+                )
+            if motif is not None:
+                # A motif also permits marks that have no readable color.
+                try:
+                    mark_rgb = _binding_rgb(binding.mark)
+                except ValueError:
+                    mark_rgb = None
+                if mark_rgb is not None:
+                    expected_mark = to_rgb(motif.resolve())
+                    if differs(mark_rgb, expected_mark):
+                        label = binding.mark.get_label() or type(binding.mark).__name__
+                        mismatches.append(
+                            f"names mark {label!r} with color {to_hex(mark_rgb)} "
+                            f"instead of {to_hex(expected_mark)}"
+                        )
+            if mismatches:
+                record(i, name, "color-mismatch", time_s, " and ".join(mismatches))
+
+    if len(samples) >= 2:
+        for i, name, _, binding in terms:
+            key = (i, name)
+            if binding is not None and key in first_term:
+                k = first_term[key]
+                if k < first_mark.get(key, len(samples)):
+                    record(
+                        i,
+                        name,
+                        "symbol-first",
+                        samples[k],
+                        "is shown before its mark is first shown",
+                    )
+    return sorted(
+        found.values(),
+        key=lambda f: (
+            f.time_s is not None,
+            0 if f.time_s is None else f.time_s,
+            f.term,
+        ),
+    )
+
+
+def assert_grounded(equations, **kwargs) -> list:
+    """Return [] when grounded, otherwise raise `GroundingError` with all faults.
+
+    Apply the rules of `grounding_faults`: a term is shown when any glyph is
+    visible with effective opacity at least 0.05; its first glyph decides
+    its color. Text-colored terms and neutral tones, the ramp from the axes
+    background to the text color that `ep.neutral` draws, are never colored.
+    Neutral tones include colors within `tol` per channel of the ramp and
+    grays whose channel spread is at most `tol`.
+
+    A shown, colored term without a shown bound mark reports no-referent.
+    A shown, bound term whose color differs from its expected mark color or
+    motif label ink reports color-mismatch, as does a readable mark color
+    that differs from its motif color. With at least two samples, a bound
+    term first shown before its mark reports symbol-first, including a mark
+    never shown.
+
+    Args:
+        equations: One equation result or an iterable of equation results.
+        **kwargs: Passed to `grounding_faults`.
+
+    Returns:
+        An empty list when no grounding faults are found.
+
+    Raises:
+        GroundingError: If any fault is found; its `faults` attribute holds
+            the list and its message names every term and kind.
+        ValueError: If only one of `at` and `times` is supplied.
+    """
+    found = grounding_faults(equations, **kwargs)
+    if found:
+        raise GroundingError(found)
+    return found
 
 
 def _traced(fig, extra=()):
