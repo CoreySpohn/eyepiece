@@ -96,6 +96,8 @@ class Line:
             the caption reads "Pr(H|E)". It carries no cue marks and does
             not enter the cache key, and the cue marks stay bound to the
             spoken words.
+        speed: Speech speed factor of this line, or None for the script's
+            speed. It enters the line's cache key as the script speed does.
         spoken: The text with marks removed (set from `text`).
         cues: The marks, as `Cue` (set from `text`).
     """
@@ -105,6 +107,7 @@ class Line:
     pad_before_s: float = 0.0
     pad_after_s: float = 0.5
     display: str | None = None
+    speed: float | None = None
     spoken: str = field(init=False, compare=False)
     cues: tuple = field(init=False, compare=False)
 
@@ -112,6 +115,8 @@ class Line:
         """Parse the marks once, and check the padding."""
         if self.pad_before_s < 0.0 or self.pad_after_s < 0.0:
             raise ValueError(f"line {self.key!r}: padding must not be negative")
+        if self.speed is not None and not self.speed > 0.0:
+            raise ValueError(f"line {self.key!r}: speed must be positive")
         try:
             spoken, cues = parse_cues(self.text)
         except ValueError as err:
@@ -180,6 +185,7 @@ class Pause:
     words = ()
     cues = ()
     display = None
+    speed = None
     pad_before_s = 0.0
     pad_after_s = 0.0
 
@@ -249,12 +255,16 @@ class Script:
         return line_hash(
             line.spoken,
             self.voice,
-            self.speed,
+            self.speed_of(line),
             self.lang,
             engine=self.engine,
             engine_version=self.engine_version,
             model=self.model,
         )
+
+    def speed_of(self, line):
+        """The speed ``line`` is spoken at: its own, else the script's."""
+        return self.speed if line.speed is None else line.speed
 
     def cache_keys(self):
         """The cache key of every spoken line, in order (pauses have none)."""
@@ -276,7 +286,11 @@ class Script:
         """
         record = {f.name: getattr(self, f.name) for f in fields(self)}
         record["lines"] = [
-            {f.name: getattr(line, f.name) for f in fields(line) if f.init}
+            {
+                f.name: getattr(line, f.name)
+                for f in fields(line)
+                if f.init and not (f.name == "speed" and getattr(line, f.name) is None)
+            }
             | ({"kind": "pause"} if isinstance(line, Pause) else {})
             for line in self.lines
         ]

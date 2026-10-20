@@ -76,7 +76,9 @@ def _kokoro(script):
 
     def speak(line):
         chunks, tokens, offset = [], [], 0.0
-        for result in pipeline(line.spoken, voice=script.voice, speed=script.speed):
+        for result in pipeline(
+            line.spoken, voice=script.voice, speed=script.speed_of(line)
+        ):
             audio = np.asarray(result.audio, dtype=np.float32)
             for t in result.tokens:
                 start = None if t.start_ts is None else offset + float(t.start_ts)
@@ -197,7 +199,7 @@ def synthesize(
         record = spoken.to_json()
         record.update(
             voice=script.voice,
-            speed=script.speed,
+            speed=script.speed_of(line),
             lang=script.lang,
             engine=script.engine,
             engine_version=script.engine_version,
