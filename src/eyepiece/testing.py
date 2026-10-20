@@ -681,11 +681,13 @@ MOTION_KINDS = (
     "outside",
     "spike",
     "shape-class",
+    "hop-rate",
 )
 
 # Frames per second a clip is sampled at when `times` is a `Span`.
 VENUE_FPS = {"video": 30.0, "phone": 30.0, "print": 30.0}
 
+_MAX_HOP_RATE = 8.0  # draws per second above which a hop group is a flicker
 _STEP_FLOOR = 0.01  # mean pixel change (of 255) under which a step is a hold
 _PAIR_ISOLATION = 2.0  # a jump must also exceed its neighbouring steps by this
 _REST_STEP_RATIO = 0.5  # share of `jump_ratio` that flags a step into rest
@@ -1728,6 +1730,7 @@ def motion_faults(
     moves=None,
     steps=(),
     draws=(),
+    hops=(),
     rest=(),
     groups=(),
     may_overlap=(),
@@ -1789,6 +1792,8 @@ def motion_faults(
       straight line is a rectangle with no thickness: it passes while it is
       horizontal or vertical and is reported when it tilts by more than
       `tol_px`.
+    - ``"hop-rate"``: a hop group (see `hops`) drawn faster than 8 draws per
+      second, or faster than its declared rate.
     - ``"spike"``: an artist that hops off its straight path by more than
       `spike_px` while travelling less than it hops, that makes a one-frame
       excursion, or that changes velocity (position over elapsed time) by
@@ -1827,6 +1832,16 @@ def motion_faults(
             other check holds for the group as for any artist. A step where
             the group does not change (a scene cut) still excuses the whole
             picture. A change inside a group's box at its cut is not seen.
+        hops: Hop groups: artists that redraw in a cut at any frame by design,
+            such as exchangeable draws, each a dict ``{"artists": [...],
+            "rate": draws_per_second}`` (a declared move's ``hops`` adds to
+            them). The group's cuts are excused wherever they fall, with no
+            declared step, and its artists are not reported as spikes; the
+            picture outside the group's boxes keeps every check, as does
+            every other artist. The group is reported as a ``"hop-rate"``
+            fault when the declared rate, or the rate at which the clip
+            actually redraws it, is above 8 draws per second, or the clip
+            redraws it faster than declared.
         rest: Artists that must not move.
         groups: Groups that move rigidly: each a list of artists, or a dict
             ``{"artists": [...], "scales": True}`` for a group that scales.
@@ -1853,8 +1868,8 @@ def motion_faults(
         original dpi.
 
     Raises:
-        ValueError: If a kind or venue is unknown, or a declared rest or group
-            artist is never visible.
+        ValueError: If a kind or venue is unknown, a declared rest or group
+            artist is never visible, or a hop group has no positive rate.
 
     Example::
 
@@ -1869,6 +1884,7 @@ def motion_faults(
     unknown = [k for k in kinds if k not in MOTION_KINDS]
     if unknown:
         raise ValueError(f"unknown fault kinds {unknown}; known: {list(MOTION_KINDS)}")
+    _hop_groups(hops, moves)
     if fps is None:
         venue = "video" if venue is None else venue
         if venue not in VENUE_FPS:
@@ -1883,7 +1899,9 @@ def motion_faults(
     if not hasattr(old_canvas, "buffer_rgba"):
         FigureCanvasAgg(fig)  # a canvas that cannot hand back pixels
     try:
-        trace = _Trace(samples, keep_frames=bool({"jump", "dead"} & set(kinds)))
+        trace = _Trace(
+            samples, keep_frames=bool({"jump", "dead", "hop-rate"} & set(kinds))
+        )
         extra = [
             a
             for move in moves or ()
@@ -1912,6 +1930,7 @@ def motion_faults(
         moves=moves,
         steps=steps,
         draws=draws,
+        hops=hops,
         rest=rest,
         groups=groups,
         may_overlap=may_overlap,
@@ -1924,6 +1943,76 @@ def motion_faults(
     )
 
 
+def _hop_groups(hops, moves):
+    """The declared hop groups as ``[(artists, rate)]``, checked.
+
+    Raises:
+        ValueError: If a group names no artists or no positive rate.
+    """
+    found = []
+    declared = [
+        *(hops or ()),
+        *(h for m in moves or () for h in _declared(m, "hops") or ()),
+    ]
+    for hop in declared:
+        artists = tuple(hop.get("artists") or ())
+        rate = hop.get("rate")
+        if not artists:
+            raise ValueError("a hop group needs its artists")
+        if not isinstance(rate, numbers.Real) or isinstance(rate, bool) or rate <= 0:
+            raise ValueError(
+                f"a hop group needs a positive draw rate in draws per second, "
+                f"got {rate!r}"
+            )
+        found.append((artists, float(rate)))
+    return found
+
+
+def _check_hop_rate(trace, hop_groups, hop_cuts):
+    """Hop groups drawn faster than the limit or than they declare.
+
+    `hop_cuts` holds, per group, the sample indices at which its pixels change.
+    """
+    found = []
+    for (artists, rate), ks in zip(hop_groups, hop_cuts, strict=True):
+        times = [trace.times[k] for k in ks]
+        counts = [
+            sum(1 for u in times[i:] if u < t + 1.0 - 1e-9) for i, t in enumerate(times)
+        ]
+        measured = float(max(counts, default=0))
+        first = ks[counts.index(max(counts))] if counts else 0
+        label = trace.label(artists[0])
+        if rate > _MAX_HOP_RATE:
+            detail = (
+                f"{label} is declared at {rate:g} draws per second, "
+                f"above {_MAX_HOP_RATE:g}"
+            )
+        elif measured > _MAX_HOP_RATE:
+            detail = (
+                f"{label} is redrawn {measured:g} times in a second, "
+                f"above {_MAX_HOP_RATE:g}"
+            )
+        elif measured > rate + 1.0:
+            detail = (
+                f"{label} is redrawn {measured:g} times in a second, declared {rate:g}"
+            )
+        else:
+            continue
+        box = trace.box(artists[0], first) if ks else None
+        found.append(
+            (
+                first,
+                "hop-rate",
+                artists[0],
+                None,
+                box or (0.0, 0.0, *trace.size),
+                detail,
+                max(rate, measured),
+            )
+        )
+    return found
+
+
 def _analyze(
     trace,
     *,
@@ -1931,6 +2020,7 @@ def _analyze(
     moves,
     steps=(),
     draws=(),
+    hops=(),
     rest,
     groups,
     may_overlap,
@@ -1964,6 +2054,9 @@ def _analyze(
             (frozenset(p), lo, hi) for p in _declared(move, "may_overlap") or ()
         ]
         group |= set(_declared(move, "draws") or ())
+    hop_groups = _hop_groups(hops, moves)
+    hopped = {a for artists, _ in hop_groups for a in artists}
+    group |= hopped
     drawn = [a for a in trace.order if a in group]
     allowed += [(frozenset(p), *everywhere) for p in itertools.combinations(drawn, 2)]
     step_ks = {
@@ -1971,7 +2064,20 @@ def _analyze(
         for k, s in enumerate(trace.times)
         if any(math.isclose(s, t, rel_tol=0.0, abs_tol=1e-9) for t in steps)
     }
-    cuts = _draw_cuts(trace, drawn, step_ks) if drawn and trace.frames else {}
+    cuts = (
+        _draw_cuts(trace, [a for a in drawn if a not in hopped], step_ks)
+        if drawn and trace.frames
+        else {}
+    )
+    # A hop group cuts wherever it changes, and each cut is excused like a step.
+    hop_cuts = []
+    every = range(1, len(trace.times))
+    for artists, _ in hop_groups if trace.frames else ():
+        own = _draw_cuts(trace, [a for a in trace.order if a in artists], every)
+        hop_cuts.append(sorted(own))
+        for k, mask in own.items():
+            cuts[k] = cuts[k] | mask if k in cuts else mask
+    hop_ks = {k for ks in hop_cuts for k in ks}
     found = []
     if "jump" in kinds:
         found += _check_jump(trace, jump_ratio, rest_times, tol_px, cuts, group)
@@ -1987,18 +2093,28 @@ def _analyze(
     if "outside" in kinds:
         found += _check_outside(trace, texts | declared, frame_tol)
     if "spike" in kinds:
-        found += _check_spike(trace, spike_px)
+        found += [f for f in _check_spike(trace, spike_px) if f[2] not in hopped]
+    if "hop-rate" in kinds:
+        found += _check_hop_rate(
+            trace,
+            hop_groups,
+            hop_cuts or [[] for _ in hop_groups],
+        )
     if "shape-class" in kinds:
         found += _check_shape_class(trace, pieces, tol_px)
+
     # A declared step excuses its jump; at a cut of the draw group it excuses
     # only the group, whose boxes the pixel baseline already left out there.
-    found = [
-        f
-        for f in found
-        if f[1] != "jump"
-        or f[0] not in step_ks
-        or (f[0] in cuts and (f[2] is None or f[2] not in group))
-    ]
+    def excused(f):
+        if f[1] != "jump":
+            return False
+        if f[2] in hopped and f[0] in hop_ks:
+            return True  # a hop group's own cut, wherever it falls
+        if f[0] not in step_ks:
+            return False
+        return not (f[0] in cuts and (f[2] is None or f[2] not in group))
+
+    found = [f for f in found if not excused(f)]
     order = {kind: i for i, kind in enumerate(MOTION_KINDS)}
     found.sort(key=lambda f: (f[0], order[f[1]]))
     return [
@@ -2217,7 +2333,16 @@ def _clip_moves(moves, plan):
 
 
 def check_clip(
-    fig, draw, plan, *, venue="video", keys=None, motifs=None, moves=None, steps=None
+    fig,
+    draw,
+    plan,
+    *,
+    venue="video",
+    keys=None,
+    motifs=None,
+    moves=None,
+    steps=None,
+    hops=None,
 ) -> ClipReport:
     """Re-render a plan-driven clip and collect its checks without writing files.
 
@@ -2252,6 +2377,8 @@ def check_clip(
             within 1e-9 s; other kinds are unchanged. A move whose contract
             names ``draws`` (a draw group) is excused at those steps only for
             its group, as in `motion_faults`.
+        hops: Hop groups, each ``{"artists": [...], "rate": draws_per_second}``,
+            as in `motion_faults`; a declared move's ``hops`` adds to them.
 
     Returns:
         A frozen `ClipReport` with the findings from each check.
@@ -2308,7 +2435,13 @@ def check_clip(
             else []
         )
         motion = motion_faults(
-            fig, at=at, times=times, moves=declared, steps=step_times, fps=plan.fps
+            fig,
+            at=at,
+            times=times,
+            moves=declared,
+            steps=step_times,
+            hops=hops or (),
+            fps=plan.fps,
         )
         unread, _ = plan.unused_knobs()
         speech = (
