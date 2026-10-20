@@ -92,3 +92,5 @@ sentences with that much silence, each sentence cached on its own. The default
 ```python
 nr.Line("why", "It is faint. The star is bright.", sentence_gap_s=0.4)
 ```
+
+To check pace, gaps, still screens and numbers in one call, see {doc}`check-timing`.
