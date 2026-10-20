@@ -259,6 +259,7 @@ how-to/burn-captions-into-a-band
 how-to/estimate-length-before-speaking
 how-to/speak-a-script
 how-to/write-numbers-for-speech
+how-to/check-narration-and-motion
 ```
 
 ```{toctree}
