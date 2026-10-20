@@ -17,7 +17,10 @@ import math
 import tempfile
 from pathlib import Path
 
+import matplotlib.image as mpimg
+
 from eyepiece._motion import frame_count
+from eyepiece.anim import record
 
 DEFAULT_MAX_BYTES = 8_000_000
 _FORMATS = ("png", "jpeg")
@@ -219,8 +222,6 @@ def _nearest_frame(values, sample):
 
 def _render(fig, draw, frames, dpi):
     """PNG bytes of each frame, written by `record`'s still writer."""
-    from eyepiece.anim import record
-
     with tempfile.TemporaryDirectory() as tmp:
         stills = {Path(tmp) / f"{i}.png": float(i) for i in range(len(frames))}
         saved = fig.get_dpi()
@@ -237,8 +238,6 @@ def _render(fig, draw, frames, dpi):
 
 def _to_jpeg(png, quality):
     """Re-encode one PNG frame as a JPEG of the given quality."""
-    import matplotlib.image as mpimg
-
     rgba = mpimg.imread(io.BytesIO(png), format="png")
     buf = io.BytesIO()
     mpimg.imsave(buf, rgba[..., :3], format="jpeg", pil_kwargs={"quality": quality})
