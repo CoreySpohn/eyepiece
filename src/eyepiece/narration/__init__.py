@@ -13,10 +13,13 @@ pass, and returns a `Narration` with those starts and ends as
 ``Timeline.narration``; `audio_track`, `mux`, `captions`, `write_srt` and
 `write_vtt` then put the voice and the captions with the silent render;
 `write_chapters` writes one WebVTT chapter cue per beat.
+`cue_track` synthesizes cue sounds (a count heard as pitch, one tick per
+pixel read, a click sting) from numbers, as a prototype.
 
 Importing this package loads neither matplotlib nor Kokoro.
 """
 
+from ._cues import CueEvents, click_sting, count_tone, cue_track, pixel_ticks
 from ._mux import (
     audio_track,
     caption_at,
@@ -66,6 +69,7 @@ __all__ = [
     "KOKORO_MODEL",
     "KOKORO_VERSION",
     "Cue",
+    "CueEvents",
     "CueTime",
     "Line",
     "MissingAudioError",
@@ -87,11 +91,15 @@ __all__ = [
     "check_number_sync",
     "check_script_speech",
     "check_silence",
+    "click_sting",
+    "count_tone",
+    "cue_track",
     "estimate",
     "line_hash",
     "lint_script",
     "mux",
     "parse_cues",
+    "pixel_ticks",
     "say",
     "sentences",
     "speech_faults",
