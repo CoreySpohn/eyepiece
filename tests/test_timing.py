@@ -1,7 +1,11 @@
 """Timing rules checked with hand-made word times."""
 
+import importlib.util
+import shutil
+import subprocess
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 import eyepiece.narration as nr
@@ -226,11 +230,260 @@ def test_assert_timing_reports_every_fault_and_keeps_the_list():
         assert any(fault.message in line for line in str(err.value).splitlines())
 
 
-@pytest.mark.parametrize("keyword", ["source", "readouts"])
-def test_unimplemented_inputs_name_the_keyword(keyword):
-    # T2/T3 replace this test when source/readouts rules are implemented.
-    with pytest.raises(NotImplementedError, match=keyword):
-        ept.timing_faults(_narration(_line("steady")), **{keyword: []})
+def test_unimplemented_readouts_name_the_keyword():
+    with pytest.raises(NotImplementedError, match="readouts"):
+        ept.timing_faults(_narration(_line("steady")), readouts=[])
+
+
+def _still_narration():
+    """Six words from 0.5 to 3.5 s in a four-second clip."""
+    return _narration(_line("steady", n_words=6, word_offset_s=0.5))
+
+
+def _gray_frame(t):
+    """A fixed native-size frame."""
+    return np.full((90, 160, 3), 128, dtype=np.uint8)
+
+
+def test_a_still_screen_under_speech_names_the_line_and_run():
+    faults = ept.timing_faults(_still_narration(), source=_gray_frame)
+    assert len(faults) == 1
+    fault = faults[0]
+    assert (fault.kind, fault.key, fault.start_s, fault.end_s) == (
+        "still-speech",
+        "steady",
+        0.0,
+        4.0,
+    )
+    assert fault.message == (
+        "still screen 0.00 to 4.00 s (4.0 s) under 3.0 s of speech (steady)"
+    )
+
+
+@pytest.mark.parametrize("still_s, reported", [(2.9, True), (3.0, False), (3.1, False)])
+def test_still_speech_must_be_strictly_over_the_limit(still_s, reported):
+    faults = ept.timing_faults(_still_narration(), source=_gray_frame, still_s=still_s)
+    assert [(f.kind, f.key) for f in faults] == (
+        [("still-speech", "steady")] if reported else []
+    )
+
+
+@pytest.mark.parametrize("pixels, reported", [(144, False), (14, True)])
+def test_stillness_uses_the_changed_pixel_fraction(pixels, reported):
+    def source(t):
+        frame = _gray_frame(t)
+        if t >= 2.0:
+            frame.reshape(-1, 3)[:pixels] = 255
+        return frame
+
+    faults = ept.timing_faults(_still_narration(), source=source)
+    assert [(f.kind, f.key) for f in faults] == (
+        [("still-speech", "steady")] if reported else []
+    )
+
+
+def test_a_change_count_equal_to_the_threshold_ends_the_still_run():
+    def source(t):
+        frame = _gray_frame(t)
+        if t >= 2.0:
+            frame[:9, :16] = 255
+        return frame
+
+    faults = ept.timing_faults(
+        _still_narration(), source=source, still_change=144 / (90 * 160)
+    )
+    assert faults == []
+
+
+@pytest.mark.parametrize("ignore_bottom, reported", [(0.0, False), (0.12, True)])
+def test_the_caption_band_can_be_ignored(ignore_bottom, reported):
+    def source(t):
+        frame = _gray_frame(t)
+        if t >= 2.0:
+            frame[-9:, :16] = 255
+        return frame
+
+    faults = ept.timing_faults(
+        _still_narration(), source=source, ignore_bottom=ignore_bottom
+    )
+    assert [(f.kind, f.key) for f in faults] == (
+        [("still-speech", "steady")] if reported else []
+    )
+
+
+def test_ignored_rows_still_count_toward_the_changed_pixel_threshold():
+    def source(t):
+        frame = _gray_frame(t)
+        if t >= 2.0:
+            # 22 pixels exceed 0.16 percent of kept rows, but not the full frame.
+            frame[0, :22] = 255
+        return frame
+
+    faults = ept.timing_faults(_still_narration(), source=source, ignore_bottom=0.12)
+    assert [(f.kind, f.key, f.start_s, f.end_s) for f in faults] == [
+        ("still-speech", "steady", 0.0, 4.0)
+    ]
+
+
+@pytest.mark.parametrize("gap, reported", [(2.5, False), (1.0, True), (2.0, False)])
+def test_declared_silence_splits_speech_on_a_still_screen(gap, reported):
+    narration = _narration(
+        _line("first", wpm=100, n_words=2, pad_after_s=0),
+        nr.Pause("hold", gap, "A still figure"),
+        _line("second", wpm=100, n_words=2, pad_after_s=2.6 - gap),
+    )
+    assert narration.total_s == pytest.approx(5.0)
+    faults = ept.timing_faults(narration, source=_gray_frame)
+    assert [(f.kind, f.key) for f in faults] == (
+        [("still-speech", "first")] if reported else []
+    )
+    if reported:
+        assert "3.4 s of speech (first, second)" in faults[0].message
+
+
+def test_overlapping_words_keep_the_latest_end_when_splitting_speech():
+    line = nr.Line("overlap", "one two three", pad_after_s=0.25)
+    words = (
+        nr.Word("one", 0.5, 3.5),
+        nr.Word("two", 1.0, 1.5),
+        nr.Word("three", 3.5, 3.75),
+    )
+    narration = _narration((line, nr.Spoken(line.key, 3.75, words)))
+    faults = ept.timing_faults(narration, source=_gray_frame, still_s=3.0)
+    assert [(f.kind, f.key, f.start_s, f.end_s) for f in faults] == [
+        ("still-speech", "overlap", 0.0, 4.0)
+    ]
+    assert "3.2 s of speech (overlap)" in faults[0].message
+
+
+@pytest.mark.parametrize("rgba", [False, True])
+@pytest.mark.parametrize("floating", [False, True])
+@pytest.mark.parametrize("changes", [False, True])
+def test_float_and_rgba_frames_match_uint8_rgb(rgba, floating, changes):
+    def source(t):
+        frame = _gray_frame(t)
+        if changes and t >= 2.0:
+            frame[:9, :16] = 255
+        if rgba:
+            alpha = np.full((90, 160, 1), 255 if t < 2.0 else 0, dtype=np.uint8)
+            frame = np.concatenate((frame, alpha), axis=2)
+        return frame.astype(float) / 255 if floating else frame
+
+    faults = ept.timing_faults(_still_narration(), source=source)
+    assert [(f.kind, f.key) for f in faults] == (
+        [] if changes else [("still-speech", "steady")]
+    )
+
+
+@pytest.mark.parametrize(
+    "before, after, reported", [(128.4, 140.6, False), (128.6, 141.4, True)]
+)
+def test_float_frames_round_before_comparing_channels(before, after, reported):
+    def source(t):
+        frame = _gray_frame(t).astype(float) / 255
+        # Rounding gives deltas of 13 and 12; truncation gives 12 and 13.
+        frame[:9, :16, 0] = (before if t < 2.0 else after) / 255
+        return frame
+
+    faults = ept.timing_faults(_still_narration(), source=source)
+    assert [(f.kind, f.key) for f in faults] == (
+        [("still-speech", "steady")] if reported else []
+    )
+
+
+def test_a_source_must_be_a_path_or_callable():
+    with pytest.raises(TypeError, match="source"):
+        ept.timing_faults(_still_narration(), source=[])
+
+
+def test_callable_sampling_uses_plan_length_and_requested_fps():
+    times = []
+
+    def source(t):
+        times.append(t)
+        return _gray_frame(t)
+
+    plan = SimpleNamespace(seconds=1.6, hero_windows=lambda: [])
+    assert ept.timing_faults(_still_narration(), source=source, plan=plan, fps=5) == []
+    assert times == [k / 5 for k in range(8)]
+
+
+@pytest.mark.parametrize("delta, reported", [(12, True), (13, False), (-12, True)])
+def test_a_pixel_changes_only_above_twelve_in_any_channel(delta, reported):
+    def source(t):
+        frame = _gray_frame(t)
+        if t >= 2.0:
+            frame[:9, :16, 0] = 128 + delta
+        return frame
+
+    faults = ept.timing_faults(_still_narration(), source=source)
+    assert [(f.kind, f.key) for f in faults] == (
+        [("still-speech", "steady")] if reported else []
+    )
+
+
+def test_a_still_run_compares_with_its_first_frame_as_drift_accumulates():
+    def source(t):
+        frame = _gray_frame(t)
+        frame[:9, :16] = 128 + 5 * int(t)
+        return frame
+
+    faults = ept.timing_faults(_still_narration(), source=source)
+    assert [(f.kind, f.start_s, f.end_s) for f in faults] == [
+        ("still-speech", 0.0, 3.0)
+    ]
+    assert "2.5 s of speech" in faults[0].message
+
+
+@pytest.mark.parametrize("changes", [False, True])
+def test_video_source_detects_stillness_and_a_color_change(tmp_path, changes):
+    if (
+        shutil.which("ffmpeg") is None
+        and importlib.util.find_spec("imageio_ffmpeg") is None
+    ):
+        pytest.skip("ffmpeg is unavailable")
+    from eyepiece._ffmpeg import resolve_ffmpeg
+
+    path = tmp_path / "color.mp4"
+    args = [resolve_ffmpeg(), "-v", "error", "-y", "-f", "lavfi", "-i"]
+    if changes:
+        args += [
+            "color=c=gray:s=160x90:d=2:r=10",
+            "-f", "lavfi", "-i", "color=c=white:s=160x90:d=2:r=10",
+            "-filter_complex", "[0:v][1:v]concat=n=2:v=1:a=0",
+        ]  # fmt: skip
+    else:
+        args += ["color=c=gray:s=160x90:d=4:r=10"]
+    subprocess.run(
+        [*args, "-pix_fmt", "yuv420p", str(path)], check=True, capture_output=True
+    )
+    faults = ept.timing_faults(
+        _still_narration(), source=path if changes else str(path)
+    )
+    assert [(f.kind, f.key) for f in faults] == (
+        [] if changes else [("still-speech", "steady")]
+    )
+
+
+def test_wide_video_frames_are_decoded_at_1280_pixels_with_even_height(tmp_path):
+    if (
+        shutil.which("ffmpeg") is None
+        and importlib.util.find_spec("imageio_ffmpeg") is None
+    ):
+        pytest.skip("ffmpeg is unavailable")
+    from eyepiece._ffmpeg import resolve_ffmpeg
+
+    path = tmp_path / "wide.mp4"
+    args = [
+        resolve_ffmpeg(), "-v", "error", "-y", "-f", "lavfi", "-i",
+        "color=c=gray:s=1920x1082:d=0.2:r=10", "-pix_fmt", "yuv420p", str(path),
+    ]  # fmt: skip
+    subprocess.run(args, check=True, capture_output=True)
+    frames = list(ept._source_frames(path, seconds=0.2, fps=10))
+    assert [t for t, _ in frames] == [0.0, 0.1]
+    # The proportional height is 721.33 pixels, rounded to the nearest even height.
+    assert [frame.shape for _, frame in frames] == [(722, 1280, 3)] * 2
+    assert all(frame.dtype == np.uint8 for _, frame in frames)
 
 
 def test_keywords_for_later_rules_are_accepted():

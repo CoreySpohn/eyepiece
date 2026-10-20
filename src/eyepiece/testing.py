@@ -63,6 +63,7 @@ Example::
 import itertools
 import math
 import numbers
+import os
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -2440,6 +2441,138 @@ def _timing_silence(narration, plan):
     ]
 
 
+def _source_frames(source, *, seconds, fps):
+    """Yield (time, RGB uint8 frame) pairs from a callable or video path."""
+    if not isinstance(source, (str, os.PathLike)) and not callable(source):
+        raise TypeError("source must be a video path or a callable source(t)")
+    if not math.isfinite(fps) or fps <= 0:
+        raise ValueError("fps must be finite and positive")
+    if not isinstance(source, (str, os.PathLike)):
+        for k in itertools.count():
+            t = k / fps
+            if t >= seconds:
+                break
+            frame = np.asarray(source(t))
+            if frame.ndim != 3 or frame.shape[2] not in (3, 4):
+                raise ValueError(
+                    "source(t) must return an (H, W, 3) or (H, W, 4) image"
+                )
+            frame = frame[:, :, :3]
+            if np.issubdtype(frame.dtype, np.floating):
+                frame = np.rint(frame * 255).astype(np.uint8)
+            elif frame.dtype != np.uint8:
+                raise TypeError("source(t) must return uint8 or floating-point pixels")
+            yield t, frame
+        return
+
+    import io
+    import subprocess
+    import tempfile
+
+    from PIL import Image
+
+    from eyepiece._ffmpeg import resolve_ffmpeg
+
+    args = [resolve_ffmpeg(), "-v", "error", "-nostdin", "-i", os.fspath(source)]
+    args += ["-map", "0:v:0"]
+    first = subprocess.run(
+        [*args, "-frames:v", "1", "-c:v", "png", "-f", "image2pipe", "pipe:1"],
+        check=True,
+        capture_output=True,
+    )
+    with Image.open(io.BytesIO(first.stdout)) as image:
+        width, height = image.size
+    if width > 1280:
+        height = max(2, round(height * 1280 / width / 2) * 2)
+        width = 1280
+    args += [
+        "-vf", f"fps={fps},scale={width}:{height}",
+        "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1",
+    ]  # fmt: skip
+    # A file for stderr avoids blocking the frame pipe on decoder diagnostics.
+    with tempfile.TemporaryFile() as errors:
+        with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=errors) as process:
+            try:
+                size = height * width * 3
+                for k in itertools.count():
+                    data = process.stdout.read(size)
+                    if not data:
+                        break
+                    if len(data) != size:
+                        raise RuntimeError("ffmpeg returned an incomplete RGB frame")
+                    yield (
+                        k / fps,
+                        np.frombuffer(data, dtype=np.uint8).reshape(height, width, 3),
+                    )
+                if process.wait():
+                    errors.seek(0)
+                    raise subprocess.CalledProcessError(
+                        process.returncode, args, stderr=errors.read()
+                    )
+            finally:
+                if process.poll() is None:
+                    process.terminate()
+                process.wait()
+
+
+def _timing_still_run(words, start, end, still_s):
+    """Find the longest speech group clipped to one still run."""
+    groups = []
+    for word_start, word_end, line_index, key in words:
+        if word_end <= start or word_start >= end:
+            continue
+        a, b = max(start, word_start), min(end, word_end)
+        if not groups or a - groups[-1][1] >= 2.0:
+            groups.append([a, b, {}])
+        group = groups[-1]
+        group[1] = max(group[1], b)
+        group[2][line_index] = key
+    if not groups:
+        return []
+    a, b, lines = max(groups, key=lambda g: g[1] - g[0])
+    speech = b - a
+    if speech <= still_s:
+        return []
+    keys = [lines[i] for i in sorted(lines)]
+    return [
+        TimingFault(
+            "still-speech",
+            f"still screen {start:.2f} to {end:.2f} s ({end - start:.1f} s) "
+            f"under {speech:.1f} s of speech ({', '.join(keys)})",
+            keys[0],
+            start,
+            end,
+        )
+    ]
+
+
+def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom, fps):
+    """Compare each sample with the first frame of its still run."""
+    words = sorted(
+        (w.start_s, w.end_s, i, beat.key)
+        for i, beat in enumerate(narration.beats)
+        for w in beat.words
+    )
+    seconds = plan.seconds if plan is not None else narration.total_s
+    reference = None
+    start = last = 0.0
+    found = []
+    for t, frame in _source_frames(source, seconds=seconds, fps=fps):
+        height, width = frame.shape[:2]
+        kept = frame[: int(height * (1 - ignore_bottom))].astype(np.int16)
+        if reference is None:
+            reference, start = kept, t
+        else:
+            changed = np.count_nonzero(np.any(np.abs(kept - reference) > 12, axis=2))
+            if changed >= still_change * height * width:
+                found += _timing_still_run(words, start, t, still_s)
+                reference, start = kept, t
+        last = t
+    if reference is not None:
+        found += _timing_still_run(words, start, last + 1 / fps, still_s)
+    return found
+
+
 def timing_faults(
     narration,
     *,
@@ -2457,7 +2590,7 @@ def timing_faults(
     fps=10.0,
     settle_tol_s=0.0,
 ) -> list[TimingFault]:
-    """Check narration pace, sentence gaps and declared silence.
+    """Check narration pace, sentence gaps, declared silence and still screens.
 
     Speech rates come from `speech_rate` and are compared in whole words per
     minute: 160 wpm is the pace past which a viewer cannot follow a moving
@@ -2473,20 +2606,48 @@ def timing_faults(
     timing, undeclared silence and hero spans, so the screen and voice stay
     together and long silent stretches have a declared purpose.
 
+    With `source`, frames are compared with the first frame of each still run.
+    The bottom `ignore_bottom` fraction of rows is ignored. A pixel changes if
+    any RGB channel differs by more than 12 out of 255. A run continues while
+    fewer than `still_change` times the full frame's height times width pixels
+    change; the first frame at or above that count ends the run at its time
+    and starts the next. The final run ends one frame after the last sample.
+    Comparing with the run's first frame lets slow drift accumulate.
+
+    Every overlapping word is clipped to the run, and the words are ordered by time.
+    A silence of at least 2.0 s from the latest word end to the next word
+    start splits speech into groups. Speech is the longest group's span,
+    from its first word start to its last word end, including shorter gaps.
+    A run is reported only when that speech is strictly over `still_s`. The
+    finding names the group's lines in clip order and is keyed by the first line.
+
+    A 19 to 28 pt word changes about 900 to 2300 pixels of a 1280 x 720
+    frame. This catches a screen where nothing arrives, not a small swell;
+    a swell is the motion checks' job.
+
     Args:
         narration: A laid-out `eyepiece.narration.Narration`.
-        plan: A `eyepiece.Plan` whose hero annotations declare silent spans.
-        source: Reserved for still-screen checks; must be None for now.
+        plan: A `eyepiece.Plan` whose hero annotations declare silent spans;
+            its `seconds` gives the clip length for a callable source.
+        source: Optional video path (str or os.PathLike), decoded by ffmpeg
+            through an RGB pipe until the stream ends, scaled to 1280 pixels
+            wide when wider, keeping aspect with an even height, else native
+            size. Or a callable source(t) returning an (H, W, 3) or (H, W, 4)
+            array: uint8 or float in [0, 1], scaled by 255 and rounded. Alpha
+            is dropped. Sample at t = k / fps, starting at zero, while t is
+            below plan.seconds or, without a plan, narration.total_s.
         at: Reserved callable that poses the source at a clip time.
         readouts: Reserved for number checks; must be None for now.
         ceiling: Fastest whole-word pace of a longer line, in words/min.
         short_ceiling: Fastest whole-word pace of a short line, in words/min.
         short_words: Largest spoken word count considered a short line.
         min_gap_s: Least heard silence between spoken lines, in seconds.
-        still_s: Reserved still-screen duration, in seconds.
-        still_change: Reserved threshold for image change during stillness.
-        ignore_bottom: Reserved bottom fraction to omit from image checks.
-        fps: Reserved image sampling rate, in frames per second.
+        still_s: Maximum speech span over one still run, default 2.0 seconds.
+        still_change: Changed pixel fraction ending a run, default 0.0016
+            (0.16 percent of the full frame, including ignored rows).
+        ignore_bottom: Bottom fraction of rows to ignore, default 0.0; keep
+            rows from zero up to int(H * (1 - ignore_bottom)).
+        fps: Sampling rate, default 10 frames per second; frame k is at k / fps.
         settle_tol_s: Reserved readout settling tolerance, in seconds.
 
     Returns:
@@ -2494,16 +2655,18 @@ def timing_faults(
         original rule order retained for equal times. Findings are not raised.
 
     Raises:
-        NotImplementedError: If `source` or `readouts` is not None; the message
-            names the unsupported keyword.
+        TypeError: If `source` is neither a video path nor a callable.
+        NotImplementedError: If `readouts` is not None.
     """
-    if source is not None:
-        raise NotImplementedError("source is not implemented")
     if readouts is not None:
         raise NotImplementedError("readouts is not implemented")
     found = _timing_speech_rate(narration, ceiling, short_ceiling, short_words)
     found += _timing_line_gap(narration, min_gap_s)
     found += _timing_silence(narration, plan)
+    if source is not None:
+        found += _timing_still(
+            narration, source, plan, still_s, still_change, ignore_bottom, fps
+        )
     return sorted(found, key=lambda f: (f.start_s is None, f.start_s or 0.0))
 
 
