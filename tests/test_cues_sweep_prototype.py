@@ -6,14 +6,27 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import hwostyle
+import hwostyle.core
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+
+from eyepiece import _style
 
 ROOT = Path(__file__).resolve().parents[1]
 SWEEP = runpy.run_path(str(ROOT / "docs" / "narration" / "cues_sweep" / "sweep.py"))
 DURATION_S = 6.0
 RATE = 48000
+STYLE_STATE = (
+    "_current_mode",
+    "_current_family",
+    "_activated",
+    "palette",
+    "cmaps",
+    "roles",
+)
 
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
@@ -62,17 +75,62 @@ def _ticks(x):
     return np.array(keep)
 
 
-@pytest.fixture(scope="module")
-def built(tmp_path_factory):
-    out = tmp_path_factory.mktemp("sweep")
-    paths = {
-        "a": SWEEP["build"](out / "a.mp4", duration_s=DURATION_S, dpi=20),
-        "b": SWEEP["build"](out / "b.mp4", duration_s=DURATION_S, dpi=20),
-        "silent": SWEEP["build"](
-            out / "silent.mp4", duration_s=DURATION_S, dpi=20, cues=False
-        ),
+def _style_state():
+    return {
+        "rc": matplotlib.rcParams.copy(),
+        "hwostyle": {name: getattr(hwostyle.core, name) for name in STYLE_STATE},
+        "mode": _style.mode(),
+        "video": _style._VIDEO,
     }
-    return paths
+
+
+@pytest.fixture(scope="module", autouse=True)
+def sweep_style_guard():
+    # Module fixtures run before the per-test restoration fixture snapshots state.
+    # This finalizer runs after built's teardown and observes what later modules get.
+    saved = _style_state()
+    yield
+    assert _style_state() == saved
+
+
+@pytest.fixture(scope="module")
+def built(tmp_path_factory, sweep_style_guard, style_context):
+    out = tmp_path_factory.mktemp("sweep")
+    with style_context():
+        yield {
+            "a": SWEEP["build"](out / "a.mp4", duration_s=DURATION_S, dpi=20),
+            "b": SWEEP["build"](out / "b.mp4", duration_s=DURATION_S, dpi=20),
+            "silent": SWEEP["build"](
+                out / "silent.mp4", duration_s=DURATION_S, dpi=20, cues=False
+            ),
+        }
+
+
+@pytest.mark.parametrize("mode", [None, "light", "paper"])
+def test_scene_preserves_the_callers_style(mode):
+    if mode is not None:
+        hwostyle.use(mode)
+    matplotlib.rcParams["axes.facecolor"] = "#abcdef"
+    matplotlib.rcParams["font.size"] = 17.0
+    _style.use_video(True)
+    saved = _style_state()
+    scene = SWEEP["Scene"](SWEEP["make_plan"](DURATION_S), dpi=20)
+    try:
+        assert _style_state() == saved
+        assert scene.fig.get_facecolor() == matplotlib.colors.to_rgba("black")
+    finally:
+        plt.close(scene.fig)
+
+
+def test_scene_restores_style_if_figure_creation_fails(monkeypatch):
+    def fail(**kwargs):
+        raise RuntimeError("figure creation failed")
+
+    monkeypatch.setattr(plt, "figure", fail)
+    saved = _style_state()
+    with pytest.raises(RuntimeError, match="figure creation failed"):
+        SWEEP["Scene"](SWEEP["make_plan"](DURATION_S), dpi=20)
+    assert _style_state() == saved
 
 
 def test_one_audio_and_one_video_stream_of_one_length(built):

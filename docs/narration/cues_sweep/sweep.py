@@ -30,9 +30,11 @@ import json
 import re
 import subprocess
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import hwostyle
+import hwostyle.core
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -57,6 +59,23 @@ SEGMENTS = (
     ("read.ifs", 1.0),
 )
 CLICK_S = 0.6 + 1.5  # Timeline.click: the beat and its hold
+
+
+@contextmanager
+def _dark_style():
+    """Keep the sweep's style local, including an initially inactive style."""
+    names = (
+        "_current_mode", "_current_family", "_activated", "palette", "cmaps", "roles"
+    )  # fmt: skip
+    saved = {name: getattr(hwostyle.core, name) for name in names}
+    # hwostyle.dark() does not restore custom rcParams or the inactive state.
+    with plt.rc_context():
+        try:
+            hwostyle.use("dark")
+            yield
+        finally:
+            for name, value in saved.items():
+                setattr(hwostyle.core, name, value)
 
 
 def count_at(wavelength_nm):
@@ -117,9 +136,9 @@ def cue_events(plan):
 class Scene:
     """Count against wavelength above, the two pixel rows below."""
 
+    @_dark_style()
     def __init__(self, plan, dpi):
         """Build the finished figure at `dpi` and freeze its layout."""
-        hwostyle.use("dark")
         self.plan = plan
         self.fig = plt.figure(figsize=FIGSIZE, dpi=dpi)
         grid = self.fig.add_gridspec(3, 1, height_ratios=(3.0, 0.3, 0.3), hspace=1.5)
@@ -180,6 +199,7 @@ class Scene:
         self.click.update(plan.value(k, "click.count"))
 
 
+@_dark_style()
 def _render(plan, path, dpi):
     scene = Scene(plan, dpi)
     with ep.record(scene.fig, path, fps=plan.fps, plan=plan, dpi=dpi) as rec:

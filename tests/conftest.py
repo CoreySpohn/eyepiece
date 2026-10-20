@@ -2,6 +2,7 @@
 
 import importlib
 import os
+from contextlib import contextmanager
 
 import hwostyle.core
 import matplotlib
@@ -57,11 +58,13 @@ def pytest_sessionfinish(session, exitstatus):
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
-_STYLE_STATE = ("_current_mode", "_current_family", "_activated", "palette", "cmaps")
+_STYLE_STATE = (
+    "_current_mode", "_current_family", "_activated", "palette", "cmaps", "roles"
+)  # fmt: skip
 
 
-@pytest.fixture(autouse=True)
-def restore_style_state():
+@contextmanager
+def _preserve_style_state():
     """Put hwostyle and the rcParams back the way the test found them.
 
     hwostyle.use() is global: it rebinds the mode, the palette, and the
@@ -77,11 +80,25 @@ def restore_style_state():
     saved = {name: getattr(hwostyle.core, name) for name in _STYLE_STATE}
     saved_rc = matplotlib.rcParams.copy()
     saved_video = _style._VIDEO
-    yield
-    for name, value in saved.items():
-        setattr(hwostyle.core, name, value)
-    matplotlib.rcParams.update(saved_rc)
-    _style._VIDEO = saved_video
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            setattr(hwostyle.core, name, value)
+        matplotlib.rcParams.update(saved_rc)
+        _style._VIDEO = saved_video
+
+
+@pytest.fixture(scope="module")
+def style_context():
+    """Let module fixtures restore style before handing control to other tests."""
+    return _preserve_style_state
+
+
+@pytest.fixture(autouse=True)
+def restore_style_state(style_context):
+    with style_context():
+        yield
 
 
 def make_image_sequence():
