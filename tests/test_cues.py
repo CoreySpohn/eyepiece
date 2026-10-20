@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from eyepiece import narration as nr
+from eyepiece.narration import _cues
 
 RATE = 48000
 WINDOW_S = 0.05
@@ -131,6 +132,29 @@ def test_sting_ends_at_its_time_with_two_partials():
     resolution = RATE / len(segment)
     assert top[0] == pytest.approx(880.0, abs=resolution)
     assert top[1] == pytest.approx(1318.5, abs=resolution)
+
+
+@pytest.mark.parametrize("t_end", [0.0, 1.0 / RATE, 0.01])
+def test_early_sting_keeps_the_complete_stings_ending_envelope(t_end):
+    x = nr.click_sting(t_end, duration_s=1.0, rate=RATE)
+    assert np.all(np.isfinite(x))
+    end = round(t_end * RATE)
+    np.testing.assert_array_equal(x[end:], 0.0)
+    if end:
+        complete = nr.click_sting(0.09, duration_s=0.09, rate=RATE)
+        np.testing.assert_allclose(x[:end], complete[-end:], atol=1e-15)
+        assert x[end - 1] == 0.0
+        tail = x[max(0, end - round(0.005 * RATE)) : end]
+        assert np.max(np.abs(tail)) < 0.02 * 10 ** (-26.0 / 20.0)
+
+
+@pytest.mark.parametrize("sample", [np.nan, np.inf, -np.inf])
+def test_composite_refuses_nonfinite_samples(monkeypatch, sample):
+    monkeypatch.setattr(
+        _cues, "pixel_ticks", lambda *args, **kwargs: np.full(RATE, sample)
+    )
+    with pytest.raises(ValueError, match=r"finite|full scale"):
+        nr.cue_track(nr.CueEvents(tick_times=(0.5,)), 1.0, rate=RATE)
 
 
 def events(**kwargs):

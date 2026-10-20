@@ -209,7 +209,8 @@ def click_sting(t_end, *, duration_s, rate=48000):
     Two equal partials, A5 at 880 Hz and E6 at 1318.5 Hz (a fifth, 3:2),
     sound for the 90 ms before `t_end`: a 15 ms raised-cosine attack, then a
     raised-cosine fall that reaches zero at `t_end`. The peak is -26 dBFS.
-    A sting that would start before the clip starts at 0.
+    If the sting would start before the clip, its beginning is cropped,
+    preserving the complete sting's normalization and ending decay.
 
     Args:
         t_end: When the sting ends, in seconds, inside the clip.
@@ -227,12 +228,10 @@ def click_sting(t_end, *, duration_s, rate=48000):
         raise ValueError(f"t_end must lie in [0, duration_s={duration_s}], got {t_end}")
     out = np.zeros(size)
     j = min(round(t_end * rate), size)
-    i = max(j - round(STING_S * rate), 0)
-    n = j - i
-    if n <= 0:
-        return out
+    n = round(STING_S * rate)
+    i = max(j - n, 0)
     k = np.arange(n)
-    attack = min(round(STING_ATTACK_S * rate), n)
+    attack = round(STING_ATTACK_S * rate)
     envelope = np.empty(n)
     envelope[:attack] = _raised_cosine(attack)
     envelope[attack:] = 0.5 + 0.5 * np.cos(
@@ -240,7 +239,8 @@ def click_sting(t_end, *, duration_s, rate=48000):
     )
     tone = sum(np.sin(2.0 * np.pi * f * k / rate) for f in STING_HZ)
     sting = envelope * tone
-    out[i:j] = _amplitude(STING_DB) * sting / np.max(np.abs(sting))
+    sting = _amplitude(STING_DB) * sting / np.max(np.abs(sting))
+    out[i:j] = sting[n - (j - i) :]
     return out
 
 
@@ -262,7 +262,8 @@ def cue_track(events, duration_s, *, rate=48000, seed=0):
 
     Raises:
         ValueError: If a voice's arguments are refused (named as there, the
-            sting time as ``sting_s``), or the sum would reach full scale.
+            sting time as ``sting_s``), or the sum is non-finite or would
+            reach full scale.
     """
     out = np.zeros(_length(duration_s, rate))
     if len(events.count_times):
@@ -285,6 +286,8 @@ def cue_track(events, duration_s, *, rate=48000, seed=0):
                 f"got {events.sting_s}"
             )
         out += click_sting(events.sting_s, duration_s=duration_s, rate=rate)
+    if not np.all(np.isfinite(out)):
+        raise ValueError("the cue voices contain non-finite samples")
     if np.max(np.abs(out), initial=0.0) >= 1.0:
         raise ValueError("the cue voices sum to full scale; lower their density")
     return out
