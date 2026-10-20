@@ -66,12 +66,15 @@ print(f"{len(track)} samples, peak {20 * np.log10(np.abs(track).max()):.1f} dBFS
 - `nr.click_sting`: 90 ms of 880 Hz and 1318.5 Hz (a fifth) with a soft
   attack, ending exactly at its time, which is the end of the click's swell.
 
-Pass the events to `nr.audio_track(..., cues=events)`. The cues are mixed
-before the loudness pass, and the voice drops out under them through the same
-fades that duck it elsewhere. With `cues=None` the track is unchanged, byte
-for byte.
+Pass the events to `nr.audio_track(..., cues=events)`. The cues are synthesized
+at fixed levels and mixed before the loudness pass. Count-tone and tick
+windows duck the speech through the same fades that duck it elsewhere, while
+the bed keeps its level. With `cues=None` the track is unchanged, byte for byte.
 
 ## Levels
+
+The table gives isolated synthesis output levels, before summation,
+normalization and AAC encoding.
 
 | Sound | Level |
 | --- | --- |
@@ -81,11 +84,9 @@ for byte.
 | Click sting | -26 dBFS peak |
 | Room tone (from `mux`) | -60 dBFS |
 
-Every cue stays at least 12 dB below the voice. That holds when the speech files are near
-full scale, as the cached speech is. Because `mux` normalizes the whole mix,
-the cues move with the speech gain; a clip with no voice should pass
-`loudness=None` to `mux`, or the normalization lifts the cues to the speech
-target. There is no music bed.
+`mux` normalizes the combined speech and cue track. No cue-to-voice margin is
+enforced. A clip with no voice should pass `loudness=None` to `mux`, or
+normalization lifts the cues to the speech target. There is no music bed.
 
 ## Signs of a gimmick
 

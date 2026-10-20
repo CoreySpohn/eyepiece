@@ -232,12 +232,10 @@ def audio_track(
             out, over ``duck_fade_s``, from the first to the last knot of
             the count tone and over each run of ticks (ticks less than 1 s
             apart), through the duck machinery the bed uses; the bed keeps
-            its level. The cues are summed before `mux` normalizes the
-            loudness, so the gain that brings the speech to its target moves
-            the cues with it, and a cue never exceeds the voice by more than
-            -12 dB after normalization when the speech files are at the
-            level of synthesized speech (peaks near full scale), against the
-            cues' -30 dBFS tone and -26 dBFS peaks.
+            its level. Cues are synthesized at fixed levels and mixed before
+            normalization. `mux` normalizes the combined speech and cue
+            track, with no enforced cue-to-voice margin. For cue-only clips,
+            pass ``loudness=None`` to `mux` to retain the synthesis levels.
 
     Returns:
         The path written.

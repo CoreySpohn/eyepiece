@@ -19,9 +19,8 @@ no network), returned as a mono float array in full-scale units (1.0 is
 - `click_sting`: a 90 ms two-partial tone, A5 (880 Hz) and E6 (1318.5 Hz),
   a fifth (3:2) apart, with a soft attack, ending exactly at its time.
 
-`cue_track` sums the three on one array. The bell and the sting have no
-level in the sound specification this module follows; both use the ticks'
--26 dBFS peak.
+`cue_track` sums the three on one array. The bell and the sting both default
+to -26 dBFS peak.
 """
 
 import math
