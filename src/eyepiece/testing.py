@@ -64,6 +64,7 @@ import itertools
 import math
 import numbers
 import os
+import re
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -2573,6 +2574,88 @@ def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom,
     return found
 
 
+_READOUT_NUMBER = re.compile(r"(?<![\d.])(?<!\d,)\d+(?:,\d{3})*(?:\.\d+)?(?!\d)")
+
+
+def _timing_numbers(narration, readouts, at, plan, settle_tol_s, fps):
+    """Check readout text and ink against the number on the speech clock."""
+    from eyepiece.narration._speech import _spoken_value, _word_key
+
+    if not math.isfinite(fps) or fps <= 0:
+        raise ValueError("fps must be finite and positive")
+    if plan is not None:
+        settle_tol_s = max(settle_tol_s, 1 / plan.fps)
+    found = []
+    for word_key, artist in readouts.items():
+        key, index = _word_key(word_key)
+        beat = narration.beat(key)
+        words = narration.script.line(key).words
+        try:
+            spoken = _spoken_value(words, index)
+        except ValueError as error:
+            raise ValueError(f"line {key!r} word {index}: {error}") from error
+        start, end = beat.words[index].start_s, beat.words[-1].end_s
+        judged = start + settle_tol_s
+        times = [judged]
+        for k in itertools.count():
+            t = start + k / fps
+            if t >= end:
+                break
+            times.append(t)
+        times.append(end)
+        samples = {}
+        for t in times:
+            at(t)
+            text = artist.get_text()
+            ink = _ink(artist) if artist.get_visible() else 0.0
+            token = _READOUT_NUMBER.search(text)
+            value = float(token.group().replace(",", "")) if token is not None else None
+            matches = value is not None and abs(value - spoken) <= 1e-9
+            samples[t] = (text, ink, value is not None, matches)
+        threshold = max(_SHOWN, 0.9 * max(s[1] for s in samples.values()))
+        landing = next(
+            (
+                t
+                for t in sorted(samples)
+                if t >= start and samples[t][1] >= threshold and samples[t][3]
+            ),
+            None,
+        )
+        label = f"line {key!r} says {words[index]!r} ({spoken:g})"
+        if samples[judged][1] < threshold or not samples[judged][3]:
+            text, ink, _, _ = samples[start]
+            shown = repr(text) if ink >= _SHOWN else "nothing"
+            detail = (
+                "does not show it during the line"
+                if landing is None
+                else f"lands at {landing:.2f} s, {landing - start:.2f} s late"
+            )
+            found.append(
+                TimingFault(
+                    "number-late",
+                    f"{label} at {start:.2f} s but the readout shows {shown}; {detail}",
+                    key,
+                    start,
+                    end if landing is None else landing,
+                )
+            )
+        if landing is not None:
+            for t in sorted(samples):
+                text, ink, has_number, matches = samples[t]
+                if landing < t <= end and ink >= _SHOWN and has_number and not matches:
+                    found.append(
+                        TimingFault(
+                            "number-contradicts",
+                            f"{label} but at {t:.2f} s the readout shows {text!r}, "
+                            f"contradicting the spoken number {spoken:g}",
+                            key,
+                            t,
+                        )
+                    )
+                    break
+    return found
+
+
 def timing_faults(
     narration,
     *,
@@ -2590,7 +2673,7 @@ def timing_faults(
     fps=10.0,
     settle_tol_s=0.0,
 ) -> list[TimingFault]:
-    """Check narration pace, sentence gaps, declared silence and still screens.
+    """Check narration pace, gaps, silence, still screens and shown numbers.
 
     Speech rates come from `speech_rate` and are compared in whole words per
     minute: 160 wpm is the pace past which a viewer cannot follow a moving
@@ -2625,6 +2708,22 @@ def timing_faults(
     frame. This catches a screen where nothing arrives, not a small swell;
     a swell is the motion checks' job.
 
+    With `readouts`, each number's artist is posed at its word start plus
+    `settle_tol_s`, and at every 1 / `fps` from the word start through the
+    last word's end, including the end itself. A readout's value is the first
+    whole number in its text; numbers after it, such as a denominator or a
+    year, are context. Readouts are written with their value first. Thousands
+    commas and decimal parts are accepted. A whole numeric token is not
+    preceded by a digit, a decimal point or a digit-comma, and is not followed
+    by a digit. A readout shows its spoken number when its value matches with
+    absolute tolerance 1e-9 and its ink is at least 0.05 and at least 90 percent
+    of its largest ink over those poses. Invisible artists have no ink.
+    A number that misses the judged time is reported as `number-late`.
+    After landing and through the speech end, `number-contradicts` reports
+    the first sample with ink at least 0.05 and a first number that differs
+    from the spoken value beyond that tolerance. Text with no number is not
+    a contradiction. The figure is left posed at the last sample.
+
     Args:
         narration: A laid-out `eyepiece.narration.Narration`.
         plan: A `eyepiece.Plan` whose hero annotations declare silent spans;
@@ -2636,8 +2735,9 @@ def timing_faults(
             array: uint8 or float in [0, 1], scaled by 255 and rounded. Alpha
             is dropped. Sample at t = k / fps, starting at zero, while t is
             below plan.seconds or, without a plan, narration.total_s.
-        at: Reserved callable that poses the source at a clip time.
-        readouts: Reserved for number checks; must be None for now.
+        at: Callable that poses the figure at a clip time; required with `readouts`.
+        readouts: Mapping from a number word, ``(line_key, word_index)`` or
+            ``"line_key:word_index"``, to the `matplotlib.text.Text` showing it.
         ceiling: Fastest whole-word pace of a longer line, in words/min.
         short_ceiling: Fastest whole-word pace of a short line, in words/min.
         short_words: Largest spoken word count considered a short line.
@@ -2647,8 +2747,10 @@ def timing_faults(
             (0.16 percent of the full frame, including ignored rows).
         ignore_bottom: Bottom fraction of rows to ignore, default 0.0; keep
             rows from zero up to int(H * (1 - ignore_bottom)).
-        fps: Sampling rate, default 10 frames per second; frame k is at k / fps.
-        settle_tol_s: Reserved readout settling tolerance, in seconds.
+        fps: Sampling rate, default 10 frames per second. Source frames start
+            at zero; readout scans start at the number word.
+        settle_tol_s: Seconds after the word start by which its readout must
+            land, default zero. With `plan`, floored at one frame, 1 / plan.fps.
 
     Returns:
         A list of `TimingFault`, sorted by start time with None last and
@@ -2656,10 +2758,12 @@ def timing_faults(
 
     Raises:
         TypeError: If `source` is neither a video path nor a callable.
-        NotImplementedError: If `readouts` is not None.
+        ValueError: If `readouts` lacks `at`, a word does not start a number,
+            or a sampling rate is not finite and positive.
+        KeyError: If a readout names a line the narration lacks.
     """
-    if readouts is not None:
-        raise NotImplementedError("readouts is not implemented")
+    if readouts is not None and at is None:
+        raise ValueError("readouts requires at(t) to pose the figure")
     found = _timing_speech_rate(narration, ceiling, short_ceiling, short_words)
     found += _timing_line_gap(narration, min_gap_s)
     found += _timing_silence(narration, plan)
@@ -2667,6 +2771,8 @@ def timing_faults(
         found += _timing_still(
             narration, source, plan, still_s, still_change, ignore_bottom, fps
         )
+    if readouts is not None:
+        found += _timing_numbers(narration, readouts, at, plan, settle_tol_s, fps)
     return sorted(found, key=lambda f: (f.start_s is None, f.start_s or 0.0))
 
 

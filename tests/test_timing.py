@@ -7,7 +7,9 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from matplotlib.figure import Figure
 
+import eyepiece as ep
 import eyepiece.narration as nr
 import eyepiece.testing as ept
 
@@ -230,9 +232,306 @@ def test_assert_timing_reports_every_fault_and_keeps_the_list():
         assert any(fault.message in line for line in str(err.value).splitlines())
 
 
-def test_unimplemented_readouts_name_the_keyword():
-    with pytest.raises(NotImplementedError, match="readouts"):
-        ept.timing_faults(_narration(_line("steady")), readouts=[])
+def _number_narration(number="8"):
+    """A number at 1.0 s, with speech ending at 2.0 s."""
+    line = nr.Line("measured", f"we measured it at {number} epochs .")
+    starts = (0.0, 0.2, 0.5, 0.7, 1.0, 1.4, 1.9)
+    ends = (*starts[1:], 2.0)
+    words = tuple(
+        nr.Word(token, start, end)
+        for token, start, end in zip(line.words, starts, ends, strict=True)
+    )
+    return _narration((line, nr.Spoken(line.key, 2.0, words)))
+
+
+@pytest.fixture
+def readout():
+    return Figure(figsize=(2, 1)).text(0.5, 0.5, "")
+
+
+def _number_faults(readout, at, *, narration=None, word_key=("measured", 4), **kw):
+    return ept.timing_faults(
+        _number_narration() if narration is None else narration,
+        at=at,
+        readouts={word_key: readout},
+        # This deliberately short line isolates the number rule.
+        ceiling=200,
+        short_ceiling=200,
+        **kw,
+    )
+
+
+@pytest.mark.parametrize("word_key", [("measured", 4), "measured:4"])
+def test_a_number_already_shown_at_its_word_is_clean(readout, word_key):
+    def at(t):
+        readout.set_text("epoch 8 of 8" if t >= 0.5 else "")
+        readout.set_alpha(1.0)
+
+    assert _number_faults(readout, at, word_key=word_key) == []
+
+
+def test_a_matching_denominator_never_counts_as_landing(readout):
+    faults = _number_faults(
+        readout,
+        lambda t: readout.set_text("epoch 7 of 8" if t < 1.5 else "epoch 9 of 8"),
+    )
+    assert [(f.kind, f.start_s, f.end_s) for f in faults] == [("number-late", 1.0, 2.0)]
+    assert "does not show it during the line" in faults[0].message
+
+
+@pytest.mark.parametrize("before", ["7 epochs", "epoch 7 of 8"])
+def test_a_late_number_names_the_word_text_and_landing(readout, before):
+    faults = _number_faults(
+        readout, lambda t: readout.set_text(before if t < 1.5 else "epoch 8 of 8")
+    )
+    assert [(f.kind, f.key, f.start_s) for f in faults] == [
+        ("number-late", "measured", 1.0)
+    ]
+    assert faults[0].end_s == pytest.approx(1.5, abs=0.1)
+    assert all(
+        part in faults[0].message
+        for part in ("measured", "'8'", before, "lands at 1.50 s, 0.50 s late")
+    )
+
+
+@pytest.mark.parametrize("after", ["9 epochs", "epoch 9 of 8"])
+def test_a_number_that_changes_after_landing_contradicts_once(readout, after):
+    faults = _number_faults(
+        readout, lambda t: readout.set_text("epoch 8 of 8" if t < 1.5 else after)
+    )
+    assert [(f.kind, f.key) for f in faults] == [("number-contradicts", "measured")]
+    assert faults[0].start_s == pytest.approx(1.5, abs=0.1)
+    assert all(part in faults[0].message for part in ("1.50", after, "8"))
+
+
+def test_a_late_number_can_contradict_only_after_it_lands(readout):
+    def at(t):
+        readout.set_text("7 epochs" if t < 1.4 else "8" if t < 1.7 else "9 epochs")
+
+    faults = _number_faults(readout, at)
+    assert [f.kind for f in faults] == ["number-late", "number-contradicts"]
+    assert faults[0].end_s == pytest.approx(1.4, abs=0.1)
+    assert faults[1].start_s == pytest.approx(1.7, abs=0.1)
+
+
+@pytest.mark.parametrize("text, alpha", [("", 1), ("waiting", 1), ("9", 0.049)])
+def test_a_contradiction_needs_visible_numeric_text(readout, text, alpha):
+    def at(t):
+        readout.set_text("8" if t < 1.5 else text)
+        readout.set_alpha(1 if t < 1.5 else alpha)
+
+    assert _number_faults(readout, at) == []
+
+
+def test_a_contradiction_only_needs_the_absolute_ink_floor(readout):
+    def at(t):
+        readout.set_text("8" if t < 1.5 else "9")
+        readout.set_alpha(1 if t < 1.5 else 0.05)
+
+    faults = _number_faults(readout, at)
+    assert [f.kind for f in faults] == ["number-contradicts"]
+    assert faults[0].start_s == pytest.approx(1.5, abs=0.1)
+
+
+def test_readouts_require_a_pose_callable(readout):
+    with pytest.raises(ValueError, match="at"):
+        ept.timing_faults(_number_narration(), readouts={("measured", 4): readout})
+
+
+def test_a_readout_word_must_start_a_number(readout):
+    with pytest.raises(ValueError, match=r"measured.*1.*not a number"):
+        _number_faults(readout, lambda t: None, word_key=("measured", 1))
+
+
+def test_a_readout_line_must_exist(readout):
+    with pytest.raises(KeyError):
+        _number_faults(readout, lambda t: None, word_key=("unknown", 4))
+
+
+@pytest.mark.parametrize("text", ["18 epochs", "80 epochs", "0.8", "1,008", "1,8"])
+def test_a_number_substring_never_counts_as_landing(readout, text):
+    faults = _number_faults(readout, lambda t: readout.set_text(text))
+    assert [(f.kind, f.key, f.start_s, f.end_s) for f in faults] == [
+        ("number-late", "measured", 1.0, 2.0)
+    ]
+    assert "does not show it during the line" in faults[0].message
+    assert text in faults[0].message
+
+
+@pytest.mark.parametrize(
+    "number, text",
+    [
+        ("8", "8 epochs, 1980 to 2016"),
+        ("8", "epoch 8 of 8: 2016"),
+        ("8", "8 of 18"),
+        ("8", "8."),
+        ("8", "epochs,8"),
+        ("1000", "1,000 frames"),
+        ("77", "77\u00b0"),
+        ("100.7", "fit returns 100.7\u00b0"),
+        ("eight", "8 epochs"),
+        ("8", "8.0000000005"),
+    ],
+)
+def test_readouts_match_whole_numeric_tokens(readout, number, text):
+    assert (
+        _number_faults(
+            readout,
+            lambda t: readout.set_text(text),
+            narration=_number_narration(number),
+        )
+        == []
+    )
+
+
+def test_a_number_must_reach_ninety_percent_of_its_largest_ink(readout):
+    def at(t):
+        readout.set_text("8 epochs")
+        readout.set_alpha(0.3 if t < 1.4 else 1.0)
+
+    faults = _number_faults(readout, at)
+    assert [f.kind for f in faults] == ["number-late"]
+    assert faults[0].end_s == pytest.approx(1.4, abs=0.1)
+    assert "8 epochs" in faults[0].message
+
+
+@pytest.mark.parametrize("alpha, late", [(0.899, True), (0.900, False)])
+def test_the_relative_ink_threshold_is_inclusive(readout, alpha, late):
+    def at(t):
+        readout.set_text("8 epochs")
+        readout.set_alpha(alpha if t < 1.4 else 1.0)
+
+    faults = _number_faults(readout, at)
+    assert [f.kind for f in faults] == (["number-late"] if late else [])
+    if late:
+        assert faults[0].end_s == 1.4
+
+
+@pytest.mark.parametrize("alpha, clean", [(0.05, True), (0.049, False), (0.3, True)])
+def test_readout_ink_has_an_absolute_floor_and_a_relative_peak(readout, alpha, clean):
+    def at(t):
+        readout.set_text("8 epochs")
+        readout.set_alpha(alpha)
+
+    faults = _number_faults(readout, at)
+    assert [f.kind for f in faults] == ([] if clean else ["number-late"])
+    if not clean:
+        assert "nothing" in faults[0].message
+
+
+def test_an_invisible_readout_does_not_show_its_number(readout):
+    def at(t):
+        readout.set_text("8 epochs")
+        readout.set_visible(t >= 1.5)
+
+    faults = _number_faults(readout, at)
+    assert [f.kind for f in faults] == ["number-late"]
+    assert faults[0].end_s == pytest.approx(1.5, abs=0.1)
+    assert "nothing" in faults[0].message
+
+
+def test_blank_text_before_landing_is_only_late(readout):
+    faults = _number_faults(
+        readout, lambda t: readout.set_text("" if t < 1.5 else "8 epochs")
+    )
+    assert [f.kind for f in faults] == ["number-late"]
+    assert faults[0].end_s == pytest.approx(1.5, abs=0.1)
+    assert "nothing" in faults[0].message
+
+
+@pytest.mark.parametrize("delay, late", [(0.08, False), (0.15, True)])
+def test_a_plan_allows_one_frame_for_the_number_to_land(readout, delay, late):
+    timeline = ep.Timeline(narration=_number_narration())
+    timeline.line("measured")
+    timeline.hold(2.0)
+    plan = timeline.at_fps(10)
+    start = plan.narration.beat("measured").words[4].start_s
+    faults = _number_faults(
+        readout,
+        lambda t: readout.set_text("" if t < start + delay else "8 epochs"),
+        narration=plan.narration,
+        plan=plan,
+    )
+    assert [f.kind for f in faults] == (["number-late"] if late else [])
+
+
+@pytest.mark.parametrize("delay, late", [(0.08, False), (0.15, True)])
+def test_the_plan_frame_floor_is_independent_of_scan_fps(readout, delay, late):
+    timeline = ep.Timeline(narration=_number_narration())
+    timeline.line("measured")
+    timeline.hold(2.0)
+    plan = timeline.at_fps(10)
+    start = plan.narration.beat("measured").words[4].start_s
+    faults = _number_faults(
+        readout,
+        lambda t: readout.set_text("8 epochs" if t >= start + delay else ""),
+        narration=plan.narration,
+        plan=plan,
+        fps=4,
+    )
+    assert [f.kind for f in faults] == (["number-late"] if late else [])
+    if late:
+        assert faults[0].end_s == start + 0.25
+
+
+def test_an_explicit_settle_tolerance_above_the_plan_floor_is_kept(readout):
+    timeline = ep.Timeline(narration=_number_narration())
+    timeline.line("measured")
+    timeline.hold(2.0)
+    plan = timeline.at_fps(10)
+    start = plan.narration.beat("measured").words[4].start_s
+    assert (
+        _number_faults(
+            readout,
+            lambda t: readout.set_text("8 epochs" if t >= start + 0.21 else ""),
+            narration=plan.narration,
+            plan=plan,
+            fps=4,
+            settle_tol_s=0.23,
+        )
+        == []
+    )
+
+
+def test_settle_tolerance_is_sampled_between_regular_frames(readout):
+    assert (
+        _number_faults(
+            readout,
+            lambda t: readout.set_text("8" if t >= 1.08 else ""),
+            settle_tol_s=0.08,
+        )
+        == []
+    )
+
+
+def test_the_off_grid_judged_pose_counts_toward_peak_ink(readout):
+    def at(t):
+        judged = abs(t - 1.08) < 1e-12
+        readout.set_text("9" if judged else "8")
+        readout.set_alpha(1.0 if judged else 0.5)
+
+    faults = _number_faults(readout, at, settle_tol_s=0.08)
+    assert [(f.kind, f.start_s, f.end_s) for f in faults] == [("number-late", 1.0, 2.0)]
+    assert "does not show it during the line" in faults[0].message
+
+
+def test_scan_fps_sets_the_first_landing_sample(readout):
+    faults = _number_faults(
+        readout, lambda t: readout.set_text("8" if t >= 1.1 else ""), fps=4
+    )
+    assert [(f.kind, f.start_s, f.end_s) for f in faults] == [
+        ("number-late", 1.0, 1.25)
+    ]
+    assert "lands at 1.25 s, 0.25 s late" in faults[0].message
+
+
+def test_the_speech_end_is_sampled_and_left_posed(readout):
+    faults = _number_faults(
+        readout, lambda t: readout.set_text("8" if t >= 2.0 else ""), fps=2.5
+    )
+    assert [f.kind for f in faults] == ["number-late"]
+    assert faults[0].end_s == 2.0
+    assert readout.get_text() == "8"
 
 
 def _still_narration():
