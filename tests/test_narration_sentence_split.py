@@ -177,3 +177,12 @@ def test_the_estimate_holds_the_gap_after_each_sentence():
     # The gap replaces the usual quarter second after a sentence.
     assert gapped.words[2].start_s - plain.words[2].start_s == pytest.approx(0.75)
     assert gapped.duration_s > plain.duration_s
+
+
+def test_synthesize_refuses_lint_findings_only_when_rules_are_asked(tmp_path):
+    script = nr.Script((nr.Line("a", "It is faint. Why is it faint?"),))
+    calls = []
+    with pytest.raises(nr.SpeechTextError, match="multi-sentence"):
+        _run(script, tmp_path, calls, rules=True)
+    assert calls == []
+    assert _run(script, tmp_path, calls) == ["a"]

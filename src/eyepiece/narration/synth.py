@@ -222,6 +222,7 @@ def synthesize(
     force=False,
     respeak=False,
     prune=False,
+    rules=False,
 ):
     """Speak every line of ``script`` that is not cached.
 
@@ -240,6 +241,9 @@ def synthesize(
         respeak: Speak again a line whose JSON exists but whose audio does
             not. Without it that is an error.
         prune: Delete the cache files that no line of the script uses.
+        rules: Also refuse a script with `lint_script` findings (long
+            lines, numbers without a cue and the like). Off by default, so a
+            script written before those rules still synthesizes.
 
     Returns:
         The keys of the lines that were spoken.
@@ -250,7 +254,7 @@ def synthesize(
         MissingAudioError: If a line has JSON but no audio and ``respeak`` is
             not set.
     """
-    check_script_speech(script)
+    check_script_speech(script, rules=rules)
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
     write_audio = _write_compressed if write_audio is None else write_audio
