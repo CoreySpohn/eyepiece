@@ -3,11 +3,50 @@
 import os
 import sys
 import time
+import wave
 from functools import partial
 from pathlib import Path
 
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
+
+
+def write_render_audio(path):
+    """Write a deterministic audio track long enough for the tiny test clips."""
+    rate = 48_000
+    samples = np.round(
+        6000 * np.sin(2 * np.pi * 440 * np.arange(2 * rate) / rate)
+    ).astype("<i2")
+    with wave.open(str(path), "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(rate)
+        stream.writeframes(samples.tobytes())
+    return path
+
+
+def decode_variant_video(path):
+    """Decode all frames of a 96 by 54 pixel test video with ffmpeg."""
+    import subprocess
+
+    from eyepiece._ffmpeg import resolve_ffmpeg
+
+    result = subprocess.run(
+        [
+            resolve_ffmpeg(), "-v", "error", "-i", str(path), "-map", "0:v:0",
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
+        ],
+        capture_output=True,
+        check=True,
+        timeout=30,
+    )  # fmt: skip
+    return np.frombuffer(result.stdout, dtype=np.uint8).reshape(-1, 54, 96, 3)
+
+
+def build_adopt_variant(venue, mode, *, markers, color):
+    """Count builds and distinguish candidate videos by their background."""
+    return build_variant_clip(venue, mode, markers=markers, data={mode: color})
 
 
 def build_variant_clip(

@@ -5,6 +5,7 @@ replace every artist property it uses; ``frame_faults`` can diagnose some
 violations of that contract. Only an explicit caller key enables chunk reuse.
 """
 
+import filecmp
 import hashlib
 import importlib.machinery
 import importlib.util
@@ -28,7 +29,7 @@ import zlib
 from collections.abc import Mapping
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from functools import partial
 from numbers import Integral, Real
 from pathlib import Path
@@ -644,14 +645,16 @@ class ClipSpec:
     Attributes:
         slug: Clip identifier and output filename prefix.
         build: Picklable callable taking (venue, mode), returning (fig, draw).
-        frames: Frame item sequence or integer count.
+        frames: Frame item sequence or integer count; may be None when
+            frames_for supplies every requested variant's frames.
         venues: Tuple of destination settings.
         frame_at: Optional picklable index-to-item callable. Its behavior must
             be represented by clock or the named source inputs for keying.
         hold_s: Extra first/last frame holds in seconds.
         audio: Optional callable taking a Variant and returning an audio path.
         after: Optional callable taking (variant, out_dir), returning extra
-            output paths. Runs for rendered and kept variants.
+            output paths. Runs for rendered, adopted, and kept variants in the
+            real output directory; writers should be idempotent.
         script: Script text or a Path to source bytes for the key.
         modules: Module source inputs for the key.
         data: Tuple of data inputs, or a callable returning one per Variant.
@@ -662,6 +665,13 @@ class ClipSpec:
         poster: Optional frame index for each silent variant's PNG poster.
         on_rescale: "warn", "raise", or "ignore" for data-scale drift, as in
             record. Exporters that require fixed data scales set "raise".
+        frames_for: Optional parent-only callable taking a Variant and
+            overriding frames with that variant's sequence or integer count.
+        frame_at_for: Optional parent-only callable taking a Variant and
+            overriding frame_at with a picklable index-to-item callable or None.
+            Its behavior must be represented by clock or named source inputs.
+        adopt_build: Optional picklable builder with the same signature as
+            build, reproducing videos made with an older figure or stamp.
     """
 
     slug: str
@@ -681,6 +691,9 @@ class ClipSpec:
     extra: tuple = ()
     poster: int | None = None
     on_rescale: str = "warn"
+    frames_for: object = None
+    frame_at_for: object = None
+    adopt_build: object = None
 
 
 class VariantResult(NamedTuple):
@@ -692,6 +705,7 @@ class VariantResult(NamedTuple):
         key: Content key computed before rendering.
         rendered: True when the video was rendered during this call.
         frames: Encoded frame count, including holds.
+        adopted: True when an older render matched the existing video bytes.
     """
 
     variant: Variant
@@ -699,13 +713,17 @@ class VariantResult(NamedTuple):
     key: str
     rendered: bool
     frames: int
+    adopted: bool = False
 
 
-def _variant_video(spec, variant, venue, out_dir, key, hold, audio, workers):
+def _variant_video(
+    spec, variant, venue, out_dir, key, hold, audio, workers, *, target=None
+):
     """Render once, atomically replacing a narrated target after mux succeeds."""
     import hwostyle
 
-    target = out_dir / f"{spec.slug}-{variant.name}.mp4"
+    if target is None:
+        target = out_dir / f"{spec.slug}-{variant.name}.mp4"
     silent = out_dir / f".{target.stem}.silent.mp4" if variant.narrated else target
     muxed = out_dir / f".{target.stem}.mux.mp4"
     try:
@@ -722,7 +740,7 @@ def _variant_video(spec, variant, venue, out_dir, key, hold, audio, workers):
             extra_ffmpeg_args=spec.extra_ffmpeg_args,
             setup=partial(hwostyle.use, variant.mode),
             rc=dict(venue.rc or {}),
-            work_dir=out_dir / f".chunks-{spec.slug}-{variant.name}",
+            work_dir=out_dir / f".chunks-{target.stem}",
             key=key,
             on_rescale=spec.on_rescale,
         )
@@ -738,8 +756,29 @@ def _variant_video(spec, variant, venue, out_dir, key, hold, audio, workers):
             muxed.unlink(missing_ok=True)
 
 
+def _adopt_video(spec, variant, venue, out_dir, target, hold, audio, workers):
+    """Compare an isolated old render, preserving the target and resume chunks."""
+    scratch = target.with_name(f".{target.stem}.adopt-{uuid.uuid4().hex}.mp4")
+    try:
+        _variant_video(
+            replace(spec, build=spec.adopt_build),
+            variant,
+            venue,
+            out_dir,
+            None,
+            hold,
+            audio,
+            workers,
+            target=scratch,
+        )
+        return filecmp.cmp(scratch, target, shallow=False)
+    finally:
+        scratch.unlink(missing_ok=True)
+        shutil.rmtree(out_dir / f".chunks-{scratch.stem}", ignore_errors=True)
+
+
 def render_variants(
-    spec, variants, out_dir, *, manifest, workers=None, force=False
+    spec, variants, out_dir, *, manifest, workers=None, force=False, adopt=False
 ) -> list[VariantResult]:
     """Render each requested variant once, skipping current manifest entries.
 
@@ -751,6 +790,11 @@ def render_variants(
     A replaced variant's old entry is discarded before rendering, so failures
     cannot leave it marked current. Narrated variants are exempt from venue
     frame budgets because speech determines their length.
+    Per-variant frame callbacks run only in the parent before keying or building.
+    With adopt=True, an old builder may reproduce an existing non-current video
+    exactly; matching videos keep their bytes and modification times and are
+    recorded under the new key. Posters use the current builder. Extra outputs
+    are generated in out_dir as for a normal render; after should be idempotent.
 
     Args:
         spec: Frozen ClipSpec describing explicit inputs and figure builders.
@@ -759,6 +803,7 @@ def render_variants(
         manifest: Manifest whose root contains all outputs.
         workers: Worker count forwarded to render_frames.
         force: Render even when the manifest entry is current.
+        adopt: Try spec.adopt_build for existing non-current videos unless forced.
 
     Returns:
         Results in first-request order with paths relative to out_dir.
@@ -766,7 +811,8 @@ def render_variants(
     Raises:
         ValueError: For duplicate or unknown venues, invalid modes or venue
             settings, exceeded silent frame budgets, missing narrated audio,
-            invalid frames, poster indices, or on_rescale, or outputs outside out_dir.
+            invalid frames, poster indices, or on_rescale, outputs outside out_dir,
+            or adopt=True without adopt_build.
         TypeError: If an explicit key input is unsupported.
         RuntimeError: If rendering or audio muxing fails.
         ScaleDriftError: If a data scale drifts with spec.on_rescale="raise".
@@ -774,15 +820,12 @@ def render_variants(
     import hwostyle
 
     _validate_on_rescale(spec.on_rescale)
+    if adopt and spec.adopt_build is None:
+        raise ValueError("adopt=True requires adopt_build")
     requested = list(dict.fromkeys(variants))
     venues = {venue.name: venue for venue in spec.venues}
     if len(venues) != len(spec.venues):
         raise ValueError("Venue names must be unique")
-    count = _frame_source(spec.frames, spec.frame_at)
-    if spec.poster is not None and (
-        not isinstance(spec.poster, Integral) or not 0 <= spec.poster < count
-    ):
-        raise ValueError(f"poster must be a frame index in [0, {count})")
     for venue in venues.values():
         for name in ("dpi", "fps"):
             value = getattr(venue, name)
@@ -801,6 +844,7 @@ def render_variants(
             matplotlib.RcParams(venue.rc or {})
         except (KeyError, ValueError, TypeError) as exc:
             raise ValueError(f"Venue {venue.name}: invalid rc settings: {exc}") from exc
+    resolved = []
     for variant in requested:
         if (
             not isinstance(variant.mode, str)
@@ -810,6 +854,28 @@ def render_variants(
             raise ValueError(f"Invalid style mode: {variant.mode}")
         if variant.venue not in venues:
             raise ValueError(f"Unknown venue: {variant.venue}")
+        variant_spec = replace(
+            spec,
+            frames=spec.frames_for(variant)
+            if spec.frames_for is not None
+            else spec.frames,
+            frame_at=(
+                spec.frame_at_for(variant)
+                if spec.frame_at_for is not None
+                else spec.frame_at
+            ),
+        )
+        if variant_spec.frames is None:
+            raise ValueError(f"Variant {variant.name} requires frames or frames_for")
+        count = _frame_source(variant_spec.frames, variant_spec.frame_at)
+        if (
+            not variant.narrated
+            and spec.poster is not None
+            and (not isinstance(spec.poster, Integral) or not 0 <= spec.poster < count)
+        ):
+            raise ValueError(
+                f"Variant {variant.name}: poster must be a frame index in [0, {count})"
+            )
         venue = venues[variant.venue]
         if (
             not variant.narrated
@@ -822,8 +888,9 @@ def render_variants(
             )
         if variant.narrated and spec.audio is None:
             raise ValueError(f"Narrated variant {variant.name} requires audio")
+        resolved.append((variant, variant_spec, count))
     jobs = []
-    for variant in requested:
+    for variant, variant_spec, count in resolved:
         venue = venues[variant.venue]
         hold = tuple(frame_count(seconds, venue.fps) for seconds in spec.hold_s)
         audio = Path(spec.audio(variant)) if variant.narrated else None
@@ -842,20 +909,20 @@ def render_variants(
                 "dpi": venue.dpi,
                 "rc": dict(venue.rc or {}),
                 "hold": hold,
-                "frames": spec.frames,
-                "frame_at": spec.frame_at is not None,
+                "frames": variant_spec.frames,
+                "frame_at": variant_spec.frame_at is not None,
                 "encoder": spec.encoder,
                 "extra_ffmpeg_args": spec.extra_ffmpeg_args,
                 **({"poster": spec.poster} if spec.poster is not None else {}),
             },
             extra=extra,
         )
-        jobs.append((variant, venue, hold, audio, key))
+        jobs.append((variant, variant_spec, count, venue, hold, audio, key))
     out_dir = Path(out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
     try:
-        for variant, venue, hold, audio, key in jobs:
+        for variant, variant_spec, count, venue, hold, audio, key in jobs:
             entry = manifest.entry(spec.slug, variant.name)
             target = out_dir / f"{spec.slug}-{variant.name}.mp4"
             expected = [target]
@@ -867,31 +934,47 @@ def render_variants(
                 if entry is None
                 else [manifest.root / output["path"] for output in entry["outputs"]]
             )
+            current = manifest.current(spec.slug, variant.name, key)
             rendered = (
                 force
                 or recorded[: len(expected)] != expected
                 or any(not path.is_relative_to(out_dir) for path in recorded)
-                or not manifest.current(spec.slug, variant.name, key)
+                or not current
             )
+            adopted = False
             if rendered:
                 manifest.discard(spec.slug, variant.name)
-                target, frames = _variant_video(
-                    spec, variant, venue, out_dir, key, hold, audio, workers
-                )
+                if adopt and not force and not current and target.is_file():
+                    adopted = _adopt_video(
+                        variant_spec,
+                        variant,
+                        venue,
+                        out_dir,
+                        target,
+                        hold,
+                        audio,
+                        workers,
+                    )
+                if adopted:
+                    rendered = False
+                    frames = count + sum(hold)
+                else:
+                    target, frames = _variant_video(
+                        variant_spec, variant, venue, out_dir, key, hold, audio, workers
+                    )
                 outputs = [target]
                 if spec.poster is not None and not variant.narrated:
-                    outputs.append(
-                        render_poster(
-                            partial(spec.build, venue, variant.mode),
-                            spec.frames,
-                            spec.poster,
-                            poster,
-                            dpi=venue.dpi,
-                            frame_at=spec.frame_at,
-                            setup=partial(hwostyle.use, variant.mode),
-                            rc=dict(venue.rc or {}),
-                        )
+                    render_poster(
+                        partial(spec.build, venue, variant.mode),
+                        variant_spec.frames,
+                        spec.poster,
+                        poster,
+                        dpi=venue.dpi,
+                        frame_at=variant_spec.frame_at,
+                        setup=partial(hwostyle.use, variant.mode),
+                        rc=dict(venue.rc or {}),
                     )
+                    outputs.append(poster)
             else:
                 frames = entry["frames"]
                 outputs = [
@@ -913,7 +996,9 @@ def render_variants(
                 fps=venue.fps,
                 dpi=venue.dpi,
             )
-            results.append(VariantResult(variant, relative, key, rendered, frames))
+            results.append(
+                VariantResult(variant, relative, key, rendered, frames, adopted)
+            )
     finally:
         manifest.save()
     return results
