@@ -84,7 +84,7 @@ def test_public_types_defaults_and_fixed_order():
         "render_variants",
     ):
         assert getattr(ep, name) is getattr(render, name)
-        assert name in ep.__all__
+        assert name in ep.render.__all__
     assert Variant("doc", "light").name == "doc-light"
     assert Variant("doc", "light", True).name == "doc-light-narrated"
     assert Venue("doc", dpi=100, fps=12).rc is None

@@ -11,7 +11,7 @@ Exports load on first access and preserve their implementation objects.
 
 from typing import TYPE_CHECKING
 
-from eyepiece import _LAZY_EXPORTS, _lazy_lookup
+from eyepiece import _EXPORT_TARGETS, _lazy_lookup
 
 if TYPE_CHECKING:
     from eyepiece._diagnostics import (
@@ -158,7 +158,7 @@ __all__ = [
     "weighted_draws",
 ]
 
-_EXPORTS = {name: _LAZY_EXPORTS[name] for name in __all__}
+_EXPORTS = {name: _EXPORT_TARGETS[name] for name in __all__}
 
 
 def __getattr__(name):

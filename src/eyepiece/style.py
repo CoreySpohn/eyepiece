@@ -30,7 +30,7 @@ import matplotlib
 import numpy as np
 from matplotlib import font_manager
 
-from eyepiece import _LAZY_EXPORTS, _lazy_lookup
+from eyepiece import _EXPORT_TARGETS, _lazy_lookup
 from eyepiece._style import _CMAP_FALLBACKS
 
 if TYPE_CHECKING:
@@ -335,7 +335,7 @@ __all__ = [
 ]
 
 _EXPORTS = {
-    name: _LAZY_EXPORTS[name]
+    name: _EXPORT_TARGETS[name]
     for name in [
         "SourceStyles",
         "TALK_FRACTIONS",

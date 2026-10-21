@@ -28,7 +28,7 @@ def test_spans_is_shade_intervals_with_a_warning():
     with pytest.warns(DeprecationWarning, match=r"eyepiece\.shade_intervals"):
         old = ep.spans
     assert old is ep.shade_intervals
-    assert "shade_intervals" in ep.__all__
+    assert "shade_intervals" in ep.plot.__all__
     assert "spans" not in ep.__all__
 
 

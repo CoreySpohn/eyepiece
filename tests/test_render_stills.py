@@ -35,7 +35,7 @@ def read_pixels(path):
 
 def test_public_still_exports():
     for name in ("render_poster", "render_still", "same_picture"):
-        assert name in ep.__all__
+        assert name in ep.render.__all__
         assert getattr(ep, name) is getattr(render, name)
 
 

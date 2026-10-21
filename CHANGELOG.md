@@ -7,6 +7,9 @@
   output, `testing` for checks, and `narration` for speech and captions.
   Existing root paths still work silently in 0.17. Deprecated aliases keep
   their existing warnings.
+- Limit root star imports to `Timeline`, `Plan`, `Tempo`, `PlotResult`,
+  `MosaicResult`, `MotionContract`, `animate`, `record`, `save_fig`, and
+  `__version__`. Root discovery also lists the task namespaces.
 
 ## [0.15.0](https://github.com/CoreySpohn/eyepiece/compare/v0.14.0...v0.15.0) (2026-10-16)
 

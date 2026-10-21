@@ -384,3 +384,72 @@ ORIGINAL_OWNERS = {
         "timing_faults": "eyepiece.testing",
     },
 }
+
+
+SHORTCUTS = {
+    "Timeline",
+    "Plan",
+    "Tempo",
+    "PlotResult",
+    "MosaicResult",
+    "MotionContract",
+    "animate",
+    "record",
+    "save_fig",
+    "__version__",
+}
+TASK_MODULES = {
+    "plot",
+    "clock",
+    "motion",
+    "style",
+    "render",
+    "testing",
+    "narration",
+    "motifs",
+    "prepared",
+    "mpl",
+    "manim",
+}
+
+
+def test_root_discovery_stays_small_after_legacy_access():
+    assert set(ep.__all__) == SHORTCUTS
+    assert len(ep.__all__) == len(SHORTCUTS)
+    assert set(dir(ep)) == SHORTCUTS | TASK_MODULES
+    for name in OLD_ROOT:
+        getattr(ep, name)
+    assert set(dir(ep)) == SHORTCUTS | TASK_MODULES
+
+
+def test_star_import_exposes_only_stable_shortcuts():
+    namespace = {}
+    exec("from eyepiece import *", namespace)
+    assert set(namespace) - {"__builtins__"} == SHORTCUTS
+
+
+@pytest.mark.parametrize("name", OLD_ROOT)
+def test_every_former_root_name_still_resolves_silently(name):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        value = getattr(ep, name)
+        imported = {}
+        exec(f"from eyepiece import {name}", imported)
+        assert imported[name] is value
+    assert not [w for w in caught if w.category is DeprecationWarning]
+
+
+def test_fresh_root_discovery_loads_no_renderers():
+    code = f"""
+import sys
+import eyepiece as ep
+assert set(ep.__all__) == {SHORTCUTS!r}
+assert set(dir(ep)) == {SHORTCUTS | TASK_MODULES!r}
+assert 'matplotlib' not in sys.modules
+assert 'eyepiece.plot' not in sys.modules
+assert 'eyepiece.motion' not in sys.modules
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr

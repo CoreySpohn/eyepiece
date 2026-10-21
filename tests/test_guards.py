@@ -115,7 +115,7 @@ def test_import_blocker_really_blocks():
     assert "blocked: csv" in out.stderr
 
 
-_EXPECTED_ALL = [
+_LEGACY_PUBLIC_NAMES = [
     "ARTIST_KEYS",
     "ENCODER_PROFILE",
     "GLYPHS",
@@ -276,9 +276,13 @@ _EXPECTED_ALL = [
 ]
 
 
-def test_public_export_list_is_unchanged():
-    """Lazy-loading __init__ must keep exactly the current public surface."""
-    assert eyepiece.__all__ == _EXPECTED_ALL
+def test_former_public_surface_remains_resolvable():
+    """Root discovery is small while every former public name still works."""
+    assert set(eyepiece.__all__) | set(eyepiece._LEGACY_ROOT) == set(
+        _LEGACY_PUBLIC_NAMES
+    )
+    for name in _LEGACY_PUBLIC_NAMES:
+        assert getattr(eyepiece, name) is not None
 
 
 def test_lazy_attribute_access_resolves_and_caches():
@@ -355,7 +359,9 @@ for info in pkgutil.walk_packages(eyepiece.__path__, "eyepiece."):
         pass  # an optional renderer (e.g. Manim) that is not installed
 
 bad = []
-for name, (module_name, attr_name) in eyepiece._LAZY_EXPORTS.items():
+for name, (module_name, attr_name) in (
+    eyepiece._LAZY_EXPORTS | eyepiece._LEGACY_ROOT
+).items():
     value = getattr(eyepiece, name)
     expected = getattr(importlib.import_module(module_name), attr_name)
     if isinstance(value, types.ModuleType) or value is not expected:

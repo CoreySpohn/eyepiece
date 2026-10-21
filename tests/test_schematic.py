@@ -93,7 +93,7 @@ def test_rail_is_exported_at_top_level():
 
 def test_glyph_vocabulary_is_exported_at_top_level():
     assert eyepiece.GLYPHS is GLYPHS
-    assert "GLYPHS" in eyepiece.__all__
+    assert "GLYPHS" in eyepiece.plot.__all__
 
 
 def _hatch_color(patch):

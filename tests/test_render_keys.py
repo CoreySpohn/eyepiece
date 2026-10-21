@@ -63,7 +63,7 @@ def encoder_identity(tmp_path, monkeypatch):
 
 def test_public_export():
     assert ep.content_key is content_key
-    assert "content_key" in ep.__all__
+    assert "content_key" in ep.render.__all__
     assert re.fullmatch(r"[0-9a-f]{64}", content_key())
 
 

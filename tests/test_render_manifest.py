@@ -36,7 +36,7 @@ def manifest_versions(monkeypatch):
 
 def test_public_export():
     assert ep.Manifest is Manifest
-    assert "Manifest" in ep.__all__
+    assert "Manifest" in ep.render.__all__
 
 
 def test_round_trip_and_relative_output_metadata(tmp_path):
