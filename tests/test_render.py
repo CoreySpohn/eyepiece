@@ -627,3 +627,28 @@ def test_odd_layout_frames_match_record_bytes(tmp_path, workers):
         with Image.open(still) as expected, Image.open(poster) as actual:
             assert actual.size == expected.size == (320, 180)
             assert actual.tobytes() == expected.tobytes()
+
+
+@pytest.mark.parametrize("keep_chunks", [False, True])
+def test_success_removes_worker_claims_and_preserves_unrelated_files(
+    tmp_path, keep_chunks
+):
+    folder = tmp_path / "chunks"
+    with _workspace(folder):
+        unrelated = folder / "consumer.txt"
+        unrelated.write_text("keep me")
+    ep.render_frames(
+        build_clip,
+        3,
+        tmp_path / "clip.mp4",
+        fps=12,
+        dpi=100,
+        workers=2,
+        chunk_frames=1,
+        work_dir=folder,
+        key="cleanup",
+        keep_chunks=keep_chunks,
+    )
+    assert not list(folder.glob("claim-*"))
+    assert unrelated.read_text() == "keep me"
+    assert len(list(folder.glob("chunk-*.bin"))) == (3 if keep_chunks else 0)

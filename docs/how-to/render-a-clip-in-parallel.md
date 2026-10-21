@@ -185,12 +185,18 @@ print(f"Reused {recovered.resumed} complete chunks")
 
 With `resume=False` or `key=None`, chunks are never reused and are deleted
 as they are consumed. With a key and resume enabled, chunks remain until
-the video succeeds, then are deleted unless `keep_chunks=True`.
+the video succeeds, then are deleted unless `keep_chunks=True`. Successful
+renders also remove worker claim and control files. The ownership marker,
+retained chunks, and unrelated files remain.
 
 ## Name the content inputs
 
 `content_key` hashes the script, clock, module sources, data, settings, and
-package and ffmpeg versions. Include fps, dpi, encoder options, rc, holds,
+package and ffmpeg versions. It always includes a SHA-256 source hash of
+the eyepiece package: sorted logical relative paths and bytes of every
+`.py` file, excluding `__pycache__`. Editable source changes therefore
+invalidate keys even when `eyepiece.__version__` stays the same. Absolute
+installation paths do not affect the hash. Include fps, dpi, encoder options, rc, holds,
 and frame items or count in `settings`. Include the source and inputs of a
 `frame_at` callable too, when using one.
 

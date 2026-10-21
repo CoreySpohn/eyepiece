@@ -209,5 +209,10 @@ def _workspace(folder):
             ):
                 path.unlink()
         yield
+        # The render's inner ExitStack has stopped every worker before this
+        # success cleanup. Keep resumable chunks and caller-owned files.
+        for path in folder.iterdir():
+            if _PROTOCOL_NAME.fullmatch(path.name):
+                path.unlink(missing_ok=True)
     finally:
         lock.unlink(missing_ok=True)

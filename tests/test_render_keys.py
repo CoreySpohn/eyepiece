@@ -518,3 +518,26 @@ def test_float_signed_zero_and_nan_payloads_are_preserved(dtype, unsigned, bits)
     if dtype is np.float64:
         assert content_key(data=(float(nan),)) != content_key(data=(float(other_nan),))
         assert content_key(data=(0.0,)) != content_key(data=(-0.0,))
+
+
+def test_eyepiece_source_edits_invalidate_keys_without_version_change(
+    tmp_path, monkeypatch
+):
+    package = tmp_path / "package"
+    package.mkdir()
+    source = package / "draw.py"
+    source.write_text("color = 'red'\n")
+    monkeypatch.setattr(ep, "__path__", [str(package)])
+    original = content_key()
+    source.write_text("color = 'blue'\n")
+    changed = content_key()
+    assert changed != original
+    moved = tmp_path / "moved"
+    package.rename(moved)
+    monkeypatch.setattr(ep, "__path__", [str(moved)])
+    assert content_key() == changed
+    (moved / "notes.txt").write_text("not Python source")
+    cache = moved / "__pycache__"
+    cache.mkdir()
+    (cache / "ignored.py").write_text("ignored = True\n")
+    assert content_key() == changed
