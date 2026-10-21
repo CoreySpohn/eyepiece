@@ -3147,7 +3147,7 @@ _READOUT_SCIENTIFIC = re.compile(
 
 def _timing_numbers(narration, readouts, at, plan, settle_tol_s, fps):
     """Check readout text and ink against the number on the speech clock."""
-    from eyepiece.narration._speech import _spoken_value, _word_key
+    from eyepiece.narration._speech import _bare, _value_end, _word_key
 
     if not math.isfinite(fps) or fps <= 0:
         raise ValueError("fps must be finite and positive")
@@ -3159,9 +3159,11 @@ def _timing_numbers(narration, readouts, at, plan, settle_tol_s, fps):
         beat = narration.beat(key)
         words = narration.script.line(key).words
         try:
-            spoken = _spoken_value(words, index)
+            spoken, number_end = _value_end(words, index)
         except ValueError as error:
             raise ValueError(f"line {key!r} word {index}: {error}") from error
+        phrase = " ".join(_bare(w) for w in words[index:number_end])
+        spoken_scientific = "times ten to the" in phrase
         start, end = beat.words[index].start_s, beat.words[-1].end_s
         judged = start + settle_tol_s
         times = [judged]
@@ -3179,14 +3181,18 @@ def _timing_numbers(narration, readouts, at, plan, settle_tol_s, fps):
             token = _READOUT_NUMBER.search(text)
             value = float(token.group().replace(",", "")) if token is not None else None
             science = _READOUT_SCIENTIFIC.search(text)
-            if science is not None and (
+            shown_scientific = science is not None and (
                 token is None or science.start() <= token.start()
-            ):
+            )
+            if shown_scientific:
                 power = science["braced"] or science["bare"]
                 value = float(f"{science['mantissa']}e{power}")
-                matches = math.isclose(value, spoken, rel_tol=1e-9, abs_tol=0)
-            else:
-                matches = value is not None and abs(value - spoken) <= 1e-9
+            matches = value is not None and math.isclose(
+                value,
+                spoken,
+                rel_tol=1e-9 if spoken_scientific or shown_scientific else 0,
+                abs_tol=0 if spoken_scientific or shown_scientific else 1e-9,
+            )
             samples[t] = (text, ink, value is not None, matches)
         threshold = max(_SHOWN, 0.9 * max(s[1] for s in samples.values()))
         landing = next(
@@ -3298,8 +3304,9 @@ def timing_faults(
     After landing and through the speech end, `number-contradicts` reports
     the first sample with ink at least 0.05 and a first number that differs
     from the spoken value beyond that tolerance. Scientific notation from
-    `eyepiece.narration.scientific` is read as a whole quantity and uses a
-    relative tolerance of 1e-9. Text with no number is not
+    `eyepiece.narration.scientific` is read as a whole quantity. If either
+    the speech or the display uses scientific notation, matching uses a
+    relative tolerance of 1e-9 with no absolute tolerance. Text with no number is not
     a contradiction. The figure is left posed at the last sample.
 
     Args:
