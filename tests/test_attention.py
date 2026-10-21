@@ -1088,8 +1088,12 @@ def test_words_gap_before_and_after_math_matches_a_plain_gap(
     ]
     assert plain
     reference = float(np.median(plain))
+    # Window extents snap to whole pixels, so a gap carries up to a pixel of
+    # rounding at each of its two edges. Fonts whose bearings differ from the
+    # math font (Helvetica and Arial, the fallbacks when Inter is missing)
+    # round the two edges apart; the bug this pins is a gap of about an em.
     for gap, (a, b) in zip(gaps, itertools.pairwise(texts), strict=True):
-        assert gap == pytest.approx(reference, abs=1.0), (a.get_text(), b.get_text())
+        assert gap == pytest.approx(reference, abs=2.0), (a.get_text(), b.get_text())
     plt.close(fig)
 
 
