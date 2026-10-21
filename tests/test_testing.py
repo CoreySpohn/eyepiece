@@ -344,3 +344,89 @@ def test_speech_rate_counts_a_pause_inside_a_line_and_skips_bare_dashes():
     narration = nr.Narration(nr.Script((line,)), {"a": nr.Spoken("a", 3.0, words)})
     ((key, wpm),) = ept.speech_rate(narration).rates
     assert key == "a" and wpm == pytest.approx(60.0 * 4 / 3.0)
+
+
+def test_halo_lint_names_the_text_and_ignores_backing_boxes():
+    from matplotlib import patheffects
+
+    fig = _figure()
+    halo = fig.text(
+        0.1,
+        0.7,
+        "haloed label",
+        gid="subject-label",
+        path_effects=[patheffects.withStroke(linewidth=3, foreground="white")],
+    )
+    fig.text(0.1, 0.4, "boxed label", bbox=ep.backing())
+    faults = ept.halo_faults(fig)
+    assert len(faults) == 1
+    assert faults[0].artist is halo
+    assert faults[0].text == "haloed label"
+    assert all(
+        word in str(faults[0]) for word in ("subject-label", "haloed label", "backing")
+    )
+    with pytest.raises(ept.HaloError, match="haloed label") as error:
+        ept.assert_no_halos(fig)
+    assert error.value.faults[0].artist is halo
+    halo.set_path_effects([])
+    assert ept.assert_no_halos(fig) == []
+
+
+def test_halo_lint_skips_labels_that_are_not_drawn():
+    from matplotlib import patheffects
+
+    fig = _figure()
+    fig.text(
+        0.1,
+        0.7,
+        "hidden",
+        visible=False,
+        path_effects=[patheffects.withStroke(linewidth=3)],
+    )
+    fig.text(
+        0.1,
+        0.4,
+        "transparent",
+        alpha=0,
+        path_effects=[patheffects.withStroke(linewidth=3)],
+    )
+    assert ept.halo_faults(fig) == []
+
+
+def test_halo_lint_catches_an_opaque_stroke_with_transparent_fill():
+    from matplotlib import patheffects
+
+    fig = _figure()
+    label = fig.text(
+        0.1,
+        0.7,
+        "outline label",
+        color="none",
+        path_effects=[patheffects.withStroke(linewidth=3, foreground="black")],
+    )
+    faults = ept.halo_faults(fig)
+    assert [fault.artist for fault in faults] == [label]
+    label.set_alpha(0)
+    assert ept.halo_faults(fig) == []
+
+
+@pytest.mark.parametrize(
+    "stroke",
+    [
+        dict(linewidth=3, foreground="none"),
+        dict(linewidth=3, foreground="black", alpha=0),
+        dict(linewidth=0, foreground="black"),
+    ],
+)
+def test_halo_lint_skips_transparent_fill_without_a_visible_stroke(stroke):
+    from matplotlib import patheffects
+
+    fig = _figure()
+    fig.text(
+        0.1,
+        0.7,
+        "invisible outline",
+        color="none",
+        path_effects=[patheffects.withStroke(**stroke)],
+    )
+    assert ept.halo_faults(fig) == []

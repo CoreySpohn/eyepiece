@@ -76,12 +76,14 @@ from typing import NamedTuple
 import numpy as np
 from matplotlib import rcParams
 from matplotlib.axis import Axis
+from matplotlib.backend_bases import GraphicsContextBase
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_hex, to_rgb, to_rgba
 from matplotlib.image import AxesImage
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+from matplotlib.patheffects import withStroke
 from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
@@ -120,6 +122,8 @@ __all__ = [
     "ClipReport",
     "GroundingError",
     "GroundingFault",
+    "HaloError",
+    "HaloFault",
     "MeaningError",
     "MeaningFault",
     "MotifError",
@@ -138,12 +142,14 @@ __all__ = [
     "assert_meaning",
     "assert_motifs",
     "assert_motion",
+    "assert_no_halos",
     "assert_readable",
     "assert_speech_rate",
     "assert_timing",
     "caption_line",
     "check_clip",
     "grounding_faults",
+    "halo_faults",
     "meaning_faults",
     "meaning_faults_chain",
     "meaning_report",
@@ -247,13 +253,29 @@ def _walk(artist):
             yield from _walk(child)
 
 
+def _text_alpha(artist):
+    """The greatest opacity of a text's fill or stroked outline."""
+    alpha = _alpha(artist, artist.get_color())
+    for effect in artist.get_path_effects():
+        if isinstance(effect, withStroke):
+            # Reproduce the graphics context that Text.draw passes to Stroke,
+            # including explicit opacity overrides on either one.
+            gc = GraphicsContextBase()
+            gc.set_foreground(to_rgba(artist.get_color()), isRGBA=True)
+            gc.set_alpha(artist.get_alpha())
+            effect._update_gc(gc, effect._gc)
+            if gc.get_linewidth() > 0:
+                alpha = max(alpha, gc.get_rgb()[3])
+    return alpha
+
+
 def _visible_texts(fig):
     out = []
     for artist in _walk(fig):
         if (
             isinstance(artist, Text)
             and artist.get_text().strip()
-            and _alpha(artist, artist.get_color()) >= _SHOWN
+            and _text_alpha(artist) >= _SHOWN
         ):
             out.append(artist)
     return out
@@ -619,6 +641,103 @@ def assert_readable(fig, **kwargs):
     found = readability_faults(fig, **kwargs)
     if found:
         raise ReadabilityError(found)
+
+
+@dataclass(frozen=True, eq=False)
+class HaloFault:
+    """One text artist drawn with a stroked halo instead of a backing box.
+
+    Attributes:
+        artist: The text artist at fault.
+        text: Its text when checked.
+        detail: A description naming the artist and the backing-box convention.
+        kind: Always ``"halo"``.
+    """
+
+    artist: object
+    text: str
+    detail: str
+    kind: str = "halo"
+
+    def __str__(self):
+        """Name the haloed text and the convention it breaks."""
+        return f"{self.kind}: {self.detail}"
+
+
+class HaloError(AssertionError):
+    """A figure has haloed text.
+
+    Attributes:
+        faults: The list of `HaloFault` records.
+    """
+
+    def __init__(self, faults):
+        """Build the assertion message from every finding."""
+        self.faults = list(faults)
+        super().__init__(
+            "\n".join([f"{len(self.faults)} halo fault(s):", *map(str, self.faults)])
+        )
+
+
+def halo_faults(fig) -> list[HaloFault]:
+    """List visible text artists drawn with a stroked halo.
+
+    Labels use a backing box, as `eyepiece.backing` and `eyepiece.callout`
+    do. A `matplotlib.patheffects.withStroke` on text breaks that convention,
+    including when the same text also has a box. Halos on lines and other
+    marks are outside this check. Hidden, blank and transparent texts are
+    skipped, as in `readability_faults`.
+
+    Args:
+        fig: The figure to check as drawn.
+
+    Returns:
+        One `HaloFault` per haloed text, in drawing order. Each keeps the
+        artist and its text; the detail includes its gid or label when set.
+
+    Example::
+
+        faults = ept.halo_faults(fig)
+    """
+    _renderer(fig)
+    found = []
+    for artist in _visible_texts(fig):
+        if not any(
+            isinstance(effect, withStroke) for effect in artist.get_path_effects()
+        ):
+            continue
+        tag = artist.get_gid() or artist.get_label()
+        name = _name(artist) + (f" ({tag!r})" if tag else "")
+        found.append(
+            HaloFault(
+                artist,
+                artist.get_text(),
+                f"{name} uses a stroked halo; use a backing box",
+            )
+        )
+    return found
+
+
+def assert_no_halos(fig) -> list[HaloFault]:
+    """Raise `HaloError` if visible text has a stroked halo.
+
+    Args:
+        fig: The figure to check as drawn.
+
+    Returns:
+        An empty list when no haloed text is found.
+
+    Raises:
+        HaloError: If any halo is found; its `faults` attribute holds the list.
+
+    Example::
+
+        ept.assert_no_halos(fig)
+    """
+    found = halo_faults(fig)
+    if found:
+        raise HaloError(found)
+    return found
 
 
 def caption_line(
@@ -1328,9 +1447,11 @@ class _Trace:
     def label(self, artist):
         if isinstance(artist, Text):
             return _name(artist)
-        index = [a for a in self.order if type(a) is type(artist)].index(artist)
         tag = artist.get_gid() or artist.get_label()
         tag = "" if not tag or str(tag).startswith("_") else f" {tag!r}"
+        if artist not in self.boxes:
+            return f"{type(artist).__name__}{tag}"
+        index = [a for a in self.order if type(a) is type(artist)].index(artist)
         x, y = self.first_box(artist)[:2]
         return f"{type(artist).__name__}{tag} #{index} at ({x:.0f}, {y:.0f})"
 
@@ -1411,7 +1532,7 @@ def _check_teleports(trace, tol, jump_ratio):
     return found
 
 
-def _draw_cuts(trace, drawn, step_ks):
+def _draw_cuts(trace, drawn, step_ks, captions=()):
     """Masks of the draw group's boxes at each declared step where it changes.
 
     Returns:
@@ -1420,29 +1541,36 @@ def _draw_cuts(trace, drawn, step_ks):
         mask is a boolean array of the frame's rows and columns.
     """
     cuts = {}
+    if not drawn:
+        return cuts
+    height, width = trace.frames[0].shape[:2]
+    # Resolve each artist's crops once for the group. Comparing these small
+    # rectangles avoids gathering whole frames through a boolean mask.
+    regions, caption_regions = {}, {}
+    for artists, target in ((drawn, regions), (captions, caption_regions)):
+        for artist in artists:
+            for k in trace.boxes.get(artist, {}):
+                x0, y0, x1, y1 = trace.box(artist, k)
+                rows = slice(
+                    max(int(height - y1 - 2), 0), max(int(height - y0 + 2) + 1, 0)
+                )
+                cols = slice(max(int(x0 - 2), 0), max(int(x1 + 2) + 1, 0))
+                target.setdefault(k, []).append((rows, cols))
     for k in sorted(step_ks):
         if k < 1:
             continue
-        height, width = trace.frames[k].shape[:2]
+        crops = regions.get(k - 1, []) + regions.get(k, [])
+        if not any(
+            not np.array_equal(trace.frames[k - 1][crop], trace.frames[k][crop])
+            for crop in crops
+        ):
+            continue
         mask = np.zeros((height, width), dtype=bool)
-        for artist in drawn:
-            for j in (k - 1, k):
-                box = trace.box(artist, j)
-                if box is None:
-                    continue
-                x0, y0, x1, y1 = (
-                    box[0] - 2.0,
-                    box[1] - 2.0,
-                    box[2] + 2.0,
-                    box[3] + 2.0,
-                )
-                rows = slice(max(int(height - y1), 0), max(int(height - y0) + 1, 0))
-                cols = slice(max(int(x0), 0), max(int(x1) + 1, 0))
-                mask[rows, cols] = True
-        before = trace.frames[k - 1][mask].astype(np.int16)
-        after = trace.frames[k][mask].astype(np.int16)
-        if before.size and np.abs(after - before).max() > 0:
-            cuts[k] = mask
+        # Captions share the mask at the draw's cuts, but their own arrival
+        # or other continuous changes do not create cuts or count as hops.
+        for crop in crops + caption_regions.get(k - 1, []) + caption_regions.get(k, []):
+            mask[crop] = True
+        cuts[k] = mask
     return cuts
 
 
@@ -1510,6 +1638,17 @@ def _jumps(trace, size, moving, jump_ratio, rest_times, tol, cuts=None):
             near = [size[j] for j in (i - 1, i + 1) if 0 <= j <= last]
             if near and value <= _PAIR_ISOLATION * max(near):
                 continue
+        # An 8-bit fade can hold, then change a whole region by one level.
+        # Require excess beyond that per-channel rounding allowance.
+        diff = np.abs(
+            trace.frames[i + 1].astype(np.int16) - trace.frames[i].astype(np.int16)
+        )
+        if i + 1 in (cuts or {}):
+            diff[cuts[i + 1]] = 0
+        excess = float(np.where(diff > 1, diff, 0).mean())
+        limit = jump_ratio * median * (_REST_STEP_RATIO if into_rest else 1.0)
+        if excess <= limit:
+            continue
         where = "into the rest state" if i in entries else "in one frame"
         detail = (
             f"the picture changes {value:.2f} levels {where}, "
@@ -2121,6 +2260,7 @@ def motion_faults(
 
     - ``"jump"``: a step between consecutive frames that exceeds `jump_ratio`
       times the median non-zero step and stands out from the steps next to it.
+      One 8-bit level per changed channel is allowed for fade quantization.
       The step into the rest state (the end of a declared move, else the last
       step that changes anything) is also reported when it is `jump_ratio / 2`
       times the median and twice the step before it, because a move settles
@@ -2190,19 +2330,23 @@ def motion_faults(
             that cuts at the same step is still reported, by the pixel
             baseline or, in a clip too still to have one, as an artist that
             jumps. Artists of the group may also overlap one another. Every
-            other check holds for the group as for any artist. A step where
+            other check holds for the group as for any artist. Text artists
+            declared on the same move join its draw group as captions. A step where
             the group does not change (a scene cut) still excuses the whole
             picture. A change inside a group's box at its cut is not seen.
         hops: Hop groups: artists that redraw in a cut at any frame by design,
             such as exchangeable draws, each a dict ``{"artists": [...],
             "rate": draws_per_second}`` (a declared move's ``hops`` adds to
             them). The group's cuts are excused wherever they fall, with no
-            declared step, and its artists are not reported as spikes; the
-            picture outside the group's boxes keeps every check, as does
+            declared step, and its artists are not reported as spikes. Text
+            artists declared on the same move join its hop groups as captions
+            at the hop artists' cuts, without counting as redraws themselves.
+            The picture outside the group's boxes keeps every check, as does
             every other artist. The group is reported as a ``"hop-rate"``
             fault when the declared rate, or the rate at which the clip
             actually redraws it, is above 8 draws per second, or the clip
-            redraws it faster than declared.
+            redraws it faster than declared. Every excessive one-second
+            window starting at an observed cut is reported.
         rest: Artists that must not move.
         groups: Groups that move rigidly: each a list of artists, or a dict
             ``{"artists": [...], "scales": True}`` for a group that scales.
@@ -2295,18 +2439,27 @@ def motion_faults(
     )
 
 
+def _cut_captions(move):
+    """Text artists declared on the same move belong to its cut group."""
+    return tuple(a for a in _declared(move, "artists") or () if isinstance(a, Text))
+
+
 def _hop_groups(hops, moves):
-    """The declared hop groups as ``[(artists, rate)]``, checked.
+    """The declared hop groups as ``[(artists, rate, captions)]``, checked.
 
     Raises:
         ValueError: If a group names no artists or no positive rate.
     """
     found = []
     declared = [
-        *(hops or ()),
-        *(h for m in moves or () for h in _declared(m, "hops") or ()),
+        *((h, ()) for h in hops or ()),
+        *(
+            (h, _cut_captions(m))
+            for m in moves or ()
+            for h in _declared(m, "hops") or ()
+        ),
     ]
-    for hop in declared:
+    for hop, captions in declared:
         artists = tuple(hop.get("artists") or ())
         rate = hop.get("rate")
         if not artists:
@@ -2316,7 +2469,7 @@ def _hop_groups(hops, moves):
                 f"a hop group needs a positive draw rate in draws per second, "
                 f"got {rate!r}"
             )
-        found.append((artists, float(rate)))
+        found.append((artists, float(rate), captions))
     return found
 
 
@@ -2326,42 +2479,48 @@ def _check_hop_rate(trace, hop_groups, hop_cuts):
     `hop_cuts` holds, per group, the sample indices at which its pixels change.
     """
     found = []
-    for (artists, rate), ks in zip(hop_groups, hop_cuts, strict=True):
+    for (artists, rate, _), ks in zip(hop_groups, hop_cuts, strict=True):
         times = [trace.times[k] for k in ks]
-        counts = [
-            sum(1 for u in times[i:] if u < t + 1.0 - 1e-9) for i, t in enumerate(times)
-        ]
-        measured = float(max(counts, default=0))
-        first = ks[counts.index(max(counts))] if counts else 0
+        end = 0
+        windows = []
+        for i, t in enumerate(times):
+            while end < len(times) and times[end] < t + 1.0 - 1e-9:
+                end += 1
+            measured = float(end - i)
+            if measured > _MAX_HOP_RATE or measured > rate + 1.0:
+                windows.append((ks[i], measured))
+        # An excessive declaration is a fault even without observed cuts.
+        if not windows and rate > _MAX_HOP_RATE:
+            windows = [(ks[0] if ks else 0, 0.0)]
         label = trace.label(artists[0])
-        if rate > _MAX_HOP_RATE:
-            detail = (
-                f"{label} is declared at {rate:g} draws per second, "
-                f"above {_MAX_HOP_RATE:g}"
+        for first, measured in windows:
+            if rate > _MAX_HOP_RATE:
+                detail = (
+                    f"{label} is declared at {rate:g} draws per second, "
+                    f"above {_MAX_HOP_RATE:g}"
+                )
+            elif measured > _MAX_HOP_RATE:
+                detail = (
+                    f"{label} is redrawn {measured:g} times in a second, "
+                    f"above {_MAX_HOP_RATE:g}"
+                )
+            else:
+                detail = (
+                    f"{label} is redrawn {measured:g} times in a second, "
+                    f"declared {rate:g}"
+                )
+            box = trace.box(artists[0], first) if ks else None
+            found.append(
+                (
+                    first,
+                    "hop-rate",
+                    artists[0],
+                    None,
+                    box or (0.0, 0.0, *trace.size),
+                    detail,
+                    max(rate, measured),
+                )
             )
-        elif measured > _MAX_HOP_RATE:
-            detail = (
-                f"{label} is redrawn {measured:g} times in a second, "
-                f"above {_MAX_HOP_RATE:g}"
-            )
-        elif measured > rate + 1.0:
-            detail = (
-                f"{label} is redrawn {measured:g} times in a second, declared {rate:g}"
-            )
-        else:
-            continue
-        box = trace.box(artists[0], first) if ks else None
-        found.append(
-            (
-                first,
-                "hop-rate",
-                artists[0],
-                None,
-                box or (0.0, 0.0, *trace.size),
-                detail,
-                max(rate, measured),
-            )
-        )
     return found
 
 
@@ -2405,9 +2564,12 @@ def _analyze(
         allowed += [
             (frozenset(p), lo, hi) for p in _declared(move, "may_overlap") or ()
         ]
-        group |= set(_declared(move, "draws") or ())
+        own_draws = _declared(move, "draws") or ()
+        group |= set(own_draws)
+        if own_draws:
+            group.update(_cut_captions(move))
     hop_groups = _hop_groups(hops, moves)
-    hopped = {a for artists, _ in hop_groups for a in artists}
+    hopped = {a for artists, _, captions in hop_groups for a in (*artists, *captions)}
     group |= hopped
     drawn = [a for a in trace.order if a in group]
     allowed += [(frozenset(p), *everywhere) for p in itertools.combinations(drawn, 2)]
@@ -2424,8 +2586,10 @@ def _analyze(
     # A hop group cuts wherever it changes, and each cut is excused like a step.
     hop_cuts = []
     every = range(1, len(trace.times))
-    for artists, _ in hop_groups if trace.frames else ():
-        own = _draw_cuts(trace, [a for a in trace.order if a in artists], every)
+    for artists, _, captions in hop_groups if trace.frames else ():
+        own = _draw_cuts(
+            trace, [a for a in trace.order if a in artists], every, captions
+        )
         hop_cuts.append(sorted(own))
         for k, mask in own.items():
             cuts[k] = cuts[k] | mask if k in cuts else mask
@@ -3077,8 +3241,10 @@ def review_sheet(
     return path
 
 
-def _timing_still_run(words, start, end, still_s):
+def _timing_still_run(words, start, end, still_s, arrivals=()):
     """Find the longest speech group clipped to one still run."""
+    if any(start <= t < end for t in arrivals):
+        return []
     groups = []
     for word_start, word_end, line_index, key in words:
         if word_end <= start or word_start >= end:
@@ -3115,6 +3281,19 @@ def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom,
         for i, beat in enumerate(narration.beats)
         for w in beat.words
     )
+    # The plan has arrival times but no artist geometry. Cue-linked arrivals
+    # count independently of their pixel area, including the timeline's lead.
+    cues = list(narration.cues())
+    arrivals = [
+        span.start_s
+        for span in getattr(plan, "spans", {}).values()
+        if span.kind in {"enter", "text", "caption", "write", "place", "set", "readout"}
+        or (span.kind == "hold" and span.writes)
+        if any(
+            cue.line == span.section and -1e-9 <= cue.at_s - span.start_s <= 0.1 + 1e-9
+            for cue in cues
+        )
+    ]
     seconds = plan.seconds if plan is not None else narration.total_s
     reference = None
     start = last = 0.0
@@ -3127,11 +3306,11 @@ def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom,
         else:
             changed = np.count_nonzero(np.any(np.abs(kept - reference) > 12, axis=2))
             if changed >= still_change * height * width:
-                found += _timing_still_run(words, start, t, still_s)
+                found += _timing_still_run(words, start, t, still_s, arrivals)
                 reference, start = kept, t
         last = t
     if reference is not None:
-        found += _timing_still_run(words, start, last + 1 / fps, still_s)
+        found += _timing_still_run(words, start, last + 1 / fps, still_s, arrivals)
     return found
 
 
@@ -3257,6 +3436,11 @@ def timing_faults(
     change; the first frame at or above that count ends the run at its time
     and starts the next. The final run ends one frame after the last sample.
     Comparing with the run's first frame lets slow drift accumulate.
+    With `plan`, a declared arrival starting in the run on a narration cue
+    (including the timeline's 0.1 s lead) makes the run non-still regardless
+    of its area. Arrival kinds are enter, text, caption, write, place, set
+    and readout; a hold that writes knobs also counts. Runs without such an
+    arrival keep the pixel threshold.
 
     Every overlapping word is clipped to the run, and the words are ordered by time.
     A silence of at least 2.0 s from the latest word end to the next word

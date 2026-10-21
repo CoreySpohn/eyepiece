@@ -593,3 +593,78 @@ def test_collapse_colors_stay_between_the_cells_and_the_target(kind):
             continue
         colors = np.asarray(ghost.get_colors())[:, :3]
         assert np.all(colors >= low - 1e-9) and np.all(colors <= high + 1e-9)
+
+
+@pytest.mark.parametrize("level", [(0.5, 1.0), (1.0, 0.5)])
+def test_a_staged_mesh_scales_each_colormap_alpha_and_restores(level):
+    from matplotlib.colors import ListedColormap
+
+    fig, ax = plt.subplots()
+    mesh = ax.pcolormesh(
+        [[0.0, 1.0]],
+        cmap=ListedColormap([(1, 0, 0, 0.2), (0, 0, 1, 0.8)]),
+        edgecolors=(0, 0, 0, 0.6),
+        linewidth=1,
+    )
+    stage = ep.Stage({"mesh": mesh})
+    for _ in range(2):
+        stage.weigh({"mesh": level})
+        fig.canvas.draw()
+        np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.1, 0.4])
+        np.testing.assert_allclose(mesh.get_edgecolors()[:, 3], 0.3)
+    mesh.set_array(np.array([[1.0, 0.0]]))
+    stage.weigh({"mesh": level})
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.4, 0.1])
+    mesh.set_array(np.array([[0.0, 1.0]]))
+    stage.rest()
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.2, 0.8])
+    np.testing.assert_allclose(mesh.get_edgecolors()[:, 3], 0.6)
+
+
+def test_mesh_edges_that_follow_faces_keep_following_changed_data():
+    from matplotlib.colors import ListedColormap
+
+    fig, ax = plt.subplots()
+    mesh = ax.pcolormesh(
+        [[0.0, 1.0]],
+        cmap=ListedColormap([(1, 0, 0, 0.2), (0, 0, 1, 0.8)]),
+        edgecolors="face",
+    )
+    fig.canvas.draw()
+    stage = ep.Stage({"mesh": mesh})
+    stage.weigh({"mesh": (0.5, 1.0)})
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_edgecolors()[:, 3], [0.1, 0.4])
+    mesh.set_array(np.array([[1.0, 0.0]]))
+    stage.weigh({"mesh": (0.5, 1.0)})
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_edgecolors()[:, 3], [0.4, 0.1])
+    stage.rest()
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_edgecolors()[:, 3], [0.8, 0.2])
+
+
+@pytest.mark.parametrize("level", [(0.5, 1.0), (1.0, 0.5)])
+def test_staging_only_a_mesh_leaves_its_colorbar_unchanged(level):
+    from matplotlib.colors import ListedColormap
+
+    fig, ax = plt.subplots()
+    mesh = ax.pcolormesh(
+        [[0.0, 1.0]],
+        cmap=ListedColormap([(1, 0, 0, 0.2), (0, 0, 1, 0.8)]),
+    )
+    colorbar = fig.colorbar(mesh, ax=ax)
+    fig.canvas.draw()
+    bar_colors = colorbar.solids.get_facecolors().copy()
+    stage = ep.Stage({"mesh": mesh})
+    for _ in range(2):
+        stage.weigh({"mesh": level})
+        fig.canvas.draw()
+        np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.1, 0.4])
+        np.testing.assert_allclose(colorbar.solids.get_facecolors(), bar_colors)
+    stage.rest()
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.2, 0.8])
+    np.testing.assert_allclose(colorbar.solids.get_facecolors(), bar_colors)

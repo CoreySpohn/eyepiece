@@ -216,3 +216,23 @@ the axes background to the text color that `neutral` draws. The kinds are:
 - `color-mismatch`: a bound term not in its motif's label ink (else its mark's
   color), or a mark off its motif's color.
 - `symbol-first`: a bound term on screen before its mark, sampled over `times`.
+
+
+## halo_faults
+
+Labels use backing boxes, as `callout` does by default and as
+`bbox=ep.backing()` draws explicitly. `halo_faults(fig)` lists visible text
+artists with `matplotlib.patheffects.withStroke`. It returns one `HaloFault`
+per artist, with the artist, its text and a detail naming it. Hidden, blank
+and transparent text is skipped. A box does not excuse a halo on the same
+text. Halos on lines and marks are outside this check.
+
+```python
+import eyepiece.testing as ept
+
+faults = ept.halo_faults(fig)
+ept.assert_no_halos(fig)
+```
+
+`assert_no_halos` raises `HaloError` with the findings in its `faults`
+attribute, or returns an empty list when the figure has no text halos.

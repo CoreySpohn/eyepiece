@@ -62,7 +62,7 @@ def test_a_rate_above_eight_per_second_is_a_fault():
     hops = [{"artists": [dot], "rate": 10.0}]
     faults = ept.motion_faults(fig, at, TIMES, hops=hops, moves=[{"artists": [glider]}])
     rates = [f for f in faults if f.kind == "hop-rate"]
-    assert len(rates) == 1
+    assert len(rates) > 1
     assert rates[0].artist is dot
     assert rates[0].value == pytest.approx(10.0)
 
@@ -72,7 +72,7 @@ def test_a_declared_rate_that_the_clip_exceeds_is_a_fault():
     at = _poser(dot, glider, label, every=3)  # drawn at 10 per second
     hops = [{"artists": [dot], "rate": 4.0}]
     faults = ept.motion_faults(fig, at, TIMES, hops=hops, moves=[{"artists": [glider]}])
-    assert [f.kind for f in faults if f.kind == "hop-rate"] == ["hop-rate"]
+    assert len([f for f in faults if f.kind == "hop-rate"]) > 1
 
 
 def test_another_artist_cutting_with_a_hop_is_still_reported():
@@ -96,8 +96,67 @@ def test_a_move_contract_can_name_the_hops():
     assert ept.motion_faults(fig, at, TIMES, moves=moves) == []
 
 
+def test_a_smooth_caption_arrival_does_not_count_as_hops():
+    fig, dot, glider, label = _scene()
+    pose = _poser(dot, glider, label, every=10)  # 3 draws per second
+
+    def at(t):
+        pose(t)
+        label.set_alpha(min(1.0, t / 0.5))
+
+    moves = [
+        {"artists": [glider]},
+        {"artists": [dot, label], "hops": [{"artists": [dot], "rate": 3.0}]},
+    ]
+    assert ept.motion_faults(fig, at, TIMES, moves=moves) == []
+
+
 def test_a_hop_without_a_rate_is_refused():
     fig, dot, glider, label = _scene()
     at = _poser(dot, glider, label, every=10)
     with pytest.raises(ValueError, match="rate"):
         ept.motion_faults(fig, at, TIMES, hops=[{"artists": [dot]}])
+
+
+def test_every_excessive_hop_window_is_reported():
+    fig, dot, _, _ = _scene()
+    times = [k / 10 for k in range(41)]
+
+    def at(t):
+        count = sum(t >= cut - 1e-9 for cut in (0.1, 0.2, 0.3, 2.1, 2.2, 2.3))
+        dot.set_xdata([0.2 if count % 2 else 0.8])
+
+    faults = ept.motion_faults(
+        fig, at, times, hops=[{"artists": [dot], "rate": 1}], kinds=["hop-rate"]
+    )
+    assert [f.time for f in faults] == pytest.approx([0.1, 2.1])
+    assert [f.value for f in faults] == [3, 3]
+
+
+def test_hop_cuts_include_color_changes_inside_a_stationary_box():
+    fig, dot, _, _ = _scene()
+
+    def at(t):
+        dot.set_color("red" if round(t * FPS) % 6 < 3 else "blue")
+
+    faults = ept.motion_faults(
+        fig, at, TIMES, hops=[{"artists": [dot], "rate": 4}], kinds=["hop-rate"]
+    )
+    assert faults
+    assert faults[0].time == pytest.approx(0.1)
+    assert faults[0].value == 10
+
+
+def test_a_hop_report_survives_an_invisible_first_artist():
+    fig, dot, glider, label = _scene()
+    dot.set_visible(False)
+    at = _poser(dot, glider, label, every=10)
+    faults = ept.motion_faults(
+        fig,
+        at,
+        TIMES,
+        hops=[{"artists": [dot, glider], "rate": 12}],
+        kinds=["hop-rate"],
+    )
+    assert faults
+    assert all(f.kind == "hop-rate" and "Line2D" in f.detail for f in faults)
