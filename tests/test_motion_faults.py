@@ -826,6 +826,61 @@ def test_overlap_uses_only_what_the_clip_leaves_visible():
     assert _kinds(found) == ["overlap"]
 
 
+def test_overlap_indexes_allowances_once_and_preserves_fault_records():
+    fig = _figure()
+    a, b, c = artists = [fig.text(0, 0, name) for name in ("a", "b", "c")]
+    times = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.61, 0.7]
+    trace = ept._Trace(times, keep_frames=False)
+    trace.order = artists
+    for j, artist in enumerate(artists):
+        trace.boxes[artist] = {
+            k: ((k + 2 * j, 0, k + 2 * j + 20, 10), None, 1, None)
+            for k in range(len(times))
+        }
+
+    class Allowances(list):
+        visits = 0
+
+        def __iter__(self):
+            for item in super().__iter__():
+                self.visits += 1
+                yield item
+
+    allowed = Allowances(
+        [
+            (frozenset((a, b)), 0.2, 0.3),
+            (frozenset((b, a)), 0.5, 0.5),
+            (frozenset((a, c)), -math.inf, math.inf),
+        ]
+    )
+    found = ept._check_overlap(trace, set(artists), allowed, 2, 0.5)
+    # Exact records from the original checker: both allowance endpoints
+    # include the 0.1-second motion window, and separate spans form a union.
+    assert found == [
+        (
+            0,
+            "overlap",
+            a,
+            b,
+            (2, 0, 20, 10),
+            "text 'a' and text 'b' overlap by 18.0 x 10.0 px while moving, "
+            "at 3 sample(s)",
+            10,
+        ),
+        (
+            0,
+            "overlap",
+            b,
+            c,
+            (4, 0, 22, 10),
+            "text 'b' and text 'c' overlap by 18.0 x 10.0 px while moving, "
+            "at 9 sample(s)",
+            10,
+        ),
+    ]
+    assert allowed.visits == len(allowed)
+
+
 @pytest.mark.parametrize("fps", [24, 30, 60])
 def test_a_smooth_accelerating_move_has_no_jump_at_any_frame_rate(fps):
     fig = _figure()
