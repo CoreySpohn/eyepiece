@@ -59,7 +59,7 @@ their canonical homes below are `testing` and `narration`, respectively.
 | add seconds exactly | `clock.Time` | A float that adds exactly | [clock](../explanation/clock.md) (prose) |
 | count frames in a duration | `clock.frame_count(seconds, fps)` | Frames a duration lasts | [clock](../explanation/clock.md) (prose) |
 | count the words a viewer reads | `clock.reading_words(text)` | Words, with a math symbol counting as two | API reference |
-| inspect resolved spans and findings | `clock.Span`, `clock.Event`, `clock.Fault` (`plan.faults`) | Records the plan returns | [clock](../explanation/clock.md) (prose: `clock.Span`, `plan.faults`); `clock.Event` and `clock.Fault` API reference |
+| inspect resolved spans and findings | `clock.Span`, `clock.Event`, `testing.Fault` (`plan.faults`) | Records the plan returns | [clock](../explanation/clock.md) (prose: `clock.Span`, `plan.faults`); `clock.Event` and `testing.Fault` API reference |
 
 ## 2. Draw things on
 

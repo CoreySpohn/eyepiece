@@ -111,6 +111,7 @@ from eyepiece._motion import frame_count
 from eyepiece.attention import _data_colors, _default_avoid, _renderer
 
 if TYPE_CHECKING:
+    from eyepiece._clock import Fault
     from eyepiece._render_pool import assert_frames_pure, frame_faults
     from eyepiece._render_poster import same_picture
     from eyepiece.attention import AttentionFault, audit
@@ -127,6 +128,7 @@ __all__ = [
     "AttentionFault",
     "ClipError",
     "ClipReport",
+    "Fault",
     "GroundingError",
     "GroundingFault",
     "HaloError",
@@ -3591,7 +3593,7 @@ class ClipReport:
         meaning: `MeaningFault` list, empty when no meaning keys were supplied.
             Warnings and advisories count as findings too.
         motion: `MotionFault` list from sampling every frame.
-        plan_faults: The plan's `eyepiece.Fault` list, including info findings,
+        plan_faults: The plan's `eyepiece.testing.Fault` list, including info findings,
             which are kept here but do not count toward `faults` or `ok`.
         unread_knobs: List of knob names never read by the draw function.
             Constant knobs that were read do not count as unread.
@@ -3839,6 +3841,7 @@ def assert_clip(fig, draw, plan, **kwargs) -> ClipReport:
 
 
 _LAZY_EXPORTS = {
+    "Fault": ("eyepiece._clock", "Fault"),
     "AttentionFault": ("eyepiece.attention", "AttentionFault"),
     "audit": ("eyepiece.attention", "audit"),
     "assert_frames_pure": ("eyepiece._render_pool", "assert_frames_pure"),

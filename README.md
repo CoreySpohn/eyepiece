@@ -105,7 +105,7 @@ lists every public name with its canonical path and a worked example.
   function reads frame by frame (`value`, `progress`, `frame_of`, `events`,
   `spans_json`). `ep.clock.Tempo` sets the pace of the whole clip in one place.
 - **Helpers.** `ep.clock.ease`, `ep.clock.stagger`, `ep.clock.Time`, `ep.clock.frame_count`, `ep.clock.reading_words`,
-  and the `ep.clock.Span`, `ep.clock.Event` and `ep.clock.Fault` records a plan carries.
+  and the `ep.clock.Span`, `ep.clock.Event` and `ep.testing.Fault` records a plan carries.
 
 ### Move the viewer's eye
 

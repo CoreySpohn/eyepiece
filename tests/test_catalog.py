@@ -49,6 +49,7 @@ PREFIXES = {
 }
 # Existing aliases remain callable, but the catalog has one path per task.
 CANONICAL_ALIASES = {
+    "clock.Fault": "testing.Fault",
     "render.frame_faults": "testing.frame_faults",
     "render.assert_frames_pure": "testing.assert_frames_pure",
     "render.same_picture": "testing.same_picture",

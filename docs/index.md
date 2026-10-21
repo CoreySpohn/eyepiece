@@ -170,7 +170,7 @@ and the API reference documents every signature.
   function reads frame by frame (`ep.clock.Plan.value`, `ep.clock.Plan.progress`, `ep.clock.Plan.frame_of`, `ep.clock.Plan.events`,
   `ep.clock.Plan.spans_json`). `ep.clock.Tempo` sets the pace of the whole clip in one place.
 - **Helpers.** `ep.clock.ease`, `ep.clock.stagger`, `ep.clock.Time`, `ep.clock.frame_count`, `ep.clock.reading_words`,
-  and the `ep.clock.Span`, `ep.clock.Event` and `ep.clock.Fault` records a plan carries.
+  and the `ep.clock.Span`, `ep.clock.Event` and `ep.testing.Fault` records a plan carries.
 
 ### Move the viewer's eye
 

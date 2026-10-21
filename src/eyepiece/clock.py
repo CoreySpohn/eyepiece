@@ -16,11 +16,13 @@ from eyepiece import _EXPORT_TARGETS, _lazy_lookup
 if TYPE_CHECKING:
     from eyepiece._clock import (
         Event,
-        Fault,
         Plan,
         Span,
         Time,
         Timeline,
+    )
+    from eyepiece._clock import (
+        Fault as Fault,
     )
     from eyepiece._motion import (
         Tempo,
@@ -33,7 +35,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Event",
-    "Fault",
     "Plan",
     "Span",
     "Tempo",
@@ -46,7 +47,7 @@ __all__ = [
     "stagger",
 ]
 
-_EXPORTS = {name: _EXPORT_TARGETS[name] for name in __all__}
+_EXPORTS = {name: _EXPORT_TARGETS[name] for name in [*__all__, "Fault"]}
 
 
 def __getattr__(name):

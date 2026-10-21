@@ -64,6 +64,7 @@ def test_clock_helpers_remain_numerical_without_matplotlib():
 import sys
 from eyepiece import clock
 clock.Timeline().hold(0.5)
+assert clock.Fault is __import__("eyepiece._clock", fromlist=["Fault"]).Fault
 assert clock.ease(0.0) == 0.0
 assert clock.ease(1.0) == 1.0
 assert clock.stagger(0.0, 0) == 0.0
@@ -461,3 +462,17 @@ def test_version_has_only_its_root_home():
     assert "__version__" not in dir(ep.render)
     with pytest.raises(AttributeError, match="__version__"):
         _ = ep.render.__version__
+
+
+def test_fault_has_testing_home_and_silent_clock_alias():
+    from eyepiece._clock import Fault
+
+    assert "Fault" in ep.testing.__all__
+    assert "Fault" not in ep.clock.__all__
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        from eyepiece.clock import Fault as clock_fault
+        from eyepiece.testing import Fault as testing_fault
+
+        assert ep.Fault is clock_fault is testing_fault is Fault
+    assert not caught
