@@ -29,11 +29,6 @@ STYLE_STATE = (
     "roles",
 )
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="the example writes MP4s through ffmpeg, and ffprobe reads them",
-)
-
 
 def _streams(path):
     done = subprocess.run(
@@ -96,6 +91,8 @@ def sweep_style_guard():
 
 @pytest.fixture(scope="module")
 def built(tmp_path_factory, sweep_style_guard, style_context):
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("the example writes MP4s through ffmpeg, and ffprobe reads them")
     out = tmp_path_factory.mktemp("sweep")
     with style_context():
         yield {
