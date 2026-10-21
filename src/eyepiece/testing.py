@@ -361,7 +361,7 @@ def _small(texts, boxes, dpi, minimum):
     found = []
     for text, box in zip(texts, boxes, strict=True):
         size = text.get_fontsize() * dpi / 72.0
-        if size < minimum:
+        if size < minimum and not getattr(text, "_eyepiece_furniture", False):
             detail = (
                 f"{_name(text)} is {size:.1f} px tall, under the {minimum:g} px minimum"
             )

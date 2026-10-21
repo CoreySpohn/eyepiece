@@ -1801,7 +1801,11 @@ class Stage:
                         f"{name!r} holds a {type(item).__name__}, and a data "
                         f"mark never drifts"
                     )
-            self._lifts[name] = [_Lift(item) for item in self._items[name]]
+            self._lifts[name] = [
+                _Lift(item)
+                for item in self._items[name]
+                if not getattr(item, "_eyepiece_furniture", False)
+            ]
         for lift in self._lifts[name]:
             dpi = lift.text.get_figure(root=True).dpi
             if lift_pt * dpi / 72.0 > _LIFT_MAX_PX + 1e-9:
