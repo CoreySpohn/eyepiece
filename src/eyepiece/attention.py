@@ -56,7 +56,7 @@ from matplotlib.transforms import (
 )
 
 from eyepiece import _style
-from eyepiece._motion import DEFAULT_EASE, _unsnapped
+from eyepiece._motion import DEFAULT_EASE, _unsnapped, pulse_shape
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import stagger as _stagger
 from eyepiece._result import MosaicResult, MotionContract, PlotResult
@@ -2473,9 +2473,7 @@ def _pulse(u, shape):
     if u <= 0.0 or u >= 1.0:
         return 0.0
     if shape == "plateau":
-        # Up on the ease over the first `_PLATEAU_RISE`, hold, and back down.
-        edge = min(u, 1.0 - u) / _PLATEAU_RISE
-        return 1.0 if edge >= 1.0 else float(_ease(edge, DEFAULT_EASE))
+        return pulse_shape(u)
     return math.sin(math.pi * u) ** 2
 
 

@@ -76,7 +76,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 |---|---|---|---|
 | underline words for a beat | `underline(text_artist, color=, ease=)`, placed by `tl.underline(target)` | Draws along the baseline, holds, then fades | [motion-attention](../gallery/motion-attention.md) |
 | light the thing the narration names | `indicate(artists, scale=, strength=, shape=)`, placed by `tl.indicate(target)` | Swells and tints toward the text ink, then returns exactly | [motion-attention](../gallery/motion-attention.md), [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
-| a plateau pulse (emphasis held at its peak) | `indicate(..., shape="plateau")` | Up 35%, hold 30%, down 35% | [contract](../explanation/contract.md) (prose) |
+| a plateau pulse (emphasis held at its peak) | `pulse_shape(u, rise=, hold=, fall=, ease=)`, `indicate(..., shape="plateau")` | One shared shape: up 35%, hold 30%, down 35% by default | [motion-attention](../gallery/motion-attention.md) |
 | outline a thing, then let it go | `circumscribe(target, shape=, style="trace")`, placed by `tl.circumscribe(target)` | Outline draws on, then fades | [motion-attention](../gallery/motion-attention.md) (`circumscribe`), [motion-clock](../gallery/motion-clock.md) (`tl.circumscribe`) |
 | pass a comet around a thing | `circumscribe(target, style="flash")` | A tapered comet runs once around the outline | [contract](../explanation/contract.md) (prose) |
 | put a no-hue cue behind the subject | `MotifSet.default()["cue"].patch_kw()` on a patch you draw | Text-ink band, ring or underlay behind the subject | [motifs](../gallery/motifs.md) (no function; hand-built patch) |
