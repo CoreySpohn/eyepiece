@@ -32,6 +32,7 @@ NOT_CATALOGED = {}
 DEPRECATED = {
     "ept.Span": "ept.Window",
     "spans": "shade_intervals",
+    "radial_profile_plot": "plot_radial_image",
     "motifs.resolve_role": "role",
     "tl.pulse": "tl.indicate",
     "tl.ring": "tl.circumscribe",
@@ -172,3 +173,9 @@ def test_deprecated_aliases_listed_and_still_resolve(old, new):
         warnings.simplefilter("ignore", DeprecationWarning)
         assert _resolve(old) is not None
     assert _resolve(new) is not None
+
+
+def test_package_docstring_names_the_public_submodules():
+    for namespace in NAMESPACES[1:]:
+        name = namespace.removeprefix("eyepiece.")
+        assert f"``{name}``" in eyepiece.__doc__

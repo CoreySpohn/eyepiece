@@ -563,3 +563,9 @@ temporary.cleanup()
 ```
 
 The examples remove their temporary files after all cells finish.
+
+The frame checks also live in the checking namespace:
+`eyepiece.testing.frame_faults`, `eyepiece.testing.assert_frames_pure`, and
+`eyepiece.testing.same_picture` are the same functions as the `eyepiece.render`
+names. Neither path warns. These aliases load on access, so importing
+`eyepiece.testing` alone does not load the render workers.

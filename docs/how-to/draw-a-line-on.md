@@ -46,7 +46,9 @@ arc-length speed with a bright head on the tip: the last tenth of the drawn
 length brightens toward the text color with a dot on the tip, and the head
 dissolves into the line's own color as the path completes, so the last frame is
 the plain line. Its default ease is the library's reveal ease, and `lag=`
-staggers several lines.
+staggers several lines. When `update` reads a knob from `tl.move`, use
+`ep.head_draw(curve, ease="linear")`: the knob is already eased. A direct
+progress value, as below, can use the default ease.
 
 ```{code-cell} python
 reveal.update(1.0)

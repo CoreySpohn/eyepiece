@@ -3,7 +3,7 @@
 `eyepiece.prepared` and its renderers (`eyepiece.mpl`, `eyepiece.manim`)
 never pick a color or a colormap themselves; they take a `RenderProfile`
 snapshot and, for named scientific sources, a `SourceCast`. Building
-either of those is this module's only job, and it is the only module in
+either of those is this module's prepared-view job, and it is the only module in
 `eyepiece` allowed to import `hwostyle` or Matplotlib -- everything a
 prepared-view renderer needs from the active style is captured here, once,
 as plain read-only data.
@@ -16,11 +16,15 @@ Matplotlib text rcParams, at the moment it is called. It never calls
 particular mode calls `hwostyle.use(...)` before snapshotting.
 
 The Matplotlib primitives (`imshow_log`, `sky_fan`, and the rest) resolve
-hwostyle at call time instead, through `eyepiece._style`.
+hwostyle at call time instead, through `eyepiece._style`. The public `role`,
+`neutral`, and `backing` names here are the same callables as the package-root
+names, loaded lazily.
 """
 
 import dataclasses
+import importlib
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 import hwostyle
 import matplotlib
@@ -28,6 +32,9 @@ import numpy as np
 from matplotlib import font_manager
 
 from eyepiece._style import _CMAP_FALLBACKS
+
+if TYPE_CHECKING:
+    from eyepiece._style import backing, neutral, role
 
 # Roles documented on `hwostyle.colormaps.Colormaps`: sequential intensity
 # families (idealized/model images, detector readouts, pupil transmission),
@@ -290,4 +297,25 @@ class SourceCast:
         return _MARKERS[self.slot(name) % len(_MARKERS)]
 
 
-__all__ = ["RenderProfile", "SourceCast", "snapshot_profile"]
+__all__ = [
+    "RenderProfile",
+    "SourceCast",
+    "backing",
+    "neutral",
+    "role",
+    "snapshot_profile",
+]
+
+
+def __getattr__(name):
+    """Load the shared color helpers on first access."""
+    if name in {"role", "neutral", "backing"}:
+        value = getattr(importlib.import_module("eyepiece._style"), name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    """Include the lazy color helpers in namespace discovery."""
+    return sorted(set(globals()) | set(__all__))

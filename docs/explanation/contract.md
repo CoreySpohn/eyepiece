@@ -58,8 +58,10 @@ through `plt.subplots(..., layout="constrained")`, and returns it. Passing
 an axes, or a sequence of axes, means the primitive draws into exactly what
 it was handed and creates nothing.
 
-This is the whole of the ax-first idea, and it is what lets the same
-function serve a quick look and a publication panel. A caller who wants a
+Ax-first means the caller owns the axes. It does not mean that `ax` is
+always the first positional argument; many primitives take it as a keyword.
+This ownership is what lets the same function serve a quick look and a
+publication panel. A caller who wants a
 figure gets one for free; a caller who has already built a mosaic hands over
 the slots and gets them filled.
 
@@ -396,6 +398,10 @@ in a small runnable example.
   The rest state, `u = 1`, is the resampled set.
 
 ## Style resolves at call time
+
+`eyepiece.style.role`, `eyepiece.style.neutral`, and `eyepiece.style.backing`
+are alternate paths to the same functions as `eyepiece.role`,
+`eyepiece.neutral`, and `eyepiece.backing`. Neither path warns.
 
 Color, colormap, and savefig policy come from hwostyle, and every lookup
 happens inside the call, not at import. Importing eyepiece activates no

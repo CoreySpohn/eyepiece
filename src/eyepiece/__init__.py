@@ -2,14 +2,15 @@
 
 eyepiece provides a small set of pure functions for rendering, comparing,
 and animating simulated images (point spread functions, coronagraph
-detection maps, complex optical fields, and the like). Every public name
-lives at the top level of this package; the submodules that implement them
-(``images``, ``layout``, ``output``, ``anim``, ``scene``, ``stats``,
-``_schematic``, ``_phasor``, ``insets``, ``profiles``, ``emphasis``,
-``_motion``, ``camera``, ``_pixel_morph``, ``attention``, ``_warp``,
-``_arrows``, ``_zoom``) are
-internal organization and are not part of the public API. The vocabularies a
-caller reads against are exported alongside the functions: ``ARTIST_KEYS``,
+detection maps, complex optical fields, and the like). Most plotting and
+animation names are available at the package root. Eight public submodules
+provide task namespaces: ``narration`` for speech and captions, ``testing``
+for clip checks, ``render`` for render workers and variants, ``prepared``
+for scene records, ``motifs`` for recurring styles, ``mpl`` and ``manim``
+for prepared renderers, and ``style`` for appearance snapshots and source
+styles. Other implementation submodules are internal organization and are
+not part of the public API. The vocabularies a caller reads against are
+exported alongside the functions: ``ARTIST_KEYS``,
 the key set a result's ``artists`` dict draws from; ``PRESETS``, the
 measured fps/dpi pairs for the usual animation destinations; and ``GLYPHS``,
 the optical-element names ``rail`` draws.
@@ -146,12 +147,12 @@ __all__ = [
     "pixel_quads",
     "plot_contrast_curve",
     "plot_radial",
+    "plot_radial_image",
     "provenance_fields",
     "provenance_text",
     "pulse_shape",
     "quad_image",
     "quiet_spines",
-    "radial_profile_plot",
     "rail",
     "rail_panels",
     "reading_words",
@@ -274,7 +275,7 @@ _LAZY_EXPORTS = {
     "save_fig": ("eyepiece.output", "save_fig"),
     "plot_contrast_curve": ("eyepiece.profiles", "plot_contrast_curve"),
     "plot_radial": ("eyepiece.profiles", "plot_radial"),
-    "radial_profile_plot": ("eyepiece.profiles", "radial_profile_plot"),
+    "plot_radial_image": ("eyepiece.profiles", "plot_radial_image"),
     "file_metadata": ("eyepiece.provenance", "file_metadata"),
     "provenance_fields": ("eyepiece.provenance", "provenance_fields"),
     "provenance_text": ("eyepiece.provenance", "provenance_text"),
@@ -366,6 +367,7 @@ _LAZY_EXPORTS = {
 # cached, so every access warns.
 _DEPRECATED = {
     "spans": "shade_intervals",
+    "radial_profile_plot": "plot_radial_image",
 }
 
 

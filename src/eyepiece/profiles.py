@@ -3,7 +3,7 @@
 `plot_radial` takes precomputed `(r, values)` arrays -- this library never
 recomputes a profile itself; the computation belongs to `hwoutils.radial`
 (or whichever library produced the arrays), not to a plotting primitive.
-`radial_profile_plot`, at the bottom of this module, is the one function
+`plot_radial_image`, at the bottom of this module, is the one function
 here that reaches outside that rule: it calls `hwoutils.radial.radial_profile`
 directly, under the `eyepiece[hwo]` extra, then hands the result to
 `plot_radial` unchanged.
@@ -30,10 +30,13 @@ the calls that did not.
 Axis labels: `plot_radial` and `plot_contrast_curve` are unit-agnostic --
 `r` may be lambda/D, arcsec, AU, or pixels, and neither function can know
 which, so both only take an optional `xlabel`/`ylabel` and never guess one.
-`radial_profile_plot` DOES know its units (it takes `pixscale_lod`
+`plot_radial_image` DOES know its units (it takes `pixscale_lod`
 explicitly), so it defaults the x label to a lambda/D separation label,
 still overridable by an explicit `xlabel`.
 """
+
+import warnings
+from functools import wraps
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -392,7 +395,7 @@ def plot_contrast_curve(
 _LOD_SEPARATION_XLABEL = r"$r$ [$\lambda/D$]"
 
 
-def radial_profile_plot(
+def plot_radial_image(
     image,
     pixscale_lod,
     *,
@@ -454,7 +457,7 @@ def radial_profile_plot(
         from hwoutils import radial
     except ImportError:
         raise ImportError(
-            "radial_profile_plot needs hwoutils: pip install eyepiece[hwo]"
+            "plot_radial_image needs hwoutils: pip install eyepiece[hwo]"
         ) from None
 
     separations, profile = radial.radial_profile(
@@ -472,3 +475,14 @@ def radial_profile_plot(
         xlabel=resolved_xlabel,
         ylabel=ylabel,
     )
+
+
+@wraps(plot_radial_image)
+def radial_profile_plot(*args, **kwargs):
+    """Deprecated alias for `plot_radial_image`, with the same arguments."""
+    warnings.warn(
+        "radial_profile_plot is deprecated; use plot_radial_image",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return plot_radial_image(*args, **kwargs)
