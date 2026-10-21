@@ -87,7 +87,7 @@ kinds = ("linear", "cosine", "smoothstep", "smootherstep", "back_out",
 fig, axes = plt.subplots(1, 6, figsize=(9.0, 2.0), layout="constrained",
                          sharey=True)
 for axis, kind in zip(axes, kinds, strict=True):
-    axis.plot(s, s, color=ep.motion.blend(plt.rcParams["text.color"], 0.3), lw=1.0)
+    axis.plot(s, s, color=ep.style.blend(plt.rcParams["text.color"], 0.3), lw=1.0)
     axis.plot(s, ep.clock.ease(s, kind), color=hwostyle.palette[0])
     axis.set_title(kind, fontsize="small")
     axis.set_xlabel("progress")

@@ -81,7 +81,9 @@ if TYPE_CHECKING:
         spotlight,
     )
     from eyepiece.emphasis import (
-        blend,
+        blend as blend,
+    )
+    from eyepiece.emphasis import (
         capture,
         fade,
     )
@@ -97,7 +99,6 @@ __all__ = [
     "aperture_counts",
     "arrivals",
     "arrow",
-    "blend",
     "brush",
     "build_axes",
     "callout",
@@ -136,7 +137,7 @@ __all__ = [
     "zoom_path",
 ]
 
-_EXPORTS = {name: _EXPORT_TARGETS[name] for name in __all__}
+_EXPORTS = {name: _EXPORT_TARGETS[name] for name in [*__all__, "blend"]}
 
 
 def __getattr__(name):

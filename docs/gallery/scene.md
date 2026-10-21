@@ -751,7 +751,7 @@ as a hatch that should recede less than the region it fills. With no
 
 ```{code-cell} python
 face = axes[1].get_facecolor()
-print(ep.motion.blend(cast["b"]["color"], 0.45, background=face))
+print(ep.style.blend(cast["b"]["color"], 0.45, background=face))
 ```
 
 ### Arriving instead of receding

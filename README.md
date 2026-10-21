@@ -117,7 +117,7 @@ lists every public name with its canonical path and a worked example.
   `ep.motion.brush`, `ep.motion.follow_zoom`, `ep.motion.Anchor`, and `ep.testing.audit` with its `ep.testing.AttentionFault`
   for the connector rules.
 - **Dim, bring in, and settle.** `ep.motion.Stage` (groups shown, dimmed, or absent,
-  at absolute levels), `ep.motion.fade`, `ep.motion.blend`, `ep.motion.capture`, and `ep.motion.collapse`.
+  at absolute levels), `ep.motion.fade`, `ep.style.blend`, `ep.motion.capture`, and `ep.motion.collapse`.
 - **Land the answer.** `ep.motion.click` (ink swells, the end dot grows, the number
   sets bold, the ruler recedes), `ep.motion.ruler_readout`, and `ep.motion.readout`.
 - **Equations and numbers.** `ep.motion.term_row`, `ep.motion.equation`, `ep.motion.transform` (one

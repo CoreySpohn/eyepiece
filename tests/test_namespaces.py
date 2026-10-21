@@ -476,3 +476,17 @@ def test_fault_has_testing_home_and_silent_clock_alias():
 
         assert ep.Fault is clock_fault is testing_fault is Fault
     assert not caught
+
+
+def test_blend_has_style_home_and_silent_motion_alias():
+    from eyepiece.emphasis import blend
+
+    assert "blend" in ep.style.__all__
+    assert "blend" not in ep.motion.__all__
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        from eyepiece.motion import blend as motion_blend
+        from eyepiece.style import blend as style_blend
+
+        assert ep.blend is motion_blend is style_blend is blend
+    assert not caught

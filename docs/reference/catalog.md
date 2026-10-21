@@ -109,7 +109,7 @@ their canonical homes below are `testing` and `narration`, respectively.
 | settle the scene by presence | `stage.weigh(levels)` | Arrival by opacity, no motion, driven by an entry knob such as one `tl.enter` or `tl.run` writes | [build-up](../tutorials/build-up.md) |
 | a label that arrives attached to its mark | `stage.weigh(levels, lift_pt=)` | Labels drift up at most 10 px as they fade in | [signature-moves](../gallery/signature-moves.md) |
 | return every group to how it was drawn | `stage.rest()`, `stage.state()` | Rest state; the levels of a state | [bring-a-panel-in](../how-to/bring-a-panel-in.md) (`rest`); `state` API reference |
-| fade artists toward the background, or by opacity | `motion.fade(target, level, by="color"/"alpha")`, `motion.blend(color, level)` | Contrast blend (or opacity) that works in both modes | [scene](../gallery/scene.md), [motion-clock](../gallery/motion-clock.md) |
+| fade artists toward the background, or by opacity | `motion.fade(target, level, by="color"/"alpha")`, `style.blend(color, level)` | Contrast blend (or opacity) that works in both modes | [scene](../gallery/scene.md), [motion-clock](../gallery/motion-clock.md) |
 | collect the artists a block adds | `motion.capture(container)` | Context manager listing new artists | [scene](../gallery/scene.md) |
 | a list of steps with the current one bright | `plot.step_list(rows, current=)` | Current step bold, done steps dim, future hidden | [scene](../gallery/scene.md) |
 | gather a row of cells into one bar | `motion.collapse(ax, segments, weights, start, end, fig=)` | Cells fly into a bar of their sum | [motion-staging](../gallery/motion-staging.md) |

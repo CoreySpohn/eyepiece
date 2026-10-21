@@ -49,6 +49,7 @@ if TYPE_CHECKING:
         VIDEO_RC,
         talk_rc,
     )
+    from eyepiece.emphasis import blend
     from eyepiece.layout import (
         SourceStyles,
     )
@@ -324,6 +325,7 @@ __all__ = [
     "SourceCast",
     "SourceStyles",
     "backing",
+    "blend",
     "neutral",
     "quiet_spines",
     "role",
@@ -341,6 +343,7 @@ _EXPORTS = {
         "TALK_FRACTIONS",
         "VIDEO_RC",
         "backing",
+        "blend",
         "neutral",
         "quiet_spines",
         "role",
