@@ -82,6 +82,7 @@ from matplotlib.colors import to_hex, to_rgb, to_rgba
 from matplotlib.image import AxesImage
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
+from matplotlib.patheffects import withStroke
 from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
@@ -120,6 +121,8 @@ __all__ = [
     "ClipReport",
     "GroundingError",
     "GroundingFault",
+    "HaloError",
+    "HaloFault",
     "MeaningError",
     "MeaningFault",
     "MotifError",
@@ -138,12 +141,14 @@ __all__ = [
     "assert_meaning",
     "assert_motifs",
     "assert_motion",
+    "assert_no_halos",
     "assert_readable",
     "assert_speech_rate",
     "assert_timing",
     "caption_line",
     "check_clip",
     "grounding_faults",
+    "halo_faults",
     "meaning_faults",
     "meaning_faults_chain",
     "meaning_report",
@@ -619,6 +624,103 @@ def assert_readable(fig, **kwargs):
     found = readability_faults(fig, **kwargs)
     if found:
         raise ReadabilityError(found)
+
+
+@dataclass(frozen=True, eq=False)
+class HaloFault:
+    """One text artist drawn with a stroked halo instead of a backing box.
+
+    Attributes:
+        artist: The text artist at fault.
+        text: Its text when checked.
+        detail: A description naming the artist and the backing-box convention.
+        kind: Always ``"halo"``.
+    """
+
+    artist: object
+    text: str
+    detail: str
+    kind: str = "halo"
+
+    def __str__(self):
+        """Name the haloed text and the convention it breaks."""
+        return f"{self.kind}: {self.detail}"
+
+
+class HaloError(AssertionError):
+    """A figure has haloed text.
+
+    Attributes:
+        faults: The list of `HaloFault` records.
+    """
+
+    def __init__(self, faults):
+        """Build the assertion message from every finding."""
+        self.faults = list(faults)
+        super().__init__(
+            "\n".join([f"{len(self.faults)} halo fault(s):", *map(str, self.faults)])
+        )
+
+
+def halo_faults(fig) -> list[HaloFault]:
+    """List visible text artists drawn with a stroked halo.
+
+    Labels use a backing box, as `eyepiece.backing` and `eyepiece.callout`
+    do. A `matplotlib.patheffects.withStroke` on text breaks that convention,
+    including when the same text also has a box. Halos on lines and other
+    marks are outside this check. Hidden, blank and transparent texts are
+    skipped, as in `readability_faults`.
+
+    Args:
+        fig: The figure to check as drawn.
+
+    Returns:
+        One `HaloFault` per haloed text, in drawing order. Each keeps the
+        artist and its text; the detail includes its gid or label when set.
+
+    Example::
+
+        faults = ept.halo_faults(fig)
+    """
+    _renderer(fig)
+    found = []
+    for artist in _visible_texts(fig):
+        if not any(
+            isinstance(effect, withStroke) for effect in artist.get_path_effects()
+        ):
+            continue
+        tag = artist.get_gid() or artist.get_label()
+        name = _name(artist) + (f" ({tag!r})" if tag else "")
+        found.append(
+            HaloFault(
+                artist,
+                artist.get_text(),
+                f"{name} uses a stroked halo; use a backing box",
+            )
+        )
+    return found
+
+
+def assert_no_halos(fig) -> list[HaloFault]:
+    """Raise `HaloError` if visible text has a stroked halo.
+
+    Args:
+        fig: The figure to check as drawn.
+
+    Returns:
+        An empty list when no haloed text is found.
+
+    Raises:
+        HaloError: If any halo is found; its `faults` attribute holds the list.
+
+    Example::
+
+        ept.assert_no_halos(fig)
+    """
+    found = halo_faults(fig)
+    if found:
+        raise HaloError(found)
+    return found
 
 
 def caption_line(

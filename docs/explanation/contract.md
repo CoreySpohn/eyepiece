@@ -540,6 +540,15 @@ A non-linear encoding is declared. A geometric size map is often the only legibl
 choice, and it stays legitimate exactly as long as the figure carries a key from
 which the reader can recover it. Without one the reader assumes linear.
 
+## Labels use backing boxes
+
+A label that needs separation from the marks beneath it uses a backing box,
+not a stroked halo around its glyphs. `backing()` supplies the box and
+`callout` uses it by default. The box belongs to the text and follows its
+opacity and position during arrivals. `eyepiece.testing.halo_faults` lists
+text drawn with `patheffects.withStroke`; `assert_no_halos` raises on it.
+This rule concerns text. A line or ring may have a backing stroke.
+
 ## Curves are labeled at the data, not in a corner
 
 A legend asks the reader to hold a color in working memory, cross the figure, and
