@@ -36,9 +36,9 @@ and a section are all spans of one `Timeline`, and the knobs a span writes are a
 draw function reads, through `Plan.value(k, knob)`. A draw function never sees
 time. Times are exact sums, so `Time` handles place one span after another
 without drift. One rule turns seconds into frames everywhere: a span from `s`
-to `e` seconds covers frames `k0 = frame_count(s)` up to
-`k1 = max(k0 + 1, frame_count(e))`, its progress on frame `k` is
-`ease((k - k0 + 1) / n)` and exactly 1 from `k1` on, and a time that falls on
+to `e` seconds covers frames `k0 = ep.clock.frame_count(s)` up to
+`k1 = max(k0 + 1, ep.clock.frame_count(e))`, its progress on frame `k` is
+`ep.clock.ease((k - k0 + 1) / n)` and exactly 1 from `k1` on, and a time that falls on
 half a frame rounds up. Two spans that write one knob on the same frame raise.
 The other checks are faults (text arriving over motion, a caption leaving
 before it is read, a span that rounds to no frames); a strict timeline raises
@@ -116,7 +116,7 @@ draws what setting it once does. Transient moves, `indicate` and
 `circumscribe`, equal the frame without them at both ends of their progress.
 Drawing never raises, so a still or a PDF save is not aborted half way:
 a leader or link that breaks the connector rules of the evidence guide is
-found by its `faults()` or by `audit(fig)`, which raises `AttentionFault` for
+found by its `faults()` or by `ep.testing.audit(fig)`, which raises `AttentionFault` for
 the strict ones. See {doc}`../reference/attention-moves` for each move's rest
 state and behavior, eases, and `Tempo`.
 

@@ -357,8 +357,8 @@ the replacement: `eyepiece.testing.Span` (now `Window`), `spans` (now
 `shade_intervals`), `eyepiece.motifs.resolve_role` (now `role`, which
 takes `mode=`), `Timeline.pulse` and `Timeline.ring` (now `Timeline.indicate` and
 `Timeline.circumscribe`), and `PRESETS["talk_60"]` (now `PRESETS["talk"]`).
-The arguments `write(overlap=)`, `record(allow_rescale=)` and
-`Narration(min_s=)` are gone; use `on_rescale=` for `record` and `ends=` for
+The arguments `ep.motion.write(overlap=)`, `record(allow_rescale=)` and
+`ep.narration.Narration(min_s=)` are gone; use `on_rescale=` for `record` and `ends=` for
 `Narration`.
 
 ## Installation

@@ -36,7 +36,7 @@ to draw one that breaks the connector rules of the
 shorter than a quarter of its panel, cross no data and no other text, and
 take a neutral rather than a data color. Drawing never raises, so a still
 or a PDF save is never aborted half way; `faults()` on the leader lists what
-it breaks, and `audit(fig)` checks every leader and link of a figure at once
+it breaks, and `ep.testing.audit(fig)` checks every leader and link of a figure at once
 and raises `AttentionFault` for those made with `strict=True` (the default).
 A recording calls it on the composite.
 
@@ -187,7 +187,7 @@ plt.show()
 A term is rewritten by setting its text in the loop, for example
 ``row.artists["text"][2].set_text("0.45")``, and `Anchor.from_artist` of a term
 follows it. Use `term_row` for terms whose text you choose, and {doc}`readout <motion-clock>` for a number that counts, because a rewritten term changes width
-and pushes its neighbors. Call `audit(fig)` once the composite is laid out to
+and pushes its neighbors. Call `ep.testing.audit(fig)` once the composite is laid out to
 vet every leader and link of the clip.
 
 ## Write: a label put down by hand
@@ -202,7 +202,7 @@ through the mathtext parser: every symbol is a glyph, and a fraction bar counts
 as one. The filled glyphs cross-fade into the real text after `draw` of the
 progress, so the last frame is the text as drawn. `lag` sets how much the
 glyphs overlap one another and `lw` the pen width.
-`equation(...).update(u, reveal="write")` writes an equation the same way.
+`ep.motion.equation(...).update(u, reveal="write")` writes an equation the same way.
 
 ```{code-cell} python
 import eyepiece as ep
@@ -267,7 +267,7 @@ print(cues[0][2])
 plt.show()
 ```
 
-`write_vtt(narration, path, line=line)` writes the setting on every cue, and
+`ep.narration.write_vtt(narration, path, line=line)` writes the setting on every cue, and
 `write_captions` writes the WebVTT and the SRT file together. A line of the
 script may carry `display=` text, so the caption reads `Pr(H|E)` while the voice
 says "P of H given E"; the cue marks stay on the spoken words. When no position

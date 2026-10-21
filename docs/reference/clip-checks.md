@@ -9,7 +9,7 @@ checks in `eyepiece.testing`. See {doc}`../explanation/clock` for the reasoning.
 imported by name rather than a top-level export, because it belongs to a test
 suite and not to a figure.
 
-`readability_faults(fig, at=pose, times=...)` poses the figure at each sample
+`ep.testing.readability_faults(fig, at=pose, times=...)` poses the figure at each sample
 time, draws it, and returns a list of faults in output pixels: two visible
 texts, or a text and another's backing box, whose extents overlap by more than
 a tolerance; text or marks the figure edge clips; text under the venue's
@@ -20,7 +20,7 @@ keeps its dpi. `assert_readable` raises `ReadabilityError` with the report.
 
 ## meaning_faults
 
-`meaning_faults(fig, at=pose, times=..., keys={gid_prefix: meaning})` checks
+`ep.testing.meaning_faults(fig, at=pose, times=..., keys={gid_prefix: meaning})` checks
 what the colors say, which `readability_faults` does not. Artists are tied to a
 meaning by `gid` prefix (longest prefix wins, and an artist with no `gid`
 inherits its nearest ancestor's).
@@ -48,7 +48,7 @@ naming it in `waive` with a reason, and stays in `meaning_report`, whose all-pas
 
 ## motion_faults
 
-`motion_faults(fig, at, times, moves=..., rest=..., groups=...)` is the same
+`ep.testing.motion_faults(fig, at, times, moves=..., rest=..., groups=...)` is the same
 check for the path between two states rather than the states themselves. Given
 an `eyepiece.testing.Window(start, stop)` it poses the figure at every frame of
 the venue's frame rate (30 per second for each venue; `fps=` overrides), always
@@ -152,14 +152,14 @@ frame plus a little; the frames are kept only for `jump` and `dead`.
 
 ## caption_line
 
-`caption_line(fig, at=pose, times=...)` uses the same extents to place
+`ep.narration.caption_line(fig, at=pose, times=...)` uses the same extents to place
 captions: it returns the WebVTT `line:` percentage of the lowest strip, two
 caption lines tall, that no visible text of the figure touches at any sampled
 time, and raises when there is none.
 
 ## speech_rate
 
-`speech_rate(narration, ceiling=160)` checks the voice instead of the picture.
+`ep.testing.speech_rate(narration, ceiling=160)` checks the voice instead of the picture.
 For each line of a `Narration` it returns the words per minute, spoken words
 over the span from the start of the first word to the end of the last in the
 cached word times, so padding and the pauses between lines do not count and a
@@ -168,7 +168,7 @@ ceiling; `assert_speech_rate` raises `SpeechRateError` naming them.
 
 ## timing_faults
 
-`timing_faults(narration, plan=None, source=None, at=None, readouts=None)`
+`ep.testing.timing_faults(narration, plan=None, source=None, at=None, readouts=None)`
 applies the timing rules of a narrated clip in one call and returns
 `TimingFault` records sorted by time; `assert_timing` raises `TimingError`.
 Each finding has one of the `TIMING_KINDS`:
@@ -194,7 +194,7 @@ Each finding has one of the `TIMING_KINDS`:
 
 ## review_sheet
 
-`review_sheet(path, source, narration=None, plan=None, events=None,
+`ep.testing.review_sheet(path, source, narration=None, plan=None, events=None,
 audio=None)` writes one PNG of a clip at its event times: every cue, every beat
 end and, with a plan, the middle and end of every move. With a narration each
 row is one beat,
@@ -204,7 +204,7 @@ with its text, a frame per event, the caption under each frame and, with
 
 ## grounding_faults
 
-`grounding_faults(equations, at=None, times=None)` checks that each colored term
+`ep.testing.grounding_faults(equations, at=None, times=None)` checks that each colored term
 of an `equation` is grounded in the mark it names, the binding made with
 `eq.bind(name, mark, motif=...)`. It returns `GroundingFault` records, one per
 term and kind at its first time; `assert_grounded` raises `GroundingError`.
@@ -221,7 +221,7 @@ the axes background to the text color that `neutral` draws. The kinds are:
 ## halo_faults
 
 Labels use backing boxes, as `callout` does by default and as
-`bbox=ep.style.backing()` draws explicitly. `halo_faults(fig)` lists visible text
+`bbox=ep.style.backing()` draws explicitly. `ep.testing.halo_faults(fig)` lists visible text
 artists with `matplotlib.patheffects.withStroke`. It returns one `HaloFault`
 per artist, with the artist, its text and a detail naming it. Hidden, blank
 and transparent text is skipped. A box does not excuse a halo on the same

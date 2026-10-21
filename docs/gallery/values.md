@@ -41,7 +41,7 @@ under `cbar`, and its axes in `insets`.
 
 ## A stamp that reserves its band
 
-`stamp(fig, reserve=True)` puts the provenance line along the bottom edge and
+`ep.render.stamp(fig, reserve=True)` puts the provenance line along the bottom edge and
 shrinks the layout above it, so the stamp never lands on a tick label and the
 caller does not edit the layout rectangle by hand. The date defaults to the
 commit date of the script's repository, else today, so rebuilding an unchanged

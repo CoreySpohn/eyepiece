@@ -304,7 +304,7 @@ res = ep.plot.curve_insets(
 ## The phase key alone
 
 `phase_ring` draws the ring by itself, a circle of `radius` about `center`
-colored by the phase colormap, onto any axes, and `phasor(ring=True)` draws
+colored by the phase colormap, onto any axes, and `ep.plot.phasor(ring=True)` draws
 its ring through it. On a given axes it adds the one collection and touches
 nothing else: not the aspect, the ticks, the spines, or limits that were
 set. Called without an axes, it makes a new one with an equal aspect so the

@@ -225,7 +225,7 @@ print(key)
 ## Render variants and keep a manifest
 
 `Venue` describes a destination's rc, dpi, fps, and optional silent frame
-budget. `variants()` lists silent venue and mode pairs first, followed by
+budget. `ep.render.variants()` lists silent venue and mode pairs first, followed by
 the requested narrated pairs. `ClipSpec.build(venue, mode)` supplies each
 figure; `render_variants` applies the mode and venue rc before building it.
 

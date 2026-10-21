@@ -11,7 +11,7 @@ when the primitive declares no motion contract. The new `contract` argument is
 keyword-only, preserving positional arguments in result subclasses.
 `Stage.contract` describes its staged artists. The artists are the ones the
 figure draws, not copies made for the checker. Pass a result directly as
-`motion_faults(fig, at, times, moves=[result])`.
+`ep.testing.motion_faults(fig, at, times, moves=[result])`.
 
 - `moves` is a tuple of artists whose geometry may move or change shape;
   the checker also accepts the older name `artists` in a declaration.
@@ -63,7 +63,7 @@ Use it to place another span or to select a settled still from the plan.
 `eyepiece.testing.Window(start, stop)` is the checker's declaration of a move's
 time interval in seconds. Use it to sample every frame with `motion_faults`
 or to declare when an artist moves. It carries no knobs or frame bounds.
-`check_clip(moves=...)` accepts either a timeline span **by its name** or an
+`ep.testing.check_clip(moves=...)` accepts either a timeline span **by its name** or an
 `eyepiece.testing.Window` value, for example `moves={curve: "reveal"}` or
 `moves={curve: ep.testing.Window(0.0, 1.0)}`. An `eyepiece.clock.Span` object itself is not
 accepted there; pass its `.name`. See {doc}`../how-to/check-a-clip` for the

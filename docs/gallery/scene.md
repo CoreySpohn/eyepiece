@@ -758,7 +758,7 @@ print(ep.motion.blend(cast["b"]["color"], 0.45, background=face))
 
 A color fade suits an element the reader has already seen. An element that
 arrives during a build-up wants the opposite: to appear over what is already
-drawn without painting the background color across it. `fade(..., by="alpha")`
+drawn without painting the background color across it. `ep.motion.fade(..., by="alpha")`
 scales each artist's own opacity by `level`, counting an unset alpha as 1,
 and hides the artist outright at 0, so nothing is drawn until it arrives.
 Restoring the previous handle before each new fade keeps every step relative

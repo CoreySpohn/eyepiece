@@ -112,7 +112,7 @@ for ax, name, subset in zip(
 plt.show()
 ```
 
-Pass your own records through `MotifSet(..., accepted=...)` for a custom set.
+Pass your own records through `ep.motifs.MotifSet(..., accepted=...)` for a custom set.
 Import `AcceptedPair` from `eyepiece.motifs` and supply its roles, modes,
 channels and measured `de`. A record is a permission per mode, never a
 verdict: the channel check is what accepts the pair.

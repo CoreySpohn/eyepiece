@@ -86,9 +86,9 @@ for axis, t in zip(axes, (0.0, 0.55, 1.0), strict=True):
 plt.show()
 ```
 
-`brush(veil_alpha=0.72)` controls the veil opacity applied to unselected
-objects. `Stage(dim=...)` instead controls contrast retained. The old
-`brush(dim=...)` spelling keeps its opacity meaning and warns to use
+`ep.motion.brush(veil_alpha=0.72)` controls the veil opacity applied to unselected
+objects. `ep.motion.Stage(dim=...)` instead controls contrast retained. The old
+`ep.motion.brush(dim=...)` spelling keeps its opacity meaning and warns to use
 `veil_alpha`.
 
 `brush` is how the image and its unrolled copy show that they hold the same

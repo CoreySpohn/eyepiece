@@ -163,13 +163,13 @@ print(ep.prepared.find_element(moved, "path") is path, ep.prepared.find_element(
 A `Sequence` is a fixed-topology template view, one physical timestamp per
 sample, and the channels that say how the template varies:
 
-- `ArrayChannel(element_id, field, values)` drives an image's `"data"` or
+- `ep.prepared.ArrayChannel(element_id, field, values)` drives an image's `"data"` or
   `"valid"`, or a `Points` mark's `"xy"`, from an array with one leading slot
   per sample. A masked cube has its mask captured once.
-- `PathWindow(element_id, history=None)` reveals a stored `Path` up to the
+- `ep.prepared.PathWindow(element_id, history=None)` reveals a stored `Path` up to the
   current sample: a growing prefix, or a trailing window of `history`
   vertices. The path has one vertex per sample and is stored once.
-- `Clock(element_id, fmt="{value:g} {unit}")` sets a `Label` to the
+- `ep.prepared.Clock(element_id, fmt="{value:g} {unit}")` sets a `Label` to the
   acquisition time of the sample being shown. It reports the sampled time,
   never an interpolated one.
 
@@ -243,7 +243,7 @@ stable palette slot and marker: it records a source and its colors. A
 carry across a clip. Use it for named subjects in an ax-first animation and
 for the clip's meaning checks. These are separate inputs: a `SourceCast` goes
 to a prepared renderer's `cast=`, while a `MotifSet` goes to
-`check_clip(motifs=...)`. A clip that uses both paths keeps their assignments
+`ep.testing.check_clip(motifs=...)`. A clip that uses both paths keeps their assignments
 consistent explicitly; neither object is converted into the other. See
 {ref}`motifs` for the role vocabulary.
 
@@ -262,7 +262,7 @@ source IDs in encounter order, which is only stable within one tree.
 A `RenderProfile` is a read-only snapshot of the style: palette colors,
 sampled colormap tables, the bad-sample color, text and background colors,
 the reference color, font family, text size, and stroke width.
-`snapshot_profile()` reads the current hwostyle state at the moment it is
+`ep.style.snapshot_profile()` reads the current hwostyle state at the moment it is
 called and never changes global state; call `hwostyle.use(...)` first to
 snapshot a particular mode. A profile never changes after construction, so
 switching modes cannot recolor a result that already exists, and two profiles

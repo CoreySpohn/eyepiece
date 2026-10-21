@@ -58,7 +58,7 @@ share of changed pixels (0 to 1) that lie on them, or None when none are
 given. It is a number to read, never a fault.
 
 ```python
-report = check_clip(fig, draw, plan, driven=[readout_text, needle])
+report = ep.testing.check_clip(fig, draw, plan, driven=[readout_text, needle])
 print(report.motion_ink)
 ```
 
@@ -69,7 +69,7 @@ declared with `hops=`. Its cuts are excused; a rate above 8 draws per second
 is reported as `hop-rate`.
 
 ```python
-motion_faults(fig, at, times, hops=[{"artists": [draws], "rate": 4.0}])
+ep.testing.motion_faults(fig, at, times, hops=[{"artists": [draws], "rate": 4.0}])
 ```
 
 ## Write chapters
@@ -82,11 +82,11 @@ key to a title. An empty title is refused.
 ep.narration.write_chapters(narration, "out/chapters.vtt", titles={"open": "The problem"})
 ```
 
-`write_captions(..., chapters=True)` writes the same file beside the captions.
+`ep.narration.write_captions(..., chapters=True)` writes the same file beside the captions.
 
 ## Pause between sentences
 
-`Line(sentence_gap_s=0.4)` speaks the line a sentence at a time and joins the
+`ep.narration.Line(sentence_gap_s=0.4)` speaks the line a sentence at a time and joins the
 sentences with that much silence, each sentence cached on its own. The default
 (None) speaks the line whole, with the keys and output it always had.
 

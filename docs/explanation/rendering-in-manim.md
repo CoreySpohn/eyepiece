@@ -31,7 +31,7 @@ naming the extra.
 
 ## Rendering a view
 
-`render(view, *, cast=None, profile=None)` returns a `ManimResult`. Its
+`ep.manim.render(view, *, cast=None, profile=None)` returns a `ManimResult`. Its
 `mobject` is a Manim `Group` centered at the origin, holding raster images
 and vector marks together; move and scale it like any mobject.
 
@@ -99,7 +99,7 @@ class SpeckleScene(manim.Scene):
 ```
 
 Manim lays text out through Pango, which resolves fonts independently of
-Matplotlib. `snapshot_profile()` records the first family of the Matplotlib
+Matplotlib. `ep.style.snapshot_profile()` records the first family of the Matplotlib
 font stack that Matplotlib can find installed, skipping a listed font that is
 missing. When Pango does not list that family (Matplotlib's bundled DejaVu
 Sans, for example), `render` registers the file Matplotlib resolved with
@@ -113,7 +113,7 @@ A scene that builds its own `manim.Text` beside a rendered panel calls
 ### Point sizes
 
 `Units` converts lengths in points at the delivered size to Manim's scene
-units, `font_size`, and `stroke_width`, and back. `Units()` is Manim's own
+units, `font_size`, and `stroke_width`, and back. `ep.manim.Units()` is Manim's own
 font-size points (72 per scene unit, so `font_size(pt) == pt`);
 `Units.for_frame(pixel_height, dpi)` derives the scale from the delivered
 frame, for a scene whose sizes must match a still shown at that resolution:

@@ -59,7 +59,7 @@ def show_strip(fig, update, values, titles=None):
 
 ## Head draw with a backing line
 
-Use `head_draw(..., behind=)` when a curve needs a halo that must stay
+Use `ep.motion.head_draw(..., behind=)` when a curve needs a halo that must stay
 behind the bright drawing head.
 
 ```{code-cell} python
@@ -149,7 +149,7 @@ Both end as the original text with no pen left over.
 
 ## A passing flash
 
-Use `circumscribe(style="flash")` to point out a subject once and leave its
+Use `ep.motion.circumscribe(style="flash")` to point out a subject once and leave its
 appearance unchanged.
 
 ```{code-cell} python
@@ -171,7 +171,7 @@ The tapered comet runs clockwise from the top and disappears at the end.
 
 ## Hold an emphasis at its peak
 
-Use `indicate(shape="plateau")` when the viewer needs time to read an
+Use `ep.motion.indicate(shape="plateau")` when the viewer needs time to read an
 emphasis before it returns to the original appearance.
 
 ```{code-cell} python
@@ -211,7 +211,7 @@ with `plan.value(k, "click.answer")` after the moves it settles.
 
 ## Grow an arrow at one shape
 
-Use `arrow(grow="scaled")` when a vector should grow from its tail with
+Use `ep.motion.arrow(grow="scaled")` when a vector should grow from its tail with
 its stroke and head scaled together.
 
 ```{code-cell} python
@@ -223,7 +223,7 @@ show_strip(fig, vector.update, (0.2, 0.55, 1.0))
 
 ## Build axes in small events
 
-Use `build_axes(style="staccato")` when the viewer should read the spine,
+Use `ep.motion.build_axes(style="staccato")` when the viewer should read the spine,
 ticks, numbers and axis label as separate events.
 
 ```{code-cell} python
@@ -245,7 +245,7 @@ The limits stay fixed, and the last frame is the axes as made.
 
 ## Drift unmatched equation glyphs
 
-Use `transform(fade_toward=True)` when removed and added material should
+Use `ep.motion.transform(fade_toward=True)` when removed and added material should
 fade toward each other while the matching equation terms travel.
 
 ```{code-cell} python

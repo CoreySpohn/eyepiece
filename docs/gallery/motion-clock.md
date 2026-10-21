@@ -70,7 +70,7 @@ print(f"frame {k}: zoom progress {s:.2f}, view width {path(s)[2]:.2f} lambda/D")
 ```
 
 Every frame of a span has moved: a span from `s` to `e` seconds covers frames
-`frame_count(s)` up to `max(k0 + 1, frame_count(e))`, frame `i` of its `n`
+`ep.clock.frame_count(s)` up to `max(k0 + 1, ep.clock.frame_count(e))`, frame `i` of its `n`
 frames reaches progress `(i + 1) / n` before easing, and the last frame shows
 the target exactly. The middle frame of a span is `k0 + (n - 1) // 2`. The four plain easing curves all fix
 both ends and pass through one half at the midpoint; they differ in how gently
@@ -103,11 +103,11 @@ after another without float drift (a `Time` adds exactly). Without `at=`, a
 span starts at the cursor `now` and moves it on; with `at=` it starts where
 told and the cursor stays. `together` starts a group at `now` and `stagger`
 spaces its targets. A subject span writes the knob of its own name, so
-`enter("star")` ramps `star` from 0 to 1, `indicate("speckle")` ramps
+`ep.clock.Timeline.enter("star")` ramps `star` from 0 to 1, `ep.clock.Timeline.indicate("speckle")` ramps
 `indicate.speckle`, and a caption writes `caption.<name>`.
 
 Given a `Narration`, the same function lays each span on the word that names
-it. A mark `{show:star}` starts `enter("star")` a tenth of a second before the
+it. A mark `{show:star}` starts `ep.clock.Timeline.enter("star")` a tenth of a second before the
 word, `{indicate:speckle}` centers the indication on its word, and
 `{circumscribe:halo}` starts the outline on it. Lines open in script order
 with `line`, and a line lasts until its speech and padding end or its last

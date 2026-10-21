@@ -215,7 +215,7 @@ can drift within the line.
 Captions sit at the bottom of the picture unless a cue says otherwise. Where
 the figure has text there, `eyepiece.narration.caption_line(fig, at=pose,
 times=...)` returns the WebVTT `line:` percentage of a position that no visible
-text touches at the sampled times, and `write_vtt(..., line=...)` writes it on
+text touches at the sampled times, and `ep.narration.write_vtt(..., line=...)` writes it on
 every cue. The alternative is a caption band reserved in the clip layout, a
 strip no panel or label uses, with its percentage passed to `write_vtt`
 directly. `caption_line` raises when no position is clear, which is the sign

@@ -88,7 +88,7 @@ on, for the caller to fill: the insets `curve_insets` stands over the marks
 of a curve, or the panels `rail_panels` hangs under the planes of a rail.
 They are axes, not artists, so they never go under an artist key, and the
 tuple is empty for every primitive that creates none. A dial drawn by
-`phasor(at=...)` is different: there the inset is the axes the phasor draws
+`ep.plot.phasor(at=...)` is different: there the inset is the axes the phasor draws
 on, so it is the result's `.ax`.
 
 The prepared renderers return their own result types, described under
@@ -236,7 +236,7 @@ and `Producer`, PNG carries no time chunk, and the SVG hash salt is fixed, so
 two saves of one figure are byte-identical and a PDF does not change when
 matplotlib is upgraded. A different figure gives a different file. An explicit
 `metadata=` still wins key by key, and the provenance keys a stamp writes stay.
-`stamp(fig, reserve=True)` reserves the stamp's band in the layout and returns
+`ep.render.stamp(fig, reserve=True)` reserves the stamp's band in the layout and returns
 a `PlotResult`; its date defaults to the commit date of the script's
 repository, else today.
 
@@ -303,7 +303,7 @@ in a small runnable example.
   own, the ink of the mark they name. At presence 1 every label is exactly in
   place, so the rest state is the still. Labels and callouts only: a group
   holding a data mark raises, because a data mark never drifts.
-- `write` and `equation(...).update(reveal="write")`: ink is laid down glyph
+- `write` and `ep.motion.equation(...).update(reveal="write")`: ink is laid down glyph
   by glyph in reading order. Each glyph first traces its outline with a thin
   pen (0.75 pt by default), then fills; progress is linear inside each
   glyph's window, the easing lives only in when the windows open, and a
@@ -312,7 +312,7 @@ in a small runnable example.
   the real text is a cross-fade with no frame lighter than both its ends.
   Nothing outside the text moves. At `u = 1` the text, or the equation as
   made, draws itself: the rest state is the still.
-- `circumscribe(style="flash")`: a comet `time_width` of the perimeter long
+- `ep.motion.circumscribe(style="flash")`: a comet `time_width` of the perimeter long
   passes once round the outline, from the top and clockwise, on the eased
   progress. Its head runs from the start of the outline to `time_width` past
   the end, so it grows out of the top, flies round at constant length, and
@@ -320,7 +320,7 @@ in a small runnable example.
   width and opacity at the head to 40% width at the tail and adds no hue.
   Only the comet moves; the target is never touched. At `u = 0` and `u = 1`
   the frame is the still.
-- `indicate(shape="plateau")`: the pulse rises on the ease over the first
+- `ep.motion.indicate(shape="plateau")`: the pulse rises on the ease over the first
   35% of the progress, holds its peak through the middle 30%, and falls
   symmetrically, so the emphasis is read at its peak. Only widths, sizes and
   the tint toward the text ink move, never positions or hue, and at both ends
@@ -337,13 +337,13 @@ in a small runnable example.
   position and no hue is added. At `u = 0` the figure is as it was; at
   `u = 1` it is the landed still, whatever path the knob took: the geometry
   at its own width, the dot set, the number bold and the ruler gone.
-- `arrow(grow="scaled")`: the arrow grows as the drawn arrow scaled by `u`
+- `ep.motion.arrow(grow="scaled")`: the arrow grows as the drawn arrow scaled by `u`
   about its tail (about its middle for the two-headed kinds): line width and
   head size are `u` times their drawn values, so the shape is the same at
   every `u`. The ends move along the line from tail to head and nothing else
   moves. At `u = 0` nothing is drawn and at `u = 1` the arrow is exactly as
   made.
-- `build_axes(style="staccato")`: the build is a sequence of small events.
+- `ep.motion.build_axes(style="staccato")`: the build is a sequence of small events.
   The spine draws on over the first 40% of each axis's build, then each tick
   appears in turn along the axis and then each number, every one eased in its
   own window of equal length, so at most one of them is part way in at a
@@ -353,7 +353,7 @@ in a small runnable example.
   The spine has a longer window than a tick because, in an equal one, it
   swept across in a frame or two and the clip read as a jump. At `u = 1` the
   axes are exactly as made.
-- `transform(fade_toward=True)`: glyphs with no counterpart fade while they
+- `ep.motion.transform(fade_toward=True)`: glyphs with no counterpart fade while they
   drift, at the same time as the matched glyphs move, instead of fading in
   place before and after the motion. The leaving glyphs move together toward
   the center of the arriving ones (of the whole target when none arrive) and
@@ -362,7 +362,7 @@ in a small runnable example.
   rest states are those of the plain transform: `eq_a` at `u = 0` and `eq_b`
   at `u = 1`.
 - `photons` (exchangeable draws): an image develops from its own photons.
-  `arrivals(rate, exposure, seed=)` draws one seeded Poisson process per pixel
+  `ep.motion.arrivals(rate, exposure, seed=)` draws one seeded Poisson process per pixel
   on the exposure clock: the counts never decrease, the arrivals between two
   clock times are independent and Poisson with mean rate times the elapsed
   exposure, and the same rate, clock and seed replay the same photons. The
@@ -375,7 +375,7 @@ in a small runnable example.
   they gave the pixel's displayed value (a pixel's first photon fully) and
   fade within the window. At `u = 1` the final counts show with no glow, the
   plain still. The cuts are the draws: `steps(knob)` names their frames for
-  `check_clip`, and every other check runs as usual. `aperture_counts(mark,
+  `check_clip`, and every other check runs as usual. `ep.motion.aperture_counts(mark,
   aperture, leak=)` reads its numbers off the mark, the drawn pixels of the
   sample shown, so a readout beside the image changes on the same frames and
   never disagrees with it.
@@ -550,7 +550,7 @@ which the reader can recover it. Without one the reader assumes linear.
 ## Labels use backing boxes
 
 A label that needs separation from the marks beneath it uses a backing box,
-not a stroked halo around its glyphs. `backing()` supplies the box and
+not a stroked halo around its glyphs. `ep.style.backing()` supplies the box and
 `callout` uses it by default. The box belongs to the text and follows its
 opacity and position during arrivals. `eyepiece.testing.halo_faults` lists
 text drawn with `patheffects.withStroke`; `assert_no_halos` raises on it.

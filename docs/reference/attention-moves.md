@@ -13,7 +13,7 @@ result whose `update(u)` sets progress absolutely and whose rest state, the
 state it is made in, is the one a still shows: a flight is absent, a callout, a
 leader and a link are fully drawn. Drawing never raises, so a still or a PDF
 save is not aborted half way: a leader or link that breaks the connector rules
-of the evidence guide is found by its `faults()` or by `audit(fig)`, which
+of the evidence guide is found by its `faults()` or by `ep.testing.audit(fig)`, which
 raises `AttentionFault` for the strict ones.
 
 `Stage`, `build_axes`, and `collapse` follow the same rule.
