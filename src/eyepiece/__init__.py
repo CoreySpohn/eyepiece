@@ -35,6 +35,7 @@ that needs them.
 
 import importlib
 import importlib.util
+import warnings
 
 from eyepiece._version import __version__
 
@@ -165,10 +166,10 @@ __all__ = [
     "save_fig",
     "scatter_values",
     "schematic",
+    "shade_intervals",
     "show_field",
     "signed_trace",
     "sky_fan",
-    "spans",
     "spotlight",
     "stagger",
     "stamp",
@@ -218,7 +219,7 @@ _LAZY_EXPORTS = {
     "scatter_values": ("eyepiece._scatter", "scatter_values"),
     "log_zero_floor": ("eyepiece.marks", "log_zero_floor"),
     "ref_line": ("eyepiece.marks", "ref_line"),
-    "spans": ("eyepiece.marks", "spans"),
+    "shade_intervals": ("eyepiece.marks", "shade_intervals"),
     "interval_points": ("eyepiece.stats", "interval_points"),
     "backing": ("eyepiece._style", "backing"),
     "neutral": ("eyepiece._style", "neutral"),
@@ -350,6 +351,13 @@ _LAZY_EXPORTS = {
     "weighted_draws": ("eyepiece._weighted", "weighted_draws"),
 }
 
+# Deprecated name -> the public name that replaces it. Each resolves to the
+# replacement with a DeprecationWarning, is left out of __all__ and is never
+# cached, so every access warns.
+_DEPRECATED = {
+    "spans": "shade_intervals",
+}
+
 
 def __getattr__(name):
     """Resolve a public name on first access (PEP 562), then cache it.
@@ -358,7 +366,16 @@ def __getattr__(name):
     ``eyepiece.mpl``) imports and returns that submodule, as plain attribute
     access did before the package loaded lazily. Only the requested
     submodule loads, so ``import eyepiece.prepared`` stays free of pyplot.
+    A deprecated name warns and returns its replacement.
     """
+    if name in _DEPRECATED:
+        new = _DEPRECATED[name]
+        warnings.warn(
+            f"eyepiece.{name} is deprecated; use eyepiece.{new}",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return __getattr__(new)
     try:
         module_name, attr_name = _LAZY_EXPORTS[name]
     except KeyError:

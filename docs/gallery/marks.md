@@ -22,18 +22,18 @@ hwostyle.use("dark")
 plt.rcParams["savefig.dpi"] = 100
 ```
 
-## Excluded regions: `spans`
+## Excluded regions: `shade_intervals`
 
-`spans` shades the runs where a boolean mask is True, placing the boundaries halfway
-between samples. Set `log=True` for geometric midpoints, or supply explicit
-`intervals` whose infinite ends clip to the current limits.
+`shade_intervals` shades the runs where a boolean mask is True, placing the
+boundaries halfway between samples. Set `log=True` for geometric midpoints, or
+supply explicit `intervals` whose infinite ends clip to the current limits.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 x = np.arange(4)
 ax.plot(x, [0.2, 0.6, 0.8, 0.9])
 in_range = np.array([True, False, False, True])
-ep.spans(x, ~in_range, ax=ax)
+ep.shade_intervals(x, ~in_range, ax=ax)
 ax.set(xlabel="position", ylabel="response")
 ```
 
