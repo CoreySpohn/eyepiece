@@ -805,3 +805,20 @@ def test_keywords_for_later_rules_are_accepted():
         )
         == []
     )
+
+
+@pytest.mark.parametrize("value", [1.3e-4, 1e-8, 1e-15, 1000, -2.5e2, 0])
+def test_scientific_pair_round_trips_through_the_screen_number_gate(readout, value):
+    screen, spoken = nr.scientific(value, ".1e")
+    line = nr.Line("scientific", "The value is " + spoken + ".")
+    narration = nr.Narration.estimated(nr.Script((line,)))
+    readout.set_text(screen)
+    kwargs = dict(
+        at=lambda t: None,
+        readouts={("scientific", 3): readout},
+        ceiling=200,
+        short_ceiling=200,
+    )
+    assert ept.timing_faults(narration, **kwargs) == []
+    readout.set_text(nr.scientific(value * 10 if value else 1, ".1e")[0])
+    assert "number-late" in [f.kind for f in ept.timing_faults(narration, **kwargs)]
