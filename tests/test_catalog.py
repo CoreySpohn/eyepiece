@@ -3,6 +3,7 @@
 import importlib
 import inspect
 import re
+import warnings
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,16 @@ NAMESPACES = (
 # Public names the catalog may leave out, each with the reason. Empty while
 # the catalog lists every public name; add an entry here, not a silent skip.
 NOT_CATALOGED = {}
+
+# Deprecated aliases, as the catalog writes them, and their replacements. The
+# task tables must use the replacement; the "Deprecated names" table lists both.
+DEPRECATED = {
+    "ept.Span": "ept.Window",
+    "spans": "shade_intervals",
+    "motifs.resolve_role": "role",
+    "tl.pulse": "tl.indicate",
+    "tl.ring": "tl.circumscribe",
+}
 
 # Prefixes the catalog uses, as its introduction states them.
 PREFIXES = {
@@ -139,3 +150,25 @@ def test_catalog_names_resolve(span):
         return
     for keyword in re.findall(r"(\w+)=", call.split(")")[0]):
         assert keyword in params, f"{span!r}: no parameter {keyword!r}"
+
+
+@pytest.mark.parametrize("span", _use_cells())
+def test_catalog_uses_no_deprecated_alias(span):
+    match = NAME.match(span)
+    if match:
+        name = match.group(0).rstrip(".")
+        assert name not in DEPRECATED, f"{span!r}: use {DEPRECATED.get(name)}"
+
+
+@pytest.mark.parametrize(("old", "new"), DEPRECATED.items())
+def test_deprecated_aliases_listed_and_still_resolve(old, new):
+    text = CATALOG.read_text()
+    section = text[text.index("## Deprecated names") :]
+    row = next(line for line in section.splitlines() if f"`{old}(" in line)
+    assert f"`{new}(" in row, f"{old} row does not name {new}"
+    # Some aliases warn on access and some on call; tests/test_deprecated_names.py
+    # pins the warnings. Here the alias must still resolve beside its replacement.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert _resolve(old) is not None
+    assert _resolve(new) is not None
