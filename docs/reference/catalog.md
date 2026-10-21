@@ -135,6 +135,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | a labeled bracket | `bracket(ax, x0, x1, y, text, depth=)` | Square bracket labeled on its far side | [scene](../gallery/scene.md) |
 | a label that reads over marks or pixels | `backing(alpha=)` | `bbox` plate in the background color | [stats](../gallery/stats.md) |
 | a dashed circle or path legible on any pixels | `overlay_circle`, `overlay_line` | Dashed mark with an underlay | [images](../gallery/images.md) |
+| quiet the frame of a line or scatter panel | `quiet_spines(ax, keep=, level=)` | Hides unkept spines and optionally softens the rest | [stats](../gallery/stats.md) |
 | a neutral scenery tone | `neutral(level)` | Gray between background and text ink | [stats](../gallery/stats.md) |
 | the brand color of a role | `role(name, mode=)` | Hex color for a named role or a neutral rank, in the active or a given mode | [stats](../gallery/stats.md) |
 | a pixel-edge extent and matching axis labels | `extent_lod_from_pixels`, `extent_lod`, `extent_arcsec`, `extent_au`, `label_lod`, `label_arcsec`, `label_au` | Extents and labels for image axes | [images](../gallery/images.md) (`extent_lod_from_pixels`, `label_lod`), [profiles](../gallery/profiles.md) (prose: `extent_arcsec`, `extent_au`); the rest API reference |
