@@ -130,3 +130,18 @@ def test_hop_cuts_include_color_changes_inside_a_stationary_box():
     assert faults
     assert faults[0].time == pytest.approx(0.1)
     assert faults[0].value == 10
+
+
+def test_a_hop_report_survives_an_invisible_first_artist():
+    fig, dot, glider, label = _scene()
+    dot.set_visible(False)
+    at = _poser(dot, glider, label, every=10)
+    faults = ept.motion_faults(
+        fig,
+        at,
+        TIMES,
+        hops=[{"artists": [dot, glider], "rate": 12}],
+        kinds=["hop-rate"],
+    )
+    assert faults
+    assert all(f.kind == "hop-rate" and "Line2D" in f.detail for f in faults)

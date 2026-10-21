@@ -1328,9 +1328,11 @@ class _Trace:
     def label(self, artist):
         if isinstance(artist, Text):
             return _name(artist)
-        index = [a for a in self.order if type(a) is type(artist)].index(artist)
         tag = artist.get_gid() or artist.get_label()
         tag = "" if not tag or str(tag).startswith("_") else f" {tag!r}"
+        if artist not in self.boxes:
+            return f"{type(artist).__name__}{tag}"
+        index = [a for a in self.order if type(a) is type(artist)].index(artist)
         x, y = self.first_box(artist)[:2]
         return f"{type(artist).__name__}{tag} #{index} at ({x:.0f}, {y:.0f})"
 
