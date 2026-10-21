@@ -215,5 +215,7 @@ def test_a_cut_move_covers_its_own_caption_by_default(cut_kind):
     else:
         move["hops"] = [{"artists": mark.contract.draws, "rate": 4}]
     at = _poser(mark, label, jump_at=cuts[2])
-    faults = ept.motion_faults(fig, at, times, moves=[move], steps=cuts, kinds=["jump"])
+    faults = ept.motion_faults(
+        fig, at, times, moves=[move], steps=cuts, kinds=["jump", "hop-rate"]
+    )
     assert faults == []

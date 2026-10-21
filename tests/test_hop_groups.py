@@ -96,6 +96,21 @@ def test_a_move_contract_can_name_the_hops():
     assert ept.motion_faults(fig, at, TIMES, moves=moves) == []
 
 
+def test_a_smooth_caption_arrival_does_not_count_as_hops():
+    fig, dot, glider, label = _scene()
+    pose = _poser(dot, glider, label, every=10)  # 3 draws per second
+
+    def at(t):
+        pose(t)
+        label.set_alpha(min(1.0, t / 0.5))
+
+    moves = [
+        {"artists": [glider]},
+        {"artists": [dot, label], "hops": [{"artists": [dot], "rate": 3.0}]},
+    ]
+    assert ept.motion_faults(fig, at, TIMES, moves=moves) == []
+
+
 def test_a_hop_without_a_rate_is_refused():
     fig, dot, glider, label = _scene()
     at = _poser(dot, glider, label, every=10)

@@ -1515,7 +1515,7 @@ def _check_teleports(trace, tol, jump_ratio):
     return found
 
 
-def _draw_cuts(trace, drawn, step_ks):
+def _draw_cuts(trace, drawn, step_ks, captions=()):
     """Masks of the draw group's boxes at each declared step where it changes.
 
     Returns:
@@ -1529,13 +1529,16 @@ def _draw_cuts(trace, drawn, step_ks):
     height, width = trace.frames[0].shape[:2]
     # Resolve each artist's crops once for the group. Comparing these small
     # rectangles avoids gathering whole frames through a boolean mask.
-    regions = {}
-    for artist in drawn:
-        for k in trace.boxes.get(artist, {}):
-            x0, y0, x1, y1 = trace.box(artist, k)
-            rows = slice(max(int(height - y1 - 2), 0), max(int(height - y0 + 2) + 1, 0))
-            cols = slice(max(int(x0 - 2), 0), max(int(x1 + 2) + 1, 0))
-            regions.setdefault(k, []).append((rows, cols))
+    regions, caption_regions = {}, {}
+    for artists, target in ((drawn, regions), (captions, caption_regions)):
+        for artist in artists:
+            for k in trace.boxes.get(artist, {}):
+                x0, y0, x1, y1 = trace.box(artist, k)
+                rows = slice(
+                    max(int(height - y1 - 2), 0), max(int(height - y0 + 2) + 1, 0)
+                )
+                cols = slice(max(int(x0 - 2), 0), max(int(x1 + 2) + 1, 0))
+                target.setdefault(k, []).append((rows, cols))
     for k in sorted(step_ks):
         if k < 1:
             continue
@@ -1546,7 +1549,9 @@ def _draw_cuts(trace, drawn, step_ks):
         ):
             continue
         mask = np.zeros((height, width), dtype=bool)
-        for crop in crops:
+        # Captions share the mask at the draw's cuts, but their own arrival
+        # or other continuous changes do not create cuts or count as hops.
+        for crop in crops + caption_regions.get(k - 1, []) + caption_regions.get(k, []):
             mask[crop] = True
         cuts[k] = mask
     return cuts
@@ -2317,8 +2322,9 @@ def motion_faults(
             "rate": draws_per_second}`` (a declared move's ``hops`` adds to
             them). The group's cuts are excused wherever they fall, with no
             declared step, and its artists are not reported as spikes. Text
-            artists declared on the same move join its hop groups as captions; the
-            picture outside the group's boxes keeps every check, as does
+            artists declared on the same move join its hop groups as captions
+            at the hop artists' cuts, without counting as redraws themselves.
+            The picture outside the group's boxes keeps every check, as does
             every other artist. The group is reported as a ``"hop-rate"``
             fault when the declared rate, or the rate at which the clip
             actually redraws it, is above 8 draws per second, or the clip
@@ -2422,7 +2428,7 @@ def _cut_captions(move):
 
 
 def _hop_groups(hops, moves):
-    """The declared hop groups as ``[(artists, rate)]``, checked.
+    """The declared hop groups as ``[(artists, rate, captions)]``, checked.
 
     Raises:
         ValueError: If a group names no artists or no positive rate.
@@ -2446,7 +2452,7 @@ def _hop_groups(hops, moves):
                 f"a hop group needs a positive draw rate in draws per second, "
                 f"got {rate!r}"
             )
-        found.append((tuple(dict.fromkeys((*artists, *captions))), float(rate)))
+        found.append((artists, float(rate), captions))
     return found
 
 
@@ -2456,7 +2462,7 @@ def _check_hop_rate(trace, hop_groups, hop_cuts):
     `hop_cuts` holds, per group, the sample indices at which its pixels change.
     """
     found = []
-    for (artists, rate), ks in zip(hop_groups, hop_cuts, strict=True):
+    for (artists, rate, _), ks in zip(hop_groups, hop_cuts, strict=True):
         times = [trace.times[k] for k in ks]
         end = 0
         windows = []
@@ -2546,7 +2552,7 @@ def _analyze(
         if own_draws:
             group.update(_cut_captions(move))
     hop_groups = _hop_groups(hops, moves)
-    hopped = {a for artists, _ in hop_groups for a in artists}
+    hopped = {a for artists, _, captions in hop_groups for a in (*artists, *captions)}
     group |= hopped
     drawn = [a for a in trace.order if a in group]
     allowed += [(frozenset(p), *everywhere) for p in itertools.combinations(drawn, 2)]
@@ -2563,8 +2569,10 @@ def _analyze(
     # A hop group cuts wherever it changes, and each cut is excused like a step.
     hop_cuts = []
     every = range(1, len(trace.times))
-    for artists, _ in hop_groups if trace.frames else ():
-        own = _draw_cuts(trace, [a for a in trace.order if a in artists], every)
+    for artists, _, captions in hop_groups if trace.frames else ():
+        own = _draw_cuts(
+            trace, [a for a in trace.order if a in artists], every, captions
+        )
         hop_cuts.append(sorted(own))
         for k, mask in own.items():
             cuts[k] = cuts[k] | mask if k in cuts else mask
