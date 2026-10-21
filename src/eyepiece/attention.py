@@ -3284,6 +3284,7 @@ class _Underline(Line2D):
         self._width = linewidth
         self._override_color = color
         self._fraction = 0.0
+        self._opacity = 0.0
 
     def draw(self, renderer):
         text = self._target
@@ -3304,6 +3305,10 @@ class _Underline(Line2D):
         self.set_color(
             text.get_color() if self._override_color is None else self._override_color
         )
+        opacity = to_rgba(text.get_color(), text.get_alpha())[3]
+        if self._override_color is not None:
+            opacity *= to_rgba(self._override_color)[3]
+        self.set_alpha(self._opacity * opacity)
         super().draw(renderer)
 
 
@@ -3320,7 +3325,9 @@ def underline(
 
     Args:
         text_artist: A single-line Matplotlib Text, including one of `words`.
-        color: Stroke color. None follows the current text color.
+        color: Stroke color. None follows the current text color. The stroke
+            follows the effective text opacity and multiplies it by any
+            explicit stroke color opacity and the animation fade.
         offset: Distance below the baseline, as a fraction of font size.
         linewidth: Stroke width, as a fraction of font size.
         draw: Fraction of progress spent drawing on, in (0, 1).
@@ -3370,7 +3377,7 @@ def underline(
         line.set_visible(0 < u < 1)
         line._fraction = min(1.0, max(0.0, _ease(min(u / draw, 1.0), ease)))
         fade = max(0.0, (u - draw - hold) / (1 - draw - hold))
-        line.set_alpha(1.0 - min(1.0, max(0.0, _ease(fade, ease))))
+        line._opacity = 1.0 - min(1.0, max(0.0, _ease(fade, ease)))
 
     update(1.0)
     return PlotResult(

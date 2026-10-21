@@ -112,6 +112,56 @@ def test_default_underline_color_follows_text_between_draws():
     assert to_rgba(mark.artists["line"].get_color()) == to_rgba("blue")
 
 
+@pytest.mark.parametrize("override", [False, True])
+def test_transparent_underline_color_leaves_no_pixels(override):
+    fig, ax = plt.subplots()
+    target = ax.text(0.2, 0.5, "transparent", color=(0, 0, 0, 0))
+    mark = ep.underline(target, color=(0, 0, 0, 0) if override else None)
+    still = _pixels(fig)
+    mark.update(0.5)
+    np.testing.assert_array_equal(_pixels(fig), still)
+
+
+@pytest.mark.parametrize("color", [None, "black"])
+@pytest.mark.parametrize("alpha", [None, 0.4])
+def test_underline_follows_stage_hidden_text_between_draws(color, alpha):
+    fig, ax = plt.subplots()
+    target = ax.text(0.2, 0.5, "staged", alpha=alpha)
+    stage = ep.Stage({"label": target})
+    mark = ep.underline(target, color=color)
+    mark.update(0.5)
+    shown = _pixels(fig)
+    stage.set(shown=[])
+    hidden = _pixels(fig)
+    mark.update(0)
+    np.testing.assert_array_equal(hidden, _pixels(fig))
+    stage.rest()
+    mark.update(0.5)
+    np.testing.assert_array_equal(_pixels(fig), shown)
+
+
+@pytest.mark.parametrize(
+    "color, alpha, expected",
+    [(None, None, 0.4), (None, 0.3, 0.3), ((0, 0, 0, 0.5), None, 0.2)],
+)
+@pytest.mark.parametrize("u, fade", [(0.5, 1), (0.825, 0.5)])
+def test_underline_multiplies_animation_and_effective_opacity(
+    color, alpha, expected, u, fade
+):
+    fig, ax = plt.subplots(facecolor="white")
+    ax.set_axis_off()
+    target = ax.text(
+        0.2, 0.5, "opacity", fontsize=40, color=(0, 0, 0, 0.4), alpha=alpha
+    )
+    mark = ep.underline(target, color=color, linewidth=0.2, ease="linear")
+    mark.update(u)
+    pixels = _pixels(fig)
+    line = mark.artists["line"]
+    x, y = np.mean(line.get_xydata(), axis=0).astype(int)
+    ink = 1 - pixels[pixels.shape[0] - 1 - y, x, 0] / 255
+    assert ink == pytest.approx(expected * fade, abs=2 / 255)
+
+
 def test_skipped_underline_knob_is_optional_like_other_attention():
     tl = ep.Timeline()
     tl.underline("word")
