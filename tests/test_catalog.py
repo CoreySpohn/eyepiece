@@ -13,6 +13,9 @@ import eyepiece
 CATALOG = Path(__file__).resolve().parents[1] / "docs" / "reference" / "catalog.md"
 NAMESPACES = (
     "eyepiece",
+    "eyepiece.plot",
+    "eyepiece.clock",
+    "eyepiece.motion",
     "eyepiece.narration",
     "eyepiece.testing",
     "eyepiece.render",
@@ -30,10 +33,10 @@ NOT_CATALOGED = {}
 # Deprecated aliases, as the catalog writes them, and their replacements. The
 # task tables must use the replacement; the "Deprecated names" table lists both.
 DEPRECATED = {
-    "ept.Span": "ept.Window",
-    "spans": "shade_intervals",
-    "radial_profile_plot": "plot_radial_image",
-    "motifs.resolve_role": "role",
+    "testing.Span": "testing.Window",
+    "spans": "plot.shade_intervals",
+    "radial_profile_plot": "plot.plot_radial_image",
+    "motifs.resolve_role": "style.role",
     "tl.pulse": "tl.indicate",
     "tl.ring": "tl.circumscribe",
 }
@@ -41,15 +44,15 @@ DEPRECATED = {
 # Prefixes the catalog uses, as its introduction states them.
 PREFIXES = {
     "ep": "eyepiece",
-    "nr": "eyepiece.narration",
+    **{ns.removeprefix("eyepiece."): ns for ns in NAMESPACES[1:]},
     "synth": "eyepiece.narration.synth",
-    "ept": "eyepiece.testing",
-    "render": "eyepiece.render",
-    "motifs": "eyepiece.motifs",
-    "style": "eyepiece.style",
-    "mpl": "eyepiece.mpl",
-    "manim": "eyepiece.manim",
-    "prepared": "eyepiece.prepared",
+}
+# Existing aliases remain callable, but the catalog has one path per task.
+CANONICAL_ALIASES = {
+    "render.frame_faults": "testing.frame_faults",
+    "render.assert_frames_pure": "testing.assert_frames_pure",
+    "render.same_picture": "testing.same_picture",
+    "testing.caption_line": "narration.caption_line",
 }
 INSTANCES = {"tl": eyepiece.Timeline, "plan": eyepiece.Plan, "stage": eyepiece.Stage}
 NAME = re.compile(r"[A-Za-z_][\w.]*")
@@ -62,11 +65,24 @@ def _module(name):
     return importlib.import_module(name)
 
 
-def _catalog_words():
-    words = set()
-    for span in re.findall(r"`([^`]+)`", CATALOG.read_text()):
-        words.update(re.findall(r"[A-Za-z_]\w*", span))
-    return words
+def _catalog_paths():
+    """Qualified paths in task tables, excluding deprecated aliases."""
+    paths = set()
+    for span in _use_cells():
+        match = NAME.match(span)
+        if not match:
+            continue
+        parts = match.group(0).rstrip(".").split(".")
+        paths.add(".".join(parts))
+        paths.add(".".join(parts[:2]) if parts[0] in PREFIXES else parts[0])
+    return paths
+
+
+def _canonical_path(namespace, name):
+    if namespace == "eyepiece":
+        return name
+    path = f"{namespace.removeprefix('eyepiece.')}.{name}"
+    return CANONICAL_ALIASES.get(path, path)
 
 
 def _use_cells():
@@ -98,12 +114,10 @@ def _resolve(dotted):
     elif head in PREFIXES:
         obj = _module(PREFIXES[head])
     else:
-        owners = [ns for ns in NAMESPACES if ns != "eyepiece.manim"]
-        found = [
-            getattr(_module(ns), head) for ns in owners if hasattr(_module(ns), head)
-        ]
-        assert found, f"{head!r} is not public in any eyepiece namespace"
-        obj = found[0]
+        assert head in eyepiece.__all__ or dotted in DEPRECATED, (
+            f"{head!r} needs its canonical task namespace"
+        )
+        obj = getattr(eyepiece, head)
     for part in rest:
         if hasattr(obj, part):
             obj = getattr(obj, part)
@@ -117,10 +131,13 @@ def _resolve(dotted):
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_catalog_lists_every_public_name(namespace):
     public = getattr(_module(namespace), "__all__", ())
+    paths = _catalog_paths()
     missing = sorted(
-        name
+        _canonical_path(namespace, name)
         for name in public
-        if name not in _catalog_words() and name not in NOT_CATALOGED
+        if _canonical_path(namespace, name) not in paths
+        and not (name in eyepiece.__all__ and name in paths)
+        and name not in NOT_CATALOGED
     )
     assert not missing, f"{namespace} names missing from catalog.md: {missing}"
 
@@ -159,6 +176,24 @@ def test_catalog_uses_no_deprecated_alias(span):
     if match:
         name = match.group(0).rstrip(".")
         assert name not in DEPRECATED, f"{span!r}: use {DEPRECATED.get(name)}"
+
+
+@pytest.mark.parametrize("span", _use_cells())
+def test_task_rows_use_canonical_paths(span):
+    match = NAME.match(span)
+    assert match, span
+    name = match.group(0).rstrip(".")
+    head, *rest = name.split(".")
+    if head == "ep":
+        assert rest, span
+        assert rest[0] in eyepiece.__all__ or rest[0] in PREFIXES, span
+        name = name.removeprefix("ep.")
+        head, *rest = name.split(".")
+    assert head in eyepiece.__all__ or head in INSTANCES or head in PREFIXES, span
+    assert name not in CANONICAL_ALIASES, f"{span!r}: use {CANONICAL_ALIASES.get(name)}"
+    if head in PREFIXES and head not in {"ep", "synth"}:
+        assert rest, span
+        assert rest[0] in _module(PREFIXES[head]).__all__, span
 
 
 @pytest.mark.parametrize(("old", "new"), DEPRECATED.items())
