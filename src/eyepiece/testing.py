@@ -63,7 +63,6 @@ Example::
     ept.assert_readable(fig, at=clip.pose, times=cue_times)
 """
 
-import importlib
 import itertools
 import math
 import numbers
@@ -89,6 +88,7 @@ from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
+from eyepiece import _lazy_lookup
 from eyepiece._equation import _binding_rgb
 from eyepiece._meaning import (
     MEANING_KINDS,
@@ -113,6 +113,7 @@ from eyepiece.attention import _data_colors, _default_avoid, _renderer
 if TYPE_CHECKING:
     from eyepiece._render_pool import assert_frames_pure, frame_faults
     from eyepiece._render_poster import same_picture
+    from eyepiece.attention import AttentionFault, audit
 
 __all__ = [
     "GROUNDING_KINDS",
@@ -123,6 +124,7 @@ __all__ = [
     "TIMING_KINDS",
     "VENUES",
     "VENUE_FPS",
+    "AttentionFault",
     "ClipError",
     "ClipReport",
     "GroundingError",
@@ -152,6 +154,7 @@ __all__ = [
     "assert_readable",
     "assert_speech_rate",
     "assert_timing",
+    "audit",
     "caption_line",
     "check_clip",
     "frame_faults",
@@ -3831,9 +3834,11 @@ def assert_clip(fig, draw, plan, **kwargs) -> ClipReport:
 
 
 _LAZY_EXPORTS = {
-    "assert_frames_pure": "eyepiece._render_pool",
-    "frame_faults": "eyepiece._render_pool",
-    "same_picture": "eyepiece._render_poster",
+    "AttentionFault": ("eyepiece.attention", "AttentionFault"),
+    "audit": ("eyepiece.attention", "audit"),
+    "assert_frames_pure": ("eyepiece._render_pool", "assert_frames_pure"),
+    "frame_faults": ("eyepiece._render_pool", "frame_faults"),
+    "same_picture": ("eyepiece._render_poster", "same_picture"),
 }
 _DEPRECATED = {"Span": "Window"}
 
@@ -3841,9 +3846,7 @@ _DEPRECATED = {"Span": "Window"}
 def __getattr__(name):
     """Load shared render checks or resolve a deprecated name."""
     if name in _LAZY_EXPORTS:
-        value = getattr(importlib.import_module(_LAZY_EXPORTS[name]), name)
-        globals()[name] = value
-        return value
+        return _lazy_lookup(name, _LAZY_EXPORTS, globals())
     if name in _DEPRECATED:
         new = _DEPRECATED[name]
         warnings.warn(

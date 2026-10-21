@@ -19,6 +19,10 @@ pixel read, a click sting) from numbers shown in the clip.
 Importing this package loads neither matplotlib nor Kokoro.
 """
 
+from typing import TYPE_CHECKING
+
+from eyepiece import _lazy_lookup
+
 from ._cues import CueEvents, click_sting, count_tone, cue_track, pixel_ticks
 from ._mux import (
     audio_track,
@@ -66,6 +70,11 @@ from ._timeline import (
     estimate,
 )
 
+if TYPE_CHECKING:
+    from eyepiece.testing import (
+        caption_line,
+    )
+
 __all__ = [
     "KOKORO_MODEL",
     "KOKORO_VERSION",
@@ -88,6 +97,7 @@ __all__ = [
     "Word",
     "audio_track",
     "caption_at",
+    "caption_line",
     "captions",
     "check_number_sync",
     "check_script_speech",
@@ -110,3 +120,16 @@ __all__ = [
     "write_srt",
     "write_vtt",
 ]
+
+
+_EXPORTS = {"caption_line": ("eyepiece.testing", "caption_line")}
+
+
+def __getattr__(name):
+    """Load caption placement only when a caller needs a figure."""
+    return _lazy_lookup(name, _EXPORTS, globals())
+
+
+def __dir__():
+    """Include lazy caption placement in discovery."""
+    return sorted(set(globals()) | set(__all__))

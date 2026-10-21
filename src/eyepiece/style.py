@@ -22,7 +22,6 @@ names, loaded lazily.
 """
 
 import dataclasses
-import importlib
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -31,7 +30,28 @@ import matplotlib
 import numpy as np
 from matplotlib import font_manager
 
+from eyepiece import _LAZY_EXPORTS, _lazy_lookup
 from eyepiece._style import _CMAP_FALLBACKS
+
+if TYPE_CHECKING:
+    from eyepiece._motion import (
+        unsnapped,
+    )
+    from eyepiece._style import (
+        quiet_spines,
+        use_video,
+    )
+    from eyepiece._video import (
+        video_roles,
+    )
+    from eyepiece.anim import (
+        TALK_FRACTIONS,
+        VIDEO_RC,
+        talk_rc,
+    )
+    from eyepiece.layout import (
+        SourceStyles,
+    )
 
 if TYPE_CHECKING:
     from eyepiece._style import backing, neutral, role
@@ -298,22 +318,43 @@ class SourceCast:
 
 
 __all__ = [
+    "TALK_FRACTIONS",
+    "VIDEO_RC",
     "RenderProfile",
     "SourceCast",
+    "SourceStyles",
     "backing",
     "neutral",
+    "quiet_spines",
     "role",
     "snapshot_profile",
+    "talk_rc",
+    "unsnapped",
+    "use_video",
+    "video_roles",
 ]
+
+_EXPORTS = {
+    name: _LAZY_EXPORTS[name]
+    for name in [
+        "SourceStyles",
+        "TALK_FRACTIONS",
+        "VIDEO_RC",
+        "backing",
+        "neutral",
+        "quiet_spines",
+        "role",
+        "talk_rc",
+        "unsnapped",
+        "use_video",
+        "video_roles",
+    ]
+}
 
 
 def __getattr__(name):
-    """Load the shared color helpers on first access."""
-    if name in {"role", "neutral", "backing"}:
-        value = getattr(importlib.import_module("eyepiece._style"), name)
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    """Load one shared appearance helper on first access."""
+    return _lazy_lookup(name, _EXPORTS, globals())
 
 
 def __dir__():

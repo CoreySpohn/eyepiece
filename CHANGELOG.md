@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add canonical task namespaces: `plot` for data displays, `clock` for
+  scheduling, `motion` for moves, `style` for appearance, `render` for
+  output, `testing` for checks, and `narration` for speech and captions.
+  Existing root paths still work silently in 0.17. Deprecated aliases keep
+  their existing warnings.
+
 ## [0.15.0](https://github.com/CoreySpohn/eyepiece/compare/v0.14.0...v0.15.0) (2026-10-16)
 
 

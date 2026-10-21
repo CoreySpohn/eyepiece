@@ -3,8 +3,9 @@
 eyepiece provides a small set of pure functions for rendering, comparing,
 and animating simulated images (point spread functions, coronagraph
 detection maps, complex optical fields, and the like). Most plotting and
-animation names are available at the package root. Eight public submodules
-provide task namespaces: ``narration`` for speech and captions, ``testing``
+animation names are available at the package root. Eleven public submodules
+provide task namespaces: ``plot`` for data displays, ``clock`` for scheduling,
+``motion`` for moves and attention, ``narration`` for speech and captions, ``testing``
 for clip checks, ``render`` for render workers and variants, ``prepared``
 for scene records, ``motifs`` for recurring styles, ``mpl`` and ``manim``
 for prepared renderers, and ``style`` for appearance snapshots and source
@@ -371,6 +372,19 @@ _DEPRECATED = {
 }
 
 
+def _lazy_lookup(name, exports, namespace):
+    """Resolve and cache a facade export without importing its peers."""
+    try:
+        module_name, attr_name = exports[name]
+    except KeyError:
+        raise AttributeError(
+            f"module {namespace['__name__']!r} has no attribute {name!r}"
+        ) from None
+    value = getattr(importlib.import_module(module_name), attr_name)
+    namespace[name] = value
+    return value
+
+
 def __getattr__(name):
     """Resolve a public name on first access (PEP 562), then cache it.
 
@@ -389,14 +403,12 @@ def __getattr__(name):
         )
         return __getattr__(new)
     try:
-        module_name, attr_name = _LAZY_EXPORTS[name]
+        _LAZY_EXPORTS[name]
     except KeyError:
         if not name.startswith("__") and importlib.util.find_spec(f"{__name__}.{name}"):
             return importlib.import_module(f"{__name__}.{name}")
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
-    value = getattr(importlib.import_module(module_name), attr_name)
-    globals()[name] = value
-    return value
+    return _lazy_lookup(name, _LAZY_EXPORTS, globals())
 
 
 def __dir__():

@@ -175,9 +175,26 @@ def test_worker_module_rejects_bad_arguments_with_usage(arguments):
 
 
 def test_facade_exports_exactly_the_public_names():
-    assert set(render.__all__) == PUBLIC_NAMES
-    assert len(render.__all__) == len(PUBLIC_NAMES)
-    assert {name for name in vars(render) if not name.startswith("_")} == PUBLIC_NAMES
+    output_names = {
+        "Animation",
+        "ENCODER_PROFILE",
+        "PRESETS",
+        "RawSink",
+        "ScaleDriftError",
+        "__version__",
+        "animate",
+        "file_metadata",
+        "provenance_fields",
+        "provenance_text",
+        "record",
+        "save_fig",
+        "stamp",
+        "to_scrubber",
+    }
+    expected = PUBLIC_NAMES | output_names
+    assert set(render.__all__) == expected
+    assert len(render.__all__) == len(expected)
+    assert expected <= set(dir(render))
     for name in render.__all__:
         assert getattr(render, name) is getattr(ep, name)
 
@@ -228,7 +245,9 @@ assert 'eyepiece.render' not in sys.modules
 instances = pickle.loads(Path(sys.argv[1]).read_bytes())
 facade = sys.modules['eyepiece.render']
 assert set(instances) == {
-    name for name in facade.__all__ if isinstance(getattr(facade, name), type)
+    name for name in ("ClipSpec", "Manifest", "RenderResult", "Variant",
+                      "VariantResult", "Venue")
+    if isinstance(getattr(facade, name), type)
 }
 for name, value in instances.items():
     assert type(value) is getattr(facade, name)
