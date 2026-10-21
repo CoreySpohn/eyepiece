@@ -68,6 +68,7 @@ import math
 import numbers
 import os
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -127,11 +128,11 @@ __all__ = [
     "MotionFault",
     "ReadabilityError",
     "ReadabilityFault",
-    "Span",
     "SpeechRate",
     "SpeechRateError",
     "TimingError",
     "TimingFault",
+    "Window",
     "assert_clip",
     "assert_grounded",
     "assert_meaning",
@@ -704,7 +705,7 @@ MOTION_KINDS = (
     "hop-rate",
 )
 
-# Frames per second a clip is sampled at when `times` is a `Span`.
+# Frames per second a clip is sampled at when `times` is a `Window`.
 VENUE_FPS = {"video": 30.0, "phone": 30.0, "print": 30.0}
 
 _MAX_HOP_RATE = 8.0  # draws per second above which a hop group is a flicker
@@ -719,8 +720,12 @@ _KINK_RATIO = 6.0  # a kink is this many median speeds in one frame
 _KINK_FLOOR_PX = 4.0
 
 
-class Span(NamedTuple):
+class Window(NamedTuple):
     """A stretch of clip time to check at every frame.
+
+    A window is what a check samples, not a timeline span: `eyepiece.Span`
+    is the record a `eyepiece.Timeline` verb returns. `check_clip` takes a
+    plan span by name where it would take a window.
 
     Attributes:
         start: First time, in seconds.
@@ -1972,7 +1977,7 @@ def _check_spike(trace, spike_px):
 
 
 def _sample_times(times, fps):
-    if isinstance(times, Span):
+    if isinstance(times, Window):
         n = max(math.floor((times.stop - times.start) * fps + 1e-9), 0)
         out = [times.start + k / fps for k in range(n + 1)]
         if abs(out[-1] - times.stop) <= 1e-9:
@@ -2023,10 +2028,10 @@ def motion_ink(fig, at, times, driven, *, venue=None, fps=None, dpi=None):
     Args:
         fig: The figure of the clip.
         at: Callable ``at(t)`` that poses the figure at time `t`.
-        times: Sample times, or a `Span` to sample at every frame.
+        times: Sample times, or a `Window` to sample at every frame.
         driven: The artists the knob drives.
-        venue: Key of `VENUE_FPS` giving the frame rate of a `Span`.
-        fps: Frame rate of a `Span`; overrides `venue`.
+        venue: Key of `VENUE_FPS` giving the frame rate of a `Window`.
+        fps: Frame rate of a `Window`; overrides `venue`.
         dpi: Output dpi; None uses the figure's.
 
     Returns:
@@ -2109,7 +2114,7 @@ def motion_faults(
     recorded under the artist itself, so glyphs drawn as paths are traced as
     text is, and the rendered frame is kept for the pixel checks. The checks
     run on that record, so the result describes what was drawn. Sampling must
-    be dense for the continuity checks to mean anything: pass a `Span` to use
+    be dense for the continuity checks to mean anything: pass a `Window` to use
     every frame at the venue frame rate, or list the frame times.
 
     Kinds of fault:
@@ -2161,7 +2166,7 @@ def motion_faults(
     Args:
         fig: The figure of the clip.
         at: Callable ``at(t)`` that poses the figure at time `t`.
-        times: Sample times, or a `Span` to sample at every frame.
+        times: Sample times, or a `Window` to sample at every frame.
         moves: Declared moves, each a dict (or an object whose ``contract`` is
             a dict or has the same fields) with any of ``name``, ``span``
             (start, stop), ``artists`` (or ``moves``, those that may move),
@@ -2213,9 +2218,9 @@ def motion_faults(
         spikes: Include ``"spike"`` in the default kinds.
         kinds: The kinds to look for, a subset of `MOTION_KINDS`; None is
             every kind but ``"spike"``, or every kind with `spikes`.
-        venue: Key of `VENUE_FPS` giving the frame rate of a `Span`; default
+        venue: Key of `VENUE_FPS` giving the frame rate of a `Window`; default
             ``"video"``.
-        fps: Frame rate of a `Span`; overrides `venue`.
+        fps: Frame rate of a `Window`; overrides `venue`.
         dpi: Output dpi; None uses the figure's.
 
     Returns:
@@ -2229,7 +2234,7 @@ def motion_faults(
 
     Example::
 
-        span = ept.Span(0.0, 2.0)
+        span = ept.Window(0.0, 2.0)
         faults = ept.motion_faults(fig, at=clip.pose, times=span, rest=[title])
     """
     if kinds is None:
@@ -2478,7 +2483,7 @@ def assert_motion(fig, at, times, **kwargs):
     Args:
         fig: The figure of the clip.
         at: Callable ``at(t)`` that poses the figure at time `t`.
-        times: Sample times, or a `Span`.
+        times: Sample times, or a `Window`.
         **kwargs: Passed to `motion_faults`.
 
     Raises:
@@ -2487,7 +2492,7 @@ def assert_motion(fig, at, times, **kwargs):
 
     Example::
 
-        ept.assert_motion(fig, clip.pose, ept.Span(0.0, 2.0), rest=[title])
+        ept.assert_motion(fig, clip.pose, ept.Window(0.0, 2.0), rest=[title])
     """
     found = motion_faults(fig, at, times, **kwargs)
     if found:
@@ -3442,7 +3447,7 @@ def _clip_moves(moves, plan):
     def span(value):
         if isinstance(value, str):
             resolved = plan._span(value)
-            return Span(float(resolved.start_s), float(resolved.end_s))
+            return Window(float(resolved.start_s), float(resolved.end_s))
         return value
 
     if isinstance(moves, dict):
@@ -3493,7 +3498,7 @@ def check_clip(
         keys: Meaning gid-prefix mapping. An explicit mapping, even an empty
             one, overrides `motifs`. With neither, meaning checks are skipped.
         motifs: A `eyepiece.MotifSet` supplying `meaning_keys()`.
-        moves: Mapping from artists to plan span names or testing `Span`
+        moves: Mapping from artists to plan span names or `Window`
             values, or an iterable of declarations accepted by `motion_faults`.
             A declaration dict's ``span`` may also be a plan span name.
         steps: Additional intended discontinuities as integer frame indices
@@ -3607,3 +3612,20 @@ def assert_clip(fig, draw, plan, **kwargs) -> ClipReport:
     if not report.ok:
         raise ClipError(report)
     return report
+
+
+_DEPRECATED = {"Span": "Window"}
+
+
+def __getattr__(name):
+    """Resolve a deprecated name to its replacement, with a warning."""
+    if name in _DEPRECATED:
+        new = _DEPRECATED[name]
+        warnings.warn(
+            f"eyepiece.testing.{name} is deprecated; use eyepiece.testing.{new}, "
+            "the same class under a name that does not clash with eyepiece.Span",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return globals()[new]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

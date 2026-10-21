@@ -685,7 +685,7 @@ def test_left_anchored_bayes_moves_without_a_jump_into_or_out_of_rest():
     def at(t):
         move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
 
-    ept.assert_motion(fig, at, ept.Span(0.0, duration), fps=30)
+    ept.assert_motion(fig, at, ept.Window(0.0, duration), fps=30)
 
 
 def test_the_bar_stays_an_axis_aligned_rectangle_through_the_move():
@@ -698,7 +698,7 @@ def test_the_bar_stays_an_axis_aligned_rectangle_through_the_move():
         move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
 
     ept.assert_motion(
-        fig, at, ept.Span(0.0, 2.0), fps=30, rectilinear=bars, kinds=["shape-class"]
+        fig, at, ept.Window(0.0, 2.0), fps=30, rectilinear=bars, kinds=["shape-class"]
     )
 
 
@@ -711,14 +711,14 @@ def test_a_transform_result_carries_its_rectilinear_bar_into_the_check():
         move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
 
     found = ept.motion_faults(
-        fig, at, ept.Span(0.0, 2.0), fps=30, moves=[move], kinds=["shape-class"]
+        fig, at, ept.Window(0.0, 2.0), fps=30, moves=[move], kinds=["shape-class"]
     )
     assert found == []
     # The same read finds bars that lean: tip a corner after each draw.
     for bar in move.contract.rectilinear:
         bar.draw = _leaning(bar)
     found = ept.motion_faults(
-        fig, at, ept.Span(0.0, 2.0), fps=30, moves=[move], kinds=["shape-class"]
+        fig, at, ept.Window(0.0, 2.0), fps=30, moves=[move], kinds=["shape-class"]
     )
     assert found
     assert {f.kind for f in found} == {"shape-class"}
@@ -782,7 +782,7 @@ def test_left_anchored_morph_moves_without_a_jump_into_or_out_of_rest():
     def at(t):
         move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
 
-    ept.assert_motion(fig, at, ept.Span(0.0, 2.0), fps=30)
+    ept.assert_motion(fig, at, ept.Window(0.0, 2.0), fps=30)
 
 
 def test_morph_changes_shape_where_fade_only_moves_a_box():
@@ -923,4 +923,4 @@ def test_default_morph_bayes_lints_clean_with_its_declared_contract():
     def at(t):
         move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
 
-    assert ept.motion_faults(fig, at, ept.Span(0.0, duration), moves=[move]) == []
+    assert ept.motion_faults(fig, at, ept.Window(0.0, duration), moves=[move]) == []

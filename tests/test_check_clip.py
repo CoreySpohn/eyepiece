@@ -241,7 +241,7 @@ def test_persistent_readability_fault_is_reported_once():
 def test_move_spans_support_names_spans_and_motion_declarations(form):
     fig, draw, plan, dot = _clip()
     span = plan.spans["slide"]
-    value = ept.Span(span.start_s, span.end_s) if form == "span" else "slide"
+    value = ept.Window(span.start_s, span.end_s) if form == "span" else "slide"
     moves = (
         [{"artists": [dot], "span": value}] if form == "declaration" else {dot: value}
     )

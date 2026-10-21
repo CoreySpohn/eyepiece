@@ -205,7 +205,7 @@ def test_moves_declare_real_artists_and_lint_cleanly(name):
                 if not isinstance(artist, Text) or artist.get_text():
                     seen.add(artist)
     assert seen == members
-    assert ept.motion_faults(fig, at, ept.Span(0, 2), moves=[result]) == []
+    assert ept.motion_faults(fig, at, ept.Window(0, 2), moves=[result]) == []
 
 
 def _centers(group):
@@ -284,7 +284,7 @@ def test_transform_does_not_promise_rigidity_when_matched_spacing_changes():
         assert not word <= set(members)
     assert (
         ept.motion_faults(
-            fig, lambda t: move.update(t / 2), ept.Span(0, 2), moves=[move]
+            fig, lambda t: move.update(t / 2), ept.Window(0, 2), moves=[move]
         )
         == []
     )
@@ -308,7 +308,7 @@ def test_stage_of_an_axes_declares_drawn_members(image):
     assert all(not isinstance(a, Text) or a.get_text() for a in stage.contract.rest)
     assert (
         ept.motion_faults(
-            fig, lambda t: stage.set(shown=[], u=t / 2), ept.Span(0, 2), moves=[stage]
+            fig, lambda t: stage.set(shown=[], u=t / 2), ept.Window(0, 2), moves=[stage]
         )
         == []
     )
@@ -330,7 +330,7 @@ def test_words_contract_covers_both_public_reveal_modes():
         ept.motion_faults(
             fig,
             lambda t: result.reveal(t / 2, by="letter"),
-            ept.Span(0, 2),
+            ept.Window(0, 2),
             moves=[result],
         )
         == []
@@ -386,7 +386,7 @@ def test_a_rest_artist_that_moves_is_reported_as_drift(name):
     fig, result, at = _clip(name)
     assert result.contract.rest
     pose = _shifted(at, [result.contract.rest[0]], 30.0)
-    found = ept.motion_faults(fig, pose, ept.Span(0, 2), moves=[result])
+    found = ept.motion_faults(fig, pose, ept.Window(0, 2), moves=[result])
     assert "drift" in {f.kind for f in found}
 
 
@@ -395,7 +395,7 @@ def test_dropping_the_declared_overlap_is_reported(name):
     fig, result, at = _clip(name)
     assert result.contract.may_overlap
     bare = dataclasses.replace(result.contract, may_overlap=())
-    found = ept.motion_faults(fig, at, ept.Span(0, 2), moves=[bare])
+    found = ept.motion_faults(fig, at, ept.Window(0, 2), moves=[bare])
     assert "overlap" in {f.kind for f in found}
 
 
@@ -404,7 +404,7 @@ def test_a_glyph_pulled_out_of_a_rigid_group_is_reported_as_a_tear():
     move, _a, _b = _transform(ax)
     group = move.contract.groups[0]
     pose = _shifted(lambda t: move.update(t / 2), [group[0]], 20.0)
-    found = ept.motion_faults(fig, pose, ept.Span(0, 2), moves=[move])
+    found = ept.motion_faults(fig, pose, ept.Window(0, 2), moves=[move])
     assert "tear" in {f.kind for f in found}
 
 
