@@ -174,8 +174,8 @@ reference documents every signature.
 
 ### Move the viewer's eye
 
-- **Draw on.** `head_draw` (the signature constant-speed reveal with a
-  bright head), `draw_on`, `build_axes`, `arrow`, `angle_arc`, `compass`,
+- **Draw on.** `head_draw` (the signature arc-length reveal with a bright
+  head), `draw_on`, `build_axes`, `arrow`, `angle_arc`, `compass`,
   `write` (a label traced as if by hand), and `words`.
 - **Point at the subject.** `indicate` (a pulse that returns exactly),
   `circumscribe`, `callout`, `leader`, `link`, `flight`, `spotlight`,
@@ -231,9 +231,10 @@ move's result carries,
 meaning per hue, within and across clips), `motif_faults` and
 `motif_margins`, `timing_faults` (pace, gaps, still screens, numbers said
 before they are shown), `speech_rate`, `grounding_faults` (equation terms
-without a referent), and `motion_ink`. Every check has an `assert_*` twin,
-`caption_line` places captions clear of the figure's text, and
-`review_sheet` draws a contact sheet at the cues and events that matter.
+without a referent), and `motion_ink` (how much of the motion is the
+quantity). The fault checks have `assert_*` twins that raise, `caption_line`
+places captions clear of the figure's text, and `review_sheet` draws a
+contact sheet at the cues and events that matter.
 
 ### Record and render
 
@@ -244,8 +245,8 @@ without a referent), and `motion_ink`. Every check has an `assert_*` twin,
   HTML page whose slider scrubs one knob).
 - **Render in parallel.** `ClipSpec`, `Venue`, `Variant` and `variants`
   describe a clip's venue, mode, and narration variants; `render_variants`
-  renders them keyed by `content_key` into a `Manifest`, resumably;
-  `render_frames` renders one clip in worker processes; `render_poster`,
+  renders each one keyed by `content_key` into a `Manifest`, resumably;
+  `render_frames` renders one clip's frames in worker processes; `render_poster`,
   `render_still`, and `same_picture` make and compare deterministic stills;
   `frame_faults` and `assert_frames_pure` check that frames do not depend
   on draw order.
@@ -257,8 +258,9 @@ without a referent), and `motion_ink`. Every check has an `assert_*` twin,
 - **`eyepiece.prepared`.** The frozen records (`ImageView`, `CurveView`,
   `TrackView`, `PanelGroup`, and the `Path`, `Points`, `Region`,
   `ReferenceLine`, and `Label` marks, with `AxisSpec` and `Scale`),
-  `Sequence` for replayable states over physical time, and the display
-  mapping. It imports only NumPy.
+  `Sequence` for replayable states over physical time with the
+  `ArrayChannel`, `PathWindow`, and `Clock` channels that change them, and
+  the display mapping. It imports only NumPy.
 - **`eyepiece.style`.** `SourceCast` for fixed source colors and markers, and
   `snapshot_profile`, which captures the active hwostyle appearance as a
   read-only `RenderProfile`.
