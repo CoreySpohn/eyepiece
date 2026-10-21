@@ -234,7 +234,7 @@ x = np.linspace(0.0, 10.0, 200)
 fig, ax = plt.subplots(figsize=(12.8, 7.2), dpi=100, layout="constrained")
 (curve,) = ax.plot(x, np.sin(x))
 (marker,) = ax.plot([7.85], [1.0], "o")
-reveal = ep.head_draw(curve)
+reveal = ep.head_draw(curve, ease="linear")
 emphasis = ep.indicate(marker, scale=1.5)
 
 tl = ep.Timeline({"curve": 0.0, "emphasis": 0.0})
@@ -255,6 +255,35 @@ with ep.record(fig, "clip.mp4", fps=plan.fps, plan=plan, stills={"clip.png": "dr
         draw(k)
         rec.frame()
 ```
+
+### Callback conventions
+
+`check_clip` and `assert_clip` take `draw(k)`, where `k` is an integer
+frame index. `animate` and render workers take `draw(fig, item)`, where
+`item` comes from the supplied frame iterable. Lower-level checks such as
+`motion_faults` and `readability_faults` take `at(t)`, where `t` is in
+seconds. Adapt the plan-driven `draw` above as follows:
+
+```python
+def draw_frame(fig, item):
+    draw(item)
+
+
+def at(t):
+    k = min(plan.n_frames - 1, max(0, round(t * plan.fps)))
+    draw(k)
+
+
+movie = ep.animate(fig, draw_frame, range(plan.n_frames), fps=plan.fps)
+faults = ept.readability_faults(fig, at=at, times=[0.0, 0.5, 1.0])
+```
+
+For render workers, create the figure and these callbacks inside the worker
+builder and return `(fig, draw_frame)`. In the other direction, a frame-based
+callback can be passed to `check_clip` through `lambda k: draw_frame(fig, k)`,
+and a seconds-based callback through `lambda k: at(k / plan.fps)`.
+`tl.move` already eases its knob, so its reveal uses `ease="linear"` to
+apply that eased value once.
 
 A prepared sequence gives a still, a strip of selected epochs, and a movie
 from one preparation:

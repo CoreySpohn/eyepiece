@@ -184,3 +184,22 @@ def test_rejects_non_lines_and_stepped_lines():
     (step,) = ax.plot([0, 1], [0, 1], drawstyle="steps")
     with pytest.raises(ValueError, match="stepped"):
         ep.head_draw(step)
+
+
+def test_linear_head_driven_by_move_applies_the_knob_ease_once():
+    fig, ax = _board()
+    (line,) = ax.plot([0.1, 0.9], [0.5, 0.5], color="black")
+    reveal = ep.head_draw(line, ease="linear")
+    tl = ep.Timeline({"curve": 0.0})
+    tl.move("draw", 2.0, to={"curve": 1.0})
+    plan = tl.at_fps(30)
+    fig.canvas.draw()
+    display = line.get_transform().transform([[0.1, 0.5], [0.9, 0.5]])
+    for k in (6, 15, 39, 51):
+        knob = plan.value(k, "curve")
+        raw = plan.progress(k, "draw", eased=False)
+        assert knob == pytest.approx(ep.ease(raw))
+        assert knob != pytest.approx(raw)
+        reveal.update(knob)
+        reached, total = _along(display, _tip(fig, reveal))
+        assert reached / total == pytest.approx(knob, abs=1e-3)
