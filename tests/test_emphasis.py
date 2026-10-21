@@ -390,3 +390,25 @@ def test_rgb_mesh_opacity_does_not_depend_on_its_colormap(controller):
     fig.canvas.draw()
     np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.5, 0.5])
     plt.close(fig)
+
+
+def test_fading_only_a_mesh_leaves_its_colorbar_unchanged():
+    from matplotlib.colors import ListedColormap
+
+    fig, ax = plt.subplots()
+    mesh = ax.pcolormesh(
+        [[0.0, 1.0]],
+        cmap=ListedColormap([(1, 0, 0, 0.2), (0, 0, 1, 0.8)]),
+    )
+    colorbar = fig.colorbar(mesh, ax=ax)
+    fig.canvas.draw()
+    bar_colors = colorbar.solids.get_facecolors().copy()
+    faded = ep.fade(mesh, 0.5, by="alpha")
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.1, 0.4])
+    np.testing.assert_allclose(colorbar.solids.get_facecolors(), bar_colors)
+    faded.restore()
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.2, 0.8])
+    np.testing.assert_allclose(colorbar.solids.get_facecolors(), bar_colors)
+    plt.close(fig)

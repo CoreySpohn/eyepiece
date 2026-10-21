@@ -644,3 +644,27 @@ def test_mesh_edges_that_follow_faces_keep_following_changed_data():
     stage.rest()
     fig.canvas.draw()
     np.testing.assert_allclose(mesh.get_edgecolors()[:, 3], [0.8, 0.2])
+
+
+@pytest.mark.parametrize("level", [(0.5, 1.0), (1.0, 0.5)])
+def test_staging_only_a_mesh_leaves_its_colorbar_unchanged(level):
+    from matplotlib.colors import ListedColormap
+
+    fig, ax = plt.subplots()
+    mesh = ax.pcolormesh(
+        [[0.0, 1.0]],
+        cmap=ListedColormap([(1, 0, 0, 0.2), (0, 0, 1, 0.8)]),
+    )
+    colorbar = fig.colorbar(mesh, ax=ax)
+    fig.canvas.draw()
+    bar_colors = colorbar.solids.get_facecolors().copy()
+    stage = ep.Stage({"mesh": mesh})
+    for _ in range(2):
+        stage.weigh({"mesh": level})
+        fig.canvas.draw()
+        np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.1, 0.4])
+        np.testing.assert_allclose(colorbar.solids.get_facecolors(), bar_colors)
+    stage.rest()
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.2, 0.8])
+    np.testing.assert_allclose(colorbar.solids.get_facecolors(), bar_colors)

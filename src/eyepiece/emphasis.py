@@ -19,6 +19,7 @@ are not yet shown.
 """
 
 import contextlib
+from functools import partial
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -257,6 +258,12 @@ def _scale_cmap_alpha(cmap, level):
     return scaled.with_extremes(**extremes)
 
 
+def _set_mesh_cmap(artist, cmap):
+    """Set a mesh's drawing colormap without updating its attached colorbar."""
+    with artist.callbacks.blocked(signal="changed"):
+        artist.set_cmap(cmap)
+
+
 def _fade_alpha(artist, level, handle):
     """Scale an artist's own alpha by `level`; hide it outright at 0."""
     alpha = artist.get_alpha()
@@ -267,8 +274,8 @@ def _fade_alpha(artist, level, handle):
             edges[:, 3] *= level
             artist.set_edgecolor(edges)
         cmap = artist.get_cmap()
-        handle._record(artist, artist.set_cmap, cmap)
-        artist.set_cmap(_scale_cmap_alpha(cmap, level))
+        handle._record(artist, partial(_set_mesh_cmap, artist), cmap)
+        _set_mesh_cmap(artist, _scale_cmap_alpha(cmap, level))
     else:
         handle._record(artist, artist.set_alpha, alpha)
         artist.set_alpha(level * (1.0 if alpha is None else alpha))

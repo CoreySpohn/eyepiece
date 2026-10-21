@@ -66,6 +66,7 @@ from eyepiece.emphasis import (
     _own_background,
     _resolve_background,
     _scale_cmap_alpha,
+    _set_mesh_cmap,
 )
 
 # Where on an artist's box `Anchor.from_artist` resolves, as box fractions.
@@ -1499,8 +1500,9 @@ class _Look:
                 edges = self.edges.copy()
                 edges[:, 3] *= level
                 artist.set_edgecolor(edges)
-            artist.set_cmap(
-                self.cmap if level >= 1.0 else _scale_cmap_alpha(self.cmap, level)
+            _set_mesh_cmap(
+                artist,
+                self.cmap if level >= 1.0 else _scale_cmap_alpha(self.cmap, level),
             )
             return
         if presence >= 1.0 and contrast >= 1.0:
