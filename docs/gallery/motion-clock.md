@@ -185,6 +185,30 @@ a verb whose mark the line lacks. An information fault, such as a skipped
 pulse or a span clamped to the end of the clip, only records what happened.
 `with_=` names an overlap that a clip allows.
 
+## Hold until a computed time
+
+Some holds end at a time the clip computes rather than a duration it states,
+such as the moment a label has been read. `wait_until` moves the cursor to
+that time without placing a span, so no knob is written and the open section
+simply lasts until then. Here the label lands at 0.4 s, `Tempo.read_s` sizes
+its reading time from its words, and the next section starts once the label
+has been read.
+
+```{code-cell} python
+tempo = ep.Tempo(factor=1.0)
+tl = ep.Timeline({"label": 0.0, "next": 0.0}, tempo=tempo)
+tl.section("label")
+label = tl.text("label")
+tl.wait_until(label.end + tempo.read_s("Down to the companion"))
+tl.section("next")
+tl.enter("next")
+
+plan = tl.at_fps(24)
+for span in plan.spans.values():
+    print(f"{span.name:6s} {span.start_s:5.2f} to {span.end_s:5.2f} s")
+print(f"{plan.seconds:.2f} s in {plan.n_frames} frames")
+```
+
 ## Readout: a number that counts
 
 A value that changes on screen, such as the time of a simulation or a

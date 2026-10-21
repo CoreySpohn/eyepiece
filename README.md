@@ -8,11 +8,20 @@ Plotting and animation primitives for astronomical imaging simulations.
 recur across direct-imaging work: log-scaled and diverging image displays,
 side-by-side and A/B comparison panels, radial profiles and contrast curves,
 corner plots, orbit and sky-track scenes, optical-train schematics, and a
-multi-sink animation recorder that grabs frames once and writes them to any
+multi-sink animation recorder that draws each frame once and writes it to any
 combination of gif, mp4, and html. Every primitive takes plain arrays in and
 returns a small result object holding the axes and the artists it drew, so
 callers can update or extend a figure without re-deriving which line or
 image object came from where.
+
+On top of the figures sits a layer for explanatory animation. A `Timeline`
+lays a clip out in seconds and resolves it into a per-frame plan, the moves
+(draw-ons, pulses, callouts, staged dimming, camera paths, equation
+transforms) are driven by that plan, `eyepiece.narration` places spoken
+lines and their cue words on the same clock, `eyepiece.testing` checks the
+finished clip for motion, readability, color-meaning and timing faults, and
+`eyepiece.render` renders its venue, mode and narration variants, each
+with parallel frame workers.
 
 For a scene that has to appear more than once, eyepiece also offers prepared
 views: plain records of images, curves, tracks, and their marks, carrying
@@ -39,77 +48,138 @@ standalone plotting library.
 
 ## What is in it
 
-Every name below is importable straight from `eyepiece`; the submodules that
-implement them are internal organization.
+The groups below follow what an author sets out to do. Names without a
+prefix are importable straight from `eyepiece`; the rest live in the named
+submodule. The
+[capability catalog](https://github.com/CoreySpohn/eyepiece/blob/main/docs/reference/catalog.md)
+is the full table, one row per task, with the page that shows each name.
 
-- **Images.** `imshow_log` (log scale clipped to a floor, so a zero-valued
-  pixel cannot break the norm), `imshow_diverging` (symmetric norm about
-  zero), both placed by `extent` or by pixel `centers`, `kymograph` (a cut
-  stacked against time or wavelength), `show_field` (amplitude and phase
-  panels of a complex field), `compare_row` (several images sharing one norm
-  and colorbar), `compare_grid` (the same on a 2D layout with empty cells
-  allowed), and `triptych` (A, B, and a ratio or residual comparison panel,
-  side by side).
-- **Annotations.** `overlay_circle` and `overlay_line` (dashed circles and
-  paths that read over bright and dark pixels), `ruler` (a dimension arrow),
-  and `bracket` (a labeled span).
-- **Distributions and sequences.** `corner`, `corner_overlay` (a second
-  sample set laid over an existing triangle plot), `hist_vs_pdf`,
-  `cov_ellipse`, and three that reveal samples one at a time:
-  `convergence` (a running mean or sum), `signed_trace` (a trace shaded
-  above and below a level), and `hist_fill` (a histogram filling on a
-  pinned scale).
-- **Profiles.** `plot_radial` (a precomputed radial profile line),
-  `plot_contrast_curve` (a contrast curve with inner/outer working angle
-  shading and reference floor curves, drawn once per axes even across
-  repeated calls, with each curve taking the next palette color so two
-  calls on one axes are distinguishable), and `radial_profile_plot`
-  (computes the profile via `hwoutils` and plots it in one call, under the
-  `[hwo]` extra).
-- **Scenes.** `trail` (a 2D or 3D trajectory with depth-cued markers),
-  `sky_fan` (weighted candidate sky tracks with an inner-working-angle disk),
-  and `fading_track`.
-- **Schematics.** `rail` (an optical-train diagram built from a plain
-  `(label, glyph)` element list, over the `GLYPHS` vocabulary), and
-  `schematic`, a preset wrapper over `rail` for the imager and coronagraph
-  trains that come up constantly.
-- **Motion.** `Timeline` (an animation's named spans declared in seconds
-  and resolved for any frame rate into a `Plan` of per-frame knob values and
-  `Event`s, with a narration placing each span on its word), with `Time`,
-  `Span`, `Fault`, `ease`, `stagger`, and `frame_count`.
-- **Cameras and morphs.** `zoom_path` (the optimal pan-and-zoom path between
-  two views), `view_limits` and `overview_box` for a camera that zooms an
-  axes, `PageCamera` (any view of a finished figure, re-rendered sharp at a
-  fixed output size, with an optional overview margin), `spotlight` (a veil
-  that dims a figure outside chosen rectangles), `quad_image` (an image drawn
-  as one movable shape per pixel, from `pixel_quads`), and `brush` (the same
-  objects lit in several panels at once).
-- **Attention.** `Anchor` (a data point or a part of a drawn artist,
-  resolved at draw time), `flight` (a copy of a mark carried from one panel
-  onto another), `callout` (a short caption beside its subject, its key
-  term in the color of the mark it names), `leader` (a connector audited
-  against the leader rules), `Stage` (groups shown, dimmed toward the
-  background, or absent, at absolute levels), `build_axes` (an axis drawn
-  on in front of the viewer), `collapse` (a row of cells gathered into
-  a bar whose length is their sum), and `Tempo` (one factor for a clip's
-  pace: its moves, its settles, and a reading hold that grows with each
-  caption's words).
-- **Layout.** Pixel-edge extent helpers (`extent_lod`, `extent_arcsec`,
-  `extent_au`, ...) with matching axis labelers, plus `Frame` and
-  `SourceStyles` for keeping several panels of one scene consistent.
-- **Output.** `save_fig` for a styled write to disk, `record` (a context
-  manager that opens every sink at once and takes frames from a loop the
-  caller drives) and `animate` (which binds a figure, a draw function, and a
-  frame source into the public `Animation` type it returns), `RawSink` (raw
-  frames from anywhere, such as a `PageCamera`, into a reproducible mp4), and
-  `PRESETS` of measured fps/dpi pairs.
+### Make a still
 
-Prepared views live in namespaces of their own:
+- **Images.** `imshow_log`, `imshow_diverging` and `display_limits`,
+  `compare_row` and `compare_grid` (several images on one norm and
+  colorbar), `triptych` (A, B, and their ratio or residual), `show_field`
+  (a complex field), and `kymograph` (a cut stacked against time or
+  wavelength).
+- **Marks and annotations.** `overlay_circle` and `overlay_line` (dashed
+  marks that read over any pixels), `ruler`, `bracket`, `ref_line` (a
+  threshold with its label pinned to an axes edge), `shade_intervals`
+  (excluded intervals), `log_zero_floor`, and `backing` (a plate behind a label).
+- **Distributions and diagnostics.** `corner`, `corner_overlay`,
+  `hist_vs_pdf`, `cov_ellipse`, `convergence`, `signed_trace`, `hist_fill`,
+  `interval_points` (including one-sided intervals), `calibration`, `strip`,
+  and `scatter_values`.
+- **Profiles.** `plot_radial`, `plot_contrast_curve`, and
+  `radial_profile_plot` (under the `[hwo]` extra).
+- **Scenes, schematics and phasors.** `trail`, `sky_fan`, `fading_track`,
+  `step_list`; `rail`, `rail_panels`, `schematic` and the `GLYPHS`
+  vocabulary for optical trains; `phasor`, `phase_ring`, and `curve_insets`.
+- **Layout and color.** `extent_lod`, `extent_lod_from_pixels`,
+  `extent_arcsec`, `extent_au`, the matching `label_lod`, `label_arcsec`,
+  and `label_au`, `Frame` and `SourceStyles` for panels of one scene, and
+  `role` (a named role or neutral rank, in any mode) and `neutral` for
+  brand and scenery colors.
+
+### Put a clip on one clock
+
+- **Timing.** `Timeline` declares named spans in seconds (`enter`, `leave`,
+  `text`, `move`, `run`, `hold`, `wait_until`, `read`, `settle`,
+  `together`, `stagger`, `indicate`, `circumscribe`, `click`, `caption`, `section`,
+  `hero`) and `Timeline.at_fps` resolves them into a `Plan` that a draw
+  function reads frame by frame (`value`, `progress`, `frame_of`, `events`,
+  `spans_json`). `Tempo` sets the pace of the whole clip in one place.
+- **Helpers.** `ease`, `stagger`, `Time`, `frame_count`, `reading_words`,
+  and the `Span`, `Event` and `Fault` records a plan carries.
+
+### Move the viewer's eye
+
+- **Draw on.** `head_draw` (the signature arc-length reveal with a bright
+  head), `draw_on`, `build_axes`, `arrow`, `angle_arc`, `compass`,
+  `write` (a label traced as if by hand), and `words`.
+- **Point at the subject.** `indicate` (a pulse that returns exactly),
+  `circumscribe`, `callout`, `leader`, `link`, `flight`, `spotlight`,
+  `brush`, `follow_zoom`, `Anchor`, and `audit` with its `AttentionFault`
+  for the connector rules.
+- **Dim, bring in, and settle.** `Stage` (groups shown, dimmed, or absent,
+  at absolute levels), `fade`, `blend`, `capture`, and `collapse`.
+- **Land the answer.** `click` (ink swells, the end dot grows, the number
+  sets bold, the ruler recedes), `ruler_readout`, and `readout`.
+- **Equations and numbers.** `term_row`, `equation`, `transform` (one
+  equation carried into another glyph by glyph), `exposure_text`,
+  `aperture_counts`, `arrivals`, and `photons`.
+- **Uncertainty.** `weighted_draws` (a posterior as true-scale weighted
+  draws) and `hop` (draws played one at a time with aging ghosts and a
+  running tally).
+- **Cameras and morphs.** `PageCamera`, `zoom_path`, `view_limits`,
+  `overview_box`, `warp`, `warp_grid`, `morph`, `quad_image`, and
+  `pixel_quads`.
+
+### Keep color and scale honest
+
+- **Motifs.** `Motif` and `MotifSet` give each recurring quantity one
+  drawing style across a clip, with `AcceptedPair` and `is_hue_role` in
+  `eyepiece.motifs`.
+- **Scale for a talk.** `talk_rc` (type and strokes sized from the frame
+  height, from `TALK_FRACTIONS` and `VIDEO_RC`), `use_video` and
+  `video_roles` for video-safe dark colors, and `unsnapped`.
+
+### Narrate it (`eyepiece.narration`)
+
+- **Script and speech.** `Script`, `Line`, `Pause`, `Cue` and `parse_cues`
+  for cue marks on words, `estimate` for a draft length, `say` for numbers
+  written for the voice, `speech_faults`, `lint_script`, and
+  `check_script_speech`. `python -m eyepiece.narration.synth` speaks the
+  lines into a cache under the `[narration]` extra.
+- **On the clock.** `Narration` loads the measured speech and places each
+  line, beat, and cue (`Timeline(narration=...)` and `Timeline.line` use
+  it), with `check_number_sync`, `check_silence`, and `sentences`.
+- **Captions, chapters and sound.** `captions`, `caption_at`,
+  `write_captions`, `write_vtt`, `write_srt`, `write_chapters`, cue sounds
+  (`CueEvents`, `cue_track`, `count_tone`, `pixel_ticks`, `click_sting`),
+  `audio_track`, and `mux` for a loudness-normalized narrated mp4.
+
+### Check the clip (`eyepiece.testing`)
+
+`check_clip` re-renders a plan-driven clip without writing files and
+collects its readability, motion and meaning findings, the plan's own faults,
+unread knobs, and speaking pace in one `ClipReport`. Each check also stands
+alone: `motion_faults` (jumps, dead moves, drift, torn groups, overlaps,
+departures) against the moves a clip declares, or the `MotionContract` a
+move's result carries,
+`readability_faults`, `meaning_faults` and `meaning_faults_chain` (one
+meaning per hue, within and across clips), `motif_faults` and
+`motif_margins`, `timing_faults` (pace, gaps, still screens, numbers said
+before they are shown), `speech_rate`, `grounding_faults` (equation terms
+without a referent), and `motion_ink` (how much of the motion is the
+quantity). The fault checks have `assert_*` twins that raise, `caption_line`
+places captions clear of the figure's text, and `review_sheet` draws a
+contact sheet at the cues and events that matter.
+
+### Record and render
+
+- **Record.** `save_fig`, `record` (a context manager that takes frames from
+  a loop the caller drives, with `stills=` from the same pass and
+  `on_rescale=` against scale drift), `animate` and its `Animation`,
+  `RawSink`, `PRESETS`, `ENCODER_PROFILE`, and `to_scrubber` (an offline
+  HTML page whose slider scrubs one knob).
+- **Render in parallel.** `ClipSpec`, `Venue`, `Variant` and `variants`
+  describe a clip's venue, mode, and narration variants; `render_variants`
+  renders each one keyed by `content_key` into a `Manifest`, resumably;
+  `render_frames` renders one clip's frames in worker processes; `render_poster`,
+  `render_still`, and `same_picture` make and compare deterministic stills;
+  `frame_faults` and `assert_frames_pure` check that frames do not depend
+  on draw order.
+- **Provenance.** `stamp`, `provenance_text`, `provenance_fields`, and
+  `file_metadata`.
+
+### Prepare a scene once
 
 - **`eyepiece.prepared`.** The frozen records (`ImageView`, `CurveView`,
   `TrackView`, `PanelGroup`, and the `Path`, `Points`, `Region`,
-  `ReferenceLine`, and `Label` marks), `Sequence` for replayable states over
-  physical time, and the shared display mapping. It imports only NumPy.
+  `ReferenceLine`, and `Label` marks, with `AxisSpec` and `Scale`),
+  `Sequence` for replayable states over physical time with the
+  `ArrayChannel`, `PathWindow`, and `Clock` channels that change them, and
+  the display mapping. It imports only NumPy.
 - **`eyepiece.style`.** `SourceCast` for fixed source colors and markers, and
   `snapshot_profile`, which captures the active hwostyle appearance as a
   read-only `RenderProfile`.
@@ -129,10 +199,11 @@ ep.save_fig(result.fig, "psf")
 ```
 
 Every primitive returns a small result object carrying the axes it drew on
-and the artists it made (keyed by the `ARTIST_KEYS` vocabulary), so a caller
-can keep working on the figure without hunting for the objects again. An
-image primitive also returns an `.update` that redraws with new data through
-the same transform, which is what makes animation a few lines:
+and the artists it made (keyed by the common `ARTIST_KEYS` vocabulary), so a
+caller can keep working on the figure without hunting for the objects again.
+`imshow_log` and `imshow_diverging` also return an `.update` that redraws
+with new data through the same transform, which is what makes animation a
+few lines:
 
 ```python
 frames = [cube[k] for k in range(len(cube))]
@@ -144,6 +215,45 @@ def draw(fig, k):
 
 
 ep.animate(result.fig, draw, len(frames), fps=10).save("run.mp4", "run.gif")
+```
+
+An explanatory clip puts every move on one clock. The timeline below draws a
+curve on, pulses a marker, and holds; the plan sets every frame, the checks
+run on the same draw function, and `record` writes the movie and a still
+from one pass:
+
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+
+import eyepiece as ep
+import eyepiece.testing as ept
+
+plt.rcParams.update(ep.talk_rc(720, dpi=100))
+x = np.linspace(0.0, 10.0, 200)
+fig, ax = plt.subplots(figsize=(12.8, 7.2), dpi=100, layout="constrained")
+(curve,) = ax.plot(x, np.sin(x))
+(marker,) = ax.plot([7.85], [1.0], "o")
+reveal = ep.head_draw(curve)
+emphasis = ep.indicate(marker, scale=1.5)
+
+tl = ep.Timeline({"curve": 0.0, "emphasis": 0.0})
+tl.move("draw", 2.0, to={"curve": 1.0})
+tl.run("emphasize", 1.0, to={"emphasis": 1.0})
+tl.hold(1.5)
+plan = tl.at_fps(30)
+
+
+def draw(k):
+    reveal.update(plan.value(k, "curve"))
+    emphasis.update(plan.value(k, "emphasis"))
+
+
+ept.assert_clip(fig, draw, plan, moves={curve: "draw"})
+with ep.record(fig, "clip.mp4", fps=plan.fps, plan=plan, stills={"clip.png": "draw"}) as rec:
+    for k in range(plan.n_frames):
+        draw(k)
+        rec.frame()
 ```
 
 A prepared sequence gives a still, a strip of selected epochs, and a movie
@@ -163,10 +273,17 @@ movie.save("run.mp4")
 The same sequence plays in a talk through Manim:
 
 ```python
+import manim
+from matplotlib.colors import to_hex
+
 import eyepiece.manim as em
 
-clip = em.animate(sequence, cast=cast, profile=snapshot_profile())
-self.add(clip.mobject)  # inside a Manim Scene or Slide
+profile = snapshot_profile()
+clip = em.animate(sequence, cast=cast, profile=profile)
+# Inside a Manim Scene or Slide; the background follows the profile so its
+# text stays readable.
+self.camera.background_color = manim.ManimColor(to_hex(profile.background_color))
+self.add(clip.mobject)
 self.play(clip.playback(run_time=8))
 ```
 
@@ -185,8 +302,21 @@ ep.save_fig(result.fig, "coronagraph_rail")
 
 ## Status
 
-eyepiece is young: the primitives above are implemented and tested, and the
-public API may still shift before 1.0.
+eyepiece is pre-1.0. The figure primitives, the timeline and its moves, the
+narration and check layers, the parallel render driver, and the prepared
+views are implemented and tested, and the public API may still shift
+between minor versions before 1.0. The
+[changelog](https://github.com/CoreySpohn/eyepiece/blob/main/CHANGELOG.md)
+records each change.
+
+Deprecated in 0.16, with a warning that names the replacement, and removed in
+0.17: `eyepiece.testing.Span` (now `Window`), `spans` (now
+`shade_intervals`), `eyepiece.motifs.resolve_role` (now `role`, which
+takes `mode=`), `Timeline.pulse` and `Timeline.ring` (now `Timeline.indicate` and
+`Timeline.circumscribe`), and `PRESETS["talk_60"]` (now `PRESETS["talk"]`).
+The arguments `write(overlap=)`, `record(allow_rescale=)` and
+`Narration(min_s=)` are gone; use `on_rescale=` for `record` and `ends=` for
+`Narration`.
 
 ## Installation
 
@@ -212,6 +342,17 @@ pkg-config, and ffmpeg:
 ```bash
 pip install "eyepiece[manim]"
 pip install "eyepiece[slides]"
+```
+
+Speech synthesis for narrated clips is the `[narration]` extra (Kokoro and
+soundfile). Kokoro pulls in torch and supports Python 3.10 to 3.12, so run
+the synthesis step in an environment of its own; loading cached speech,
+captions, and the narration checks need only the base install. The meaning
+and motif checks in `eyepiece.testing` measure color distances with
+`colorspacious`, which the `[test]` extra installs.
+
+```bash
+pip install "eyepiece[narration]"
 ```
 
 ## License
