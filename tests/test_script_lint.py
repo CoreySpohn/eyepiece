@@ -58,6 +58,26 @@ def test_a_number_needs_a_cue_within_two_words():
     assert _codes(far) == [("number-without-cue", "a")]
 
 
+@pytest.mark.parametrize(
+    "power",
+    [
+        "three, and",
+        "three; and",
+        "three and",
+        "three",
+        "twenty one, and",
+        "minus three, and",
+    ],
+)
+def test_a_quantity_after_a_scientific_exponent_is_independently_linted(power):
+    line = nr.Line(
+        "n", f"The value is {{show:value}}1 times ten to the {power} five planets."
+    )
+    faults = nr.lint_script(nr.Script((line,)))
+    assert [fault.code for fault in faults] == ["many-numbers", "number-without-cue"]
+    assert line.words[faults[1].word] == "five"
+
+
 def test_findings_name_the_line_and_a_message():
     (fault,) = nr.lint_script(nr.Script((nr.Line("a", "Some things. Done."),)))
     assert fault.key == "a" and "sentence" in fault.message

@@ -192,3 +192,45 @@ def test_scientific_sync_rejects_zero_for_a_very_small_nonzero_value():
         ],
     )
     assert "contradicts" in [fault.code for fault in faults]
+
+
+@pytest.mark.parametrize(
+    "power, value",
+    [
+        ("three, and five", 1000),
+        ("three; and five", 1000),
+        ("three and five", 1000),
+        ("three five", 1000),
+        ("twenty one, and five", 1e21),
+        ("twenty one and five", 1e21),
+        ("minus three, and five", 1e-3),
+        ("one hundred and five, and five", 1e105),
+    ],
+)
+def test_scientific_exponent_stops_after_one_valid_signed_integer(power, value):
+    script = nr.Script((nr.Line("n", f"1 times ten to the {power} planets."),))
+    narration = nr.Narration.estimated(script)
+    binding = {
+        "word_key": ("n", 0),
+        "span": (0, narration.total_s),
+        "values": [(0, value), (narration.total_s, value)],
+    }
+    assert nr.check_number_sync(narration, [binding]) == []
+
+
+@pytest.mark.parametrize("power", ["3.5", "three point five"])
+def test_scientific_exponent_must_be_an_integer(power):
+    narration = nr.Narration.estimated(
+        nr.Script((nr.Line("n", f"1 times ten to the {power}"),))
+    )
+    with pytest.raises(ValueError, match="exponent must be an integer"):
+        nr.check_number_sync(
+            narration,
+            [
+                {
+                    "word_key": ("n", 0),
+                    "span": (0, narration.total_s),
+                    "values": [(0, 1)],
+                }
+            ],
+        )

@@ -246,42 +246,30 @@ def _numbers(words):
     """The numbers a line says, as the index of the first word of each.
 
     A run of number words (``twenty one``, ``one hundred and five``,
-    ``three point five``) is one number, as is each token of digits.
+    ``three point five``) is one number, as is each token of digits. A
+    scientific phrase ends after one valid signed integer exponent.
     """
-    found, run = [], False
+    found, end = [], 0
     for i, word in enumerate(words):
-        bare = _bare(word)
-        if _DIGITS.match(word):
-            found.append(i)
-            run = False
+        if i < end:
             continue
-        is_number = bare in _NUMBER_WORDS
-        if bare == "one" and not run:
+        bare = _bare(word)
+        is_number = bool(_DIGITS.match(word)) or bare in _NUMBER_WORDS
+        if bare == "one":
             after = i and _bare(words[i - 1]) in _ONE_AFTER
             before = i + 1 < len(words) and (
                 _bare(words[i + 1]) in _ONE_BEFORE
                 or _bare(words[i + 1]) in _NUMBER_WORDS
             )
             is_number = bool(after or before)
-        joins = run and (
-            bare in ("and", "point")
-            and i + 1 < len(words)
-            and _bare(words[i + 1]) in _NUMBER_WORDS
-        )
-        if is_number and not run:
-            found.append(i)
-        run = is_number or joins
-    # A scientific phrase is one quantity, including its base and exponent.
-    quantities, end = [], -1
-    for index in found:
-        if index < end:
+        if not is_number:
             continue
-        quantities.append(index)
+        found.append(i)
         try:
-            _, end = _value_end(words, index)
+            _, end = _value_end(words, i)
         except (ValueError, IndexError):
-            end = index + 1
-    return quantities
+            end = i + 1
+    return found
 
 
 def lint_script(script: Script) -> list[ScriptFault]:
@@ -447,15 +435,46 @@ def _plain_value(words, index):
     return total + current, i
 
 
+def _exponent_value(words, index):
+    """Read one signed integer, stopping at punctuation or invalid number grammar."""
+    from ._timeline import _integer_words
+
+    word = words[index]
+    if _bare(word) in ("minus", "plus"):
+        value, end = _exponent_value(words, index + 1)
+        return (-value if _bare(word) == "minus" else value), end
+    if _DIGITS.match(word):
+        return _plain_value(words, index)
+    best = None
+    tokens = []
+    for i in range(index, len(words)):
+        bare = _bare(words[i])
+        if bare not in _NUMBER_WORDS and bare != "and":
+            break
+        tokens.append(bare)
+        value, _ = _plain_value(tokens, 0)
+        # Use the formatter's integer grammar, with its optional "and".
+        grammar = _integer_words(int(value)).replace(" and ", " (?:and )?")
+        if re.fullmatch(grammar, " ".join(tokens)):
+            best = value, i + 1
+        if words[i].rstrip("\"')]").endswith((".", ",", ";", ":", "?", "!")):
+            break
+    if best is None:
+        raise ValueError(f"{word!r} is not an integer")
+    return best
+
+
 def _value_end(words, index):
     """A signed quantity, including a scientific exponent, and its end index."""
     value, end = _plain_value(words, index)
     if [_bare(w) for w in words[end : end + 4]] == ["times", "ten", "to", "the"]:
         try:
-            power, power_end = _plain_value(words, end + 4)
+            power, power_end = _exponent_value(words, end + 4)
         except (ValueError, IndexError):
             return value, end
-        if not power.is_integer():
+        if not power.is_integer() or (
+            power_end < len(words) and _bare(words[power_end]) == "point"
+        ):
             raise ValueError("a scientific exponent must be an integer")
         value, end = float(f"{value}e{int(power)}"), power_end
     return value, end
