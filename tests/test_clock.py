@@ -2,6 +2,8 @@
 
 import itertools
 import math
+from fractions import Fraction
+from types import MappingProxyType
 
 import pytest
 from hypothesis import assume, given, settings
@@ -161,6 +163,64 @@ def test_spans_json_is_the_manifest_of_rounded_start_and_end_times():
     assert tl.at_fps(30).spans_json() == {"a": [0.0, 0.333], "b": [0.333, 1.333]}
 
 
+@pytest.fixture
+def spans_json_plan():
+    tl = ep.Timeline({"x": 0.0}, tempo=TEMPO)
+    with tl.section("one"):
+        tl.hold(0.3333333, name="pause")
+        tl.enter("subject", 0.6111111)
+        tl.move("go", 0.7222222, to={"x": 1.0})
+        tl.settle()
+        reading = tl.read("three short words", name="reading")
+        tl.pulse("subject", at=reading.start)
+        tl.click("subject")
+        tl.caption("label", "two words")
+    return tl.at_fps(30)
+
+
+def test_spans_json_without_holds_keeps_every_other_span(spans_json_plan):
+    plan = spans_json_plan
+    expected_names = {
+        "subject",
+        "go",
+        "pulse.subject",
+        "click.subject",
+        "label",
+        "label.leave",
+    }
+    assert {s.kind for s in plan.spans.values()} == {
+        "hold",
+        "enter",
+        "move",
+        "pulse",
+        "run",
+        "caption",
+        "leave",
+    }
+    assert sum(s.kind == "hold" for s in plan.spans.values()) == 4
+    result = plan.spans_json(holds=False)
+    assert set(result) == expected_names
+    assert result == {
+        name: [round(plan.spans[name].start_s, 3), round(plan.spans[name].end_s, 3)]
+        for name in expected_names
+    }
+
+
+def test_spans_json_defaults_to_every_span_rounded_to_milliseconds(spans_json_plan):
+    plan = spans_json_plan
+    expected = {
+        name: [round(span.start_s, 3), round(span.end_s, 3)]
+        for name, span in plan.spans.items()
+    }
+    assert plan.spans_json() == expected
+    assert plan.spans_json(holds=True) == expected
+
+
+def test_spans_json_holds_is_keyword_only(spans_json_plan):
+    with pytest.raises(TypeError):
+        spans_json_plan.spans_json(False)
+
+
 # ---------------------------------------------------------------------------
 # Times
 
@@ -175,6 +235,69 @@ def test_times_are_exact_sums_not_accumulated_floats():
     assert isinstance(t, ep.Time) and isinstance(0.5 + t, ep.Time)
     assert isinstance(t - 0.1, ep.Time) and isinstance(1.0 - t, ep.Time)
     assert ep.Time(1.0) - 0.25 == 0.75 and 1.0 - ep.Time(0.25) == 0.75
+
+
+def test_timeline_spans_lists_declared_records_in_declaration_order():
+    tl = ep.Timeline()
+    later = tl.move("later", 0.2, at=ep.Time(0.1) + 0.2)
+    earlier = tl.move("earlier", 0.1, at=0.0)
+    spans = tl.spans
+    assert isinstance(spans, MappingProxyType)
+    assert list(spans) == ["later", "earlier"]
+    for handle in (later, earlier):
+        record = spans[handle.name]
+        for actual, expected in (
+            (record.start, handle.start),
+            (record.end, handle.end),
+        ):
+            assert isinstance(actual, ep.Time)
+            assert actual == expected
+            assert actual.exact == expected.exact
+        assert record.k0 is None and record.k1 is None
+
+
+def test_timeline_spans_reflects_spans_declared_after_the_view_was_taken():
+    tl = ep.Timeline()
+    tl.hold(0.1, name="first")
+    spans = tl.spans
+    second = tl.hold(0.2, name="second")
+    assert list(spans) == ["first", "second"]
+    assert spans["second"] == second
+
+
+def test_timeline_spans_rejects_item_assignment_and_deletion():
+    tl = ep.Timeline()
+    span = tl.hold(0.1, name="stay")
+    spans = tl.spans
+    with pytest.raises(TypeError):
+        spans["stay"] = span
+    with pytest.raises(TypeError):
+        del spans["stay"]
+    assert spans["stay"] == span
+
+
+def test_timeline_spans_reflects_a_silent_captions_automatic_leave():
+    tl = ep.Timeline(tempo=TEMPO)
+    with tl.section("one"):
+        cap = tl.caption("label", "two words")
+        spans = tl.spans
+        assert list(spans) == ["label"]
+    assert list(spans) == ["label", "label.leave"]
+    leave = spans["label.leave"]
+    assert leave.kind == "leave"
+    assert isinstance(leave.start, ep.Time) and isinstance(leave.end, ep.Time)
+    assert leave.start.exact == (cap.end + TEMPO.read_s("two words")).exact
+    assert leave.k0 is None and leave.k1 is None
+
+
+def test_timeline_spans_reflects_a_paired_captions_updated_record():
+    tl = ep.Timeline()
+    spans = tl.spans
+    subject = tl.enter("subject", 0.5, caption="two words")
+    assert list(spans) == ["cap_subject", "subject"]
+    assert spans["cap_subject"].with_ == (subject.name,)
+    assert subject.with_ == ("cap_subject",)
+    assert all(span.k0 is None and span.k1 is None for span in spans.values())
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +652,134 @@ def test_a_caption_leaving_before_it_is_read_is_a_fault():
 
 # ---------------------------------------------------------------------------
 # The cursor
+
+
+@pytest.mark.parametrize(
+    "times, want",
+    [
+        ((2, 3, 1), Fraction(3)),
+        ((Fraction(2, 3), 0.5, Fraction(1, 3)), Fraction(2, 3)),
+        ((0.5, ep.Time(Fraction(5, 7))), Fraction(5, 7)),
+    ],
+)
+def test_wait_until_advances_to_the_latest_time_and_returns_an_exact_time(times, want):
+    tl = ep.Timeline(tempo=ep.Tempo(factor=2.0))
+    result = tl.wait_until(*times)
+    assert isinstance(result, ep.Time)
+    assert result.exact == tl.now.exact == want
+
+
+@pytest.mark.parametrize("when", [0.5, 1.0])
+def test_wait_until_at_or_before_now_leaves_the_section_end_unchanged(when):
+    tl = ep.Timeline()
+    with tl.section("one") as sec:
+        tl.hold(1.0)
+        assert tl.wait_until(when) == tl.now == 1.0
+    assert sec.end == 1.0
+
+
+@pytest.mark.parametrize("when", [0.5, 3.0])
+def test_a_noop_wait_does_not_make_a_nonextending_span_extend_its_section(when):
+    tl = ep.Timeline()
+    with tl.section("one") as sec:
+        tl.hold(1.0)
+        tl.span("motion", 2.0, kind="move", extends=False)
+        assert tl.now == 3.0
+        assert tl.wait_until(when) == 3.0
+    assert sec.end == 1.0
+
+
+def test_an_enter_after_an_implicit_wait_starts_at_the_waited_time():
+    tl = ep.Timeline()
+    tl.wait_until(Fraction(5, 4))
+    entered = tl.enter("subject", 0.5)
+    assert entered.start.exact == Fraction(5, 4)
+    assert entered.section == ""
+    plan = tl.at_fps(30)
+    assert tuple(plan.spans) == ("subject",)
+    assert plan.knobs == ("subject",)
+
+
+def test_a_section_with_only_a_wait_ends_where_the_next_section_starts():
+    tl = ep.Timeline()
+    one = tl.section("one")
+    tl.wait_until(Fraction(7, 3))
+    two = tl.section("two")
+    assert one.end.exact == two.start.exact == Fraction(7, 3)
+
+
+def test_a_wait_then_a_later_section_keeps_the_clip_length_at_the_wait():
+    tl = ep.Timeline()
+    tl.section("one")
+    tl.hold(1.0)
+    tl.wait_until(2.0)
+    two = tl.section("two")
+    tl.wait_until(2.0)
+    tl.span("late", 1.0, kind="move", extends=False)
+    plan = tl.at_fps(30)
+    assert two.start == two.end == 2.0
+    assert [e.t_s for e in plan.events(what="section-start")] == [0.0, 2.0]
+    assert plan.n_frames == 60
+
+
+def test_seconds_includes_a_wait_before_and_after_its_section_closes():
+    tl = ep.Timeline()
+    with tl.section("one") as sec:
+        tl.hold(1.0)
+        tl.wait_until(2.0)
+        assert tl.seconds == 2.0
+    assert sec.end == 2.0
+    assert tl.seconds == 2.0
+
+
+def test_a_trailing_wait_sets_the_clip_length_without_adding_a_span_or_knob():
+    tl = ep.Timeline({"x": 7.0})
+    tl.hold(1.0, name="still")
+    tl.wait_until(2.0)
+    tl.wait_until(2.25)
+    plan = tl.at_fps(30)
+    assert plan.n_frames == ep.frame_count(2.25, 30)
+    assert tuple(plan.spans) == ("still",)
+    assert plan.knobs == ("x",)
+    assert plan.value(plan.n_frames - 1, "x") == 7.0
+
+
+def test_a_wait_shorter_than_a_frame_builds_strict_without_a_collapsed_fault():
+    tl = ep.Timeline(strict=True)
+    tl.hold(1.0)
+    tl.wait_until(1.001)
+    plan = tl.at_fps(30)
+    assert plan.n_frames == ep.frame_count(1.001, 30)
+    assert "collapsed" not in _codes(plan)
+
+
+def test_a_timeline_with_only_waits_still_has_no_spans_to_build():
+    tl = ep.Timeline()
+    tl.wait_until(1.0)
+    tl.wait_until(2.0)
+    with pytest.raises(ValueError, match="the timeline has no spans"):
+        tl.at_fps(30)
+
+
+def test_wait_until_needs_at_least_one_time():
+    with pytest.raises(TypeError):
+        ep.Timeline().wait_until()
+
+
+@pytest.mark.parametrize("when", [float("nan"), float("inf"), float("-inf"), -1])
+def test_wait_until_rejects_nonfinite_or_negative_times(when):
+    tl = ep.Timeline()
+    with pytest.raises(ValueError):
+        tl.wait_until(2.0, when)
+    assert tl.now == tl.seconds == 0.0
+
+
+@pytest.mark.parametrize("when", [0.0, 2.0])
+def test_wait_until_is_not_allowed_inside_together_even_for_a_noop(when):
+    tl = ep.Timeline()
+    with tl.together(), pytest.raises(ValueError):
+        tl.wait_until(when)
+    assert tl.now == 0.0
 
 
 def test_default_placement_advances_now_and_at_does_not():
