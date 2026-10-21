@@ -236,16 +236,16 @@ fig, ax = plt.subplots(figsize=(12.8, 7.2), dpi=100, layout="constrained")
 reveal = ep.head_draw(curve)
 emphasis = ep.indicate(marker, scale=1.5)
 
-tl = ep.Timeline({"curve": 0.0, "pulse.marker": 0.0})
+tl = ep.Timeline({"curve": 0.0, "emphasis": 0.0})
 tl.move("draw", 2.0, to={"curve": 1.0})
-tl.run("emphasize", 1.0, to={"pulse.marker": 1.0})
+tl.run("emphasize", 1.0, to={"emphasis": 1.0})
 tl.hold(1.5)
 plan = tl.at_fps(30)
 
 
 def draw(k):
     reveal.update(plan.value(k, "curve"))
-    emphasis.update(plan.value(k, "pulse.marker"))
+    emphasis.update(plan.value(k, "emphasis"))
 
 
 ept.assert_clip(fig, draw, plan, moves={curve: "draw"})
