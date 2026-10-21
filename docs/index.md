@@ -145,8 +145,8 @@ reference documents every signature.
   wavelength).
 - **Marks and annotations.** `overlay_circle` and `overlay_line` (dashed
   marks that read over any pixels), `ruler`, `bracket`, `ref_line` (a
-  threshold with its label pinned to an axes edge), `spans` (excluded
-  intervals), `log_zero_floor`, and `backing` (a plate behind a label).
+  threshold with its label pinned to an axes edge), `shade_intervals`
+  (excluded intervals), `log_zero_floor`, and `backing` (a plate behind a label).
 - **Distributions and diagnostics.** `corner`, `corner_overlay`,
   `hist_vs_pdf`, `cov_ellipse`, `convergence`, `signed_trace`, `hist_fill`,
   `interval_points` (including one-sided intervals), `calibration`, `strip`,
@@ -159,13 +159,14 @@ reference documents every signature.
 - **Layout and color.** `extent_lod`, `extent_lod_from_pixels`,
   `extent_arcsec`, `extent_au`, the matching `label_lod`, `label_arcsec`,
   and `label_au`, `Frame` and `SourceStyles` for panels of one scene, and
-  `role` and `neutral` for brand and scenery colors.
+  `role` (a named role or neutral rank, in any mode) and `neutral` for
+  brand and scenery colors.
 
 ### Put a clip on one clock
 
 - **Timing.** `Timeline` declares named spans in seconds (`enter`, `leave`,
   `text`, `move`, `run`, `hold`, `wait_until`, `read`, `settle`,
-  `together`, `stagger`, `pulse`, `ring`, `click`, `caption`, `section`,
+  `together`, `stagger`, `indicate`, `circumscribe`, `click`, `caption`, `section`,
   `hero`) and `Timeline.at_fps` resolves them into a `Plan` that a draw
   function reads frame by frame (`value`, `progress`, `frame_of`, `events`,
   `spans_json`). `Tempo` sets the pace of the whole clip in one place.
@@ -198,8 +199,8 @@ reference documents every signature.
 ### Keep color and scale honest
 
 - **Motifs.** `Motif` and `MotifSet` give each recurring quantity one
-  drawing style across a clip, with `AcceptedPair`, `resolve_role`, and
-  `is_hue_role` in `eyepiece.motifs`.
+  drawing style across a clip, with `AcceptedPair` and `is_hue_role` in
+  `eyepiece.motifs`.
 - **Scale for a talk.** `talk_rc` (type and strokes sized from the frame
   height, from `TALK_FRACTIONS` and `VIDEO_RC`), `use_video` and
   `video_roles` for video-safe dark colors, and `unsnapped`.
