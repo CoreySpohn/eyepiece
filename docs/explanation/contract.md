@@ -397,6 +397,10 @@ contracts rather than the mechanism behind them.
 
 ## Style resolves at call time
 
+`eyepiece.style.role`, `eyepiece.style.neutral`, and `eyepiece.style.backing`
+are alternate paths to the same functions as `eyepiece.role`,
+`eyepiece.neutral`, and `eyepiece.backing`. Neither path warns.
+
 Color, colormap, and savefig policy come from hwostyle, and every lookup
 happens inside the call, not at import. Importing eyepiece activates no
 style and touches no rcParams. Switching modes between two calls is

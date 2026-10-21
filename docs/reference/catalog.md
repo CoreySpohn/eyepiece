@@ -132,10 +132,10 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | shade excluded intervals | `shade_intervals(x, mask, intervals=)` | Masked runs as bands | [marks](../gallery/marks.md) |
 | a zero row on a log axis | `log_zero_floor(ax, floor)` | Zero row at a display floor with a break mark | [marks](../gallery/marks.md) |
 | a labeled bracket | `bracket(ax, x0, x1, y, text, depth=)` | Square bracket labeled on its far side | [scene](../gallery/scene.md) |
-| a label that reads over marks or pixels | `backing(alpha=)` | `bbox` plate in the background color | [stats](../gallery/stats.md) |
+| a label that reads over marks or pixels | `backing(alpha=)` | `bbox` plate in the background color; alternate path `style.backing` | [stats](../gallery/stats.md); alternate path in [contract](../explanation/contract.md) (prose) |
 | a dashed circle or path legible on any pixels | `overlay_circle`, `overlay_line` | Dashed mark with an underlay | [images](../gallery/images.md) |
-| a neutral scenery tone | `neutral(level)` | Gray between background and text ink | [stats](../gallery/stats.md) |
-| the brand color of a role | `role(name, mode=)` | Hex color for a named role or a neutral rank, in the active or a given mode | [stats](../gallery/stats.md) |
+| a neutral scenery tone | `neutral(level)` | Gray between background and text ink; alternate path `style.neutral` | [stats](../gallery/stats.md); alternate path in [contract](../explanation/contract.md) (prose) |
+| the brand color of a role | `role(name, mode=)` | Hex color for a named role or a neutral rank, in the active or a given mode; alternate path `style.role` | [stats](../gallery/stats.md); alternate path in [contract](../explanation/contract.md) (prose) |
 | a pixel-edge extent and matching axis labels | `extent_lod_from_pixels`, `extent_lod`, `extent_arcsec`, `extent_au`, `label_lod`, `label_arcsec`, `label_au` | Extents and labels for image axes | [images](../gallery/images.md) (`extent_lod_from_pixels`, `label_lod`), [profiles](../gallery/profiles.md) (prose: `extent_arcsec`, `extent_au`); the rest API reference |
 | one field of view across panels | `Frame(half_fov_lod, pixscale_lod=)` | Shared extent for panels of one scene | [one-scene-n-views](../gallery/one-scene-n-views.md) |
 
@@ -234,8 +234,8 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | check equation terms are grounded | `ept.grounding_faults`, `ept.assert_grounded` | Missing referents, wrong colors, early symbols | [ground-a-symbol](../how-to/ground-a-symbol.md); `assert_grounded` (prose) |
 | measure how much motion is the quantity | `ept.motion_ink(fig, at, times, driven)` | Share of changed pixels on driven artists | [check-narration-and-motion](../how-to/check-narration-and-motion.md) (through `check_clip`) |
 | a contact sheet at the moments that matter | `ept.review_sheet(path, source, narration=, plan=, audio=)` | Frames at cues and events, with the waveform | [check-timing](../how-to/check-timing.md) |
-| check frames do not depend on draw order | `render.frame_faults`, `render.assert_frames_pure` | Purity diagnostic on sampled frames | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md); `frame_faults` API reference |
-| compare two PNGs | `render.same_picture(a, b, tol=)` | RGBA comparison | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md) |
+| check frames do not depend on draw order | `render.frame_faults`, `render.assert_frames_pure` | Purity diagnostic on sampled frames; alternate paths `ept.frame_faults`, `ept.assert_frames_pure` | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md); `frame_faults` API reference |
+| compare two PNGs | `render.same_picture(a, b, tol=)` | RGBA comparison; alternate path `ept.same_picture` | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md) |
 
 ## 15. Record and render
 

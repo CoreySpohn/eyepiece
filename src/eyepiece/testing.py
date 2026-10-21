@@ -63,6 +63,7 @@ Example::
     ept.assert_readable(fig, at=clip.pose, times=cue_times)
 """
 
+import importlib
 import itertools
 import math
 import numbers
@@ -71,7 +72,7 @@ import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 from matplotlib import rcParams
@@ -107,6 +108,10 @@ from eyepiece._motif_checks import (
 from eyepiece._motion import frame_count
 from eyepiece.attention import _data_colors, _default_avoid, _renderer
 
+if TYPE_CHECKING:
+    from eyepiece._render_pool import assert_frames_pure, frame_faults
+    from eyepiece._render_poster import same_picture
+
 __all__ = [
     "GROUNDING_KINDS",
     "KINDS",
@@ -134,6 +139,7 @@ __all__ = [
     "TimingFault",
     "Window",
     "assert_clip",
+    "assert_frames_pure",
     "assert_grounded",
     "assert_meaning",
     "assert_motifs",
@@ -143,6 +149,7 @@ __all__ = [
     "assert_timing",
     "caption_line",
     "check_clip",
+    "frame_faults",
     "grounding_faults",
     "meaning_faults",
     "meaning_faults_chain",
@@ -153,6 +160,7 @@ __all__ = [
     "motion_ink",
     "readability_faults",
     "review_sheet",
+    "same_picture",
     "speech_rate",
     "timing_faults",
 ]
@@ -3614,11 +3622,20 @@ def assert_clip(fig, draw, plan, **kwargs) -> ClipReport:
     return report
 
 
+_LAZY_EXPORTS = {
+    "assert_frames_pure": "eyepiece._render_pool",
+    "frame_faults": "eyepiece._render_pool",
+    "same_picture": "eyepiece._render_poster",
+}
 _DEPRECATED = {"Span": "Window"}
 
 
 def __getattr__(name):
-    """Resolve a deprecated name to its replacement, with a warning."""
+    """Load shared render checks or resolve a deprecated name."""
+    if name in _LAZY_EXPORTS:
+        value = getattr(importlib.import_module(_LAZY_EXPORTS[name]), name)
+        globals()[name] = value
+        return value
     if name in _DEPRECATED:
         new = _DEPRECATED[name]
         warnings.warn(
@@ -3629,3 +3646,8 @@ def __getattr__(name):
         )
         return globals()[new]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__():
+    """Include the lazy render checks in namespace discovery."""
+    return sorted(set(globals()) | set(__all__))
