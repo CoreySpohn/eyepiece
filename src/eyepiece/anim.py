@@ -671,7 +671,8 @@ def record(
             knob the draw function never read (through `Plan.value`,
             `Plan.frames` or `Plan.progress`) and every knob that never
             changes over the clip: a clip whose concept is motion needs a knob
-            that moves. The ``pulse.*`` and ``ring.*`` knobs are exempt.
+            that moves. The ``indicate.*`` and ``circumscribe.*`` knobs are
+            exempt, as `Plan.unused_knobs` describes.
         stills_dpi: Dpi of the stills; None uses the first sink's dpi, which
             makes a still pixel-identical to that sink's frame.
         snap: Whether Agg snaps markers, axis-aligned lines and rectilinear

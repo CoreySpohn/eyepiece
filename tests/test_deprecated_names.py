@@ -51,3 +51,43 @@ def test_role_takes_a_neutral_rank_as_its_gray():
     assert ep.role("text") == to_hex(ep.neutral(1.0))
     with pytest.raises(KeyError, match="neutral ranks"):
         ep.role("nonsense")
+
+
+@pytest.mark.parametrize("old,new", [("pulse", "indicate"), ("ring", "circumscribe")])
+def test_old_timeline_verbs_warn_and_place_the_same_span(old, new):
+    current = ep.Timeline()
+    current.hold(1.0)
+    placed = getattr(current, new)("dot", at=0.2)
+    legacy = ep.Timeline()
+    legacy.hold(1.0)
+    with pytest.warns(DeprecationWarning, match=f"Timeline.{new}"):
+        kept = getattr(legacy, old)("dot", at=0.2)
+    assert (kept.name, kept.kind) == (f"{old}.dot", old)
+    assert (placed.name, placed.kind) == (f"{new}.dot", new)
+    assert (kept.start_s, kept.end_s, kept.extends) == (
+        placed.start_s,
+        placed.end_s,
+        placed.extends,
+    )
+    a, b = current.at_fps(30), legacy.at_fps(30)
+    assert [a.value(k, f"{new}.dot") for k in range(a.n_frames)] == [
+        b.value(k, f"{old}.dot") for k in range(b.n_frames)
+    ]
+    assert b.unused_knobs() == a.unused_knobs()
+
+
+@pytest.mark.parametrize("old,new", [("pulse", "indicate"), ("ring", "circumscribe")])
+def test_old_span_kinds_warn_and_place_as_the_new_kind(old, new):
+    current = ep.Timeline({"k": 0.0})
+    placed = current.span("k", 0.5, kind=new, to=1.0)
+    legacy = ep.Timeline({"k": 0.0})
+    with pytest.warns(DeprecationWarning, match=repr(new)):
+        kept = legacy.span("k", 0.5, kind=old, to=1.0)
+    assert kept.kind == old
+    assert (kept.start_s, kept.end_s, kept.extends, kept.ease) == (
+        placed.start_s,
+        placed.end_s,
+        placed.extends,
+        placed.ease,
+    )
+

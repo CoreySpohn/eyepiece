@@ -61,7 +61,7 @@ Here is the figure construction, including the reserved band and its text artist
 
 `Narration.load` reads only the timing JSON in `cache`. Each `line(key)`
 opens the next spoken line. The `enter` verbs use `show:panel`, `show:image`,
-and `show:profile`, while `pulse` uses `indicate:marker`. Entries start
+and `show:profile`, while `indicate` uses `indicate:marker`. Entries start
 0.1 seconds before their marked word, and the pulse is centered on its word.
 The final `close` line keeps the finished figure visible while it is spoken.
 

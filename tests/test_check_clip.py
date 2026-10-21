@@ -170,7 +170,7 @@ def _narrated_plan(wpm=120, *, cue=False):
     tl = ep.Timeline(narration=narration)
     with tl.line("a"):
         if cue:
-            tl.pulse("dot")
+            tl.indicate("dot")
         else:
             tl.hold(0.5)
     return tl.at_fps(10)
