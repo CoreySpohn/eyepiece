@@ -262,7 +262,9 @@ the pixel-exact rest state.
 
 Each signature move states what it lets move, what it must not touch, how it
 arrives at rest, and the rest state it ends in. The tests pin these
-contracts rather than the mechanism behind them.
+contracts rather than the mechanism behind them. The
+{doc}`signature moves gallery <../gallery/signature-moves>` shows each move
+in a small runnable example.
 
 - `head_draw`: only the drawn prefix of each path changes. It grows from the
   start of the path at the eased progress, and its tip moves at constant

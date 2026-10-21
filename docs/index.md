@@ -288,6 +288,7 @@ The tutorials build {doc}`a still <tutorials/still>`,
 {doc}`a silent build-up <tutorials/build-up>` and
 {doc}`a narrated clip <tutorials/narrated>` from start to finish. The motion
 galleries show each family of moves running:
+{doc}`signature moves <gallery/signature-moves>`,
 {doc}`clocks and readouts <gallery/motion-clock>`,
 {doc}`weighted draws <gallery/weighted-draws>`,
 {doc}`cameras and zooms <gallery/motion-camera>`,
@@ -376,6 +377,7 @@ gallery/scene
 gallery/phasor
 gallery/animation
 gallery/motion
+gallery/signature-moves
 gallery/weighted-draws
 gallery/one-scene-n-views
 gallery/prepared

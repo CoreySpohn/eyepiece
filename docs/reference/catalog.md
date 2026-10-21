@@ -55,19 +55,19 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| draw a curve on at constant speed (the signature reveal) | `head_draw(lines, ease=, lag=, behind=)` | Arc-length draw (constant speed under a linear ease) with a bright head that dissolves at rest | [draw-a-line-on](../how-to/draw-a-line-on.md) |
+| draw a curve on at constant speed (the signature reveal) | `head_draw(lines, ease=, lag=, behind=)` | Arc-length draw (constant speed under a linear ease) with a bright head that dissolves at rest | [draw-a-line-on](../how-to/draw-a-line-on.md), [signature-moves](../gallery/signature-moves.md) |
 | reveal a line along its path, no head | `draw_on(lines, ease="linear")` | Steady display-space reveal | [draw-a-line-on](../how-to/draw-a-line-on.md), [motion-attention](../gallery/motion-attention.md) |
-| keep a halo or backing line behind the drawing head | `head_draw(..., behind={line: halo})` | Cuts the behind line to the drawn body | [contract](../explanation/contract.md) (prose) |
-| build an axis in front of the viewer, or a number line | `build_axes(ax, axis="x"/"y"/"both", style="sweep"/"staccato")` | Spine draws on, ticks and numbers arrive, label writes on | [bring-a-panel-in](../how-to/bring-a-panel-in.md), [motion-staging](../gallery/motion-staging.md), [build-up](../tutorials/build-up.md) |
-| grow an arrow or a vector | `arrow(tail, head, kind=, grow="length"/"scaled")` | Arrow that grows and moves without redraw | [motion-camera](../gallery/motion-camera.md) |
+| keep a halo or backing line behind the drawing head | `head_draw(..., behind={line: halo})` | Cuts the behind line to the drawn body | [signature-moves](../gallery/signature-moves.md) |
+| build an axis in front of the viewer, or a number line | `build_axes(ax, axis="x"/"y"/"both", style="sweep"/"staccato")` | Spine draws on, ticks and numbers arrive, label writes on | [bring-a-panel-in](../how-to/bring-a-panel-in.md), [motion-staging](../gallery/motion-staging.md), [build-up](../tutorials/build-up.md), [signature-moves](../gallery/signature-moves.md) |
+| grow an arrow or a vector | `arrow(tail, head, kind=, grow="length"/"scaled")` | Arrow that grows and moves without redraw | [motion-camera](../gallery/motion-camera.md), [signature-moves](../gallery/signature-moves.md) |
 | sweep an angle | `angle_arc(center, start, end, radius)` | Arc between two directions that can sweep | [motion-camera](../gallery/motion-camera.md) |
 | show north and east turning together | `compass(center, length, east=)` | Paired N and E arrows | [motion-camera](../gallery/motion-camera.md) |
-| write a label as if by hand | `write(text, draw=, lag=)` | Each glyph traced, then filled | [motion-attention](../gallery/motion-attention.md) |
+| write a label as if by hand | `write(text, draw=, lag=)` | Each glyph traced, then filled | [motion-attention](../gallery/motion-attention.md), [signature-moves](../gallery/signature-moves.md) |
 | reveal or color one word of a line | `words(at, string, by=)` | One text per word in a fixed layout | [motion-attention](../gallery/motion-attention.md) |
 | a track that fades into its own past | `fading_track(xy)` | Opacity ramps from tail to head | [scene](../gallery/scene.md) |
 | a 3D trajectory with a depth cue | `trail(xyz, depth=, marker_scale=)` | Connected path with a depth cue: the far side dashed, or markers sized by depth | [scene](../gallery/scene.md) |
 | a fan of candidate tracks by weight | `sky_fan(tracks, weights=)` | Tracks faded by weight | [scene](../gallery/scene.md) |
-| an image that develops from its photons | `arrivals(rate, exposure, seed=)`, `photons(arrivals)` | Seeded Poisson arrivals; newest photons flash | [motion-clock](../gallery/motion-clock.md) |
+| an image that develops from its photons | `arrivals(rate, exposure, seed=)`, `photons(arrivals)` | Seeded Poisson arrivals; newest photons flash | [motion-clock](../gallery/motion-clock.md), [signature-moves](../gallery/signature-moves.md) |
 | a histogram that fills as samples arrive | `hist_fill(values, ymax=, law=)` | Fills on a pinned scale | [stats](../gallery/stats.md) |
 
 ## 3. Point at the subject
@@ -75,9 +75,9 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
 | light the thing the narration names | `indicate(artists, scale=, strength=, shape=)`, placed by `tl.indicate(target)` | Swells and tints toward the text ink, then returns exactly | [motion-attention](../gallery/motion-attention.md), [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
-| a plateau pulse (emphasis held at its peak) | `indicate(..., shape="plateau")` | Up 35%, hold 30%, down 35% | [contract](../explanation/contract.md) (prose) |
+| a plateau pulse (emphasis held at its peak) | `indicate(..., shape="plateau")` | Up 35%, hold 30%, down 35% | [signature-moves](../gallery/signature-moves.md) |
 | outline a thing, then let it go | `circumscribe(target, shape=, style="trace")`, placed by `tl.circumscribe(target)` | Outline draws on, then fades | [motion-attention](../gallery/motion-attention.md) (`circumscribe`), [motion-clock](../gallery/motion-clock.md) (`tl.circumscribe`) |
-| pass a comet around a thing | `circumscribe(target, style="flash")` | A tapered comet runs once around the outline | [contract](../explanation/contract.md) (prose) |
+| pass a comet around a thing | `circumscribe(target, style="flash")` | A tapered comet runs once around the outline | [signature-moves](../gallery/signature-moves.md) |
 | put a no-hue cue behind the subject | `MotifSet.default()["cue"].patch_kw()` on a patch you draw | Text-ink band, ring or underlay behind the subject | [motifs](../gallery/motifs.md) (no function; hand-built patch) |
 | a short caption beside the thing it names | `callout(target, text, side=, rise_pt=)` | Caption with an optional leader, rising into place | [motion-attention](../gallery/motion-attention.md) |
 | a leader from a text to its mark | `leader(text, target)` | Leader line that obeys the connector rules | [attention-moves](../reference/attention-moves.md) (prose) |
@@ -96,7 +96,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | dim everything but the current subject | `Stage(groups, dim=)`, `stage.set(shown=, dimmed=)` | Groups set to shown, dimmed or absent | [motion-staging](../gallery/motion-staging.md), [bring-a-panel-in](../how-to/bring-a-panel-in.md) |
 | set some groups' presence and contrast, leave the rest | `stage.weigh(levels, ease=)` | Absolute levels per named group | [bring-a-panel-in](../how-to/bring-a-panel-in.md), [build-up](../tutorials/build-up.md) |
 | settle the scene by presence | `stage.weigh(levels)` | Arrival by opacity, no motion, driven by an entry knob such as one `tl.enter` or `tl.run` writes | [build-up](../tutorials/build-up.md) |
-| a label that arrives attached to its mark | `stage.weigh(levels, lift_pt=)` | Labels drift up at most 10 px as they fade in | [contract](../explanation/contract.md) (prose) |
+| a label that arrives attached to its mark | `stage.weigh(levels, lift_pt=)` | Labels drift up at most 10 px as they fade in | [signature-moves](../gallery/signature-moves.md) |
 | return every group to how it was drawn | `stage.rest()`, `stage.state()` | Rest state; the levels of a state | [bring-a-panel-in](../how-to/bring-a-panel-in.md) (`rest`); `state` API reference |
 | fade artists toward the background, or by opacity | `fade(target, level, by="color"/"alpha")`, `blend(color, level)` | Contrast blend (or opacity) that works in both modes | [scene](../gallery/scene.md), [motion-clock](../gallery/motion-clock.md) |
 | collect the artists a block adds | `capture(container)` | Context manager listing new artists | [scene](../gallery/scene.md) |
@@ -107,21 +107,21 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| land a composite in one beat (the click) | `click(lines, dot=, readout=, ruler=, swell=1.55)`, placed by `tl.click(target)` | 0.6 s: ink swells on a plateau, end dot grows, number sets bold, ruler recedes; 1.5 s hold after | [land-an-answer](../how-to/land-an-answer.md) |
+| land a composite in one beat (the click) | `click(lines, dot=, readout=, ruler=, swell=1.55)`, placed by `tl.click(target)` | 0.6 s: ink swells on a plateau, end dot grows, number sets bold, ruler recedes; 1.5 s hold after | [land-an-answer](../how-to/land-an-answer.md), [signature-moves](../gallery/signature-moves.md) |
 | a chime at the click | `nr.click_sting(t_end, duration_s=)` | Two-note sting ending with the swell | [add-cue-sounds](../how-to/add-cue-sounds.md) (prose) |
 
 ## 6. Numbers, readouts and equations
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| a readout that ticks with a mark | `ruler_readout(head, readout=, value=, ruler=, ruler_to=)` | One knob drives the head, a ruler and a counter read off the tip | [land-an-answer](../how-to/land-an-answer.md) |
+| a readout that ticks with a mark | `ruler_readout(head, readout=, value=, ruler=, ruler_to=)` | One knob drives the head, a ruler and a counter read off the tip | [land-an-answer](../how-to/land-an-answer.md), [signature-moves](../gallery/signature-moves.md) |
 | a number that counts without jitter | `readout(at, value, fmt=, digits=, signed=)` | Fixed digit slots; `set` chains the next value | [motion-clock](../gallery/motion-clock.md) |
 | a dimension arrow with a label | `ruler(ax, p0, p1, text)` | Dimension arrow with a backed label | [images](../gallery/images.md) |
 | label an exposure time on a log clock | `exposure_text(seconds)` | `2.8 h`, `11.6 d` | [motion-clock](../gallery/motion-clock.md) |
 | read counts and S/N off a photon image | `aperture_counts(mark, aperture, leak=)` | Numbers read from the drawn pixels | [motion-clock](../gallery/motion-clock.md) |
 | lay an equation out as separate terms | `term_row(at, terms)` | One text per term, each a target | [motion-attention](../gallery/motion-attention.md) |
-| an equation as glyph outlines with named terms | `equation(at, tex, fontsize=, colors=)` | Glyph groups per term; `update(reveal="write")` | [motion-equations](../gallery/motion-equations.md), [ground-a-symbol](../how-to/ground-a-symbol.md) |
-| carry one equation into another | `transform(eq_a, eq_b, key_map=, fade_toward=)` | Glyph-by-glyph transform | [motion-equations](../gallery/motion-equations.md) |
+| an equation as glyph outlines with named terms | `equation(at, tex, fontsize=, colors=)` | Glyph groups per term; `update(reveal="write")` | [motion-equations](../gallery/motion-equations.md), [ground-a-symbol](../how-to/ground-a-symbol.md), [signature-moves](../gallery/signature-moves.md) |
+| carry one equation into another | `transform(eq_a, eq_b, key_map=, fade_toward=)` | Glyph-by-glyph transform | [motion-equations](../gallery/motion-equations.md), [signature-moves](../gallery/signature-moves.md) |
 
 ## 7. Reference marks and furniture
 
@@ -154,8 +154,8 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| show a posterior as weighted draws | `weighted_draws(points, weights, encode="area"/"alpha", resample=)` | True-scale weights; optional resampling beat | [weighted-draws](../gallery/weighted-draws.md) |
-| play draws one at a time with ghosts and a tally | `hop(draws, rate=, ghosts=, tally=)` | Steady draw rate, aging ghosts, running tally | [motion-clock](../gallery/motion-clock.md) |
+| show a posterior as weighted draws | `weighted_draws(points, weights, encode="area"/"alpha", resample=)` | True-scale weights; optional resampling beat | [weighted-draws](../gallery/weighted-draws.md), [signature-moves](../gallery/signature-moves.md) |
+| play draws one at a time with ghosts and a tally | `hop(draws, rate=, ghosts=, tally=)` | Steady draw rate, aging ghosts, running tally | [motion-clock](../gallery/motion-clock.md), [signature-moves](../gallery/signature-moves.md) |
 | samples converging on a reference | `convergence(values, refs=, running=)` | Samples beside a running mean or sum | [stats](../gallery/stats.md) |
 | a triangle plot | `corner`, `corner_overlay` | 1D and 2D marginals | [stats](../gallery/stats.md) |
 | a covariance ellipse | `cov_ellipse(mean2, cov22, n_sigma=)` | n-sigma ellipse | [stats](../gallery/stats.md) |
