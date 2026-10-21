@@ -133,13 +133,24 @@ assert serial.path.read_bytes() == path.read_bytes()
 `resumed` (reused chunks), `workers`, and elapsed `seconds`. `workers=1`
 renders in the same process with the same code and gives the same bytes.
 Pass style changes explicitly through `setup=` and `rc=` so every worker
-receives them.
+receives them. Builders run before recording rc overrides, just as a figure
+built before entering `record`. The driver resizes the figure to even
+pixels before frame zero, using the same adjustment as the H.264 movie
+writer. Layout settles at the output dpi. Your draw function runs at the
+figure's own dpi, and each frame is captured at the output dpi through
+`savefig`. With the same style, frames, and encoder settings, this matches
+`record` frame bytes, including odd-sized figures. `RawSink` also strips
+container metadata and uses bitexact ffmpeg flags. For an identical MP4
+file from `record`, pass `extra_ffmpeg_args=["-fflags", "+bitexact",
+"-flags:v", "+bitexact", "-map_metadata", "-1"]` there too.
 
 ## Resume after a crash
 
 Pass a `content_key` as `key=` and rerun with the same inputs, settings,
 and `work_dir` after a crash. Complete chunks with matching identities and
-checksums are reused. A failed render leaves the destination video untouched.
+checksums are reused. Chunks from the earlier crop-based rasterizer are
+invalidated automatically, including with a manually supplied key. A failed
+render leaves the destination video untouched.
 Change the key whenever an input changes.
 
 Chunk files live in `work_dir`, which must be a dedicated empty folder or a

@@ -9,11 +9,11 @@ from functools import partial
 
 import matplotlib
 import matplotlib.pyplot as plt
-import numpy as np
 import pytest
 from test_render_helpers import (
     build_clip,
     build_crashing_clip,
+    build_record_clip,
     build_tiny_clip,
     build_waiting_clip,
     frame_at,
@@ -22,8 +22,8 @@ from test_render_helpers import (
 
 import eyepiece as ep
 import eyepiece._render_pool as render
+from eyepiece import _render_chunks as chunk_protocol
 from eyepiece._render_chunks import _workspace
-from eyepiece.anim import _agg_canvas, _rc_overrides, _Recorder
 
 
 def test_render_needs_no_process_pool(tmp_path):
@@ -81,6 +81,7 @@ from functools import partial
 from pathlib import Path
 import eyepiece as ep
 import eyepiece._render_pool as render
+from eyepiece import _render_chunks as chunk_protocol
 from test_render_helpers import build_waiting_clip, setup_style
 folder = Path(sys.argv[1])
 worker_fds = iter(map(int, sys.argv[2:]))
@@ -301,33 +302,33 @@ def test_encoder_close_failure_cleans_up_and_preserves_output(tmp_path, monkeypa
 
 
 def serial_reference(build, frames, path, *, dpi=100, rc=None, hold=(0, 0)):
-    """Encode a serial raster loop independent of the render driver."""
+    """Encode with record independently of the frame driver."""
     with matplotlib.rc_context(matplotlib.rcParamsDefault):
         setup_style()
-        with (
-            matplotlib.rc_context(rc),
-            matplotlib.rc_context(_rc_overrides([path], snap=False)),
-        ):
+        with matplotlib.rc_context(rc):
             fig, draw = build()
             try:
-                with _agg_canvas(fig):
-                    draw(fig, frames[0])
-                    _Recorder(fig, [], {"frames": 0}, dpi)._freeze_layout()
-                    fig.dpi = dpi
-                    width, height = fig.canvas.get_width_height()
-                    size = (width // 2 * 2, height // 2 * 2)
-                    with ep.RawSink(path, size, fps=12) as sink:
-                        for index, frame in enumerate(frames):
-                            draw(fig, frame)
-                            fig.canvas.draw()
-                            pixels = np.asarray(fig.canvas.buffer_rgba())
-                            pixels = pixels[: size[1], : size[0]]
-                            sink.write(pixels)
-                            repeats = hold[0] if index == 0 else 0
-                            if index == len(frames) - 1:
-                                repeats += hold[1]
-                            for _ in range(repeats):
-                                sink.write(pixels)
+                with ep.record(
+                    fig,
+                    path,
+                    fps=12,
+                    dpi=dpi,
+                    extra_ffmpeg_args=[
+                        "-fflags",
+                        "+bitexact",
+                        "-flags:v",
+                        "+bitexact",
+                        "-map_metadata",
+                        "-1",
+                    ],
+                ) as rec:
+                    for index, frame in enumerate(frames):
+                        draw(fig, frame)
+                        rec.frame()
+                        repeats = hold[0] if index == 0 else 0
+                        if index == len(frames) - 1:
+                            repeats += hold[1]
+                        rec.hold(repeats)
             finally:
                 plt.close(fig)
     return path.read_bytes()
@@ -554,3 +555,75 @@ def test_unpassed_parent_rc_is_isolated_and_default_chunking(tmp_path):
     assert result.chunks == result.workers == 1
     assert path.read_bytes() == expected
     assert plt.get_fignums() == before_figures
+
+
+def test_previous_raster_schema_chunks_are_not_reused(tmp_path, monkeypatch):
+    path = tmp_path / "clip.mp4"
+    kwargs = dict(
+        fps=12,
+        dpi=100,
+        workers=1,
+        chunk_frames=1,
+        work_dir=tmp_path / "chunks",
+        key="static-caller-key",
+        keep_chunks=True,
+    )
+    # Reproduce a complete cache from before record-compatible rasterization.
+    with monkeypatch.context() as patch:
+        patch.setattr(chunk_protocol, "_SCHEMA", 1)
+        patch.setattr(render, "_SCHEMA", 1)
+        ep.render_frames(build_clip, 3, path, **kwargs)
+    result = ep.render_frames(build_clip, 3, path, **kwargs)
+    assert result.resumed == 0
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_odd_layout_frames_match_record_bytes(tmp_path, workers):
+    from PIL import Image
+
+    reference = tmp_path / "record.mp4"
+    stills = {tmp_path / f"frame-{index}.png": index / 12 for index in range(3)}
+    with matplotlib.rc_context(matplotlib.rcParamsDefault):
+        setup_style()
+        fig, draw = build_record_clip()
+        try:
+            with ep.record(
+                fig,
+                reference,
+                fps=12,
+                dpi=100,
+                stills=stills,
+                extra_ffmpeg_args=[
+                    "-fflags",
+                    "+bitexact",
+                    "-flags:v",
+                    "+bitexact",
+                    "-map_metadata",
+                    "-1",
+                ],
+            ) as rec:
+                for index in range(3):
+                    draw(fig, index)
+                    rec.frame()
+        finally:
+            plt.close(fig)
+    path = tmp_path / "frames.mp4"
+    ep.render_frames(
+        build_record_clip,
+        3,
+        path,
+        fps=12,
+        dpi=100,
+        workers=workers,
+        chunk_frames=1,
+        setup=setup_style,
+    )
+    assert path.read_bytes() == reference.read_bytes()
+    for index, still in enumerate(stills):
+        poster = tmp_path / f"poster-{index}.png"
+        ep.render_poster(
+            build_record_clip, 3, index, poster, dpi=100, setup=setup_style
+        )
+        with Image.open(still) as expected, Image.open(poster) as actual:
+            assert actual.size == expected.size == (320, 180)
+            assert actual.tobytes() == expected.tobytes()

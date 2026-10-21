@@ -1,5 +1,6 @@
 """Spawned frame workers, rasterization, chunk protocol, and encoding."""
 
+import io
 import json
 import math
 import os
@@ -21,6 +22,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib._pylab_helpers import Gcf
+from matplotlib.animation import adjusted_figsize
 
 from eyepiece._render_chunks import (
     _CHUNK_NAME,
@@ -141,22 +143,24 @@ def _figure(build, frames, dpi, frame_at, setup, rc, on_rescale="ignore"):
         if setup is not None:
             setup()
         stack.enter_context(matplotlib.rc_context(rc))
-        stack.enter_context(matplotlib.rc_context(_rc_overrides([], snap=False)))
         fig, draw = build()
+        stack.enter_context(matplotlib.rc_context(_rc_overrides([], snap=False)))
         stack.callback(plt.close, fig)
         stack.enter_context(_agg_canvas(fig))
-        state = dict(fig=fig, draw=draw, frames=frames, frame_at=frame_at)
+        # MovieWriter adjusts the figure before the caller draws frame zero.
+        # Use the same roundoff correction as record's H.264 writer.
+        fig.set_size_inches(adjusted_figsize(*fig.get_size_inches(), dpi, 2))
+        state = dict(fig=fig, draw=draw, frames=frames, frame_at=frame_at, dpi=dpi)
         draw(fig, _item(state, 0))
+        state["initial_draw"] = True
         _Recorder(fig, [], {"frames": 0}, dpi)._freeze_layout()
         state["on_rescale"] = on_rescale
-        fig.dpi = dpi
         if on_rescale != "ignore":
             # Norm autoscaling and aspect adjustments settle during drawing.
             # Take the baseline at the same point as every checked raster.
             fig.canvas.draw()
             state["first_scales"] = _scale_signature(fig)
-        width, height = fig.canvas.get_width_height()
-        state["size"] = (width // 2 * 2, height // 2 * 2)
+        state["size"] = tuple(int(inches * dpi) for inches in fig.get_size_inches())
         yield state
 
 
@@ -180,11 +184,23 @@ def _check_parent(state):
 def _raster(state, index):
     _check_parent(state)
     fig = state["fig"]
-    state["draw"](fig, _item(state, index))
-    fig.canvas.draw()
+    initial_draw = state.pop("initial_draw", False)
+    if index != 0 or not initial_draw:
+        state["draw"](fig, _item(state, index))
+    # Frame zero was already drawn before layout froze. A second draw could
+    # measure the settled axes and move labels compared with record.
+    # record invokes draw at the figure dpi, then savefig at the sink dpi.
+    # Saving also applies facecolor and transparency just as MovieWriter does.
+    with io.BytesIO() as buffer:
+        fig.savefig(
+            buffer, format="rgba", dpi=state["dpi"], facecolor=fig.get_facecolor()
+        )
+        width, height = state["size"]
+        pixels = np.frombuffer(buffer.getvalue(), dtype=np.uint8).reshape(
+            height, width, 4
+        )
     _check_scales(state, index)
-    width, height = state["size"]
-    return np.asarray(fig.canvas.buffer_rgba())[:height, :width].copy()
+    return pixels
 
 
 def _validate_on_rescale(on_rescale):
@@ -586,7 +602,10 @@ def render_frames(
     ``build()`` returns ``(fig, draw)``. Draw overwrites the state needed for
     an item with ``draw(fig, item)``. Builders, setup, and frame_at must be
     picklable module-level callables (partials are supported). Each worker
-    builds once, draws frame zero, and freezes the layout at the sink dpi.
+    builds once before recording rc overrides, resizes the figure to even
+    sink pixels, draws frame zero at the figure dpi, and freezes layout at
+    the sink dpi. Each later draw runs at the figure dpi; capture uses savefig
+    at the sink dpi, matching record's default H.264 writer.
     A fresh worker starts from default style state. Parent toggles such as
     ep.use_video are not inherited, including with workers=1. Pass style
     changes through setup and rc to apply them identically in both paths.

@@ -25,7 +25,7 @@ from eyepiece._render_pool import (
 def render_poster(
     build, frames, index, path, *, dpi, frame_at=None, setup=None, rc=None
 ) -> Path:
-    """Atomically save a worker's even-cropped frame pixels as a PNG.
+    """Atomically save a worker's frame pixels after even-size adjustment as a PNG.
 
     Layout is frozen after drawing frame zero, exactly as for a video worker.
     The PNG contains RGBA pixels without metadata. Figure, style, and rc state

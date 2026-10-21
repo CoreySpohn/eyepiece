@@ -12,7 +12,8 @@ from contextlib import contextmanager
 
 import numpy as np
 
-_SCHEMA = 1
+# Version 2 uses record-compatible figure sizing and draw state.
+_SCHEMA = 2
 _SCALE_SCHEMA = 1
 _MAGIC = b"EPCHUNK\0"
 _HEADER = struct.Struct("!8sI32sIII")
