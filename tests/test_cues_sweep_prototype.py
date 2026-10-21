@@ -4,6 +4,7 @@ import json
 import runpy
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 import hwostyle
@@ -131,6 +132,28 @@ def test_scene_restores_style_if_figure_creation_fails(monkeypatch):
     with pytest.raises(RuntimeError, match="figure creation failed"):
         SWEEP["Scene"](SWEEP["make_plan"](DURATION_S), dpi=20)
     assert _style_state() == saved
+
+
+def test_silent_audio_writes_pcm_under_a_new_nested_path(tmp_path):
+    path = tmp_path / "new output" / "nested" / "track.wav"
+    plan = SWEEP["make_plan"](DURATION_S)
+    assert SWEEP["_audio"](plan, path, cues=False) == path
+    placeholders = list((path.parent / "lines").glob("*.wav"))
+    assert len(placeholders) == 1
+    with wave.open(str(placeholders[0]), "rb") as handle:
+        assert handle.getnchannels() == 1
+        assert handle.getsampwidth() == 2
+        assert handle.getframerate() == RATE
+        assert handle.getcomptype() == "NONE"
+        frames = handle.getnframes()
+        assert 0 < frames < DURATION_S * RATE
+        assert handle.readframes(frames) == bytes(2 * frames)
+    with wave.open(str(path), "rb") as handle:
+        assert handle.getnchannels() == 1
+        assert handle.getsampwidth() == 2
+        assert handle.getframerate() == RATE
+        assert handle.getnframes() == DURATION_S * RATE
+        assert handle.readframes(handle.getnframes()) == bytes(2 * handle.getnframes())
 
 
 def test_one_audio_and_one_video_stream_of_one_length(built):
