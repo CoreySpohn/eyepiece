@@ -204,3 +204,16 @@ def test_a_recolor_outside_the_group_boxes_is_reported():
 def test_a_recolor_inside_the_group_boxes_is_reported():
     jumps, cuts = _recolored("group")
     assert [f.time for f in jumps] == [pytest.approx(cuts[3])]
+
+
+@pytest.mark.parametrize("cut_kind", ["draws", "hops"])
+def test_a_cut_move_covers_its_own_caption_by_default(cut_kind):
+    fig, mark, times, cuts, label, _ = _run()
+    move = {"artists": [*mark.contract.moves, label]}
+    if cut_kind == "draws":
+        move["draws"] = mark.contract.draws
+    else:
+        move["hops"] = [{"artists": mark.contract.draws, "rate": 4}]
+    at = _poser(mark, label, jump_at=cuts[2])
+    faults = ept.motion_faults(fig, at, times, moves=[move], steps=cuts, kinds=["jump"])
+    assert faults == []

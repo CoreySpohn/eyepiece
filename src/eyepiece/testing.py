@@ -2204,14 +2204,16 @@ def motion_faults(
             that cuts at the same step is still reported, by the pixel
             baseline or, in a clip too still to have one, as an artist that
             jumps. Artists of the group may also overlap one another. Every
-            other check holds for the group as for any artist. A step where
+            other check holds for the group as for any artist. Text artists
+            declared on the same move join its draw group as captions. A step where
             the group does not change (a scene cut) still excuses the whole
             picture. A change inside a group's box at its cut is not seen.
         hops: Hop groups: artists that redraw in a cut at any frame by design,
             such as exchangeable draws, each a dict ``{"artists": [...],
             "rate": draws_per_second}`` (a declared move's ``hops`` adds to
             them). The group's cuts are excused wherever they fall, with no
-            declared step, and its artists are not reported as spikes; the
+            declared step, and its artists are not reported as spikes. Text
+            artists declared on the same move join its hop groups as captions; the
             picture outside the group's boxes keeps every check, as does
             every other artist. The group is reported as a ``"hop-rate"``
             fault when the declared rate, or the rate at which the clip
@@ -2310,6 +2312,11 @@ def motion_faults(
     )
 
 
+def _cut_captions(move):
+    """Text artists declared on the same move belong to its cut group."""
+    return tuple(a for a in _declared(move, "artists") or () if isinstance(a, Text))
+
+
 def _hop_groups(hops, moves):
     """The declared hop groups as ``[(artists, rate)]``, checked.
 
@@ -2318,10 +2325,14 @@ def _hop_groups(hops, moves):
     """
     found = []
     declared = [
-        *(hops or ()),
-        *(h for m in moves or () for h in _declared(m, "hops") or ()),
+        *((h, ()) for h in hops or ()),
+        *(
+            (h, _cut_captions(m))
+            for m in moves or ()
+            for h in _declared(m, "hops") or ()
+        ),
     ]
-    for hop in declared:
+    for hop, captions in declared:
         artists = tuple(hop.get("artists") or ())
         rate = hop.get("rate")
         if not artists:
@@ -2331,7 +2342,7 @@ def _hop_groups(hops, moves):
                 f"a hop group needs a positive draw rate in draws per second, "
                 f"got {rate!r}"
             )
-        found.append((artists, float(rate)))
+        found.append((tuple(dict.fromkeys((*artists, *captions))), float(rate)))
     return found
 
 
@@ -2426,7 +2437,10 @@ def _analyze(
         allowed += [
             (frozenset(p), lo, hi) for p in _declared(move, "may_overlap") or ()
         ]
-        group |= set(_declared(move, "draws") or ())
+        own_draws = _declared(move, "draws") or ()
+        group |= set(own_draws)
+        if own_draws:
+            group.update(_cut_captions(move))
     hop_groups = _hop_groups(hops, moves)
     hopped = {a for artists, _ in hop_groups for a in artists}
     group |= hopped
