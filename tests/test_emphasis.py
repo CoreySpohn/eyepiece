@@ -352,3 +352,41 @@ def test_step_list_layout_and_initial_current():
     with pytest.raises(ValueError, match="at least one"):
         ep.step_list([])
     plt.close("all")
+
+
+@pytest.mark.parametrize("by", ["alpha", "color"])
+def test_fading_a_mesh_preserves_the_colormap_alpha_ratio(by):
+    from matplotlib.colors import ListedColormap
+
+    fig, ax = plt.subplots()
+    mesh = ax.pcolormesh(
+        [[0.0, 1.0]],
+        cmap=ListedColormap([(1, 0, 0, 0.2), (0, 0, 1, 0.8)]),
+        edgecolors=(0, 0, 0, 0.6),
+        linewidth=1,
+    )
+    faded = ep.fade(mesh, 0.5, by=by)
+    fig.canvas.draw()
+    want = [0.1, 0.4] if by == "alpha" else [0.2, 0.8]
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], want)
+    np.testing.assert_allclose(
+        mesh.get_edgecolors()[:, 3], 0.3 if by == "alpha" else 0.6
+    )
+    faded.restore()
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.2, 0.8])
+    np.testing.assert_allclose(mesh.get_edgecolors()[:, 3], 0.6)
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("controller", ["fade", "stage"])
+def test_rgb_mesh_opacity_does_not_depend_on_its_colormap(controller):
+    fig, ax = plt.subplots()
+    mesh = ax.pcolormesh(np.array([[[1.0, 0, 0], [0, 0, 1.0]]]))
+    if controller == "fade":
+        ep.fade(mesh, 0.5, by="alpha")
+    else:
+        ep.Stage({"mesh": mesh}).weigh({"mesh": (0.5, 1.0)})
+    fig.canvas.draw()
+    np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.5, 0.5])
+    plt.close(fig)

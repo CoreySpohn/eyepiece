@@ -60,7 +60,13 @@ from eyepiece._motion import DEFAULT_EASE, _unsnapped
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import stagger as _stagger
 from eyepiece._result import MosaicResult, MotionContract, PlotResult
-from eyepiece.emphasis import _own_background, _resolve_background
+from eyepiece.emphasis import (
+    _explicit_edges,
+    _mapped_mesh,
+    _own_background,
+    _resolve_background,
+    _scale_cmap_alpha,
+)
 
 # Where on an artist's box `Anchor.from_artist` resolves, as box fractions.
 _LOCS = {
@@ -1456,6 +1462,10 @@ class _Look:
         self.artist = artist
         self.background = background
         self.alpha = artist.get_alpha()
+        self.cmap = (
+            artist.get_cmap() if _mapped_mesh(artist) and self.alpha is None else None
+        )
+        self.edges = _explicit_edges(artist) if self.cmap is not None else None
         if isinstance(artist, Line2D):
             self.colors = [
                 (artist.get_color(), artist.set_color),
@@ -1483,6 +1493,16 @@ class _Look:
     def set(self, presence, contrast):
         """Draw the artist at `presence` of its opacity and `contrast` of its color."""
         artist = self.artist
+        if self.cmap is not None:
+            level = presence * contrast
+            if self.edges is not None:
+                edges = self.edges.copy()
+                edges[:, 3] *= level
+                artist.set_edgecolor(edges)
+            artist.set_cmap(
+                self.cmap if level >= 1.0 else _scale_cmap_alpha(self.cmap, level)
+            )
+            return
         if presence >= 1.0 and contrast >= 1.0:
             artist.set_alpha(self.alpha)
             for value, setter in self.colors or ():
@@ -1613,6 +1633,8 @@ class Stage:
     A stage owns the colors and opacity of the artists it holds: make it
     after they take their final colors, and do not also fade them with
     `fade` or by hand. Data may change freely between frames.
+    Colormapped meshes scale each mapped face alpha, so their colormap
+    keeps its transparency differences at every level.
     Keep artists recolored by a draw function on every frame, such as bars,
     out of Stage groups, because the stage overwrites their colors.
 

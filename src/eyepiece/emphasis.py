@@ -22,10 +22,11 @@ import contextlib
 
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.artist import Artist
 from matplotlib.axes import Axes
-from matplotlib.collections import Collection
-from matplotlib.colors import to_rgba
+from matplotlib.collections import Collection, QuadMesh
+from matplotlib.colors import ListedColormap, to_rgba
 from matplotlib.figure import FigureBase
 from matplotlib.image import AxesImage, BboxImage, FigureImage
 from matplotlib.lines import Line2D
@@ -224,11 +225,53 @@ def _fade_image(image, level, handle):
     image.set_alpha(level * (1.0 if alpha is None else alpha))
 
 
+def _mapped_mesh(artist):
+    """Whether colors come from scalar data, rather than RGB mesh data."""
+    return (
+        isinstance(artist, QuadMesh)
+        and artist.get_array() is not None
+        and artist.get_array().ndim < 3
+    )
+
+
+def _explicit_edges(artist):
+    """Copy independent edge colors, leaving the face-following alias alone."""
+    artist.update_scalarmappable()
+    # The public getter resolves mapped edges to colors. Keep their mapping
+    # rather than freezing those colors when the colormap or data changes.
+    if artist._edge_is_mapped:
+        return None
+    return artist.get_edgecolor().copy()
+
+
+def _scale_cmap_alpha(cmap, level):
+    """Scale a colormap's opacity, including its bad and out-of-range colors."""
+    colors = cmap(np.arange(cmap.N))
+    colors[:, 3] *= level
+    scaled = ListedColormap(colors, name=cmap.name)
+    extremes = {}
+    for name in ("bad", "under", "over"):
+        rgba = getattr(cmap, f"get_{name}")().copy()
+        rgba[3] *= level
+        extremes[name] = rgba
+    return scaled.with_extremes(**extremes)
+
+
 def _fade_alpha(artist, level, handle):
     """Scale an artist's own alpha by `level`; hide it outright at 0."""
     alpha = artist.get_alpha()
-    handle._record(artist, artist.set_alpha, alpha)
-    artist.set_alpha(level * (1.0 if alpha is None else alpha))
+    if _mapped_mesh(artist) and alpha is None:
+        edges = _explicit_edges(artist)
+        if edges is not None:
+            handle._record(artist, artist.set_edgecolor, edges.copy())
+            edges[:, 3] *= level
+            artist.set_edgecolor(edges)
+        cmap = artist.get_cmap()
+        handle._record(artist, artist.set_cmap, cmap)
+        artist.set_cmap(_scale_cmap_alpha(cmap, level))
+    else:
+        handle._record(artist, artist.set_alpha, alpha)
+        artist.set_alpha(level * (1.0 if alpha is None else alpha))
     if level == 0.0:
         handle._record(artist, artist.set_visible, artist.get_visible())
         artist.set_visible(False)
@@ -336,9 +379,11 @@ def fade(target, level, *, background=None, keep=None, by="color"):
     alpha it had (None counting as 1), and at `level` 0 the artist is also
     hidden, so it draws nothing at all. An artist that carries its
     transparency only in its colors, with no alpha of its own, is drawn at
-    `level` times full opacity. To animate an arrival from the drawn
-    opacities, restore the previous handle before each new fade, which
-    keeps every step relative to the alpha the artists were drawn with::
+    `level` times full opacity. Colormapped meshes instead scale each
+    mapped face alpha, preserving the transparency carried by their colormap.
+    To animate an arrival from the drawn opacities, restore the previous
+    handle before each new fade, which keeps every step relative to the
+    alpha the artists were drawn with::
 
         faded = ep.fade(group, 0.0, by="alpha")
         for u in np.linspace(0.0, 1.0, 12):
