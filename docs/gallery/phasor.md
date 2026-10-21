@@ -49,7 +49,7 @@ amplitude = np.array([1.0, 0.8, 0.55])
 phase = np.array([0.4, 2.3, -2.0])
 res = ep.phasor(
     amplitude * np.exp(1j * phase),
-    colors=[ep._style.color(i) for i in range(3)],
+    colors=[hwostyle.palette[i] for i in range(3)],
     ring=True,
     lim=1.3,
 )
@@ -90,7 +90,7 @@ for ax, turn, title in zip(axes, turns, titles):
         ax=ax,
         starts=[0.0, e1],
         show_sum=True,
-        colors=[ep._style.color(0), ep._style.color(2)],
+        colors=[hwostyle.palette[0], hwostyle.palette[2]],
         lim=(-0.3, 1.9, -0.9, 1.3),
         separate=0.08,
         text_kw={
@@ -122,7 +122,7 @@ for ax, change, title in zip(axes, [0.3, 0.3j], ["along", "across"]):
         ax=ax,
         starts=[0.0, 1.0],
         show_sum=True,
-        colors=[ep._style.color(0), ep._style.color(2)],
+        colors=[hwostyle.palette[0], hwostyle.palette[2]],
         levels=1.0,
         level_labels="same brightness",
         level_label_angle=135.0,
@@ -212,7 +212,7 @@ units.
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(8.0, 2.6), layout="constrained")
 t = np.linspace(0.0, 10.0, 400)
-ax.plot(t, np.cos(2.0 * np.pi * t / 4.0), color=ep._style.neutral(0.6))
+ax.plot(t, np.cos(2.0 * np.pi * t / 4.0), color=ep.neutral(0.6))
 ax.set(xlim=(0.0, 10.0), ylim=(-1.6, 1.6), xlabel="time (s)")
 for t0 in (1.0, 4.5, 8.0):
     ep.phasor(
@@ -256,7 +256,7 @@ chains = [
 ]
 
 fig, ax = plt.subplots(figsize=(8.0, 3.4), layout="constrained")
-ax.plot(theta, brightness, color=ep._style.color(0))
+ax.plot(theta, brightness, color=hwostyle.palette[0])
 ax.set(xlim=(-0.25, 2.8), ylim=(-0.05, 1.9), xlabel=r"$\sin\theta$ ($\lambda/b$)",
        ylabel="brightness")
 stand = ep.curve_insets(
@@ -294,7 +294,7 @@ def spot(inset, i):
 
 
 fig, ax = plt.subplots(figsize=(7.0, 3.2), layout="constrained")
-ax.plot(sep, throughput, color=ep._style.color(0))
+ax.plot(sep, throughput, color=hwostyle.palette[0])
 ax.set(xlim=(0.0, 6.0), ylim=(0.0, 2.2), xlabel="separation", ylabel="throughput")
 res = ep.curve_insets(
     ax, sep, throughput, shown, size=0.9, size_units="data", above=0.05, build=spot
