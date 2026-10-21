@@ -508,3 +508,17 @@ def test_variant_poster_validation_precedes_any_build(tmp_path, poster):
             workers=1,
         )
     assert not (tmp_path / "builds").exists()
+
+
+def test_still_savefig_kwargs_preserve_exact_pixel_size(tmp_path):
+    path = ep.render_still(
+        build_still,
+        tmp_path / "fixed.png",
+        dpi=100,
+        bbox_inches=None,
+        facecolor="red",
+        edgecolor="red",
+    )
+    with Image.open(path) as image:
+        assert image.size == (200, 100)
+        assert image.convert("RGBA").getpixel((0, 0)) == (255, 0, 0, 255)

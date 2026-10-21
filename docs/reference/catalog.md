@@ -249,7 +249,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | pick venue settings and the encoder | `PRESETS`, `ENCODER_PROFILE` | Venue fps and dpi; H.264 profile | [animation](../gallery/animation.md) |
 | render variants in parallel | `render.ClipSpec(target_for=)`, `render.Venue`, `render.Variant`, `render.variants`, `render.render_variants(spec, variants, out_dir, manifest=)`, `render.Manifest`, `render.content_key` | Keyed, chunked, resumable renders of each venue, mode and narration variant, each with parallel frame workers | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md); `Variant` (prose) |
 | render one clip in chunks | `render.render_frames(build, frames, path, workers=)`, `render.RenderResult` | Independent frames, encoded in order | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md) |
-| a poster frame or a deterministic still | `render.render_poster`, `render.render_still`, `save_fig` | PNG of one frame; styled save | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md), [still](../tutorials/still.md) |
+| a poster frame or a deterministic still | `render.render_poster`, `render.render_still(..., **savefig_kwargs)`, `save_fig` | PNG of one frame; styled save | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md), [still](../tutorials/still.md) |
 | a scrubber page for one knob | `to_scrubber(fig, draw, plan, knob, samples)` | Self-contained HTML slider | [publish-a-scrubber-page](../how-to/publish-a-scrubber-page.md) |
 | a provenance stamp | `stamp(fig, script=, seed=)`, `provenance_text`, `provenance_fields`, `file_metadata` | Footer line and file metadata | [values](../gallery/values.md); the last three are API reference |
 

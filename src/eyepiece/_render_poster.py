@@ -72,7 +72,9 @@ def render_poster(
     return path
 
 
-def render_still(build, path, *, dpi=None, setup=None, rc=None, metadata=None) -> Path:
+def render_still(
+    build, path, *, dpi=None, setup=None, rc=None, metadata=None, **savefig_kwargs
+) -> Path:
     """Build and save a deterministic still through eyepiece.save_fig.
 
     Default style state, setup, and rc are applied in the same order as for
@@ -85,6 +87,8 @@ def render_still(build, path, *, dpi=None, setup=None, rc=None, metadata=None) -
         setup: Callable run before applying rc and building the figure.
         rc: Matplotlib overrides held open during building and saving.
         metadata: Optional format-specific metadata passed to save_fig.
+        **savefig_kwargs: Extra savefig options passed to save_fig, overriding
+            style defaults. Use bbox_inches=None to preserve the figure size.
 
     Returns:
         The saved Path returned by save_fig.
@@ -105,6 +109,7 @@ def render_still(build, path, *, dpi=None, setup=None, rc=None, metadata=None) -
             overrides["dpi"] = dpi
         if metadata is not None:
             overrides["metadata"] = metadata
+        overrides.update(savefig_kwargs)
         return eyepiece.save_fig(fig, path.name, dir=path.parent, **overrides)
 
 

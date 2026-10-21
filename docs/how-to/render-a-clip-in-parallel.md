@@ -534,7 +534,11 @@ frame index. Its PNG matches the worker raster at that index. Use the same
 `dpi`, `setup`, and `rc` as the video.
 
 `render_still` takes a builder returning a figure and saves it through
-`save_fig` as PNG, PDF, or SVG. `same_picture` compares PNG channel levels
+`save_fig` as PNG, PDF, or SVG. Pass savefig keywords directly to override
+style defaults. For a fixed-size image, use
+`ep.render_still(clip.build_still, output / "fixed.png", dpi=dpi, bbox_inches=None)`;
+this preserves the figure's full pixel dimensions instead of cropping to its
+artists. `same_picture` compares PNG channel levels
 with a tolerance and can ignore a bottom band, such as a provenance stamp.
 
 ```{code-cell} python
