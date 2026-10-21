@@ -391,3 +391,42 @@ def test_halo_lint_skips_labels_that_are_not_drawn():
         path_effects=[patheffects.withStroke(linewidth=3)],
     )
     assert ept.halo_faults(fig) == []
+
+
+def test_halo_lint_catches_an_opaque_stroke_with_transparent_fill():
+    from matplotlib import patheffects
+
+    fig = _figure()
+    label = fig.text(
+        0.1,
+        0.7,
+        "outline label",
+        color="none",
+        path_effects=[patheffects.withStroke(linewidth=3, foreground="black")],
+    )
+    faults = ept.halo_faults(fig)
+    assert [fault.artist for fault in faults] == [label]
+    label.set_alpha(0)
+    assert ept.halo_faults(fig) == []
+
+
+@pytest.mark.parametrize(
+    "stroke",
+    [
+        dict(linewidth=3, foreground="none"),
+        dict(linewidth=3, foreground="black", alpha=0),
+        dict(linewidth=0, foreground="black"),
+    ],
+)
+def test_halo_lint_skips_transparent_fill_without_a_visible_stroke(stroke):
+    from matplotlib import patheffects
+
+    fig = _figure()
+    fig.text(
+        0.1,
+        0.7,
+        "invisible outline",
+        color="none",
+        path_effects=[patheffects.withStroke(**stroke)],
+    )
+    assert ept.halo_faults(fig) == []

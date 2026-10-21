@@ -76,6 +76,7 @@ from typing import NamedTuple
 import numpy as np
 from matplotlib import rcParams
 from matplotlib.axis import Axis
+from matplotlib.backend_bases import GraphicsContextBase
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_hex, to_rgb, to_rgba
@@ -252,13 +253,29 @@ def _walk(artist):
             yield from _walk(child)
 
 
+def _text_alpha(artist):
+    """The greatest opacity of a text's fill or stroked outline."""
+    alpha = _alpha(artist, artist.get_color())
+    for effect in artist.get_path_effects():
+        if isinstance(effect, withStroke):
+            # Reproduce the graphics context that Text.draw passes to Stroke,
+            # including explicit opacity overrides on either one.
+            gc = GraphicsContextBase()
+            gc.set_foreground(to_rgba(artist.get_color()), isRGBA=True)
+            gc.set_alpha(artist.get_alpha())
+            effect._update_gc(gc, effect._gc)
+            if gc.get_linewidth() > 0:
+                alpha = max(alpha, gc.get_rgb()[3])
+    return alpha
+
+
 def _visible_texts(fig):
     out = []
     for artist in _walk(fig):
         if (
             isinstance(artist, Text)
             and artist.get_text().strip()
-            and _alpha(artist, artist.get_color()) >= _SHOWN
+            and _text_alpha(artist) >= _SHOWN
         ):
             out.append(artist)
     return out
