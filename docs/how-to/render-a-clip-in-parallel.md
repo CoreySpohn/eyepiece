@@ -260,6 +260,33 @@ saves it automatically; unchanged JSON keeps its modification time.
 A `Manifest` file has a single writer. Serialize calls that write the same
 file, even when their clips or output directories differ.
 
+### Choose output paths
+
+By default, each video is `<slug>-<variant>.mp4` under `out_dir`.
+`ClipSpec.target_for(variant)` can return a different relative `.mp4` path,
+including nested folders. Each requested variant must have a unique target.
+Posters follow the video parent and stem.
+Output destinations do not affect content keys. Changing a destination
+renders there even if the old manifest entry is current.
+
+The `after(variant, out_dir)` callback keeps receiving the output root.
+Use the same path function to place captions or other companions beside
+the video, and return their paths so the manifest tracks them.
+
+```python
+def target_for(variant):
+    return Path(variant.venue) / f"marker-{variant.name}.mp4"
+
+
+def after(variant, out_dir):
+    captions = out_dir / target_for(variant).with_suffix(".vtt")
+    captions.write_text("WEBVTT\n", encoding="utf-8")
+    return [captions]
+
+
+nested_spec = replace(spec, target_for=target_for, after=after)
+```
+
 ### Keep data scales fixed
 
 `ClipSpec.on_rescale` defaults to `"warn"`: the driver reports changes in

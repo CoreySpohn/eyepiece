@@ -665,3 +665,70 @@ def test_stamp_changes_require_explicit_key_input(clip, tmp_path, monkeypatch):
         workers=1,
     )[0]
     assert explicit.rendered and explicit.key != first.key
+
+
+@pytest.mark.parametrize("custom", [False, True])
+def test_target_paths_and_adjacent_outputs(clip, tmp_path, custom):
+    def target_for(variant):
+        return Path(variant.venue) / f"movie-{variant.name}.mp4"
+
+    def target(variant):
+        return target_for(variant) if custom else Path(f"marker-{variant.name}.mp4")
+
+    def after(variant, out_dir):
+        caption = out_dir / target(variant).with_suffix(".vtt")
+        caption.write_text("WEBVTT\n")
+        return [caption]
+
+    audio = write_audio(tmp_path / "audio.wav")
+    spec = replace(
+        clip,
+        target_for=target_for if custom else None,
+        after=after,
+        poster=0,
+        audio=lambda variant: audio,
+    )
+    manifest = Manifest(tmp_path / "manifest.json")
+    requested = [
+        Variant("doc", "light"),
+        Variant("talk", "dark"),
+        Variant("doc", "light", True),
+    ]
+    first = render_variants(spec, requested, tmp_path, manifest=manifest, workers=1)
+    for result in first:
+        video = target(result.variant)
+        expected = [video.as_posix()]
+        if not result.variant.narrated:
+            expected.append(video.with_name(f"{video.stem}-poster.png").as_posix())
+        expected.append(video.with_suffix(".vtt").as_posix())
+        assert result.outputs == expected
+        assert all((tmp_path / path).is_file() for path in result.outputs)
+    second = render_variants(spec, requested, tmp_path, manifest=manifest, workers=1)
+    assert not any(result.rendered for result in second)
+
+
+@pytest.mark.parametrize("target", ["../escape.mp4", "/outside.mp4", "wrong.png"])
+def test_invalid_target_rejected_before_build(clip, tmp_path, target):
+    spec = replace(clip, target_for=lambda variant: target)
+    with pytest.raises(ValueError, match="target"):
+        render_variants(
+            spec,
+            [Variant("doc", "light")],
+            tmp_path,
+            manifest=Manifest(tmp_path / "manifest.json"),
+            workers=1,
+        )
+    assert not (tmp_path / "builds").exists()
+
+
+def test_duplicate_targets_rejected_before_build(clip, tmp_path):
+    spec = replace(clip, target_for=lambda variant: "same.mp4")
+    with pytest.raises(ValueError, match="target"):
+        render_variants(
+            spec,
+            [Variant("doc", "light"), Variant("talk", "dark")],
+            tmp_path,
+            manifest=Manifest(tmp_path / "manifest.json"),
+            workers=1,
+        )
+    assert not (tmp_path / "builds").exists()
