@@ -3077,8 +3077,10 @@ def review_sheet(
     return path
 
 
-def _timing_still_run(words, start, end, still_s):
+def _timing_still_run(words, start, end, still_s, arrivals=()):
     """Find the longest speech group clipped to one still run."""
+    if any(start <= t < end for t in arrivals):
+        return []
     groups = []
     for word_start, word_end, line_index, key in words:
         if word_end <= start or word_start >= end:
@@ -3115,6 +3117,19 @@ def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom,
         for i, beat in enumerate(narration.beats)
         for w in beat.words
     )
+    # The plan has arrival times but no artist geometry. Cue-linked arrivals
+    # count independently of their pixel area, including the timeline's lead.
+    cues = list(narration.cues())
+    arrivals = [
+        span.start_s
+        for span in getattr(plan, "spans", {}).values()
+        if span.kind in {"enter", "text", "caption", "write", "place", "set", "readout"}
+        or (span.kind == "hold" and span.writes)
+        if any(
+            cue.line == span.section and -1e-9 <= cue.at_s - span.start_s <= 0.1 + 1e-9
+            for cue in cues
+        )
+    ]
     seconds = plan.seconds if plan is not None else narration.total_s
     reference = None
     start = last = 0.0
@@ -3127,11 +3142,11 @@ def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom,
         else:
             changed = np.count_nonzero(np.any(np.abs(kept - reference) > 12, axis=2))
             if changed >= still_change * height * width:
-                found += _timing_still_run(words, start, t, still_s)
+                found += _timing_still_run(words, start, t, still_s, arrivals)
                 reference, start = kept, t
         last = t
     if reference is not None:
-        found += _timing_still_run(words, start, last + 1 / fps, still_s)
+        found += _timing_still_run(words, start, last + 1 / fps, still_s, arrivals)
     return found
 
 
@@ -3257,6 +3272,11 @@ def timing_faults(
     change; the first frame at or above that count ends the run at its time
     and starts the next. The final run ends one frame after the last sample.
     Comparing with the run's first frame lets slow drift accumulate.
+    With `plan`, a declared arrival starting in the run on a narration cue
+    (including the timeline's 0.1 s lead) makes the run non-still regardless
+    of its area. Arrival kinds are enter, text, caption, write, place, set
+    and readout; a hold that writes knobs also counts. Runs without such an
+    arrival keep the pixel threshold.
 
     Every overlapping word is clipped to the run, and the words are ordered by time.
     A silence of at least 2.0 s from the latest word end to the next word

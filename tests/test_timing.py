@@ -805,3 +805,29 @@ def test_keywords_for_later_rules_are_accepted():
         )
         == []
     )
+
+
+@pytest.mark.parametrize("arrival", [True, False])
+def test_a_small_label_on_its_cue_counts_as_an_arrival(arrival):
+    line = nr.Line("steady", "one two three {show:label}four five six")
+    words = tuple(
+        nr.Word(w, 0.5 + i * 0.5, 1.0 + i * 0.5) for i, w in enumerate(line.words)
+    )
+    narration = _narration((line, nr.Spoken(line.key, 3.5, words)))
+    timeline = ep.Timeline(narration=narration, strict=False)
+    timeline.line("steady")
+    if arrival:
+        timeline.enter("label")
+    timeline.hold(0.1)
+    plan = timeline.at_fps(10)
+
+    def source(t):
+        frame = _gray_frame(t)
+        if t >= 2.0:
+            frame[20, :14] = 255
+        return frame
+
+    faults = ept.timing_faults(plan.narration, plan=plan, source=source)
+    assert [f.kind for f in faults if f.kind == "still-speech"] == (
+        [] if arrival else ["still-speech"]
+    )
