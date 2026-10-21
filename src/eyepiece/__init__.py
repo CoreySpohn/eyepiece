@@ -1,38 +1,38 @@
 """Plotting and animation primitives for astronomical imaging simulations.
 
-eyepiece provides a small set of pure functions for rendering, comparing,
-and animating simulated images (point spread functions, coronagraph
-detection maps, complex optical fields, and the like). Most plotting and
-animation names are available at the package root. Eleven public submodules
-provide task namespaces: ``plot`` for data displays, ``clock`` for scheduling,
-``motion`` for moves and attention, ``narration`` for speech and captions, ``testing``
-for clip checks, ``render`` for render workers and variants, ``prepared``
-for scene records, ``motifs`` for recurring styles, ``mpl`` and ``manim``
-for prepared renderers, and ``style`` for appearance snapshots and source
-styles. Other implementation submodules are internal organization and are
-not part of the public API. The vocabularies a caller reads against are
-exported alongside the functions: ``ARTIST_KEYS``,
-the key set a result's ``artists`` dict draws from; ``PRESETS``, the
-measured fps/dpi pairs for the usual animation destinations; and ``GLYPHS``,
-the optical-element names ``rail`` draws.
+Use ``import eyepiece as ep`` and call through a task namespace:
+``plot`` for stills and updatable data displays, ``clock`` for scheduling,
+``motion`` for moves and attention, ``style`` for appearance, ``render``
+for recording and output, ``testing`` for clip and frame checks, and
+``narration`` for speech and captions. The existing ``motifs`` namespace
+holds recurring styles, ``prepared`` holds scene records, and ``mpl`` and
+``manim`` render prepared views. Implementation submodules remain internal.
+
+The root keeps ten stable shortcuts: ``Timeline``, ``Plan``, ``Tempo``,
+``PlotResult``, ``MosaicResult``, ``MotionContract``, ``animate``, ``record``,
+``save_fig``, and ``__version__``. Every former root path still resolves
+silently in 0.17; star imports and discovery favor the small root and task
+namespaces. Existing deprecated aliases keep their warnings.
 
 Example::
 
     import eyepiece as ep
 
-    result = ep.imshow_log(image)
-    ep.save_fig(result.fig, "psf")
+    result = ep.plot.imshow_log(image)
+    ep.render.save_fig(result.fig, "psf")
 
-The library never imports a simulation library and never mutates
-matplotlib's global state at import time; style is applied explicitly by
-the caller (see ``eyepiece.neutral`` and ``eyepiece.backing``), not captured
-when this package loads.
+The library takes arrays and plain numbers, never simulation objects, and
+never activates a style or changes Matplotlib state at import time.
+Appearance resolves at call time through ``ep.style``. Result records expose
+the axes and artists; ``ep.plot.ARTIST_KEYS`` names the artist vocabulary,
+``ep.plot.GLYPHS`` the optical-train elements, and ``ep.render.PRESETS`` the
+usual recording destinations.
 
-Every name below loads lazily on first access (PEP 562): ``import eyepiece``
-alone never imports matplotlib, and ``import eyepiece.prepared`` -- the pure
-numerical view records in the ``prepared`` submodule -- never does either.
-Matplotlib and any renderer only load once a caller actually touches a name
-that needs them.
+Exports load lazily on access (PEP 562) and preserve their implementation
+objects and signatures. Importing the root, ``plot``, ``clock``, ``motion``,
+``render``, or ``narration`` does not import Matplotlib. ``prepared`` imports
+only the standard library and NumPy. Drawing helpers, including
+``narration.caption_line``, load their rendering dependencies when accessed.
 """
 
 import importlib
