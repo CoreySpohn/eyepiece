@@ -18,6 +18,9 @@ from eyepiece import _style
 ROOT = Path(__file__).resolve().parents[1]
 SWEEP = runpy.run_path(str(ROOT / "docs" / "narration" / "cues_sweep" / "sweep.py"))
 DURATION_S = 6.0
+# macOS's Helvetica cannot load glyphs below about 7.5 pixels per em, and the
+# eleven point tick labels reach that at 55 dpi.
+SMALL_DPI = 60
 RATE = 48000
 STYLE_STATE = (
     "_current_mode",
@@ -98,10 +101,10 @@ def built(tmp_path_factory, sweep_style_guard, style_context):
     out = tmp_path_factory.mktemp("sweep")
     with style_context():
         yield {
-            "a": SWEEP["build"](out / "a.mp4", duration_s=DURATION_S, dpi=20),
-            "b": SWEEP["build"](out / "b.mp4", duration_s=DURATION_S, dpi=20),
+            "a": SWEEP["build"](out / "a.mp4", duration_s=DURATION_S, dpi=SMALL_DPI),
+            "b": SWEEP["build"](out / "b.mp4", duration_s=DURATION_S, dpi=SMALL_DPI),
             "silent": SWEEP["build"](
-                out / "silent.mp4", duration_s=DURATION_S, dpi=20, cues=False
+                out / "silent.mp4", duration_s=DURATION_S, dpi=SMALL_DPI, cues=False
             ),
         }
 
@@ -114,7 +117,7 @@ def test_scene_preserves_the_callers_style(mode):
     matplotlib.rcParams["font.size"] = 17.0
     _style.use_video(True)
     saved = _style_state()
-    scene = SWEEP["Scene"](SWEEP["make_plan"](DURATION_S), dpi=20)
+    scene = SWEEP["Scene"](SWEEP["make_plan"](DURATION_S), dpi=SMALL_DPI)
     try:
         assert _style_state() == saved
         assert scene.fig.get_facecolor() == matplotlib.colors.to_rgba("black")
@@ -129,7 +132,7 @@ def test_scene_restores_style_if_figure_creation_fails(monkeypatch):
     monkeypatch.setattr(plt, "figure", fail)
     saved = _style_state()
     with pytest.raises(RuntimeError, match="figure creation failed"):
-        SWEEP["Scene"](SWEEP["make_plan"](DURATION_S), dpi=20)
+        SWEEP["Scene"](SWEEP["make_plan"](DURATION_S), dpi=SMALL_DPI)
     assert _style_state() == saved
 
 
