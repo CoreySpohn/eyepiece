@@ -1512,6 +1512,17 @@ def _jumps(trace, size, moving, jump_ratio, rest_times, tol, cuts=None):
             near = [size[j] for j in (i - 1, i + 1) if 0 <= j <= last]
             if near and value <= _PAIR_ISOLATION * max(near):
                 continue
+        # An 8-bit fade can hold, then change a whole region by one level.
+        # Require excess beyond that per-channel rounding allowance.
+        diff = np.abs(
+            trace.frames[i + 1].astype(np.int16) - trace.frames[i].astype(np.int16)
+        )
+        if i + 1 in (cuts or {}):
+            diff[cuts[i + 1]] = 0
+        excess = float(np.where(diff > 1, diff, 0).mean())
+        limit = jump_ratio * median * (_REST_STEP_RATIO if into_rest else 1.0)
+        if excess <= limit:
+            continue
         where = "into the rest state" if i in entries else "in one frame"
         detail = (
             f"the picture changes {value:.2f} levels {where}, "
@@ -2123,6 +2134,7 @@ def motion_faults(
 
     - ``"jump"``: a step between consecutive frames that exceeds `jump_ratio`
       times the median non-zero step and stands out from the steps next to it.
+      One 8-bit level per changed channel is allowed for fade quantization.
       The step into the rest state (the end of a declared move, else the last
       step that changes anything) is also reported when it is `jump_ratio / 2`
       times the median and twice the step before it, because a move settles

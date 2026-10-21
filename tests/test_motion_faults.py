@@ -1558,3 +1558,15 @@ def test_a_hairline_rectangle_keeps_its_corners():
     fig, at, bar = _rect_clip(lambda u: _corners_of(40, 90, 80 + 160 * u, 90.4))
     found = ept.motion_faults(fig, at, SPAN, rectilinear=[bar], kinds=["shape-class"])
     assert found == []
+
+
+def test_a_slow_large_fade_is_not_an_eight_bit_jump():
+    fig = _figure()
+    box = _box(fig, 20, 20, 360, 160)
+    dot = _box(fig, 10, 5, 4, 4)
+
+    def at(t):
+        box.set_alpha(0.1 * _smooth(t / 6.0))
+        _move(dot, 10 + 10 * t, 5)
+
+    assert ept.motion_faults(fig, at, ept.Window(0, 6), kinds=["jump"]) == []
