@@ -1420,29 +1420,31 @@ def _draw_cuts(trace, drawn, step_ks):
         mask is a boolean array of the frame's rows and columns.
     """
     cuts = {}
+    if not drawn:
+        return cuts
+    height, width = trace.frames[0].shape[:2]
+    # Resolve each artist's crops once for the group. Comparing these small
+    # rectangles avoids gathering whole frames through a boolean mask.
+    regions = {}
+    for artist in drawn:
+        for k in trace.boxes.get(artist, {}):
+            x0, y0, x1, y1 = trace.box(artist, k)
+            rows = slice(max(int(height - y1 - 2), 0), max(int(height - y0 + 2) + 1, 0))
+            cols = slice(max(int(x0 - 2), 0), max(int(x1 + 2) + 1, 0))
+            regions.setdefault(k, []).append((rows, cols))
     for k in sorted(step_ks):
         if k < 1:
             continue
-        height, width = trace.frames[k].shape[:2]
+        crops = regions.get(k - 1, []) + regions.get(k, [])
+        if not any(
+            not np.array_equal(trace.frames[k - 1][crop], trace.frames[k][crop])
+            for crop in crops
+        ):
+            continue
         mask = np.zeros((height, width), dtype=bool)
-        for artist in drawn:
-            for j in (k - 1, k):
-                box = trace.box(artist, j)
-                if box is None:
-                    continue
-                x0, y0, x1, y1 = (
-                    box[0] - 2.0,
-                    box[1] - 2.0,
-                    box[2] + 2.0,
-                    box[3] + 2.0,
-                )
-                rows = slice(max(int(height - y1), 0), max(int(height - y0) + 1, 0))
-                cols = slice(max(int(x0), 0), max(int(x1) + 1, 0))
-                mask[rows, cols] = True
-        before = trace.frames[k - 1][mask].astype(np.int16)
-        after = trace.frames[k][mask].astype(np.int16)
-        if before.size and np.abs(after - before).max() > 0:
-            cuts[k] = mask
+        for crop in crops:
+            mask[crop] = True
+        cuts[k] = mask
     return cuts
 
 

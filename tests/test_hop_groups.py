@@ -116,3 +116,17 @@ def test_every_excessive_hop_window_is_reported():
     )
     assert [f.time for f in faults] == pytest.approx([0.1, 2.1])
     assert [f.value for f in faults] == [3, 3]
+
+
+def test_hop_cuts_include_color_changes_inside_a_stationary_box():
+    fig, dot, _, _ = _scene()
+
+    def at(t):
+        dot.set_color("red" if round(t * FPS) % 6 < 3 else "blue")
+
+    faults = ept.motion_faults(
+        fig, at, TIMES, hops=[{"artists": [dot], "rate": 4}], kinds=["hop-rate"]
+    )
+    assert faults
+    assert faults[0].time == pytest.approx(0.1)
+    assert faults[0].value == 10
