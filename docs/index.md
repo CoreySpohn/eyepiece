@@ -57,7 +57,7 @@ pip install eyepiece[hwo]
 The `[hwo]` extra adds
 [hwoutils](https://github.com/CoreySpohn/hwoutils), which provides the unit
 conversions behind `extent_arcsec`, `extent_au`, and `Frame.extent_arcsec`,
-and the profile computation behind `radial_profile_plot`. Those four are the
+and the profile computation behind `plot_radial_image`. Those four are the
 only names that need it, and each raises an `ImportError` naming the extra
 when it is missing. Everything else works on the base install.
 
@@ -152,7 +152,7 @@ reference documents every signature.
   `interval_points` (including one-sided intervals), `calibration`, `strip`,
   and `scatter_values`.
 - **Profiles.** `plot_radial`, `plot_contrast_curve`, and
-  `radial_profile_plot` (under the `[hwo]` extra).
+  `plot_radial_image` (under the `[hwo]` extra).
 - **Scenes, schematics and phasors.** `trail`, `sky_fan`, `fading_track`,
   `step_list`; `rail`, `rail_panels`, `schematic` and the `GLYPHS`
   vocabulary for optical trains; `phasor`, `phase_ring`, and `curve_insets`.

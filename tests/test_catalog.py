@@ -32,6 +32,7 @@ NOT_CATALOGED = {}
 DEPRECATED = {
     "ept.Span": "ept.Window",
     "spans": "shade_intervals",
+    "radial_profile_plot": "plot_radial_image",
     "motifs.resolve_role": "role",
     "tl.pulse": "tl.indicate",
     "tl.ring": "tl.circumscribe",

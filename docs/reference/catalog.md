@@ -174,7 +174,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | A, B and their ratio or residual | `triptych(a, b, mode=)` | Three panels | [images](../gallery/images.md) |
 | a complex field | `show_field(field)` | Real, imaginary, amplitude, phase | [images](../gallery/images.md) |
 | a cut against a second variable | `kymograph(values, x, y)` | Stacked cuts | [images](../gallery/images.md) |
-| radial and contrast profiles | `plot_radial`, `radial_profile_plot`, `plot_contrast_curve` | Profiles with working angles and floors | [profiles](../gallery/profiles.md) |
+| radial and contrast profiles | `plot_radial`, `plot_radial_image`, `plot_contrast_curve` | `plot_radial` plots existing arrays; `plot_radial_image` computes a profile from an image; contrast profiles add working angles and floors | [profiles](../gallery/profiles.md) |
 | points colored by value | `scatter_values(x, y, values)` | Inset colorbar | [values](../gallery/values.md) |
 | an optical train with chosen planes lit | `rail`, `rail_panels`, `schematic(kind)`, `GLYPHS` | Miniature train, panels under planes | [scene](../gallery/scene.md) |
 | complex numbers as arrows | `phasor`, `phase_ring`, `curve_insets` | Phasors, phase key, insets over a curve | [phasor](../gallery/phasor.md) |
@@ -296,6 +296,7 @@ replacement. They are out of every `__all__`, and they go away in the next minor
 | Deprecated | Use instead | Note |
 |---|---|---|
 | `ept.Span(start, stop)` | `ept.Window(start, stop)` | The same check window, renamed apart from the timeline record `Span` |
+| `radial_profile_plot(image, pixscale_lod)` | `plot_radial_image(image, pixscale_lod)` | The same image-to-profile computation and plotting; [profiles](../gallery/profiles.md) |
 | `spans(x, mask)` | `shade_intervals(x, mask)` | The same function and signature |
 | `motifs.resolve_role(role, mode)` | `role(name, mode=)` | `role` also takes the neutral ranks |
 | `tl.pulse(target)` | `tl.indicate(target)` | The verb is named for the move it places; its knob is `indicate.<target>` |

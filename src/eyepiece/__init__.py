@@ -146,10 +146,10 @@ __all__ = [
     "pixel_quads",
     "plot_contrast_curve",
     "plot_radial",
+    "plot_radial_image",
     "provenance_fields",
     "provenance_text",
     "quad_image",
-    "radial_profile_plot",
     "rail",
     "rail_panels",
     "reading_words",
@@ -267,7 +267,7 @@ _LAZY_EXPORTS = {
     "save_fig": ("eyepiece.output", "save_fig"),
     "plot_contrast_curve": ("eyepiece.profiles", "plot_contrast_curve"),
     "plot_radial": ("eyepiece.profiles", "plot_radial"),
-    "radial_profile_plot": ("eyepiece.profiles", "radial_profile_plot"),
+    "plot_radial_image": ("eyepiece.profiles", "plot_radial_image"),
     "file_metadata": ("eyepiece.provenance", "file_metadata"),
     "provenance_fields": ("eyepiece.provenance", "provenance_fields"),
     "provenance_text": ("eyepiece.provenance", "provenance_text"),
@@ -357,6 +357,7 @@ _LAZY_EXPORTS = {
 # cached, so every access warns.
 _DEPRECATED = {
     "spans": "shade_intervals",
+    "radial_profile_plot": "plot_radial_image",
 }
 
 

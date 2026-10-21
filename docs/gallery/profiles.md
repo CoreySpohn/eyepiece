@@ -179,7 +179,7 @@ print("floor curves:", len(first.artists["lines"]))
 
 ## Profiling an image directly
 
-`radial_profile_plot` is the one function in this module that computes
+`plot_radial_image` is the one function in this module that computes
 anything, and it does so by calling `hwoutils.radial.radial_profile` rather
 than reimplementing the reduction. It lives behind the `eyepiece[hwo]`
 extra, which supplies `hwoutils` and, with it, the unit conversions behind
@@ -189,10 +189,13 @@ than executed, and without `hwoutils` installed it raises an `ImportError`
 naming the extra.
 
 ```python
-result = ep.radial_profile_plot(image, PIXSCALE_LOD, log=True, label="azimuthal mean")
+result = ep.plot_radial_image(image, PIXSCALE_LOD, log=True, label="azimuthal mean")
 ```
 
 Unlike `plot_radial`, this function is told its units, since the pixel scale
 is an argument, so it defaults the x label to a lambda over D separation
 label. Everything else is handed straight to `plot_radial`, and the same
 `PlotResult` comes back.
+
+`radial_profile_plot` remains a deprecated alias for `plot_radial_image`.
+It accepts the same arguments and warns to use the new name.

@@ -7,7 +7,7 @@ from matplotlib.colors import to_rgba
 from matplotlib.layout_engine import ConstrainedLayoutEngine
 
 from eyepiece import _style
-from eyepiece.profiles import plot_contrast_curve, plot_radial, radial_profile_plot
+from eyepiece.profiles import plot_contrast_curve, plot_radial, plot_radial_image
 
 
 def _profile(n=20):
@@ -469,58 +469,58 @@ def _assert_same_profile(res, expected_sep, expected_profile, n):
     )
 
 
-def test_radial_profile_plot_computes_and_plots():
+def test_plot_radial_image_computes_and_plots():
     try:
         import hwoutils  # noqa: F401
     except ImportError:
         img = _image()
         with pytest.raises(ImportError, match=r"eyepiece\[hwo\]"):
-            radial_profile_plot(img, 1.0)
+            plot_radial_image(img, 1.0)
     else:
         from hwoutils import radial
 
         img = _image()
         expected_sep, expected_profile = radial.radial_profile(img, 1.0)
-        res = radial_profile_plot(img, 1.0)
+        res = plot_radial_image(img, 1.0)
         _assert_same_profile(res, expected_sep, expected_profile, img.size)
         plt.close(res.fig)
 
 
-def test_radial_profile_plot_forwards_plot_kwargs():
+def test_plot_radial_image_forwards_plot_kwargs():
     try:
         import hwoutils  # noqa: F401
     except ImportError:
         pytest.skip("hwoutils not installed")
     img = _image()
-    res = radial_profile_plot(img, 1.0, color="red", log=True)
+    res = plot_radial_image(img, 1.0, color="red", log=True)
     assert res.artists["line"].get_color() == "red"
     assert res.ax.get_yscale() == "log"
     plt.close(res.fig)
 
 
-def test_radial_profile_plot_default_xlabel_is_lod_mathtext():
+def test_plot_radial_image_default_xlabel_is_lod_mathtext():
     try:
         import hwoutils  # noqa: F401
     except ImportError:
         pytest.skip("hwoutils not installed")
     img = _image()
-    res = radial_profile_plot(img, 1.0)
+    res = plot_radial_image(img, 1.0)
     assert res.ax.get_xlabel() == r"$r$ [$\lambda/D$]"
     plt.close(res.fig)
 
 
-def test_radial_profile_plot_xlabel_override_wins():
+def test_plot_radial_image_xlabel_override_wins():
     try:
         import hwoutils  # noqa: F401
     except ImportError:
         pytest.skip("hwoutils not installed")
     img = _image()
-    res = radial_profile_plot(img, 1.0, xlabel="custom")
+    res = plot_radial_image(img, 1.0, xlabel="custom")
     assert res.ax.get_xlabel() == "custom"
     plt.close(res.fig)
 
 
-def test_radial_profile_plot_forwards_center_and_nbins():
+def test_plot_radial_image_forwards_center_and_nbins():
     try:
         import hwoutils  # noqa: F401
     except ImportError:
@@ -531,7 +531,7 @@ def test_radial_profile_plot_forwards_center_and_nbins():
     expected_sep, expected_profile = radial.radial_profile(
         img, 1.0, center=(3.0, 3.0), nbins=5
     )
-    res = radial_profile_plot(img, 1.0, center=(3.0, 3.0), nbins=5)
+    res = plot_radial_image(img, 1.0, center=(3.0, 3.0), nbins=5)
     _assert_same_profile(res, expected_sep, expected_profile, img.size)
     plt.close(res.fig)
 
@@ -563,3 +563,26 @@ def test_plot_contrast_curve_shading_is_scale_free(scale):
     assert iwa_fill.get_x() <= left
     assert owa_fill.get_x() + owa_fill.get_width() >= right
     plt.close(fig)
+
+
+@pytest.mark.parametrize("namespace", ["eyepiece", "eyepiece.profiles"])
+def test_radial_profile_plot_alias_warns_once_at_caller_and_keeps_results(namespace):
+    import importlib
+
+    pytest.importorskip("hwoutils")
+    module = importlib.import_module(namespace)
+    img = _image()
+    kwargs = {"center": (3.0, 3.0), "nbins": 5, "color": "red", "log": True}
+    current = plot_radial_image(img, 1.0, **kwargs)
+    with pytest.warns(DeprecationWarning, match="plot_radial_image") as caught:
+        legacy = module.radial_profile_plot(img, 1.0, **kwargs)
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
+    np.testing.assert_array_equal(
+        legacy.artists["line"].get_xydata(), current.artists["line"].get_xydata()
+    )
+    assert legacy.artists["line"].get_color() == current.artists["line"].get_color()
+    assert legacy.ax.get_yscale() == current.ax.get_yscale()
+    assert legacy.ax.get_xlabel() == current.ax.get_xlabel()
+    plt.close(current.fig)
+    plt.close(legacy.fig)
