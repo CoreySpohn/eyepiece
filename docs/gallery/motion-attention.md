@@ -324,3 +324,19 @@ given to `Anchor.from_artist`, `Stage`, `indicate`, or `callout`, and the
 colors pick out the two factors the sentence names. In a clip the reveal runs
 before the caption's words are spoken, and the words that stay on screen are
 the same texts that the later moves point at.
+
+## Underline a word
+
+`underline` follows a single text or one artist from `words` at draw time.
+The line draws on, holds, and fades, leaving the still unchanged.
+
+```python
+import matplotlib.pyplot as plt
+import eyepiece as ep
+
+fig, ax = plt.subplots()
+label = ax.text(0.2, 0.5, "the prior", fontsize=20)
+mark = ep.underline(label)
+mark.update(0.5)
+fig.canvas.draw()
+```

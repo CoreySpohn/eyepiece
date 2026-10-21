@@ -64,6 +64,7 @@ _MARKS = {
     "caption": ("show", SHOW_LEAD_S),
     "indicate": ("indicate", 0.5 * PULSE_S),
     "circumscribe": ("circumscribe", 0.0),
+    "underline": ("underline", 0.0),
     "pulse": ("indicate", 0.5 * PULSE_S),
     "ring": ("circumscribe", 0.0),
     "move": ("move", 0.0),
@@ -71,7 +72,7 @@ _MARKS = {
 # Kind names before 0.16: the deprecated `Timeline.pulse` and `Timeline.ring`
 # still make them, and `Timeline.span` accepts them with a warning.
 _OLD_KINDS = {"pulse": "indicate", "ring": "circumscribe"}
-_ATTENTION = ("indicate", "circumscribe", *_OLD_KINDS)
+_ATTENTION = ("indicate", "circumscribe", "underline", *_OLD_KINDS)
 _MOTION = ("enter", "move", "run")
 _ARRIVAL = ("text", "caption")
 _KINDS = (
@@ -84,11 +85,12 @@ _KINDS = (
     "run",
     "indicate",
     "circumscribe",
+    "underline",
     "line",
 )
-_ATTENTION_KNOBS = ("indicate.", "circumscribe.", "pulse.", "ring.")
-_UNPACED = ("text", "caption", "indicate", "circumscribe", "run", *_OLD_KINDS)
-_LINEAR = ("hold", "indicate", "circumscribe", "run", *_OLD_KINDS)
+_ATTENTION_KNOBS = ("indicate.", "circumscribe.", "underline.", "pulse.", "ring.")
+_UNPACED = ("text", "caption", *_ATTENTION, "run")
+_LINEAR = ("hold", *_ATTENTION, "run")
 
 
 def _exact(value):
@@ -142,7 +144,7 @@ class Span:
         name: Unique among the timeline's span and knob names (lines and
             sections have a namespace of their own).
         kind: One of ``hold``, ``enter``, ``leave``, ``text``, ``caption``,
-            ``move``, ``run``, ``indicate``, ``circumscribe``, ``line``.
+            ``move``, ``run``, ``indicate``, ``circumscribe``, ``underline``, ``line``.
         section: Name of the section or line it was declared in ("" if none).
         start_s: Start in seconds, exact before frame rounding.
         end_s: End in seconds.
@@ -1229,6 +1231,19 @@ class Timeline:
         """
         return self._attention("circumscribe", target, RING_S, at, cue)
 
+    def underline(self, target, *, at=None, cue=None):
+        """Place an `eyepiece.underline` on its cue for 1.3 seconds.
+
+        Knob ``underline.<target>`` runs from 0 to 1. The span does not
+        extend its section and a silent clip needs an explicit `at`.
+
+        Example::
+
+            tl.underline("prior", at=0.2)
+            tl.hold(2)
+        """
+        return self._attention("underline", target, RING_S, at, cue)
+
     def pulse(self, target, *, at=None, cue=None):
         """Deprecated: use `indicate`.
 
@@ -1311,8 +1326,8 @@ class Timeline:
             seconds: Seconds (paced by the tempo when `paced`).
             kind: One of ``hold``, ``enter``, ``leave``, ``text``,
                 ``caption``, ``move``, ``run``, ``indicate``,
-                ``circumscribe``. ``pulse`` and ``ring``, their names before
-                0.16, still work and warn.
+                ``circumscribe``, ``underline``. ``pulse`` and ``ring``, their
+                names before 0.16, still work and warn.
             to: A number for knob `name`, or a dict of knob targets; None is a
                 progress-only span. A ``hold`` steps its targets at the start.
             paced: Pace by the tempo; None follows the kind.
