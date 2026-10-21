@@ -33,10 +33,10 @@ floor when zeros must remain visible.
 fig, axes = plt.subplots(1, 2, figsize=(8, 3), layout="constrained")
 stated = np.linspace(0.1, 0.9, 9)
 realized = stated + rng.normal(0, 0.025, len(stated))
-ep.calibration(stated, realized, ax=axes[0], scale="linear",
+ep.plot.calibration(stated, realized, ax=axes[0], scale="linear",
                lo=realized - 0.04, hi=realized + 0.04,
                hollow=stated > 0.7, tolerance=0.05)
-ep.calibration([0.001, 0.01, 0.1], [0, 0.012, 0.08], ax=axes[1],
+ep.plot.calibration([0.001, 0.01, 0.1], [0, 0.012, 0.08], ax=axes[1],
                floor=1e-4, hollow=[True, False, False])
 for ax in axes:
     ax.set(xlabel="stated", ylabel="realized")
@@ -52,10 +52,10 @@ Values at or above a cap appear as upward triangles at that cap.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
-ep.strip({"baseline": rng.lognormal(-2, 0.8, 40),
+ep.plot.strip({"baseline": rng.lognormal(-2, 0.8, 40),
           "variant": rng.lognormal(-1.5, 0.9, 40)},
          ax=ax, capped=0.6, seed=7)
-ep.ref_line(ax, 0.6, "cap")
+ep.plot.ref_line(ax, 0.6, "cap")
 ax.set(yscale="log", ylabel="error")
 ```
 

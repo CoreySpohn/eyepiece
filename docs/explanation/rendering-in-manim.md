@@ -36,13 +36,12 @@ naming the extra.
 and vector marks together; move and scale it like any mobject.
 
 ```python
-import eyepiece.manim as em
-from eyepiece.style import SourceCast, snapshot_profile
+import eyepiece as ep
 
-CAST = SourceCast(["annulus"])
-TALK = snapshot_profile()  # 24 pt text and 1.5 pt strokes by default
+CAST = ep.style.SourceCast(["annulus"])
+TALK = ep.style.snapshot_profile()  # 24 pt text and 1.5 pt strokes by default
 
-panel = em.render(sequence.frame(0), cast=CAST, profile=TALK)
+panel = ep.manim.render(sequence.frame(0), cast=CAST, profile=TALK)
 panel.mobject.scale(0.9).to_edge(manim.LEFT)
 ```
 
@@ -109,7 +108,7 @@ neither resolver has raises a `ValueError` naming it; pass another
 `font_family=` to `snapshot_profile` in that case.
 
 A scene that builds its own `manim.Text` beside a rendered panel calls
-`em.ensure_font(TALK.font_family)` first, so Pango draws the same family.
+`ep.manim.ensure_font(TALK.font_family)` first, so Pango draws the same family.
 
 ### Point sizes
 
@@ -120,8 +119,8 @@ font-size points (72 per scene unit, so `font_size(pt) == pt`);
 frame, for a scene whose sizes must match a still shown at that resolution:
 
 ```python
-units = em.Units.for_frame(pixel_height=1080, dpi=135.0)
-TALK = snapshot_profile(
+units = ep.manim.Units.for_frame(pixel_height=1080, dpi=135.0)
+TALK = ep.style.snapshot_profile(
     text_size_pt=units.font_size(12.0),
     stroke_width_pt=units.stroke_width(1.0),
 )
@@ -160,7 +159,7 @@ the left sample-and-hold state at physical time `t` and returns the `Sample`,
 and `playback(run_time)` returns a `manim.Animation` over the whole sequence.
 
 ```python
-clip = em.animate(sequence, cast=CAST, profile=TALK)
+clip = ep.manim.animate(sequence, cast=CAST, profile=TALK)
 self.add(clip.mobject)
 self.play(clip.playback(run_time=8))
 self.wait(1)
@@ -206,7 +205,7 @@ from manim_slides import Slide
 class SpeckleTalk(Slide):
     def construct(self):
         self.camera.background_color = manim.ManimColor(to_hex(TALK.background_color))
-        clip = em.animate(sequence, cast=CAST, profile=TALK)
+        clip = ep.manim.animate(sequence, cast=CAST, profile=TALK)
         self.play(manim.FadeIn(clip.mobject))
         self.next_slide(loop=True, notes="The halo decorrelates as it drifts.")
         self.play(clip.playback(run_time=8))

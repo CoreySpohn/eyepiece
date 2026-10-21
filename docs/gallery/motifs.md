@@ -24,7 +24,7 @@ import matplotlib.patches as mpatches
 import eyepiece as ep
 
 plt.rcParams["savefig.dpi"] = 100
-motifs = ep.MotifSet.default()
+motifs = ep.motifs.MotifSet.default()
 
 
 def draw_sample(ax, motif, y):
@@ -168,14 +168,14 @@ See {doc}`Declare a cast <../how-to/declare-a-cast>` to give labels their own
 ink and accept a close role pair only when its required channels differ.
 
 ```{code-cell} python
-import eyepiece.testing as ept
+import eyepiece as ep
 
 hwostyle.use("dark")
 # disk against model is the weakest dark pair (purple against pink under
 # protanomaly), so this clip shows what a finding looks like.
 clip = motifs.only("star", "planet", "disk", "model")
-print(ept.motif_margins(clip, mode="dark"))
-for fault in ept.motif_faults(clip, mode="dark"):
+print(ep.testing.motif_margins(clip, mode="dark"))
+for fault in ep.testing.motif_faults(clip, mode="dark"):
     print(fault.kind, fault.severity, fault.keys, fault.detail)
 ```
 
@@ -187,10 +187,10 @@ check the colors that appear together. For a more specific artist identifier,
 pass `gid="planet:orbit"` to the helper; the motif key still matches as a prefix.
 
 ```{code-cell} python
-import eyepiece.testing as ept
+import eyepiece as ep
 
 hwostyle.use("dark")
-motifs = ep.MotifSet.default().only("star", "planet")
+motifs = ep.motifs.MotifSet.default().only("star", "planet")
 fig, ax = plt.subplots(figsize=(4.6, 1.6), layout="constrained")
 for y, motif in enumerate(motifs.values()):
     ax.plot([0.1, 0.9], [y, y], **motif.line_kw())
@@ -199,5 +199,5 @@ for y, motif in enumerate(motifs.values()):
 ax.set_xlim(0, 1.3)
 ax.set_ylim(-0.5, 1.5)
 ax.axis("off")
-print(ept.meaning_report(ept.meaning_faults(fig, keys=motifs.meaning_keys())))
+print(ep.testing.meaning_report(ep.testing.meaning_faults(fig, keys=motifs.meaning_keys())))
 ```

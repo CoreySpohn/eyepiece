@@ -37,7 +37,7 @@ plt.rcParams["savefig.dpi"] = 120
 
 N = 128
 PIXSCALE_LOD = 0.25
-EXTENT = ep.extent_lod_from_pixels(N, PIXSCALE_LOD)
+EXTENT = ep.plot.extent_lod_from_pixels(N, PIXSCALE_LOD)
 
 u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
 x, y = np.meshgrid(u, u)
@@ -81,10 +81,10 @@ from `label_lod`, so the reader sees separations rather than pixel indices.
 ```{code-cell} python
 fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.2), layout="constrained")
 
-low = ep.imshow_log(psf, ax=axes[0], extent=EXTENT, floor=1e-12)
-high = ep.imshow_log(psf, ax=axes[1], extent=EXTENT, floor=1e-7)
+low = ep.plot.imshow_log(psf, ax=axes[0], extent=EXTENT, floor=1e-12)
+high = ep.plot.imshow_log(psf, ax=axes[1], extent=EXTENT, floor=1e-7)
 
-ep.label_lod(axes[0])
+ep.plot.label_lod(axes[0])
 axes[1].set_xlabel(r"$x$ [$\lambda/D$]")
 axes[0].set_title("floor = 1e-12")
 axes[1].set_title("floor = 1e-7")
@@ -117,19 +117,19 @@ the background mid-scale and leaves the structure above it visible.
 rate = speckles(3, level=0.6) + 2.0e-6
 
 peak_lo, peak_hi = float(np.nanmax(rate)) * 1e-3, float(np.nanmax(rate))
-data_lo, data_hi = ep.display_limits(rate, low=50.0, low_scale=0.5, high=99.9)
+data_lo, data_hi = ep.plot.display_limits(rate, low=50.0, low_scale=0.5, high=99.9)
 
 fig, axes = plt.subplots(1, 2, figsize=(9.0, 4.0), layout="constrained")
-ep.imshow_log(
+ep.plot.imshow_log(
     rate, ax=axes[0], vmin=peak_lo, vmax=peak_hi, extent=EXTENT, cbar_label="rate"
 )
-ep.imshow_log(
+ep.plot.imshow_log(
     rate, ax=axes[1], vmin=data_lo, vmax=data_hi, extent=EXTENT, cbar_label="rate"
 )
 axes[0].set_title("floor referenced to the peak")
 axes[1].set_title("floor referenced to the median")
 for ax in axes:
-    ep.label_lod(ax)
+    ep.plot.label_lod(ax)
 ```
 
 The two floors differ by orders of magnitude on the same array.
@@ -151,9 +151,9 @@ blank frame partway through an animation cannot stop a render.
 masked = np.where(r < 3.0, rate, 0.0)  # a dark-zone cut zeroes most of the frame
 
 print(f"fraction at zero:   {np.mean(masked == 0.0):.1%}")
-print("with zeros kept:   ", ep.display_limits(masked, low=1.0, high=99.9))
-print("with zeros dropped:", ep.display_limits(masked, low=1.0, high=99.9, positive=True))
-print("nothing positive:  ", ep.display_limits(np.zeros((8, 8)), positive=True))
+print("with zeros kept:   ", ep.plot.display_limits(masked, low=1.0, high=99.9))
+print("with zeros dropped:", ep.plot.display_limits(masked, low=1.0, high=99.9, positive=True))
+print("nothing positive:  ", ep.plot.display_limits(np.zeros((8, 8)), positive=True))
 ```
 
 ## One norm across a row
@@ -177,7 +177,7 @@ levels = [8.0, 2.0, 0.5]
 frames = [CORE + speckles(3, lev) + companion for lev in levels]
 
 fig, axes = plt.subplots(1, 3, figsize=(8.4, 2.9), layout="constrained")
-row = ep.compare_row(
+row = ep.plot.compare_row(
     frames,
     titles=[f"speckles x {lev:g}" for lev in levels],
     axes=axes,
@@ -185,7 +185,7 @@ row = ep.compare_row(
     vmin=1e-9,
     cbar_label="intensity",
 )
-ep.label_lod(axes[0])
+ep.plot.label_lod(axes[0])
 for ax in axes[1:]:
     ax.set_xlabel(r"$x$ [$\lambda/D$]")
 ```
@@ -206,7 +206,7 @@ fig, slots = plt.subplot_mosaic(
     layout="constrained",
 )
 panels = np.array([[slots[k] for k in "abc"], [slots[k] for k in "def"]])
-grid = ep.compare_grid(
+grid = ep.plot.compare_grid(
     [frames, [CORE + speckles(5, lev) for lev in levels]],
     titles=[[f"x {lev:g}" for lev in levels], ["", "", ""]],
     axes=panels,
@@ -231,11 +231,11 @@ not widen it.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
-result = ep.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
-ep.overlay_circle(ax, (2.6, 1.4), 0.7)  # a photometric aperture on the companion
-ep.overlay_circle(ax, (0.0, 0.0), 1.22)  # the first dark ring of the core
-ep.overlay_circle(ax, (0.0, 0.0), 20.0)  # an outer working angle beyond the view
-ep.label_lod(ax)
+result = ep.plot.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
+ep.plot.overlay_circle(ax, (2.6, 1.4), 0.7)  # a photometric aperture on the companion
+ep.plot.overlay_circle(ax, (0.0, 0.0), 1.22)  # the first dark ring of the core
+ep.plot.overlay_circle(ax, (0.0, 0.0), 20.0)  # an outer working angle beyond the view
+ep.plot.label_lod(ax)
 ```
 
 The underlay is 1 pt wider than the dash by default, enough to outline a
@@ -246,10 +246,10 @@ outright.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
-result = ep.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
-ep.overlay_circle(ax, (2.6, 1.4), 0.7, circle_kw={"lw": 1.5},
+result = ep.plot.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
+ep.plot.overlay_circle(ax, (2.6, 1.4), 0.7, circle_kw={"lw": 1.5},
                   underlay_kw={"lw": 3.6})
-ep.label_lod(ax)
+ep.plot.label_lod(ax)
 ```
 
 `ls` sets the line style of the light line, so a solid circle can mark a
@@ -265,8 +265,8 @@ fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
 pupil_image = (r <= 10.0) * (1.0 + 0.2 * np.cos(x))
 ax.imshow(pupil_image, extent=EXTENT, origin="lower", cmap=hwostyle.cmaps.pupil,
           interpolation="nearest")
-ep.overlay_circle(ax, (0.0, 0.0), 10.0, ls="-", label="rim", label_angle=40.0)
-stop = ep.overlay_circle(ax, (0.0, 0.0), 8.0, label="stop", label_angle=-135.0)
+ep.plot.overlay_circle(ax, (0.0, 0.0), 10.0, ls="-", label="rim", label_angle=40.0)
+stop = ep.plot.overlay_circle(ax, (0.0, 0.0), 8.0, label="stop", label_angle=-135.0)
 ax.set_axis_off()
 print(sorted(stop.artists))
 ```
@@ -287,13 +287,13 @@ across, and a second ruler runs from the star to the companion.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
-ep.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
-width = ep.ruler(ax, (-1.22, -2.4), (1.22, -2.4), r"$2.44\,\lambda/D$",
+ep.plot.imshow_log(frames[1], ax=ax, extent=EXTENT, vmin=1e-9)
+width = ep.plot.ruler(ax, (-1.22, -2.4), (1.22, -2.4), r"$2.44\,\lambda/D$",
                  side="below")
-ep.overlay_circle(ax, (0.0, 0.0), 1.22)
-ep.ruler(ax, (0.0, 0.0), (2.6, 1.4), "companion", side="left")
+ep.plot.overlay_circle(ax, (0.0, 0.0), 1.22)
+ep.plot.ruler(ax, (0.0, 0.0), (2.6, 1.4), "companion", side="left")
 ax.set(xlim=(-4.5, 4.5), ylim=(-4.5, 4.5))
-ep.label_lod(ax)
+ep.plot.label_lod(ax)
 ```
 
 `update(p0=None, p1=None, text=None)` moves the same arrow, backing line,
@@ -342,11 +342,11 @@ speckle_r = (2.5, 4.2, 7.6, 8.8)
 cuts = halo + sum(3e-7 * spot(r0 * lam) for r0 in speckle_r) + 2e-7 * spot(6.0)
 
 fig, ax = plt.subplots(figsize=(5.4, 3.6), layout="constrained")
-kymo = ep.kymograph(cuts, cut, wavelength_nm, ax=ax, vmin=1e-9, vmax=1e-6,
+kymo = ep.plot.kymograph(cuts, cut, wavelength_nm, ax=ax, vmin=1e-9, vmax=1e-6,
                     cbar_label="brightness")
-ep.overlay_line(ax, 7.6 * wavelength_nm / 550.0, wavelength_nm, ls=":",
+ep.plot.overlay_line(ax, 7.6 * wavelength_nm / 550.0, wavelength_nm, ls=":",
                 label=r"speckle, $r \propto \lambda$", label_at=0.85)
-ep.overlay_line(ax, [6.0, 6.0], wavelength_nm[[0, -1]], label="planet",
+ep.plot.overlay_line(ax, [6.0, 6.0], wavelength_nm[[0, -1]], label="planet",
                 label_at=0.5)
 ax.set(xlabel=r"distance from the star along the cut ($\lambda/D$)",
        ylabel="wavelength (nm)")
@@ -381,7 +381,7 @@ before = CORE + halo
 after = CORE + halo * dark_hole + companion
 
 fig, axes = plt.subplots(1, 3, figsize=(8.8, 2.9), layout="constrained")
-ratio = ep.triptych(
+ratio = ep.plot.triptych(
     before,
     after,
     mode="ratio",
@@ -389,7 +389,7 @@ ratio = ep.triptych(
     axes=axes,
     extent=EXTENT,
 )
-ep.label_lod(axes[0])
+ep.plot.label_lod(axes[0])
 ```
 
 The same pair with `mode="residual"` puts `b - a` in the third panel on the
@@ -402,7 +402,7 @@ disappears from it.
 
 ```{code-cell} python
 fig, axes = plt.subplots(1, 3, figsize=(8.8, 2.9), layout="constrained")
-residual = ep.triptych(
+residual = ep.plot.triptych(
     before,
     after,
     mode="residual",
@@ -411,7 +411,7 @@ residual = ep.triptych(
     extent=EXTENT,
 )
 residual.artists["image"][2].set_clim(-2e-6, 2e-6)
-ep.label_lod(axes[0])
+ep.plot.label_lod(axes[0])
 ```
 
 Tightening that panel's norm is the second line of the cell above, and it is
@@ -431,14 +431,14 @@ under the same `vlim` remain comparable.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(4.2, 3.4), layout="constrained")
-diff = ep.imshow_diverging(
+diff = ep.plot.imshow_diverging(
     after - before,
     ax=ax,
     extent=EXTENT,
     vlim=3e-6,
     cbar_label="difference",
 )
-ep.label_lod(ax)
+ep.plot.label_lod(ax)
 ```
 
 ## A complex field
@@ -465,7 +465,7 @@ phase = 5.0 * (x**2 - y**2) / radius**2 + 1.2 * x / radius
 field = amplitude * np.exp(1j * phase)
 
 fig = plt.figure(figsize=(6.6, 5.4), layout="constrained")
-panels = ep.show_field(field, fig=fig, mask=pupil, label="Aberrated pupil")
+panels = ep.plot.show_field(field, fig=fig, mask=pupil, label="Aberrated pupil")
 ```
 
 The returned `MosaicResult` holds the four panels in

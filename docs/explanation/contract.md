@@ -7,7 +7,7 @@ figure assembled from several primitives comes out looking like one figure
 rather than a collage. This page states the contract; the API reference
 states the arguments.
 
-eyepiece has two ways to draw. The ax-first primitives at the top level
+eyepiece has two ways to draw. The ax-first primitives in `eyepiece.plot`
 (`imshow_log`, `compare_row`, `sky_fan`, and the rest) take arrays and draw
 them in one call. Prepared views, in `eyepiece.prepared`, write a scene down
 as data once, and the renderers in `eyepiece.mpl` and `eyepiece.manim` draw
@@ -93,14 +93,14 @@ on, so it is the result's `.ax`.
 
 The prepared renderers return their own result types, described under
 {ref}`prepared-contract`: `eyepiece.mpl.render` returns an `MplResult`,
-`eyepiece.mpl.animate` an `eyepiece.Animation`, `eyepiece.manim.render` a
+`eyepiece.mpl.animate` an `eyepiece.render.Animation`, `eyepiece.manim.render` a
 `ManimResult`, and `eyepiece.manim.animate` a `ManimClip`. A preparation
 function returns a record or a `Sequence`, not a figure.
 
 ### The artist vocabulary
 
 `.artists` is a plain dict whose keys are drawn from `ARTIST_KEYS`, a fixed
-vocabulary exported at the top level. It is a convention rather than an
+vocabulary exported as `eyepiece.plot.ARTIST_KEYS`. It is a convention rather than an
 enforced schema: a primitive populates only the keys for artists it actually
 drew, so a missing key means "not drawn here", never "drawn and hidden".
 
@@ -400,8 +400,7 @@ in a small runnable example.
 ## Style resolves at call time
 
 `eyepiece.style.role`, `eyepiece.style.neutral`, and `eyepiece.style.backing`
-are alternate paths to the same functions as `eyepiece.role`,
-`eyepiece.neutral`, and `eyepiece.backing`. Neither path warns.
+resolve appearance at the moment they are called.
 
 Color, colormap, and savefig policy come from hwostyle, and every lookup
 happens inside the call, not at import. Importing eyepiece activates no
@@ -439,9 +438,9 @@ and probability to inference figures. `cmaps.high_dynamic_range` and
 `readouts`. When the installed hwostyle predates a role, eyepiece falls back to a
 plain matplotlib map for `statistic` and `pupil`, and nothing else.
 
-Video gets one derived variant of the dark roles. `eyepiece.use_video()`, after
+Video gets one derived variant of the dark roles. `eyepiece.style.use_video()`, after
 `hwostyle.use("dark")`, makes `role` and the motif colors resolve from the
-``"dark-video"`` table (`eyepiece.video_roles()`), and `motif_faults` accepts the
+``"dark-video"`` table (`eyepiece.style.video_roles()`), and `motif_faults` accepts the
 mode by name. The table is computed from the dark roles, never picked: each role
 keeps its Oklab hue, its BT.709 chroma (the length of Cb and Cr in 8-bit code
 values, the part 4:2:0 encoding halves in resolution) is capped at 75, and a dim
@@ -468,7 +467,7 @@ reference plane) is a `Motif`, and a `MotifSet` holds motifs by key, never by
 position. The key ``"planet"`` is the same planet whatever else a set lists,
 which an order-based assignment cannot promise across the scripts of one talk.
 A motif stores a hwostyle role name or a neutral rank and never a hex value;
-`motif.color` resolves it through `eyepiece.role` at the moment it is read, so
+`motif.color` resolves it through `eyepiece.style.role` at the moment it is read, so
 a mode switch reaches every figure, and a saved figure state keeps the motif
 key and not a color that goes stale. Beside the color a motif carries its
 marker, line style, hatch, arrow style and font style: the non-color channels

@@ -19,12 +19,11 @@ import hwostyle
 import matplotlib.pyplot as plt
 
 import eyepiece as ep
-import eyepiece.testing as ept
 
 hwostyle.use("dark")
-cast = ep.MotifSet([
-    ep.Motif("profile", "profile", role="truth"),
-    ep.Motif("marker", "marker", role="planet", marker="o", linestyle="none"),
+cast = ep.motifs.MotifSet([
+    ep.motifs.Motif("profile", "profile", role="truth"),
+    ep.motifs.Motif("marker", "marker", role="planet", marker="o", linestyle="none"),
 ])
 fig, ax = plt.subplots(figsize=(4.6, 2.6), layout="constrained")
 ax.plot([0, 1], [0.2, 0.8], **cast["profile"].line_kw(gid="profile:row"))
@@ -32,7 +31,7 @@ ax.plot([0.5], [0.5], **cast["marker"].marker_kw(size=10))
 ax.text(0.5, 0.85, "marker", **cast["marker"].label_kw())
 ax.set(xlim=(0, 1), ylim=(0, 1))
 keys = cast.meaning_keys()
-print(ept.meaning_report(ept.meaning_faults(fig, keys=keys)))
+print(ep.testing.meaning_report(ep.testing.meaning_faults(fig, keys=keys)))
 plt.show()
 ```
 
@@ -55,8 +54,8 @@ Compare the mark and label colors in dark mode, with and without `label_color`.
 ```{code-cell} python
 hwostyle.use("dark")
 labels = [
-    ep.Motif("ink", "label ink", role="zodi", label_color="zodi", fontstyle="italic"),
-    ep.Motif("plain", "mark color", role="zodi"),
+    ep.motifs.Motif("ink", "label ink", role="zodi", label_color="zodi", fontstyle="italic"),
+    ep.motifs.Motif("plain", "mark color", role="zodi"),
 ]
 fig, ax = plt.subplots(figsize=(4.6, 1.6), layout="constrained")
 for y, motif in enumerate(labels):
@@ -94,14 +93,14 @@ the record stays in the set.
 
 ```{code-cell} python
 hwostyle.use("paper")
-reference = ep.Motif("ref", "reference", role="reference", marker="o", linestyle="none")
-pair = ep.MotifSet.default().only("negative").add(reference)
+reference = ep.motifs.Motif("ref", "reference", role="reference", marker="o", linestyle="none")
+pair = ep.motifs.MotifSet.default().only("negative").add(reference)
 same_marker = pair.derive("ref", marker="s")
 fig, axes = plt.subplots(1, 2, figsize=(4.6, 1.6), layout="constrained")
 for ax, name, subset in zip(
     axes, ("different markers", "same marker"), (pair, same_marker), strict=True
 ):
-    cvd = [f for f in ept.motif_faults(subset, mode="paper") if f.kind == "cvd"]
+    cvd = [f for f in ep.testing.motif_faults(subset, mode="paper") if f.kind == "cvd"]
     print(
         name, "accepted:", subset.accepts("ref", "negative", "paper"), "cvd:", len(cvd)
     )

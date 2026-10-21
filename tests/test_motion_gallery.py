@@ -28,7 +28,7 @@ def _gallery_cell(catalog, marker):
 def test_collapse_copy_is_continuous():
     hwostyle.use("dark")
     ns = {"np": np, "plt": plt, "ep": ep}
-    exec(_gallery_cell("motion-staging", "gather = ep.collapse("), ns)
+    exec(_gallery_cell("motion-staging", "gather = ep.motion.collapse("), ns)
     ept.assert_motion(ns["fig"], lambda t: ns["gather"].update(t / 2), ept.Window(0, 2))
     ept.assert_motion(
         ns["fig"], lambda t: ns["gather"].update(1, carry=t / 2), ept.Window(0, 2)
@@ -75,7 +75,7 @@ def test_follow_zoom_halos_fade_continuously():
 def test_gallery_emphasis_labels_stay_inside_frame():
     hwostyle.use("dark")
     ns = {"np": np, "plt": plt, "ep": ep}
-    exec(_gallery_cell("motion-attention", "ring = ep.circumscribe(orbiter"), ns)
+    exec(_gallery_cell("motion-attention", "ring = ep.motion.circumscribe(orbiter"), ns)
     fig = ns["fig"]
     ept.assert_motion(fig, lambda t: ns["pulse"].update(t / 2), ept.Window(0, 2))
 
@@ -120,7 +120,7 @@ def test_gallery_orbit_draws_pass_check_clip(face):
         ns = {"np": np, "plt": plt, "ep": ep, "jax": jax, "jnp": jax.numpy}
         exec(_gallery_cell("motion-clock", "KeplerianOrbit"), ns)
         # The figure cell up to its timeline; the player that encodes it is left out.
-        figure = _gallery_cell("motion-clock", "ep.hop(")
+        figure = _gallery_cell("motion-clock", "ep.plot.hop(")
         exec(figure.split("plan = tl.at_fps(30)")[0] + "plan = tl.at_fps(30)\n", ns)
         mark, plan = ns["mark"], ns["plan"]
         ns["fig"].set_dpi(200)  # the page encodes the clip at dpi=200

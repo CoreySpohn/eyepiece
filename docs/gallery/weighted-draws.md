@@ -31,7 +31,7 @@ points = rng.normal(size=(60, 2))
 weights = np.exp(-((points[:, 0] - 0.8)**2 + points[:, 1]**2) / 0.6)
 fig, axes = plt.subplots(1, 2, figsize=(6.0, 2.6), layout="constrained")
 for ax, encode in zip(axes, ("area", "alpha"), strict=True):
-    mark = ep.weighted_draws(points, weights, ax=ax, encode=encode, max_size=180)
+    mark = ep.plot.weighted_draws(points, weights, ax=ax, encode=encode, max_size=180)
     ax.set(xlim=(-3, 3), ylim=(-3, 3), xlabel="parameter x",
            ylabel="parameter y", title=encode)
 print(f"Effective sample size: {mark.ess:.1f} of {len(points)}")
@@ -45,7 +45,7 @@ the change in size can be compared throughout the beat.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(4.6, 2.8), layout="constrained")
-mark = ep.weighted_draws(points, weights, ax=ax, resample=3, max_size=180)
+mark = ep.plot.weighted_draws(points, weights, ax=ax, resample=3, max_size=180)
 ax.set(xlim=(-3, 3), ylim=(-3, 3), xlabel="parameter x", ylabel="parameter y")
 fig.canvas.draw()
 fig.set_layout_engine("none")
@@ -54,10 +54,10 @@ print("Final weights:", np.round(mark.weights(1.0)[:12], 3))
 
 
 def draw(fig, k):
-    mark.update(ep.ease(k / 29))
+    mark.update(ep.clock.ease(k / 29))
 
 
-HTML(ep.animate(fig, draw, 30, fps=10).jshtml(dpi=90))
+HTML(ep.render.animate(fig, draw, 30, fps=10).jshtml(dpi=90))
 ```
 
 Without `resample`, `update(u)` holds the original weights. To show separate

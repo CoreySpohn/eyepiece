@@ -27,9 +27,9 @@ plt.rcParams["savefig.dpi"] = 100
 rng = np.random.default_rng(0)
 x, y = rng.normal(size=(2, 60))
 fig, axes = plt.subplots(1, 2, figsize=(8, 3), layout="constrained")
-ep.scatter_values(x, y, np.exp(-(x*x + y*y)), ax=axes[0],
+ep.plot.scatter_values(x, y, np.exp(-(x*x + y*y)), ax=axes[0],
                   cmap="probability", vmin=0, vmax=1, cbar_label="probability")
-ep.scatter_values(x, y, x - y, ax=axes[1], cmap="statistic",
+ep.plot.scatter_values(x, y, x - y, ax=axes[1], cmap="statistic",
                   vmin=-3, vmax=3, cbar_label="signed statistic")
 for ax in axes:
     ax.set(xlabel="x", ylabel="y")
@@ -52,7 +52,7 @@ timestamp: two saves of one figure are byte-identical in PNG, SVG and PDF.
 fig, ax = plt.subplots(figsize=(6, 3), layout="constrained")
 ax.plot(x, y, ".")
 ax.set(xlabel="x", ylabel="y")
-result = ep.stamp(fig, note="simulated", seed=0, reserve=True)
+result = ep.render.stamp(fig, note="simulated", seed=0, reserve=True)
 ```
 
 The result is a `PlotResult` with the stamp under `text`; its `update(u,

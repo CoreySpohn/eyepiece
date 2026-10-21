@@ -44,7 +44,7 @@ def build():
     return fig, draw
 
 
-ep.assert_frames_pure(build, n, dpi=dpi)
+ep.testing.assert_frames_pure(build, n, dpi=dpi)
 print("No sampled frame faults")
 ```
 
@@ -116,14 +116,14 @@ module_path.write_text(
 sys.path.insert(0, str(output))
 importlib.invalidate_caches()
 clip = importlib.import_module("parallel_clip_example")
-ep.assert_frames_pure(clip.build, n, dpi=dpi)
+ep.testing.assert_frames_pure(clip.build, n, dpi=dpi)
 
 path = output / "parallel.mp4"
-result = ep.render_frames(clip.build, n, path, fps=fps, dpi=dpi, workers=2)
+result = ep.render.render_frames(clip.build, n, path, fps=fps, dpi=dpi, workers=2)
 print(result._asdict())
-assert isinstance(result, ep.RenderResult)
+assert isinstance(result, ep.render.RenderResult)
 
-serial = ep.render_frames(
+serial = ep.render.render_frames(
     clip.build, n, output / "serial.mp4", fps=fps, dpi=dpi, workers=1
 )
 assert serial.path.read_bytes() == path.read_bytes()
@@ -168,15 +168,15 @@ settings = {
     "encoder": None,
     "extra_ffmpeg_args": None,
 }
-key = ep.content_key(modules=(clip,), settings=settings)
+key = ep.render.content_key(modules=(clip,), settings=settings)
 work_dir = output / "resume-chunks"
 resume_args = dict(
     fps=fps, dpi=dpi, workers=1, chunk_frames=8, work_dir=work_dir, key=key
 )
-ep.render_frames(
+ep.render.render_frames(
     clip.build, n, output / "resumable.mp4", keep_chunks=True, **resume_args
 )
-recovered = ep.render_frames(
+recovered = ep.render.render_frames(
     clip.build, n, output / "resumable.mp4", **resume_args
 )
 assert recovered.resumed == recovered.chunks
@@ -195,7 +195,7 @@ retained chunks, and unrelated files remain.
 package and ffmpeg versions. It always includes a SHA-256 source hash of
 the eyepiece package: sorted logical relative paths and bytes of every
 `.py` file, excluding `__pycache__`. Editable source changes therefore
-invalidate keys even when `eyepiece.__version__` stays the same. Absolute
+invalidate keys even when `eyepiece.render.__version__` stays the same. Absolute
 installation paths do not affect the hash. Include fps, dpi, encoder options, rc, holds,
 and frame items or count in `settings`. Include the source and inputs of a
 `frame_at` callable too, when using one.
@@ -215,9 +215,9 @@ key_inputs = dict(
     settings=settings,
     extra=("Example stamp",),
 )
-key = ep.content_key(**key_inputs)
-assert key == ep.content_key(**key_inputs)
-changed_key = ep.content_key(**{**key_inputs, "data": ([0.0, 0.6, 1.0],)})
+key = ep.render.content_key(**key_inputs)
+assert key == ep.render.content_key(**key_inputs)
+changed_key = ep.render.content_key(**{**key_inputs, "data": ([0.0, 0.6, 1.0],)})
 assert changed_key != key
 print(key)
 ```
@@ -244,9 +244,9 @@ def variant_data(variant):
     return (data_path,) if variant.mode == "dark" else ()
 
 
-venue = ep.Venue("doc", rc={"font.size": 7}, dpi=dpi, fps=fps, frame_budget=n)
-selection = ep.variants((venue.name,), modes=("light", "dark"))
-spec = ep.ClipSpec(
+venue = ep.render.Venue("doc", rc={"font.size": 7}, dpi=dpi, fps=fps, frame_budget=n)
+selection = ep.render.variants((venue.name,), modes=("light", "dark"))
+spec = ep.render.ClipSpec(
     slug="marker",
     build=partial(clip.build_variant, data_path=data_path),
     frames=n,
@@ -256,17 +256,17 @@ spec = ep.ClipSpec(
 )
 variant_dir = output / "variants"
 manifest_path = variant_dir / "manifest.json"
-manifest = ep.Manifest.load(manifest_path)
-first = ep.render_variants(spec, selection, variant_dir, manifest=manifest, workers=1)
+manifest = ep.render.Manifest.load(manifest_path)
+first = ep.render.render_variants(spec, selection, variant_dir, manifest=manifest, workers=1)
 assert all(item.rendered for item in first)
 
-manifest = ep.Manifest.load(manifest_path)
-second = ep.render_variants(spec, selection, variant_dir, manifest=manifest, workers=1)
+manifest = ep.render.Manifest.load(manifest_path)
+second = ep.render.render_variants(spec, selection, variant_dir, manifest=manifest, workers=1)
 assert not any(item.rendered for item in second)
 print("Second call:", [(item.variant.name, item.rendered) for item in second])
 
 data_path.write_text("0.2", encoding="utf-8")
-changed = ep.render_variants(spec, selection, variant_dir, manifest=manifest, workers=1)
+changed = ep.render.render_variants(spec, selection, variant_dir, manifest=manifest, workers=1)
 assert [item.variant.name for item in changed if item.rendered] == ["doc-dark"]
 print("Changed data:", [(item.variant.name, item.rendered) for item in changed])
 ```
@@ -316,7 +316,7 @@ the scale should stay fixed. This builder already pins its axis limits.
 ```{code-cell} python
 assert spec.on_rescale == "warn"
 strict_spec = replace(spec, slug="fixed-scale", frames=2, on_rescale="raise")
-strict = ep.render_variants(
+strict = ep.render.render_variants(
     strict_spec, selection[:1], variant_dir, manifest=manifest, workers=1
 )
 assert strict[0].rendered and strict[0].frames == 2
@@ -377,10 +377,10 @@ project_module_path.write_text(
 importlib.invalidate_caches()
 project_clips = importlib.import_module("project_clips_example")
 project_dir = output / "project-clips"
-project_manifest = ep.Manifest.load(project_dir / "manifest.json")
+project_manifest = ep.render.Manifest.load(project_dir / "manifest.json")
 
 for slug, definition in project_clips.CLIPS.items():
-    project_spec = ep.ClipSpec(
+    project_spec = ep.render.ClipSpec(
         slug=slug,
         build=partial(
             project_clips.build_variant, module=project_clips.__name__, slug=slug
@@ -390,7 +390,7 @@ for slug, definition in project_clips.CLIPS.items():
         modules=(project_clips,),
         on_rescale="raise",
     )
-    rendered = ep.render_variants(
+    rendered = ep.render.render_variants(
         project_spec, selection[:1], project_dir,
         manifest=project_manifest, workers=2,
     )
@@ -453,7 +453,7 @@ def frame_at_for(variant):
     return partial(clip.timeline_frame, count=frames_for(variant))
 
 
-narrated_selection = ep.variants(
+narrated_selection = ep.render.variants(
     (venue.name,), modes=("light",), narrated=(venue.name,)
 )
 narrated_spec = replace(
@@ -466,7 +466,7 @@ narrated_spec = replace(
     audio=audio_for,
     venues=(venue._replace(frame_budget=4),),
 )
-narrated = ep.render_variants(
+narrated = ep.render.render_variants(
     narrated_spec, narrated_selection, variant_dir, manifest=manifest, workers=2
 )
 assert [item.frames for item in narrated] == [4, n]
@@ -498,14 +498,14 @@ import hwostyle
 adopt_dir = output / "adopted"
 adopt_dir.mkdir()
 legacy_video = adopt_dir / "legacy-marker-doc-light.mp4"
-ep.render_frames(
+ep.render.render_frames(
     partial(clip.build_legacy, venue, "light"), 3, legacy_video,
     fps=venue.fps, dpi=venue.dpi, workers=1,
     setup=partial(hwostyle.use, "light"), rc=venue.rc,
 )
 before = (legacy_video.read_bytes(), legacy_video.stat().st_mtime_ns)
-adopt_manifest = ep.Manifest.load(adopt_dir / "manifest.json")
-adopt_spec = ep.ClipSpec(
+adopt_manifest = ep.render.Manifest.load(adopt_dir / "manifest.json")
+adopt_spec = ep.render.ClipSpec(
     slug="legacy-marker",
     build=clip.build_current,
     adopt_build=clip.build_legacy,
@@ -513,14 +513,14 @@ adopt_spec = ep.ClipSpec(
     venues=(venue,),
     modules=(clip,),
 )
-adopted = ep.render_variants(
+adopted = ep.render.render_variants(
     adopt_spec, selection[:1], adopt_dir,
     manifest=adopt_manifest, workers=1, adopt=True,
 )[0]
 assert adopted.adopted and not adopted.rendered
 assert (legacy_video.read_bytes(), legacy_video.stat().st_mtime_ns) == before
 assert adopt_manifest.current(adopt_spec.slug, adopted.variant.name, adopted.key)
-kept = ep.render_variants(
+kept = ep.render.render_variants(
     adopt_spec, selection[:1], adopt_dir, manifest=adopt_manifest, workers=1
 )[0]
 assert not kept.rendered and not kept.adopted
@@ -536,23 +536,23 @@ frame index. Its PNG matches the worker raster at that index. Use the same
 `render_still` takes a builder returning a figure and saves it through
 `save_fig` as PNG, PDF, or SVG. Pass savefig keywords directly to override
 style defaults. For a fixed-size image, use
-`ep.render_still(clip.build_still, output / "fixed.png", dpi=dpi, bbox_inches=None)`;
+`ep.render.render_still(clip.build_still, output / "fixed.png", dpi=dpi, bbox_inches=None)`;
 this preserves the figure's full pixel dimensions instead of cropping to its
 artists. `same_picture` compares PNG channel levels
 with a tolerance and can ignore a bottom band, such as a provenance stamp.
 
 ```{code-cell} python
-poster = ep.render_poster(clip.build, n, n // 2, output / "poster.png", dpi=dpi)
-poster_copy = ep.render_poster(
+poster = ep.render.render_poster(clip.build, n, n // 2, output / "poster.png", dpi=dpi)
+poster_copy = ep.render.render_poster(
     clip.build, n, n // 2, output / "poster-copy.png", dpi=dpi
 )
 assert poster.read_bytes() == poster_copy.read_bytes()
-assert ep.same_picture(poster, poster_copy, tol=2, ignore_bottom_px=8)
+assert ep.testing.same_picture(poster, poster_copy, tol=2, ignore_bottom_px=8)
 
 for suffix in ("png", "pdf", "svg"):
-    still = ep.render_still(clip.build_still, output / f"still.{suffix}", dpi=dpi)
+    still = ep.render.render_still(clip.build_still, output / f"still.{suffix}", dpi=dpi)
     before = still.read_bytes()
-    ep.render_still(clip.build_still, still, dpi=dpi)
+    ep.render.render_still(clip.build_still, still, dpi=dpi)
     assert still.read_bytes() == before
     print(still.name)
 
@@ -564,8 +564,6 @@ temporary.cleanup()
 
 The examples remove their temporary files after all cells finish.
 
-The frame checks also live in the checking namespace:
-`eyepiece.testing.frame_faults`, `eyepiece.testing.assert_frames_pure`, and
-`eyepiece.testing.same_picture` are the same functions as the `eyepiece.render`
-names. Neither path warns. These aliases load on access, so importing
-`eyepiece.testing` alone does not load the render workers.
+Use `ep.testing.frame_faults`, `ep.testing.assert_frames_pure`, and
+`ep.testing.same_picture` to validate frame order and deterministic stills.
+These checks load the render helpers when accessed.

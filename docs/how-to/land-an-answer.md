@@ -37,14 +37,14 @@ def measurement():
     ax.set(xlim=(-0.04, 1.05), ylim=(0, 115), xlabel="radius", ylabel="count")
     radius = np.linspace(0, 1, 120)
     (curve,) = ax.plot(radius, 100 * (1 - np.exp(-3 * radius)))
-    count = ep.readout(
-        ep.Anchor.from_data(ax, (0.05, 103)), 0, fmt="d", digits=3
+    count = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (0.05, 103)), 0, fmt="d", digits=3
     )
-    rule = ep.ruler(image, (0, 0), (0, 0), "r = 0.00", head_scale=0)
+    rule = ep.plot.ruler(image, (0, 0), (0, 0), "r = 0.00", head_scale=0)
     fig.canvas.draw()
     fig.set_layout_engine("none")
-    head = ep.head_draw(curve)
-    measured = ep.ruler_readout(
+    head = ep.motion.head_draw(curve)
+    measured = ep.motion.ruler_readout(
         head, readout=count, value=lambda r, n: n,
         ruler=rule, ruler_to=lambda r, n: (r, 0),
         ruler_text=lambda r, n: f"r = {r:.2f}",
@@ -67,8 +67,8 @@ the number turns bold and the ruler recedes. Here is the middle of that beat.
 ```{code-cell} python
 fig, curve, count, rule, measured = measurement()
 measured.update(1.0)
-landing = ep.click(
-    curve, dot=ep.Anchor.from_data(curve.axes, curve.get_xydata()[-1]),
+landing = ep.motion.click(
+    curve, dot=ep.motion.Anchor.from_data(curve.axes, curve.get_xydata()[-1]),
     readout=count, ruler=rule,
 )
 landing.update(0.5)
@@ -81,11 +81,11 @@ the plan keep that rest. This small player has 30 frames at 10 fps.
 
 ```{code-cell} python
 fig, curve, count, rule, measured = measurement()
-landing = ep.click(
-    curve, dot=ep.Anchor.from_data(curve.axes, curve.get_xydata()[-1]),
+landing = ep.motion.click(
+    curve, dot=ep.motion.Anchor.from_data(curve.axes, curve.get_xydata()[-1]),
     readout=count, ruler=rule,
 )
-tl = ep.Timeline({"measure": 0.0}, tempo=ep.Tempo(factor=1.0))
+tl = ep.clock.Timeline({"measure": 0.0}, tempo=ep.clock.Tempo(factor=1.0))
 tl.run("measure", 0.9, to={"measure": 1.0})
 tl.click("answer")
 plan = tl.at_fps(10)
@@ -98,7 +98,7 @@ def draw(fig, k):
     landing.update(plan.value(k, "click.answer"))
 
 
-HTML(ep.animate(fig, draw, plan.n_frames, fps=plan.fps).jshtml(dpi=90))
+HTML(ep.render.animate(fig, draw, plan.n_frames, fps=plan.fps).jshtml(dpi=90))
 ```
 
 For binding a move to a plan, see {doc}`bind-a-move-to-a-knob`.

@@ -38,8 +38,6 @@ from tempfile import TemporaryDirectory
 from IPython.display import HTML
 
 import eyepiece as ep
-import eyepiece.testing as ept
-from eyepiece import narration as nr
 
 tutorial_dir = Path("../narration/tutorial").resolve()
 sys.path.insert(0, str(tutorial_dir))
@@ -76,10 +74,10 @@ the holds between these spans, replacing the silent clip's fixed holds.
 
 ```{code-cell} python
 cache_dir = tutorial_dir / "cache"
-narration = nr.Narration.load(SCRIPT, cache_dir)
+narration = ep.narration.Narration.load(SCRIPT, cache_dir)
 tl = make_timeline(narration)
 plan = tl.at_fps(10)
-cues = nr.captions(tl.narration)
+cues = ep.narration.captions(tl.narration)
 print(f"{plan.n_frames} frames at {plan.fps:g} fps")
 ```
 
@@ -110,7 +108,7 @@ setting places optional player captions at the same band height.
 
 ```{code-cell} python
 with TemporaryDirectory() as directory:
-    vtt, srt = nr.write_captions(
+    vtt, srt = ep.narration.write_captions(
         tl.narration, Path(directory) / "narrated", line=90
     )
     print(vtt.read_text().splitlines()[0])
@@ -129,12 +127,12 @@ HTML5 player. It requires ffmpeg.
 ```{code-cell} python
 with TemporaryDirectory() as directory:
     work = Path(directory)
-    with ep.record(fig, work / "silent.mp4", plan=plan, dpi=80) as rec:
+    with ep.render.record(fig, work / "silent.mp4", plan=plan, dpi=80) as rec:
         for k in range(plan.n_frames):
             draw(k)
             rec.frame()
-    track = nr.audio_track(tl.narration, cache_dir, work / "track.wav")
-    movie = nr.mux(work / "silent.mp4", track, work / "narrated.mp4")
+    track = ep.narration.audio_track(tl.narration, cache_dir, work / "track.wav")
+    movie = ep.narration.mux(work / "silent.mp4", track, work / "narrated.mp4")
     data = base64.b64encode(Path(movie).read_bytes()).decode("ascii")
 HTML(
     '<video controls style="max-width: 100%" '
@@ -167,7 +165,7 @@ against its word limit. Any figure, motion, plan or speech fault stops the
 build.
 
 ```{code-cell} python
-report = ept.assert_clip(
+report = ep.testing.assert_clip(
     fig, draw, plan, moves=scene.moves, steps=caption_steps(plan, cues)
 )
 print(report)

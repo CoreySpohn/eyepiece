@@ -40,7 +40,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import eyepiece as ep
-from eyepiece import narration as nr
 
 FPS = 30
 LAMBDA_NM = (500.0, 1000.0)
@@ -90,9 +89,9 @@ def make_plan(duration_s=20.0):
     fixed = sum(s for n, s in SEGMENTS if n.startswith("read.")) + CLICK_S
     scaled = sum(s for n, s in SEGMENTS if not n.startswith("read."))
     scale = (duration_s - fixed) / (20.0 - fixed)
-    tl = ep.Timeline(
+    tl = ep.clock.Timeline(
         {"wavelength": LAMBDA_NM[0], "read.imager": 0.0, "read.ifs": 0.0},
-        tempo=ep.Tempo(factor=1.0),
+        tempo=ep.clock.Tempo(factor=1.0),
     )
     for name, seconds in SEGMENTS:
         if name.startswith("read."):
@@ -121,7 +120,7 @@ def cue_events(plan):
     """The cue events, read from the plan's own numbers."""
     span = plan.spans["wavelength"]
     frames = range(span.k0, span.k1 + 1)
-    return nr.CueEvents(
+    return ep.narration.CueEvents(
         count_times=tuple(k / plan.fps for k in frames),
         count_values=tuple(count_at(plan.value(k, "wavelength")) for k in frames),
         reference=COUNT[0],
@@ -144,7 +143,7 @@ class Scene:
         grid = self.fig.add_gridspec(3, 1, height_ratios=(3.0, 0.3, 0.3), hspace=1.5)
         ax = self.fig.add_subplot(grid[0])
         lam = np.linspace(*LAMBDA_NM, 200)
-        ax.plot(lam, count_at(lam), color=ep.neutral(0.35), lw=1.0)
+        ax.plot(lam, count_at(lam), color=ep.style.neutral(0.35), lw=1.0)
         (self.trace,) = ax.plot([], [], color="C0", lw=2.0)
         ax.set(
             xlim=LAMBDA_NM, ylim=(0, 18), xlabel="wavelength [nm]", ylabel="lenslets"
@@ -163,17 +162,17 @@ class Scene:
             self.rows[name] = (image, n, _crossings(plan, f"read.{name}"))
         self.fig.canvas.draw()
         self.fig.set_layout_engine("none")
-        self.lam = ep.readout(
-            ep.Anchor.from_data(ax, (560.0, 15.5)), LAMBDA_NM[0],
+        self.lam = ep.motion.readout(
+            ep.motion.Anchor.from_data(ax, (560.0, 15.5)), LAMBDA_NM[0],
             fmt=".0f", prefix="wavelength = ", unit="nm", digits=4,
         )  # fmt: skip
-        self.count = ep.readout(
-            ep.Anchor.from_data(ax, (560.0, 12.5)), COUNT[0],
+        self.count = ep.motion.readout(
+            ep.motion.Anchor.from_data(ax, (560.0, 12.5)), COUNT[0],
             fmt=".1f", prefix="lenslets = ", digits=2,
         )  # fmt: skip
-        self.click = ep.click(
+        self.click = ep.motion.click(
             self.trace,
-            dot=ep.Anchor.from_data(ax, (LAMBDA_NM[1], COUNT[1])),
+            dot=ep.motion.Anchor.from_data(ax, (LAMBDA_NM[1], COUNT[1])),
             readout=self.count,
         )
 
@@ -202,7 +201,7 @@ class Scene:
 @_dark_style()
 def _render(plan, path, dpi):
     scene = Scene(plan, dpi)
-    with ep.record(scene.fig, path, fps=plan.fps, plan=plan, dpi=dpi) as rec:
+    with ep.render.record(scene.fig, path, fps=plan.fps, plan=plan, dpi=dpi) as rec:
         for k in range(plan.n_frames):
             scene.draw(k)
             rec.frame()
@@ -212,8 +211,10 @@ def _render(plan, path, dpi):
 
 def _audio(plan, path, cues):
     """The track: one silent placeholder line, plus the cues when given."""
-    script = nr.Script((nr.Line("sweep", "A count heard as pitch."),))
-    narration = nr.Narration.estimated(script)
+    script = ep.narration.Script(
+        (ep.narration.Line("sweep", "A count heard as pitch."),)
+    )
+    narration = ep.narration.Narration.estimated(script)
     tail = plan.n_frames / plan.fps - narration.total_s
     beat = narration.beat("sweep")
     n = round((beat.speech_end_s - beat.speech_start_s) * 48000)
@@ -225,7 +226,7 @@ def _audio(plan, path, cues):
         handle.setsampwidth(2)
         handle.setframerate(48000)
         handle.writeframes(bytes(2 * n))
-    return nr.audio_track(
+    return ep.narration.audio_track(
         narration, lines, path, tail_s=tail, rate=48000,
         cues=cue_events(plan) if cues else None,
     )  # fmt: skip
@@ -239,7 +240,7 @@ def build(path, *, duration_s=20.0, cues=True, dpi=150):
         tmp = Path(tmp)
         silent = _render(plan, tmp / "silent.mp4", dpi)
         track = _audio(plan, tmp / "track.wav", cues)
-        nr.mux(silent, track, path, loudness=None)
+        ep.narration.mux(silent, track, path, loudness=None)
     return path
 
 

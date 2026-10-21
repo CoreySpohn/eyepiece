@@ -94,14 +94,14 @@ inner = loop(0.8, 0.10, 50.0, 60.0, n=36)
 
 # Both names from ONE SourceStyles: a fresh one restarts the palette, so two
 # separate calls would hand back the same colour twice.
-pair = ep.SourceStyles(["outer", "inner"])
+pair = ep.style.SourceStyles(["outer", "inner"])
 
 fig = plt.figure(figsize=(11.4, 3.6), layout="constrained")
 for i, mode in enumerate(["hidden", "markers", "none"]):
     ax = fig.add_subplot(1, 3, i + 1, projection="3d")
     ax.view_init(elev=30, azim=10)
-    ep.trail(inner, ax=ax, depth=mode, marker_scale=60.0, style=pair["inner"])
-    ep.trail(path, ax=ax, depth=mode, marker_scale=80.0, style=pair["outer"])
+    ep.plot.trail(inner, ax=ax, depth=mode, marker_scale=60.0, style=pair["inner"])
+    ep.plot.trail(path, ax=ax, depth=mode, marker_scale=80.0, style=pair["outer"])
     ax.set_title(f'depth="{mode}"')
 ```
 
@@ -115,8 +115,8 @@ ax_flat = fig.add_subplot(1, 2, 1)
 ax_deep = fig.add_subplot(1, 2, 2, projection="3d")
 ax_deep.view_init(elev=30, azim=10)
 
-flat = ep.trail(path[:, :2], ax=ax_flat, marker_scale=14.0)
-deep = ep.trail(path, ax=ax_deep, depth="markers", marker_scale=80.0)
+flat = ep.plot.trail(path[:, :2], ax=ax_flat, marker_scale=14.0)
+deep = ep.plot.trail(path, ax=ax_deep, depth="markers", marker_scale=80.0)
 
 ax_flat.set_aspect("equal")
 ax_flat.set_xlabel("$x$ [AU]")
@@ -139,13 +139,13 @@ idea applied to one primitive -- see [one scene, N views](one-scene-n-views)
 for the full case.
 
 ```{code-cell} python
-styles = ep.SourceStyles(["star", "b", "c"])
+styles = ep.style.SourceStyles(["star", "b", "c"])
 
 fig = plt.figure(figsize=(4.2, 3.6), layout="constrained")
 ax = fig.add_subplot(projection="3d")
 ax.view_init(elev=22, azim=-125)
 for name, tilt in (("b", 40.0), ("c", 70.0)):
-    ep.trail(loop(1.2, 0.2, tilt, 15.0, n=30), ax=ax,
+    ep.plot.trail(loop(1.2, 0.2, tilt, 15.0, n=30), ax=ax,
              style=styles[name], marker_scale=45.0)
 ax.set_title("one entry, color and marker together")
 ```
@@ -198,10 +198,10 @@ for _ in range(60):
     tracks.append((candidate[:, 0], candidate[:, 1]))
     weights.append(float(np.exp(-0.5 * np.mean(residual**2))))
 
-color = ep.SourceStyles(["candidate"])["candidate"]["color"]
+color = ep.style.SourceStyles(["candidate"])["candidate"]["color"]
 
 fig, ax = plt.subplots(figsize=(4.8, 4.4), layout="constrained")
-fan = ep.sky_fan(
+fan = ep.plot.sky_fan(
     tracks,
     ax=ax,
     colors=[color] * len(tracks),
@@ -241,7 +241,7 @@ radius = np.exp(-0.06 * t)
 spiral = np.column_stack([radius * np.cos(t), radius * np.sin(t)])
 
 fig, ax = plt.subplots(figsize=(4.4, 3.8), layout="constrained")
-fade = ep.fading_track(spiral, ax=ax, alpha_range=(0.05, 1.0),
+fade = ep.plot.fading_track(spiral, ax=ax, alpha_range=(0.05, 1.0),
                        collection_kw={"lw": 2.0})
 ax.plot(spiral[-1, 0], spiral[-1, 1], marker="o", ms=6,
         color=fade.artists["collection"].get_colors()[-1][:3])
@@ -265,7 +265,7 @@ empty, since a path of fewer than two points draws nothing.
 fig, axes = plt.subplots(1, 3, figsize=(8.4, 2.8), layout="constrained")
 for ax, k in zip(axes, [60, 220, 500]):
     ax.set(xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), aspect="equal")
-    growing = ep.fading_track(np.empty((0, 2)), ax=ax, alpha_range=(0.05, 1.0))
+    growing = ep.plot.fading_track(np.empty((0, 2)), ax=ax, alpha_range=(0.05, 1.0))
     growing.update(spiral[:k])
     ax.plot(*spiral[k - 1], marker="o", ms=5,
             color=growing.artists["collection"].get_colors()[-1][:3])
@@ -286,7 +286,7 @@ closes into a focus without the caller positioning anything.
 
 ```{code-cell} python
 print({name: "pupil-like" if wide else "image-like"
-       for name, wide in sorted(ep.GLYPHS.items())})
+       for name, wide in sorted(ep.plot.GLYPHS.items())})
 ```
 
 The rail below is assembled to show all thirteen glyphs once rather than to
@@ -313,7 +313,7 @@ vocabulary = [
 ]
 
 fig, ax = plt.subplots(figsize=(13.0, 2.2), layout="constrained")
-glyphs = ep.rail(vocabulary, ax=ax, highlight="FPM")
+glyphs = ep.plot.rail(vocabulary, ax=ax, highlight="FPM")
 ```
 
 ## You are here
@@ -388,13 +388,13 @@ slots = [(axes[0, 0], axes[1, 0]), (axes[0, 1], axes[1, 1]),
 for (plane, data, is_focal), (ax_img, ax_rail) in zip(panels, slots, strict=True):
     if is_focal:
         # no extent, so imshow_log drops the index ticks on its own
-        ep.imshow_log(data, ax=ax_img, floor=1e-8, vmax=1.0, colorbar=False)
+        ep.plot.imshow_log(data, ax=ax_img, floor=1e-8, vmax=1.0, colorbar=False)
     else:
         ax_img.imshow(data, origin="lower", interpolation="nearest", cmap=hwostyle.cmaps.pupil)
         ax_img.set_xticks([])  # a raw imshow still needs asking
         ax_img.set_yticks([])
     ax_img.set_title(plane)
-    ep.schematic("coronagraph", ax=ax_rail, highlight=plane)
+    ep.plot.schematic("coronagraph", ax=ax_rail, highlight=plane)
 ```
 
 `schematic` is the preset wrapper used above, and it is nothing more than
@@ -405,8 +405,8 @@ Anything else is a list of pairs and a call to `rail`.
 
 ```{code-cell} python
 fig, axes = plt.subplots(2, 1, figsize=(6.4, 3.0), layout="constrained")
-imager = ep.schematic("imager", ax=axes[0], highlight="focal")
-corona = ep.schematic("coronagraph", ax=axes[1], highlight="lyot")
+imager = ep.plot.schematic("imager", ax=axes[0], highlight="focal")
+corona = ep.plot.schematic("coronagraph", ax=axes[1], highlight="lyot")
 print([t.get_text() for t in imager.artists["text"]])
 print([t.get_text() for t in corona.artists["text"]])
 ```
@@ -438,7 +438,7 @@ deformable mirror before the coronagraph proper.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(8.0, 1.9), layout="constrained")
-relayed = ep.rail(
+relayed = ep.plot.rail(
     [("Pupil", "pupil"), ("DM", "pupil"), ("FPM", "fpm"), ("Lyot", "lyot"),
      ("Focal", "focal")],
     ax=ax,
@@ -459,7 +459,7 @@ coronagraph with its entrance pupil relayed onto a deformable mirror.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(8.0, 1.9), layout="constrained")
-vortex = ep.rail(
+vortex = ep.plot.rail(
     [("Pupil", "pupil"), ("DM", "dm"), ("Vortex", "phase_mask"),
      ("Lyot", "lyot"), ("Image", "detector")],
     ax=ax,
@@ -493,14 +493,14 @@ arrow marking one focal length is the caller's own artist in the same
 coordinates.
 
 ```{code-cell} python
-roles = ep.SourceStyles(["aperture", "optics", "starlight", "detector"])
+roles = ep.style.SourceStyles(["aperture", "optics", "starlight", "detector"])
 hardware = {"Pupil": "aperture", "Focal": "optics", "Lyot": "aperture",
             "Image": "detector"}
 
 fig, ax = plt.subplots(figsize=(8.0, 2.6), layout="constrained")
 ax.set(xlim=(-0.3, 10.4), ylim=(-2.0, 2.4), aspect="equal")
 ax.axis("off")
-coronagraph = ep.rail(
+coronagraph = ep.plot.rail(
     [("Pupil", "pupil"), ("Focal", "fpm"), ("Lyot", "lyot"), ("Image", "detector")],
     ax=ax,
     coords="data",
@@ -563,7 +563,7 @@ on this page.
 fig, ax = plt.subplots(figsize=(8.0, 4.2), layout="constrained")
 ax.set(xlim=(-0.3, 10.9), ylim=(-5.6, 2.4), aspect="equal")
 ax.axis("off")
-train = ep.rail(
+train = ep.plot.rail(
     [("Pupil", "pupil"), ("FPM", "fpm"), ("Lyot", "lyot"), ("Focal", "focal")],
     ax=ax,
     coords="data",
@@ -572,10 +572,10 @@ train = ep.rail(
     stops={"Lyot": 0.85},
     highlight="FPM",
 )
-strip = ep.rail_panels(train, width=2.5, bottom=-5.4, height=2.5)
+strip = ep.plot.rail_panels(train, width=2.5, bottom=-5.4, height=2.5)
 for panel, (plane, data, is_focal) in zip(strip.insets, panels, strict=True):
     if is_focal:
-        ep.imshow_log(data, ax=panel, floor=1e-8, vmax=1.0, colorbar=False)
+        ep.plot.imshow_log(data, ax=panel, floor=1e-8, vmax=1.0, colorbar=False)
     else:
         panel.imshow(data, origin="lower", interpolation="nearest", cmap=hwostyle.cmaps.pupil)
         panel.set_xticks([])
@@ -617,7 +617,7 @@ xs = (1.0, 4.0, 6.5, 9.0, 12.0, 14.6, 17.2, 20.0, 23.0)
 fig, ax = plt.subplots(figsize=(9.6, 2.4), layout="constrained")
 ax.set(xlim=(-0.2, 24.2), ylim=(-1.8, 3.6), aspect="equal")
 ax.axis("off")
-full = ep.rail(
+full = ep.plot.rail(
     [(label, glyph) for label, glyph, _ in instrument],
     ax=ax,
     coords="data",
@@ -632,13 +632,13 @@ full = ep.rail(
     label_y=1.5,
     label_kw={"fontsize": "small"},
 )
-ep.bracket(ax, 0.4, 14.6, 2.6, "upstream of the mask", depth=0.25)
-ep.bracket(ax, 17.2, 23.6, 2.6, "downstream", depth=0.25)
+ep.plot.bracket(ax, 0.4, 14.6, 2.6, "upstream of the mask", depth=0.25)
+ep.plot.bracket(ax, 17.2, 23.6, 2.6, "downstream", depth=0.25)
 
 fig, ax = plt.subplots(figsize=(9.6, 1.6), layout="constrained")
 ax.set(xlim=(-0.2, 10.2), ylim=(-1.4, 2.0), aspect="equal")
 ax.axis("off")
-relay = ep.rail(
+relay = ep.plot.rail(
     [("pupil", "pupil"), ("focus", "focal"), ("pupil image", "pupil")],
     ax=ax,
     coords="data",
@@ -667,7 +667,7 @@ among them.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(8.0, 1.9), layout="constrained")
-slide = ep.rail(
+slide = ep.plot.rail(
     [("Pupil", "pupil"), ("DM", "dm"), ("FPM", "fpm"), ("Lyot", "lyot"),
      ("Image", "detector")],
     ax=ax,
@@ -700,7 +700,7 @@ same code, fades it, and adds the next idea, the projected separation, at
 full strength.
 
 ```{code-cell} python
-cast = ep.SourceStyles(["star", "b", "separation"])
+cast = ep.style.SourceStyles(["star", "b", "separation"])
 
 
 def first_step(ax):
@@ -718,9 +718,9 @@ def first_step(ax):
 fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.0), layout="constrained")
 first_step(axes[0])
 axes[0].set_title("the orbit")
-with ep.capture(axes[1]) as carried:
+with ep.motion.capture(axes[1]) as carried:
     planet = first_step(axes[1])
-faded = ep.fade(carried, 0.3)
+faded = ep.motion.fade(carried, 0.3)
 axes[1].plot([0.0, planet[0]], [0.0, planet[1]], lw=2.0,
              color=cast["separation"]["color"])
 axes[1].text(planet[0] / 2, planet[1] / 2 + 0.08, "separation", ha="center",
@@ -751,7 +751,7 @@ as a hatch that should recede less than the region it fills. With no
 
 ```{code-cell} python
 face = axes[1].get_facecolor()
-print(ep.blend(cast["b"]["color"], 0.45, background=face))
+print(ep.motion.blend(cast["b"]["color"], 0.45, background=face))
 ```
 
 ### Arriving instead of receding
@@ -768,15 +768,15 @@ a group in over several frames.
 ```{code-cell} python
 fig, axes = plt.subplots(1, 3, figsize=(8.4, 2.6), layout="constrained")
 for ax, u in zip(axes, [0.0, 0.4, 1.0]):
-    with ep.capture(ax) as earlier:
+    with ep.motion.capture(ax) as earlier:
         planet = first_step(ax)
-    ep.fade(earlier, 0.3)
-    with ep.capture(ax) as arriving:
+    ep.motion.fade(earlier, 0.3)
+    with ep.motion.capture(ax) as arriving:
         ax.plot([0.0, planet[0]], [0.0, planet[1]], lw=2.0,
                 color=cast["separation"]["color"])
         ax.text(planet[0] / 2, planet[1] / 2 + 0.08, "separation", ha="center",
                 color=cast["separation"]["color"])
-    arrival = ep.fade(arriving, u, by="alpha")
+    arrival = ep.motion.fade(arriving, u, by="alpha")
     ax.set_title(f"level {u:g}")
 print(len(arrival.artists), "artists arriving")
 ```
@@ -798,7 +798,7 @@ steps = [
 ]
 fig, axes = plt.subplots(1, 3, figsize=(9.6, 1.9), layout="constrained")
 for ax, current in zip(axes, [0, 2, 2]):
-    narration = ep.step_list(steps, ax=ax, current=current,
+    narration = ep.plot.step_list(steps, ax=ax, current=current,
                              text_kw={"fontsize": "small"}, gap=0.32)
 narration.update(2, done=True)  # the last panel: the finished list
 print([t.get_text() for t in narration.artists["text"]][:2])

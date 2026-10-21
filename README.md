@@ -48,129 +48,145 @@ standalone plotting library.
 
 ## What is in it
 
-The groups below follow what an author sets out to do. Names without a
-prefix are importable straight from `eyepiece`; the rest live in the named
-submodule. The
+Use `import eyepiece as ep` everywhere, then call through a task namespace,
+for example `ep.plot.imshow_log(...)` or `ep.motion.indicate(...)`.
+
+| Namespace | Task |
+|---|---|
+| `ep.plot` | Still and updatable data displays, marks, and layouts |
+| `ep.clock` | Scheduling, progress shapes, and timing records |
+| `ep.motion` | Moves, attention, and camera geometry |
+| `ep.style` | Appearance, source styles, and render profiles |
+| `ep.render` | Recording, files, render workers, and provenance |
+| `ep.testing` | Clip, timing, readability, and frame checks |
+| `ep.narration` | Speech, captions, chapters, and cue sounds |
+| `ep.motifs`, `ep.prepared`, `ep.mpl`, `ep.manim` | Recurring styles, scene records, and prepared renderers |
+
+The root keeps ten stable shortcuts: `Timeline`, `Plan`, `Tempo`,
+`PlotResult`, `MosaicResult`, `MotionContract`, `animate`, `record`,
+`save_fig`, and `__version__`. All former root paths still work silently in
+0.17, while star imports and discovery favor the small root. Deprecated
+aliases keep their existing warnings. The
 [capability catalog](https://github.com/CoreySpohn/eyepiece/blob/main/docs/reference/catalog.md)
-is the full table, one row per task, with the page that shows each name.
+lists every public name with its canonical path and a worked example.
 
 ### Make a still
 
-- **Images.** `imshow_log`, `imshow_diverging` and `display_limits`,
-  `compare_row` and `compare_grid` (several images on one norm and
-  colorbar), `triptych` (A, B, and their ratio or residual), `show_field`
-  (a complex field), and `kymograph` (a cut stacked against time or
+- **Images.** `ep.plot.imshow_log`, `ep.plot.imshow_diverging` and `ep.plot.display_limits`,
+  `ep.plot.compare_row` and `ep.plot.compare_grid` (several images on one norm and
+  colorbar), `ep.plot.triptych` (A, B, and their ratio or residual), `ep.plot.show_field`
+  (a complex field), and `ep.plot.kymograph` (a cut stacked against time or
   wavelength).
-- **Marks and annotations.** `overlay_circle` and `overlay_line` (dashed
-  marks that read over any pixels), `ruler`, `bracket`, `ref_line` (a
-  threshold with its label pinned to an axes edge), `shade_intervals`
-  (excluded intervals), `log_zero_floor`, and `backing` (a plate behind a label).
-- **Distributions and diagnostics.** `corner`, `corner_overlay`,
-  `hist_vs_pdf`, `cov_ellipse`, `convergence`, `signed_trace`, `hist_fill`,
-  `interval_points` (including one-sided intervals), `calibration`, `strip`,
-  and `scatter_values`.
-- **Profiles.** `plot_radial`, `plot_contrast_curve`, and
-  `plot_radial_image` (under the `[hwo]` extra).
-- **Scenes, schematics and phasors.** `trail`, `sky_fan`, `fading_track`,
-  `step_list`; `rail`, `rail_panels`, `schematic` and the `GLYPHS`
-  vocabulary for optical trains; `phasor`, `phase_ring`, and `curve_insets`.
-- **Layout and color.** `extent_lod`, `extent_lod_from_pixels`,
-  `extent_arcsec`, `extent_au`, the matching `label_lod`, `label_arcsec`,
-  and `label_au`, `Frame` and `SourceStyles` for panels of one scene, and
-  `role` (a named role or neutral rank, in any mode) and `neutral` for
+- **Marks and annotations.** `ep.plot.overlay_circle` and `ep.plot.overlay_line` (dashed
+  marks that read over any pixels), `ep.plot.ruler`, `ep.plot.bracket`, `ep.plot.ref_line` (a
+  threshold with its label pinned to an axes edge), `ep.plot.shade_intervals`
+  (excluded intervals), `ep.plot.log_zero_floor`, and `ep.style.backing` (a plate behind a label).
+- **Distributions and diagnostics.** `ep.plot.corner`, `ep.plot.corner_overlay`,
+  `ep.plot.hist_vs_pdf`, `ep.plot.cov_ellipse`, `ep.plot.convergence`, `ep.plot.signed_trace`, `ep.plot.hist_fill`,
+  `ep.plot.interval_points` (including one-sided intervals), `ep.plot.calibration`, `ep.plot.strip`,
+  and `ep.plot.scatter_values`.
+- **Profiles.** `ep.plot.plot_radial`, `ep.plot.plot_contrast_curve`, and
+  `ep.plot.plot_radial_image` (under the `[hwo]` extra).
+- **Scenes, schematics and phasors.** `ep.plot.trail`, `ep.plot.sky_fan`, `ep.plot.fading_track`,
+  `ep.plot.step_list`; `ep.plot.rail`, `ep.plot.rail_panels`, `ep.plot.schematic` and the `ep.plot.GLYPHS`
+  vocabulary for optical trains; `ep.plot.phasor`, `ep.plot.phase_ring`, and `ep.plot.curve_insets`.
+- **Layout and color.** `ep.plot.extent_lod`, `ep.plot.extent_lod_from_pixels`,
+  `ep.plot.extent_arcsec`, `ep.plot.extent_au`, the matching `ep.plot.label_lod`, `ep.plot.label_arcsec`,
+  and `ep.plot.label_au`, `ep.plot.Frame` and `ep.style.SourceStyles` for panels of one scene, and
+  `ep.style.role` (a named role or neutral rank, in any mode) and `ep.style.neutral` for
   brand and scenery colors.
 
 ### Put a clip on one clock
 
-- **Timing.** `Timeline` declares named spans in seconds (`enter`, `leave`,
+- **Timing.** `ep.clock.Timeline` declares named spans in seconds (`enter`, `leave`,
   `text`, `move`, `run`, `hold`, `wait_until`, `read`, `settle`,
   `together`, `stagger`, `indicate`, `circumscribe`, `click`, `caption`, `section`,
-  `hero`) and `Timeline.at_fps` resolves them into a `Plan` that a draw
+  `hero`) and `ep.clock.Timeline.at_fps` resolves them into an `ep.clock.Plan` that a draw
   function reads frame by frame (`value`, `progress`, `frame_of`, `events`,
-  `spans_json`). `Tempo` sets the pace of the whole clip in one place.
-- **Helpers.** `ease`, `stagger`, `Time`, `frame_count`, `reading_words`,
-  and the `Span`, `Event` and `Fault` records a plan carries.
+  `spans_json`). `ep.clock.Tempo` sets the pace of the whole clip in one place.
+- **Helpers.** `ep.clock.ease`, `ep.clock.stagger`, `ep.clock.Time`, `ep.clock.frame_count`, `ep.clock.reading_words`,
+  and the `ep.clock.Span`, `ep.clock.Event` and `ep.clock.Fault` records a plan carries.
 
 ### Move the viewer's eye
 
-- **Draw on.** `head_draw` (the signature arc-length reveal with a bright
-  head), `draw_on`, `build_axes`, `arrow`, `angle_arc`, `compass`,
-  `write` (a label traced as if by hand), and `words`.
-- **Point at the subject.** `indicate` (a pulse that returns exactly),
-  `circumscribe`, `callout`, `leader`, `link`, `flight`, `spotlight`,
-  `brush`, `follow_zoom`, `Anchor`, and `audit` with its `AttentionFault`
+- **Draw on.** `ep.motion.head_draw` (the signature arc-length reveal with a bright
+  head), `ep.motion.draw_on`, `ep.motion.build_axes`, `ep.motion.arrow`, `ep.motion.angle_arc`, `ep.motion.compass`,
+  `ep.motion.write` (a label traced as if by hand), and `ep.motion.words`.
+- **Point at the subject.** `ep.motion.indicate` (a pulse that returns exactly),
+  `ep.motion.circumscribe`, `ep.motion.callout`, `ep.motion.leader`, `ep.motion.link`, `ep.motion.flight`, `ep.motion.spotlight`,
+  `ep.motion.brush`, `ep.motion.follow_zoom`, `ep.motion.Anchor`, and `ep.testing.audit` with its `ep.testing.AttentionFault`
   for the connector rules.
-- **Dim, bring in, and settle.** `Stage` (groups shown, dimmed, or absent,
-  at absolute levels), `fade`, `blend`, `capture`, and `collapse`.
-- **Land the answer.** `click` (ink swells, the end dot grows, the number
-  sets bold, the ruler recedes), `ruler_readout`, and `readout`.
-- **Equations and numbers.** `term_row`, `equation`, `transform` (one
-  equation carried into another glyph by glyph), `exposure_text`,
-  `aperture_counts`, `arrivals`, and `photons`.
-- **Uncertainty.** `weighted_draws` (a posterior as true-scale weighted
-  draws) and `hop` (draws played one at a time with aging ghosts and a
+- **Dim, bring in, and settle.** `ep.motion.Stage` (groups shown, dimmed, or absent,
+  at absolute levels), `ep.motion.fade`, `ep.motion.blend`, `ep.motion.capture`, and `ep.motion.collapse`.
+- **Land the answer.** `ep.motion.click` (ink swells, the end dot grows, the number
+  sets bold, the ruler recedes), `ep.motion.ruler_readout`, and `ep.motion.readout`.
+- **Equations and numbers.** `ep.motion.term_row`, `ep.motion.equation`, `ep.motion.transform` (one
+  equation carried into another glyph by glyph), `ep.motion.exposure_text`,
+  `ep.motion.aperture_counts`, `ep.motion.arrivals`, and `ep.motion.photons`.
+- **Uncertainty.** `ep.plot.weighted_draws` (a posterior as true-scale weighted
+  draws) and `ep.plot.hop` (draws played one at a time with aging ghosts and a
   running tally).
-- **Cameras and morphs.** `PageCamera`, `zoom_path`, `view_limits`,
-  `overview_box`, `warp`, `warp_grid`, `morph`, `quad_image`, and
-  `pixel_quads`.
+- **Cameras and morphs.** `ep.motion.PageCamera`, `ep.motion.zoom_path`, `ep.motion.view_limits`,
+  `ep.motion.overview_box`, `ep.motion.warp`, `ep.motion.warp_grid`, `ep.motion.morph`, `ep.motion.quad_image`, and
+  `ep.motion.pixel_quads`.
 
 ### Keep color and scale honest
 
-- **Motifs.** `Motif` and `MotifSet` give each recurring quantity one
+- **Motifs.** `ep.motifs.Motif` and `ep.motifs.MotifSet` give each recurring quantity one
   drawing style across a clip, with `AcceptedPair` and `is_hue_role` in
   `eyepiece.motifs`.
-- **Scale for a talk.** `talk_rc` (type and strokes sized from the frame
-  height, from `TALK_FRACTIONS` and `VIDEO_RC`), `use_video` and
-  `video_roles` for video-safe dark colors, and `unsnapped`.
+- **Scale for a talk.** `ep.style.talk_rc` (type and strokes sized from the frame
+  height, from `ep.style.TALK_FRACTIONS` and `ep.style.VIDEO_RC`), `ep.style.use_video` and
+  `ep.style.video_roles` for video-safe dark colors, and `ep.style.unsnapped`.
 
 ### Narrate it (`eyepiece.narration`)
 
-- **Script and speech.** `Script`, `Line`, `Pause`, `Cue` and `parse_cues`
-  for cue marks on words, `estimate` for a draft length, `say` for numbers
-  written for the voice, `speech_faults`, `lint_script`, and
-  `check_script_speech`. `python -m eyepiece.narration.synth` speaks the
+- **Script and speech.** `ep.narration.Script`, `ep.narration.Line`, `ep.narration.Pause`, `ep.narration.Cue` and `ep.narration.parse_cues`
+  for cue marks on words, `ep.narration.estimate` for a draft length, `ep.narration.say` for numbers
+  written for the voice, `ep.narration.speech_faults`, `ep.narration.lint_script`, and
+  `ep.narration.check_script_speech`. `python -m eyepiece.narration.synth` speaks the
   lines into a cache under the `[narration]` extra.
-- **On the clock.** `Narration` loads the measured speech and places each
-  line, beat, and cue (`Timeline(narration=...)` and `Timeline.line` use
-  it), with `check_number_sync`, `check_silence`, and `sentences`.
-- **Captions, chapters and sound.** `captions`, `caption_at`,
-  `write_captions`, `write_vtt`, `write_srt`, `write_chapters`, cue sounds
-  (`CueEvents`, `cue_track`, `count_tone`, `pixel_ticks`, `click_sting`),
-  `audio_track`, and `mux` for a loudness-normalized narrated mp4.
+- **On the clock.** `ep.narration.Narration` loads the measured speech and places each
+  line, beat, and cue (`ep.clock.Timeline(narration=...)` and `ep.clock.Timeline.line` use
+  it), with `ep.narration.check_number_sync`, `ep.narration.check_silence`, and `ep.narration.sentences`.
+- **Captions, chapters and sound.** `ep.narration.captions`, `ep.narration.caption_at`,
+  `ep.narration.write_captions`, `ep.narration.write_vtt`, `ep.narration.write_srt`, `ep.narration.write_chapters`, cue sounds
+  (`ep.narration.CueEvents`, `ep.narration.cue_track`, `ep.narration.count_tone`, `ep.narration.pixel_ticks`, `ep.narration.click_sting`),
+  `ep.narration.audio_track`, and `ep.narration.mux` for a loudness-normalized narrated mp4.
 
 ### Check the clip (`eyepiece.testing`)
 
-`check_clip` re-renders a plan-driven clip without writing files and
+`ep.testing.check_clip` re-renders a plan-driven clip without writing files and
 collects its readability, motion and meaning findings, the plan's own faults,
-unread knobs, and speaking pace in one `ClipReport`. Each check also stands
-alone: `motion_faults` (jumps, dead moves, drift, torn groups, overlaps,
-departures) against the moves a clip declares, or the `MotionContract` a
+unread knobs, and speaking pace in one `ep.testing.ClipReport`. Each check also stands
+alone: `ep.testing.motion_faults` (jumps, dead moves, drift, torn groups, overlaps,
+departures) against the moves a clip declares, or the `ep.motion.MotionContract` a
 move's result carries,
-`readability_faults`, `meaning_faults` and `meaning_faults_chain` (one
-meaning per hue, within and across clips), `motif_faults` and
-`motif_margins`, `timing_faults` (pace, gaps, still screens, numbers said
-before they are shown), `speech_rate`, `grounding_faults` (equation terms
-without a referent), and `motion_ink` (how much of the motion is the
-quantity). The fault checks have `assert_*` twins that raise, `caption_line`
-places captions clear of the figure's text, and `review_sheet` draws a
+`ep.testing.readability_faults`, `ep.testing.meaning_faults` and `ep.testing.meaning_faults_chain` (one
+meaning per hue, within and across clips), `ep.testing.motif_faults` and
+`ep.testing.motif_margins`, `ep.testing.timing_faults` (pace, gaps, still screens, numbers said
+before they are shown), `ep.testing.speech_rate`, `ep.testing.grounding_faults` (equation terms
+without a referent), and `ep.testing.motion_ink` (how much of the motion is the
+quantity). The fault checks have `assert_*` twins that raise, `ep.narration.caption_line`
+places captions clear of the figure's text, and `ep.testing.review_sheet` draws a
 contact sheet at the cues and events that matter.
 
 ### Record and render
 
-- **Record.** `save_fig`, `record` (a context manager that takes frames from
+- **Record.** `ep.render.save_fig`, `ep.render.record` (a context manager that takes frames from
   a loop the caller drives, with `stills=` from the same pass and
-  `on_rescale=` against scale drift), `animate` and its `Animation`,
-  `RawSink`, `PRESETS`, `ENCODER_PROFILE`, and `to_scrubber` (an offline
+  `on_rescale=` against scale drift), `ep.render.animate` and its `ep.render.Animation`,
+  `ep.render.RawSink`, `ep.render.PRESETS`, `ep.render.ENCODER_PROFILE`, and `ep.render.to_scrubber` (an offline
   HTML page whose slider scrubs one knob).
-- **Render in parallel.** `ClipSpec`, `Venue`, `Variant` and `variants`
-  describe a clip's venue, mode, and narration variants; `render_variants`
-  renders each one keyed by `content_key` into a `Manifest`, resumably;
-  `render_frames` renders one clip's frames in worker processes; `render_poster`,
-  `render_still`, and `same_picture` make and compare deterministic stills;
-  `frame_faults` and `assert_frames_pure` check that frames do not depend
+- **Render in parallel.** `ep.render.ClipSpec`, `ep.render.Venue`, `ep.render.Variant` and `ep.render.variants`
+  describe a clip's venue, mode, and narration variants; `ep.render.render_variants`
+  renders each one keyed by `ep.render.content_key` into an `ep.render.Manifest`, resumably;
+  `ep.render.render_frames` renders one clip's frames in worker processes; `ep.render.render_poster`,
+  `ep.render.render_still`, and `ep.testing.same_picture` make and compare deterministic stills;
+  `ep.testing.frame_faults` and `ep.testing.assert_frames_pure` check that frames do not depend
   on draw order.
-- **Provenance.** `stamp`, `provenance_text`, `provenance_fields`, and
-  `file_metadata`.
+- **Provenance.** `ep.render.stamp`, `ep.render.provenance_text`, `ep.render.provenance_fields`, and
+  `ep.render.file_metadata`.
 
 ### Prepare a scene once
 
@@ -183,8 +199,8 @@ contact sheet at the cues and events that matter.
 - **`eyepiece.style`.** `SourceCast` for fixed source colors and markers, and
   `snapshot_profile`, which captures the active hwostyle appearance as a
   read-only `RenderProfile`.
-- **`eyepiece.mpl`.** `render` and `animate` for Matplotlib stills and movies.
-- **`eyepiece.manim`.** `render` and `animate` for native Manim Community
+- **`eyepiece.mpl`.** `ep.mpl.render` and `ep.mpl.animate` for Matplotlib stills and movies.
+- **`eyepiece.manim`.** `ep.manim.render` and `ep.manim.animate` for native Manim Community
   objects, usable in a Manim scene or a Manim Slides deck, with `Units` for
   point sizes and `ensure_font` for Pango fonts.
 
@@ -193,9 +209,9 @@ contact sheet at the cues and events that matter.
 ```python
 import eyepiece as ep
 
-result = ep.imshow_log(psf, extent=ep.extent_lod_from_pixels(psf.shape[0], 0.5))
-ep.label_lod(result.ax)
-ep.save_fig(result.fig, "psf")
+result = ep.plot.imshow_log(psf, extent=ep.plot.extent_lod_from_pixels(psf.shape[0], 0.5))
+ep.plot.label_lod(result.ax)
+ep.render.save_fig(result.fig, "psf")
 ```
 
 Every primitive returns a small result object carrying the axes it drew on
@@ -207,14 +223,14 @@ few lines:
 
 ```python
 frames = [cube[k] for k in range(len(cube))]
-result = ep.imshow_log(frames[0])
+result = ep.plot.imshow_log(frames[0])
 
 
 def draw(fig, k):
     result.update(frames[k])
 
 
-ep.animate(result.fig, draw, len(frames), fps=10).save("run.mp4", "run.gif")
+ep.render.animate(result.fig, draw, len(frames), fps=10).save("run.mp4", "run.gif")
 ```
 
 An explanatory clip puts every move on one clock. The timeline below draws a
@@ -227,17 +243,16 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import eyepiece as ep
-import eyepiece.testing as ept
 
-plt.rcParams.update(ep.talk_rc(720, dpi=100))
+plt.rcParams.update(ep.style.talk_rc(720, dpi=100))
 x = np.linspace(0.0, 10.0, 200)
 fig, ax = plt.subplots(figsize=(12.8, 7.2), dpi=100, layout="constrained")
 (curve,) = ax.plot(x, np.sin(x))
 (marker,) = ax.plot([7.85], [1.0], "o")
-reveal = ep.head_draw(curve, ease="linear")
-emphasis = ep.indicate(marker, scale=1.5)
+reveal = ep.motion.head_draw(curve, ease="linear")
+emphasis = ep.motion.indicate(marker, scale=1.5)
 
-tl = ep.Timeline({"curve": 0.0, "emphasis": 0.0})
+tl = ep.clock.Timeline({"curve": 0.0, "emphasis": 0.0})
 tl.move("draw", 2.0, to={"curve": 1.0})
 tl.run("emphasize", 1.0, to={"emphasis": 1.0})
 tl.hold(1.5)
@@ -249,8 +264,8 @@ def draw(k):
     emphasis.update(plan.value(k, "emphasis"))
 
 
-ept.assert_clip(fig, draw, plan, moves={curve: "draw"})
-with ep.record(fig, "clip.mp4", fps=plan.fps, plan=plan, stills={"clip.png": "draw"}) as rec:
+ep.testing.assert_clip(fig, draw, plan, moves={curve: "draw"})
+with ep.render.record(fig, "clip.mp4", fps=plan.fps, plan=plan, stills={"clip.png": "draw"}) as rec:
     for k in range(plan.n_frames):
         draw(k)
         rec.frame()
@@ -274,8 +289,8 @@ def at(t):
     draw(k)
 
 
-movie = ep.animate(fig, draw_frame, range(plan.n_frames), fps=plan.fps)
-faults = ept.readability_faults(fig, at=at, times=[0.0, 0.5, 1.0])
+movie = ep.render.animate(fig, draw_frame, range(plan.n_frames), fps=plan.fps)
+faults = ep.testing.readability_faults(fig, at=at, times=[0.0, 0.5, 1.0])
 ```
 
 For render workers, create the figure and these callbacks inside the worker
@@ -289,13 +304,12 @@ A prepared sequence gives a still, a strip of selected epochs, and a movie
 from one preparation:
 
 ```python
-import eyepiece.mpl as mpl
-from eyepiece.style import SourceCast, snapshot_profile
+import eyepiece as ep
 
-cast = SourceCast(["planet b"])
-still = mpl.render(sequence.frame(10), cast=cast)
-strip = mpl.render(sequence.strip([0, 10, 20]), cast=cast)
-movie = mpl.animate(sequence, run_time=8, fps=30, cast=cast)
+cast = ep.style.SourceCast(["planet b"])
+still = ep.mpl.render(sequence.frame(10), cast=cast)
+strip = ep.mpl.render(sequence.strip([0, 10, 20]), cast=cast)
+movie = ep.mpl.animate(sequence, run_time=8, fps=30, cast=cast)
 movie.save("run.mp4")
 ```
 
@@ -305,10 +319,10 @@ The same sequence plays in a talk through Manim:
 import manim
 from matplotlib.colors import to_hex
 
-import eyepiece.manim as em
+import eyepiece as ep
 
-profile = snapshot_profile()
-clip = em.animate(sequence, cast=cast, profile=profile)
+profile = ep.style.snapshot_profile()
+clip = ep.manim.animate(sequence, cast=cast, profile=profile)
 # Inside a Manim Scene or Slide; the background follows the profile so its
 # text stays readable.
 self.camera.background_color = manim.ManimColor(to_hex(profile.background_color))
@@ -322,11 +336,11 @@ a physics panel can sit beside a reminder of which plane it shows:
 ```python
 import eyepiece as ep
 
-result = ep.rail(
+result = ep.plot.rail(
     [("Pupil", "pupil"), ("FPM", "fpm"), ("Lyot", "lyot"), ("Focal", "focal")],
     highlight="FPM",
 )
-ep.save_fig(result.fig, "coronagraph_rail")
+ep.render.save_fig(result.fig, "coronagraph_rail")
 ```
 
 ## Status
@@ -338,8 +352,8 @@ between minor versions before 1.0. The
 [changelog](https://github.com/CoreySpohn/eyepiece/blob/main/CHANGELOG.md)
 records each change.
 
-Deprecated in 0.16, with a warning that names the replacement, and removed in
-0.17: `eyepiece.testing.Span` (now `Window`), `spans` (now
+Deprecated in 0.16 and still supported in 0.17, with a warning that names
+the replacement: `eyepiece.testing.Span` (now `Window`), `spans` (now
 `shade_intervals`), `eyepiece.motifs.resolve_role` (now `role`, which
 takes `mode=`), `Timeline.pulse` and `Timeline.ring` (now `Timeline.indicate` and
 `Timeline.circumscribe`), and `PRESETS["talk_60"]` (now `PRESETS["talk"]`).

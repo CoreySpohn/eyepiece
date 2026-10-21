@@ -28,7 +28,6 @@ import numpy as np
 from IPython.display import HTML
 
 import eyepiece as ep
-import eyepiece.testing as ept
 
 hwostyle.use("dark")
 plt.rcParams.update({
@@ -48,13 +47,13 @@ profile = field[n // 2] / field[n // 2].max()
 fig, (image_ax, profile_ax) = plt.subplots(
     1, 2, figsize=(7.5, 4.2), dpi=80, layout="constrained"
 )
-result = ep.imshow_log(
-    field, ax=image_ax, extent=ep.extent_lod_from_pixels(n, 24.0 / (n - 1)),
+result = ep.plot.imshow_log(
+    field, ax=image_ax, extent=ep.plot.extent_lod_from_pixels(n, 24.0 / (n - 1)),
     vmin=1e-12, vmax=1e-7, floor=1e-12, colorbar=False,
 )
 image_ax.set(xlabel="x [lambda/D]", ylabel="y [lambda/D]", title="Field",
              xticks=[-10, 0, 10], yticks=[-10, 0, 10])
-(curve,) = profile_ax.plot(coordinate, profile, color=ep.neutral(0.85), lw=2)
+(curve,) = profile_ax.plot(coordinate, profile, color=ep.style.neutral(0.85), lw=2)
 (marker,) = profile_ax.plot([1.5], [np.interp(1.5, coordinate, profile)],
                             "o", color=hwostyle.palette[0], ms=7)
 profile_ax.set(xlim=(-12, 12), ylim=(0, 1.1), xticks=[-10, 0, 10],
@@ -62,12 +61,12 @@ profile_ax.set(xlim=(-12, 12), ylim=(0, 1.1), xticks=[-10, 0, 10],
                title="Row profile")
 fig.canvas.draw()
 fig.set_layout_engine("none")
-labels = ep.Stage({"labels": [ax.xaxis.label for ax in (image_ax, profile_ax)]
+labels = ep.motion.Stage({"labels": [ax.xaxis.label for ax in (image_ax, profile_ax)]
                              + [ax.yaxis.label for ax in (image_ax, profile_ax)]})
-builds = [ep.build_axes(ax, label=False, title=True)
+builds = [ep.motion.build_axes(ax, label=False, title=True)
           for ax in (image_ax, profile_ax)]
-reveal = ep.draw_on(curve)
-emphasis = ep.indicate(marker, scale=1.5)
+reveal = ep.motion.draw_on(curve)
+emphasis = ep.motion.indicate(marker, scale=1.5)
 plt.close(fig)
 ```
 
@@ -78,8 +77,8 @@ The emphasis run writes an indication knob from zero to one, which makes `indica
 grow and return to rest.
 
 ```{code-cell} python
-tl = ep.Timeline({"panel": 0.0, "image": 0.0, "profile": 0.0,
-                  "indicate.marker": 0.0}, tempo=ep.Tempo(factor=1.0))
+tl = ep.clock.Timeline({"panel": 0.0, "image": 0.0, "profile": 0.0,
+                  "indicate.marker": 0.0}, tempo=ep.clock.Tempo(factor=1.0))
 tl.section("Panel")
 tl.run("panel_in", 1.5, to={"panel": 1.0})
 tl.section("Image")
@@ -116,7 +115,7 @@ def draw_frame(fig, k):
     draw(k)
 
 
-anim = ep.animate(fig, draw_frame, plan.n_frames, fps=plan.fps)
+anim = ep.render.animate(fig, draw_frame, plan.n_frames, fps=plan.fps)
 HTML(anim.jshtml(dpi=80))
 ```
 
@@ -134,6 +133,6 @@ reports, and the {doc}`clock catalog <../gallery/motion-clock>` for other spans.
 This silent clip has no narration or declared meaning keys.
 
 ```{code-cell} python
-report = ept.assert_clip(fig, draw, plan, moves={curve: "profile_on"})
+report = ep.testing.assert_clip(fig, draw, plan, moves={curve: "profile_on"})
 print(report)
 ```

@@ -21,12 +21,12 @@ unit. A mark of the form `{kind:target}` sits in front of the word it names
 and is removed before the text is spoken.
 
 ```python
-from eyepiece import narration as nr
+import eyepiece as ep
 
-SCRIPT = nr.Script(
+SCRIPT = ep.narration.Script(
     (
-        nr.Line("open", "The coronagraph blocks the {indicate:star}starlight."),
-        nr.Line(
+        ep.narration.Line("open", "The coronagraph blocks the {indicate:star}starlight."),
+        ep.narration.Line(
             "leak",
             "What leaks through is {indicate:speckle}speckle, and the "
             "{circumscribe:planet}planet must stand out.",
@@ -39,7 +39,7 @@ SCRIPT = nr.Script(
 The kind is the move the clip runs (`show`, `indicate`, `circumscribe`,
 `move`, or any name the clip understands) and the target names what it acts
 on. A line can start an equation move with ``{move:bayes}``: the cue's time
-starts the move that drives ``ep.transform(a, b)`` and the clip names its own
+starts the move that drives ``ep.motion.transform(a, b)`` and the clip names its own
 target (`bayes` here), as it does for any kind. `Cue` and `Narration` take it
 unchanged, since a kind is free text. Name a term of either equation as an
 `indicate` target (``{indicate:num}``) the same way. Write the
@@ -49,11 +49,11 @@ figure's source rather than typing them twice. The voice defaults to Kokoro
 
 ## Numbers in speech
 
-`nr.say(value, spec="g", *, unit=None, signed=False)` uses the same numeric
+`ep.narration.say(value, spec="g", *, unit=None, signed=False)` uses the same numeric
 format specification as the figure, then expands notation for speech.
-`nr.say(3e-8, ".0e")` gives "3 times ten to the minus 8", and
-`nr.say(-0.126, ".1%")` gives "minus 12.6 percent". Plain decimals keep
-their digits: `nr.say(0.943, ".3f")` gives "0.943". `signed=True` adds
+`ep.narration.say(3e-8, ".0e")` gives "3 times ten to the minus 8", and
+`ep.narration.say(-0.126, ".1%")` gives "minus 12.6 percent". Plain decimals keep
+their digits: `ep.narration.say(0.943, ".3f")` gives "0.943". `signed=True` adds
 "plus" to positive values. Nonfinite values raise `ValueError`.
 
 The supported units are `um` (microns), `nm` (nanometers), `pc` (parsecs),
@@ -62,15 +62,15 @@ The supported units are `um` (microns), `nm` (nanometers), `pc` (parsecs),
 unit raises `ValueError` naming the available choices. Use `display=` to
 keep the figure notation in captions while giving the voice these words.
 
-`nr.speech_faults(text)` returns frozen `SpeechFault` records with `token`,
+`ep.narration.speech_faults(text)` returns frozen `SpeechFault` records with `token`,
 `kind`, `detail` and `start` (a character index). It identifies exponent and
 power notation, ASCII `+/-`, `~`, `*`, slashes, binary minus signs and
 micron abbreviations after numbers. Decimals, signed percentages, word
 hyphens and `S/N` are accepted. Write operators and units in words when
 they are part of speech.
 
-`nr.check_script_speech(script) -> None` checks every `Line.spoken` and
-raises `nr.SpeechTextError`, a `ValueError`, naming the line and token for
+`ep.narration.check_script_speech(script) -> None` checks every `Line.spoken` and
+raises `ep.narration.SpeechTextError`, a `ValueError`, naming the line and token for
 each fault. It needs no speech engine and can be called before estimating
 timing. Synthesis calls it before any engine import or speech, including
 when cache files exist. Cue targets and display text are never checked.
@@ -137,7 +137,7 @@ the clip's clock and nothing about what the clip does with them.
 `Narration.place(key, start_s, end_s=None)` lays one line on the clock, purely;
 a cue is the start of its word, with no lead.
 
-The clip places its moves on the words through `eyepiece.Timeline`. A verb
+The clip places its moves on the words through `eyepiece.clock.Timeline`. A verb
 with no `at=` starts on its mark: `enter`, `text` and `caption` on
 `show:<name>` a tenth of a second ahead of the word, `indicate` on
 `indicate:<name>` centered on the word, `circumscribe` on
@@ -202,7 +202,7 @@ keywords. A browser reads WebVTT in a `<track kind="captions">` element, not
 SRT.
 
 A line may carry `display=` text, which the captions show in place of the
-spoken words (`nr.Line("post", "It is P of H given E.", display="It is
+spoken words (`ep.narration.Line("post", "It is P of H given E.", display="It is
 Pr(H|E).")`). The cue marks, the cache key and the cue times belong to the
 spoken text. When the display text has as many sentences as the speech, each
 sentence keeps the span of its spoken sentence. Otherwise the whole line is
@@ -213,7 +213,7 @@ emits one `UserWarning` naming that line per call because the caption timing
 can drift within the line.
 
 Captions sit at the bottom of the picture unless a cue says otherwise. Where
-the figure has text there, `eyepiece.testing.caption_line(fig, at=pose,
+the figure has text there, `eyepiece.narration.caption_line(fig, at=pose,
 times=...)` returns the WebVTT `line:` percentage of a position that no visible
 text touches at the sampled times, and `write_vtt(..., line=...)` writes it on
 every cue. The alternative is a caption band reserved in the clip layout, a

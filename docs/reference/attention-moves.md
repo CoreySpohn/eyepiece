@@ -91,7 +91,7 @@ passes neither its old value nor its new one.
 
 The eases `back_out` and `running_start` leave [0, 1] between their exact ends,
 and a move may take any ease as a kind name or as a callable from progress to
-eased progress, for example `functools.partial(ep.ease, kind="back_out",
+eased progress, for example `functools.partial(ep.clock.ease, kind="back_out",
 strength=0.2)`. A move clips only the progress it is given. Where an eased
 factor would become an opacity, a level, a fraction of a path, a color blend,
 or a line width, the move clips the factor itself before blending, so a

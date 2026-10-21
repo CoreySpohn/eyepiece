@@ -30,7 +30,7 @@ plt.rcParams["savefig.dpi"] = 110
 
 N = 96
 PIXSCALE_LOD = 0.3
-EXTENT = ep.extent_lod_from_pixels(N, PIXSCALE_LOD)
+EXTENT = ep.plot.extent_lod_from_pixels(N, PIXSCALE_LOD)
 u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
 x, y = np.meshgrid(u, u)
 r, theta = np.hypot(x, y), np.arctan2(y, x)
@@ -46,9 +46,9 @@ NORM = LogNorm(1e-12, 1e-7)
 ```{code-cell} python
 FULL = (0.0, 0.0, 28.0)
 CLOSE = (*PLANET_XY, 4.0)
-path, length = ep.zoom_path(FULL, CLOSE)
+path, length = ep.motion.zoom_path(FULL, CLOSE)
 
-tl = ep.Timeline({"title": ""})
+tl = ep.clock.Timeline({"title": ""})
 tl.read("The whole field, star at the center", name="intro",
         to={"title": "The whole field"})
 tl.hold(1.0, name="cue", to={"title": "Down to the companion"})
@@ -72,21 +72,21 @@ second instead of 24, which only changes where the span boundaries fall.
 fig, (ax, over) = plt.subplots(1, 2, figsize=(5.0, 2.6), layout="constrained",
                                width_ratios=(1.6, 1.0))
 for target in (ax, over):
-    ep.imshow_log(FIELD, ax=target, extent=EXTENT, vmin=NORM.vmin, vmax=NORM.vmax,
+    ep.plot.imshow_log(FIELD, ax=target, extent=EXTENT, vmin=NORM.vmin, vmax=NORM.vmax,
                   floor=NORM.vmin, colorbar=False)
-ep.label_lod(ax)
+ep.plot.label_lod(ax)
 over.set_xticks([])
 over.set_yticks([])
 over.set_title("overview", fontsize="small")
-box = ep.overview_box(FULL, ax=over)
+box = ep.motion.overview_box(FULL, ax=over)
 
 with tempfile.TemporaryDirectory() as tmp_dir:
     player = Path(tmp_dir) / "zoom.html"
     player_plan = tl.at_fps(8)
-    with ep.record(fig, player, fps=8, dpi=56, free_limits=[ax]) as rec:
+    with ep.render.record(fig, player, fps=8, dpi=56, free_limits=[ax]) as rec:
         for frame in player_plan.frames:
             view = path(player_plan.progress(frame["index"], "zoom"))
-            xlim, ylim = ep.view_limits(view)
+            xlim, ylim = ep.motion.view_limits(view)
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
             box.update(view)
@@ -112,11 +112,11 @@ current view boxed, so a zoomed viewer keeps their place.
 page, panels = plt.subplots(1, 3, figsize=(8.0, 3.0), layout="constrained")
 titles = ("starlight", "companion", "both")
 for axis, image, title in zip(panels, (HALO, PLANET + 1e-13, FIELD), titles, strict=True):
-    ep.imshow_log(image, ax=axis, extent=EXTENT, vmin=NORM.vmin, vmax=NORM.vmax,
+    ep.plot.imshow_log(image, ax=axis, extent=EXTENT, vmin=NORM.vmin, vmax=NORM.vmax,
                   floor=NORM.vmin, colorbar=False)
     axis.set_title(title)
 
-with ep.PageCamera(page, (640, 360), overview=True) as cam:
+with ep.motion.PageCamera(page, (640, 360), overview=True) as cam:
     frames = [cam.render(cam.page), cam.render(cam.fit_axes(panels[1]))]
 
 shown, cells = plt.subplots(1, 2, figsize=(7.5, 2.2), layout="constrained")
@@ -133,8 +133,8 @@ moves the holes and fades the veil from one stop to the next.
 
 ```{code-cell} python
 box = panels[1].get_tightbbox().transformed(page.dpi_scale_trans.inverted())
-light = ep.spotlight(page, [(box.x0, box.y0, box.x1, box.y1)])
-with ep.PageCamera(page, (640, 240)) as still:
+light = ep.motion.spotlight(page, [(box.x0, box.y0, box.x1, box.y1)])
+with ep.motion.PageCamera(page, (640, 240)) as still:
     spot = still.render((4.0, 1.5, 8.0))
 
 shown, cell = plt.subplots(figsize=(6.0, 2.3), layout="constrained")
@@ -149,11 +149,11 @@ with fixed encoder settings and no metadata, so the same frames always give
 the same file, and it moves the file into place only when it finishes:
 
 ```python
-with ep.PageCamera(fig, (1920, 1080), overview=True) as cam:
-    path, _ = ep.zoom_path(cam.page, cam.fit_axes(axes[1]))
-    with ep.RawSink("tour.mp4", cam.size_px, fps=30) as sink:
+with ep.motion.PageCamera(fig, (1920, 1080), overview=True) as cam:
+    path, _ = ep.motion.zoom_path(cam.page, cam.fit_axes(axes[1]))
+    with ep.render.RawSink("tour.mp4", cam.size_px, fps=30) as sink:
         for t in np.linspace(0.0, 1.0, 60):
-            sink.write(cam.render(path(ep.ease(t))))
+            sink.write(cam.render(path(ep.clock.ease(t))))
 ```
 
 ## Warp: the plane moves
@@ -168,7 +168,7 @@ rotation and a stretch and turns the rotation through its angle instead.
 A pointwise map first subdivides each path (keeping its corners, using the
 same arc-length sampling as `morph`) and moves every point along the line to
 its image. `warp_grid` draws the coordinate grid that usually carries the
-move. Arrows from `ep.arrow` are `FancyArrowPatch` artists and are accepted
+move. Arrows from `ep.motion.arrow` are `FancyArrowPatch` artists and are accepted
 once that function is merged.
 
 ```{code-cell} python
@@ -179,14 +179,14 @@ ax.set(xlim=(-3.2, 3.2), ylim=(-1.2, 1.2), xticks=[], yticks=[])
 ax.set_aspect("equal")
 fig.set_layout_engine("none")
 
-grid = ep.warp_grid(ax, extent=(-8, 8, -4, 4), color=ep.neutral(0.5))
+grid = ep.motion.warp_grid(ax, extent=(-8, 8, -4, 4), color=ep.style.neutral(0.5))
 phi = np.linspace(0.0, 2.0 * np.pi, 120, endpoint=False)
 (disk,) = ax.plot(0.8 * np.cos(phi), 0.8 * np.sin(phi), color="C1", lw=2.0)
 arrow = ax.add_patch(FancyArrowPatch((0, 0), (0.8, 0), color="C0", mutation_scale=12))
 tag = ax.text(0.9, 0.9, "(0.8, 0)", color="C0")
 
 shear = np.array([[1.0, 1.0], [0.0, 1.0]])
-turn = ep.warp([grid, disk, arrow, tag], shear, path="linear")
+turn = ep.motion.warp([grid, disk, arrow, tag], shear, path="linear")
 
 shown, cells = plt.subplots(1, 4, figsize=(9.0, 1.7), layout="constrained")
 for cell, u in zip(cells, (0.0, 0.33, 0.66, 1.0), strict=True):
@@ -208,7 +208,7 @@ ax.set(xlim=(-3.2, 3.2), ylim=(-1.2, 1.2), xticks=[], yticks=[])
 ax.set_aspect("equal")
 fig.set_layout_engine("none")
 
-grid = ep.warp_grid(ax, extent=(-4, 4, -2, 2), color=ep.neutral(0.5))
+grid = ep.motion.warp_grid(ax, extent=(-4, 4, -2, 2), color=ep.style.neutral(0.5))
 
 
 def swirl(p):
@@ -220,7 +220,7 @@ def swirl(p):
     ]
 
 
-twist = ep.warp(grid, swirl)
+twist = ep.motion.warp(grid, swirl)
 
 shown, cells = plt.subplots(1, 4, figsize=(9.0, 1.7), layout="constrained")
 for cell, u in zip(cells, (0.0, 0.33, 0.66, 1.0), strict=True):
@@ -256,10 +256,10 @@ ax.set_aspect("equal")
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-gap = ep.arrow((0.0, -1.0), (2.4, -1.0), ax=ax, kind="dimension", label="d")
-force = ep.arrow((0.0, 0.0), (2.4, 0.6), ax=ax, label="v")
-turn = ep.angle_arc((4.2, -0.6), 0.0, 55.0, 1.1, ax=ax, label=r"$\theta$")
-sky = ep.compass((6.6, 0.4), 0.8, ax=ax, east="left", angle=20.0)
+gap = ep.motion.arrow((0.0, -1.0), (2.4, -1.0), ax=ax, kind="dimension", label="d")
+force = ep.motion.arrow((0.0, 0.0), (2.4, 0.6), ax=ax, label="v")
+turn = ep.motion.angle_arc((4.2, -0.6), 0.0, 55.0, 1.1, ax=ax, label=r"$\theta$")
+sky = ep.motion.compass((6.6, 0.4), 0.8, ax=ax, east="left", angle=20.0)
 
 shown, cells = plt.subplots(2, 2, figsize=(9.0, 4.6), layout="constrained")
 for cell, u in zip(cells.flat, (0.25, 0.5, 0.75, 1.0), strict=True):
@@ -294,7 +294,7 @@ sets, and nothing needs calling per frame to make the window follow.
 The magnification is exact on both axes and the box and the window always agree.
 ``update(u)`` fades the inset, the box and the connectors in; ``level`` is their
 opacity and never changes where the window sits. The connectors are audited as
-a `link` is, so ``ep.audit`` names one that crosses data, and they are hidden
+a `link` is, so ``ep.testing.audit`` names one that crosses data, and they are hidden
 while the box overlaps the inset, so give an inset a corner the target does
 not reach, or ``loc="auto"``, which keeps it in the corner farthest from the
 target and moves it only when another corner is farther by a quarter of its
@@ -304,7 +304,7 @@ color, so they read over a dark image like this one and a light one alike. The p
 while the inset reads at five times.
 
 ```{code-cell} python
-import eyepiece.testing as ept
+import eyepiece as ep
 
 rng = np.random.default_rng(7)
 yy, xx = np.mgrid[-4:4:160j, -6:6:240j]
@@ -326,7 +326,7 @@ planet.set_data(*([v] for v in orbit(0.0)))
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-zoom = ep.follow_zoom(ax, planet, zoom=5.0, loc="auto", size=0.36)
+zoom = ep.motion.follow_zoom(ax, planet, zoom=5.0, loc="auto", size=0.36)
 
 
 def pose(t):
@@ -340,9 +340,9 @@ N_ZOOM = 60
 def draw_zoom(fig, k):
     pose(2.8 * k / (N_ZOOM - 1))
 
-ept.assert_readable(fig, at=pose, times=[0.0, 0.5, 1.4, 2.8])
-ep.audit(fig)
-HTML(ep.animate(fig, draw_zoom, N_ZOOM, fps=20).jshtml(dpi=80))
+ep.testing.assert_readable(fig, at=pose, times=[0.0, 0.5, 1.4, 2.8])
+ep.testing.audit(fig)
+HTML(ep.render.animate(fig, draw_zoom, N_ZOOM, fps=20).jshtml(dpi=80))
 ```
 
 The target above is the marker itself, so nothing but its position is updated

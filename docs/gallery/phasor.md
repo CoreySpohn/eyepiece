@@ -47,7 +47,7 @@ arrow and the color of a pixel in a phase map read against one key.
 ```{code-cell} python
 amplitude = np.array([1.0, 0.8, 0.55])
 phase = np.array([0.4, 2.3, -2.0])
-res = ep.phasor(
+res = ep.plot.phasor(
     amplitude * np.exp(1j * phase),
     colors=[hwostyle.palette[i] for i in range(3)],
     ring=True,
@@ -85,7 +85,7 @@ turns = [0.0, 0.2, 0.5]
 titles = ["in step", "a fifth of a turn apart", "half a turn apart"]
 for ax, turn, title in zip(axes, turns, titles):
     wave2 = e2 * np.exp(2j * np.pi * turn)
-    ep.phasor(
+    ep.plot.phasor(
         [e1, wave2],
         ax=ax,
         starts=[0.0, e1],
@@ -117,7 +117,7 @@ of the static field's own brightness.
 ```{code-cell} python
 fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.6), layout="constrained")
 for ax, change, title in zip(axes, [0.3, 0.3j], ["along", "across"]):
-    ep.phasor(
+    ep.plot.phasor(
         [1.0, change],
         ax=ax,
         starts=[0.0, 1.0],
@@ -156,7 +156,7 @@ titles = ["on axis", "halfway to the first dark fringe", "first dark fringe"]
 fig, axes = plt.subplots(1, 3, figsize=(9.0, 3.4), layout="constrained")
 for ax, turn, title in zip(axes, turns, titles):
     steps = np.exp(2j * np.pi * turn * (np.arange(n) + 0.5) / n) / n
-    ep.phasor(
+    ep.plot.phasor(
         steps, ax=ax, chain=True, show_sum=True, head_scale=0.4, lim=frame
     )
     ax.set_title(title)
@@ -186,11 +186,11 @@ image = sum(
 )
 image += 1e-3 * rng.random(image.shape)
 
-res = ep.imshow_log(
+res = ep.plot.imshow_log(
     image, extent=(-6, 6, -6, 6), floor=1e-3, cbar_label="intensity"
 )
 for (cx, cy), field in zip(centers, fields):
-    ep.phasor(
+    ep.plot.phasor(
         [field],
         ax=res.ax,
         at=(cx + 1.8, cy),
@@ -212,10 +212,10 @@ units.
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(8.0, 2.6), layout="constrained")
 t = np.linspace(0.0, 10.0, 400)
-ax.plot(t, np.cos(2.0 * np.pi * t / 4.0), color=ep.neutral(0.6))
+ax.plot(t, np.cos(2.0 * np.pi * t / 4.0), color=ep.style.neutral(0.6))
 ax.set(xlim=(0.0, 10.0), ylim=(-1.6, 1.6), xlabel="time (s)")
 for t0 in (1.0, 4.5, 8.0):
-    ep.phasor(
+    ep.plot.phasor(
         [np.exp(2j * np.pi * t0 / 4.0)],
         ax=ax,
         at=(t0, 0.0),
@@ -259,7 +259,7 @@ fig, ax = plt.subplots(figsize=(8.0, 3.4), layout="constrained")
 ax.plot(theta, brightness, color=hwostyle.palette[0])
 ax.set(xlim=(-0.25, 2.8), ylim=(-0.05, 1.9), xlabel=r"$\sin\theta$ ($\lambda/b$)",
        ylabel="brightness")
-stand = ep.curve_insets(
+stand = ep.plot.curve_insets(
     ax,
     theta,
     brightness,
@@ -296,7 +296,7 @@ def spot(inset, i):
 fig, ax = plt.subplots(figsize=(7.0, 3.2), layout="constrained")
 ax.plot(sep, throughput, color=hwostyle.palette[0])
 ax.set(xlim=(0.0, 6.0), ylim=(0.0, 2.2), xlabel="separation", ylabel="throughput")
-res = ep.curve_insets(
+res = ep.plot.curve_insets(
     ax, sep, throughput, shown, size=0.9, size_units="data", above=0.05, build=spot
 )
 ```
@@ -316,7 +316,7 @@ the dark figure below as well as a light one.
 fig, ax = plt.subplots(figsize=(3.4, 3.4), layout="constrained")
 ax.set(xlim=(-1.4, 1.4), ylim=(-1.4, 1.4), aspect="equal")
 ax.set_axis_off()
-ring = ep.phase_ring(ax, radius=1.0, width=6.0)
+ring = ep.plot.phase_ring(ax, radius=1.0, width=6.0)
 marks = {"0": 0.0, r"$\pi/2$": np.pi / 2, r"$\pm\pi$": np.pi, r"$-\pi/2$": -np.pi / 2}
 for label, phi in marks.items():
     ax.text(1.22 * np.cos(phi), 1.22 * np.sin(phi), label, ha="center", va="center")
@@ -340,7 +340,7 @@ def steps_for(turn):
     return np.exp(2j * np.pi * turn * (np.arange(n) + 0.5) / n) / n
 
 
-res = ep.phasor(
+res = ep.plot.phasor(
     steps_for(0.0), chain=True, show_sum=True, head_scale=0.4, lim=frame
 )
 for turn in np.linspace(0.0, 1.0, 11):

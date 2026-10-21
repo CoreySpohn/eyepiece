@@ -74,7 +74,7 @@ drawing.
 sep, profile = radial_profile(image, r)
 
 fig, ax = plt.subplots(figsize=(5.4, 3.2), layout="constrained")
-prof = ep.plot_radial(
+prof = ep.plot.plot_radial(
     sep,
     profile,
     ax=ax,
@@ -108,7 +108,7 @@ floors = [
 ]
 
 fig, ax = plt.subplots(figsize=(5.8, 3.4), layout="constrained")
-curve = ep.plot_contrast_curve(
+curve = ep.plot.plot_contrast_curve(
     sep_curve,
     raw,
     ax=ax,
@@ -142,7 +142,7 @@ the second.
 processed = raw / 9.0 + 5e-12
 
 fig, ax = plt.subplots(figsize=(5.8, 3.4), layout="constrained")
-first = ep.plot_contrast_curve(
+first = ep.plot.plot_contrast_curve(
     sep_curve,
     raw,
     ax=ax,
@@ -153,7 +153,7 @@ first = ep.plot_contrast_curve(
     xlabel=r"$r$ [$\lambda/D$]",
     ylabel=r"$5\sigma$ contrast",
 )
-second = ep.plot_contrast_curve(
+second = ep.plot.plot_contrast_curve(
     sep_curve,
     processed,
     ax=ax,
@@ -189,7 +189,7 @@ than executed, and without `hwoutils` installed it raises an `ImportError`
 naming the extra.
 
 ```python
-result = ep.plot_radial_image(image, PIXSCALE_LOD, log=True, label="azimuthal mean")
+result = ep.plot.plot_radial_image(image, PIXSCALE_LOD, log=True, label="azimuthal mean")
 ```
 
 Unlike `plot_radial`, this function is told its units, since the pixel scale
@@ -216,5 +216,5 @@ labels = []
 for name, y in [("a", 0.50), ("b", 0.51), ("c", 0.52)]:
     line, = ax.plot([0, 0.8], [0.2, y])
     labels.append(ax.text(0.8, y, name, color=line.get_color(), va="center"))
-ep.spread_labels(labels, min_gap=3)
+ep.plot.spread_labels(labels, min_gap=3)
 ```

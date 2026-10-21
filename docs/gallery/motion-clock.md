@@ -26,7 +26,7 @@ plt.rcParams["savefig.dpi"] = 110
 
 N = 96
 PIXSCALE_LOD = 0.3
-EXTENT = ep.extent_lod_from_pixels(N, PIXSCALE_LOD)
+EXTENT = ep.plot.extent_lod_from_pixels(N, PIXSCALE_LOD)
 u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
 x, y = np.meshgrid(u, u)
 
@@ -52,9 +52,9 @@ Here the zoom span writes no knob: its clock drives a camera path in the
 ```{code-cell} python
 FULL = (0.0, 0.0, 28.0)
 CLOSE = (*PLANET_XY, 4.0)
-path, length = ep.zoom_path(FULL, CLOSE)
+path, length = ep.motion.zoom_path(FULL, CLOSE)
 
-tl = ep.Timeline({"title": ""})
+tl = ep.clock.Timeline({"title": ""})
 tl.read("The whole field, star at the center", name="intro",
         to={"title": "The whole field"})
 tl.hold(1.0, name="cue", to={"title": "Down to the companion"})
@@ -87,8 +87,8 @@ kinds = ("linear", "cosine", "smoothstep", "smootherstep", "back_out",
 fig, axes = plt.subplots(1, 6, figsize=(9.0, 2.0), layout="constrained",
                          sharey=True)
 for axis, kind in zip(axes, kinds, strict=True):
-    axis.plot(s, s, color=ep.blend(plt.rcParams["text.color"], 0.3), lw=1.0)
-    axis.plot(s, ep.ease(s, kind), color=hwostyle.palette[0])
+    axis.plot(s, s, color=ep.motion.blend(plt.rcParams["text.color"], 0.3), lw=1.0)
+    axis.plot(s, ep.clock.ease(s, kind), color=hwostyle.palette[0])
     axis.set_title(kind, fontsize="small")
     axis.set_xlabel("progress")
 axes[0].set_ylabel("eased progress")
@@ -119,16 +119,16 @@ events (starts, middles, ends and cues, each with the frame that shows it) and
 the frames a contact sheet should draw.
 
 ```{code-cell} python
-from eyepiece import narration as nr
+import eyepiece as ep
 
-SCRIPT = nr.Script(
+SCRIPT = ep.narration.Script(
     (
-        nr.Line(
+        ep.narration.Line(
             "find",
             "The coronagraph blocks the {show:star}star, and what leaks "
             "through is {indicate:speckle}speckle.",
         ),
-        nr.Line(
+        ep.narration.Line(
             "reveal",
             "A faint {show:planet}planet stands out of it, "
             "{circumscribe:halo}circled here.",
@@ -138,7 +138,7 @@ SCRIPT = nr.Script(
 
 
 def clip(narration=None):
-    tl = ep.Timeline(tempo=ep.Tempo(), narration=narration)
+    tl = ep.clock.Timeline(tempo=ep.clock.Tempo(), narration=narration)
     part = tl.line if narration is not None else tl.section
     part("find")
     tl.enter("star")
@@ -150,7 +150,7 @@ def clip(narration=None):
 
 
 silent = clip().at_fps(30)
-voiced = clip(nr.Narration.estimated(SCRIPT)).at_fps(30)
+voiced = clip(ep.narration.Narration.estimated(SCRIPT)).at_fps(30)
 
 print(f"silent:   {silent.n_frames} frames, {len(silent.spans)} spans")
 print(f"narrated: {voiced.n_frames} frames, {len(voiced.spans)} spans")
@@ -195,8 +195,8 @@ its reading time from its words, and the next section starts once the label
 has been read.
 
 ```{code-cell} python
-tempo = ep.Tempo(factor=1.0)
-tl = ep.Timeline({"label": 0.0, "next": 0.0}, tempo=tempo)
+tempo = ep.clock.Tempo(factor=1.0)
+tl = ep.clock.Timeline({"label": 0.0, "next": 0.0}, tempo=tempo)
 tl.section("label")
 label = tl.text("label")
 tl.wait_until(label.end + tempo.read_s("Down to the companion"))
@@ -228,16 +228,16 @@ value last set, so a readout chains: out, and back.
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(7.0, 2.8), layout="constrained")
 ax.set(xlim=(0.0, 12.5), ylim=(-1.2, 1.2), xlabel="time [h]", ylabel="offset")
-ax.plot([0.0, 12.5], [-1.0, 1.0], color=ep.neutral(0.4))
+ax.plot([0.0, 12.5], [-1.0, 1.0], color=ep.style.neutral(0.4))
 (dot,) = ax.plot([0.0], [-1.0], "o", ms=8, color="C1")
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-clock = ep.readout(
-    ep.Anchor.from_data(ax, (2.4, 0.78)), 0.0, prefix="t = ", unit="h", ha="point"
+clock = ep.motion.readout(
+    ep.motion.Anchor.from_data(ax, (2.4, 0.78)), 0.0, prefix="t = ", unit="h", ha="point"
 )
-offset = ep.readout(
-    ep.Anchor.from_data(ax, (2.4, 0.52)),
+offset = ep.motion.readout(
+    ep.motion.Anchor.from_data(ax, (2.4, 0.52)),
     -1.0,
     prefix="offset = ",
     fmt="+.2f",
@@ -253,7 +253,7 @@ def run(start, stop):
     def at(u):
         clock.update(u)
         offset.update(u)
-        e = ep.ease(u)
+        e = ep.clock.ease(u)
         x = 12.5 * (start + e * (stop - start))
         dot.set_data([x], [x / 12.5 * 2.0 - 1.0])
 
@@ -371,12 +371,12 @@ the final counts.
 STAR_RATE, CONTRAST = 1e6, 1e-7  # photons per second at the star peak; illustrative
 leak = STAR_RATE * star
 clock = np.r_[0.0, np.geomspace(1.0, 1e3, 24)]
-channel = ep.arrivals(leak + STAR_RATE * CONTRAST * planet, clock, seed=0)
+channel = ep.motion.arrivals(leak + STAR_RATE * CONTRAST * planet, clock, seed=0)
 
 fig = plt.figure(figsize=(6.4, 3.6))
 image_ax = fig.add_axes([0.03, 0.06, 0.5, 0.88])
 image_ax.set_axis_off()
-mark = ep.photons(channel, ax=image_ax, extent=(-HALF, HALF, -HALF, HALF), cmap="magma")
+mark = ep.motion.photons(channel, ax=image_ax, extent=(-HALF, HALF, -HALF, HALF), cmap="magma")
 circle = np.linspace(0.0, 2.0 * np.pi, 121)
 image_ax.plot(SEP[0] + np.cos(circle), SEP[1] + np.sin(circle), color="C0", lw=1.5)
 backing = {"facecolor": "black", "edgecolor": "none", "alpha": 0.85, "pad": 1.5}
@@ -385,7 +385,7 @@ image_ax.text(SEP[0] + 1.3, SEP[1] + 0.9, "planet", **label)
 image_ax.text(0.0, -2.6, "star leak", ha="center", **label)
 mono = {"family": "DejaVu Sans Mono", "fontsize": 11, "va": "top"}
 clock_text = fig.text(0.58, 0.9, "", **mono)
-fig.text(0.58, 0.82, "log clock", fontsize=9, va="top", color=ep.neutral(0.6))
+fig.text(0.58, 0.82, "log clock", fontsize=9, va="top", color=ep.style.neutral(0.6))
 fig.text(0.58, 0.68, "photons in the ring", fontsize=10, va="top")
 read_text = fig.text(0.58, 0.61, "", **mono)
 fig.text(
@@ -401,10 +401,10 @@ fig.text(
     f"charge-6 vortex (physicaloptix)\nplanet contrast {CONTRAST:.0e}, illustrative",
     fontsize=9,
     va="top",
-    color=ep.neutral(0.6),
+    color=ep.style.neutral(0.6),
 )
 
-tl = ep.Timeline({"u": 0.0})
+tl = ep.clock.Timeline({"u": 0.0})
 tl.hold(0.4, name="open")
 tl.run("draw", 5.0, to={"u": 1.0})
 tl.hold(1.2, name="rest")
@@ -412,8 +412,8 @@ tl.hold(1.2, name="rest")
 
 def draw_photons(k, plan):
     mark.update(plan.value(k, "u"))
-    read = ep.aperture_counts(mark, ring, leak=leak)
-    clock_text.set_text("t = " + ep.exposure_text(read.exposure, pad=True))
+    read = ep.motion.aperture_counts(mark, ring, leak=leak)
+    clock_text.set_text("t = " + ep.motion.exposure_text(read.exposure, pad=True))
     snr = f"{read.snr:>6.1f}" if read.expected > 0 else f"{'--':>6}"
     read_text.set_text(
         f"counted  {read.counts:>6,d}\n"
@@ -426,7 +426,7 @@ def draw_photons(k, plan):
 # An embedded mp4 at 1280 x 720: the photon grain does not compress as frames.
 plan = tl.at_fps(30)
 draw_photons(plan.n_frames - 1, plan)
-movie = ep.animate(fig, lambda f, k: draw_photons(k, plan), plan.n_frames, fps=30)
+movie = ep.render.animate(fig, lambda f, k: draw_photons(k, plan), plan.n_frames, fps=30)
 with tempfile.TemporaryDirectory() as tmp_dir:
     # The player embeds the file when it renders, so render it before cleanup.
     player = HTML(movie.video(Path(tmp_dir) / "photons.mp4", dpi=200)._repr_html_())
@@ -565,8 +565,8 @@ foot = fig.add_axes([0.59, 0.02, 0.25, 0.08])  # holds the draw counter
 foot.set_axis_off()
 foot.set_xlim(0.0, 1.0)
 foot.set_ylim(0.0, 1.0)
-grey = ep.neutral(0.45)
-note = {"color": ep.neutral(0.7), "fontsize": 8}
+grey = ep.style.neutral(0.45)
+note = {"color": ep.style.neutral(0.7), "fontsize": 8}
 sky.plot(0.0, 0.0, "*", color=grey, ms=9)
 sky.plot(*nominal_orbit.T, color=grey, lw=0.8, ls="--")
 circle = np.linspace(0.0, 2.0 * np.pi, 121)
@@ -585,14 +585,14 @@ sky.set_title("one planet, 40 orbits it could be on, the last 7 shown\n"
 panel.set_xlabel("draws\nline: running fraction within 30 mas\nbar: 95% interval of that fraction",
                  fontsize=8)  # fmt: skip
 panel.set_ylabel(f"fraction within {WITHIN_MAS:g} mas", fontsize=8)
-mark = ep.hop(
+mark = ep.plot.hop(
     orbits,
     ax=sky,
     rate=5.0,
     ghosts=6,
     ghost_alpha=0.6,
     line_kw={"marker": "o", "markevery": [0], "ms": 5, "lw": 1.2},
-    counter_at=ep.Anchor.from_data(foot, (0.0, 0.5)),
+    counter_at=ep.motion.Anchor.from_data(foot, (0.0, 0.5)),
     tally=within,
     tally_ax=panel,
     ref=p_ref,
@@ -644,7 +644,7 @@ low = pad + box.y0 - words.y0
 high = 1.0 - pad - (words.y1 - box.y1)
 sky.set_position([0.12, low, 0.40, high - low])
 
-tl = ep.Timeline({"u": 0.0})
+tl = ep.clock.Timeline({"u": 0.0})
 tl.hold(0.5, name="open")
 tl.run("hop", mark.duration, to={"u": 1.0})
 tl.hold(1.5, name="rest")
@@ -656,7 +656,7 @@ def draw_orbits(k, plan):
 
 plan = tl.at_fps(30)
 draw_orbits(plan.n_frames - 1, plan)
-movie = ep.animate(fig, lambda f, k: draw_orbits(k, plan), plan.n_frames, fps=30)
+movie = ep.render.animate(fig, lambda f, k: draw_orbits(k, plan), plan.n_frames, fps=30)
 with tempfile.TemporaryDirectory() as tmp_dir:
     # The player embeds the file when it renders, so render it before cleanup.
     player = HTML(movie.video(Path(tmp_dir) / "orbits.mp4", dpi=200)._repr_html_())
@@ -684,7 +684,7 @@ for axis in (left, right):
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-bounce = ep.flight(read, ep.Anchor.from_artist(landed), fig=fig, ease="back_out")
+bounce = ep.motion.flight(read, ep.motion.Anchor.from_artist(landed), fig=fig, ease="back_out")
 N_FLIGHT = 28
 
 
@@ -695,7 +695,7 @@ def draw_flight(fig, k):
 
 
 draw_flight(fig, 0)
-HTML(ep.animate(fig, draw_flight, N_FLIGHT, fps=14).jshtml(dpi=80))
+HTML(ep.render.animate(fig, draw_flight, N_FLIGHT, fps=14).jshtml(dpi=80))
 ```
 
 ## Declare an instant cut
@@ -707,7 +707,7 @@ the plan, so the jump is accepted with the other checks still active.
 ```python
 import eyepiece as ep
 
-tl = ep.Timeline({"panel": 0})
+tl = ep.clock.Timeline({"panel": 0})
 tl.hold(0.5)
 tl.cut("switch", to={"panel": 1})
 tl.hold(0.5)

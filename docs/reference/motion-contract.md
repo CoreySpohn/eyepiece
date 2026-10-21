@@ -55,7 +55,7 @@ directly.
 
 ## A span and a check window
 
-`eyepiece.Span` is the plan span returned by `Timeline` verbs such as
+`eyepiece.clock.Span` is the plan span returned by `Timeline` verbs such as
 `enter` and `move`. It carries a name, start and end times in seconds, the
 knobs it writes, and, once resolved in a `Plan`, frame bounds `k0` and `k1`.
 Use it to place another span or to select a settled still from the plan.
@@ -65,6 +65,6 @@ time interval in seconds. Use it to sample every frame with `motion_faults`
 or to declare when an artist moves. It carries no knobs or frame bounds.
 `check_clip(moves=...)` accepts either a timeline span **by its name** or an
 `eyepiece.testing.Window` value, for example `moves={curve: "reveal"}` or
-`moves={curve: ept.Window(0.0, 1.0)}`. An `eyepiece.Span` object itself is not
+`moves={curve: ep.testing.Window(0.0, 1.0)}`. An `eyepiece.clock.Span` object itself is not
 accepted there; pass its `.name`. See {doc}`../how-to/check-a-clip` for the
 complete check and {doc}`../how-to/stills-from-the-encode` for still selection.

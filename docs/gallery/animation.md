@@ -43,7 +43,7 @@ plt.rcParams["savefig.dpi"] = 120
 
 N = 96
 PIXSCALE_LOD = 0.3
-EXTENT = ep.extent_lod_from_pixels(N, PIXSCALE_LOD)
+EXTENT = ep.plot.extent_lod_from_pixels(N, PIXSCALE_LOD)
 N_FRAMES = 20
 
 u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
@@ -87,14 +87,14 @@ needs anything installed beyond matplotlib.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(3.8, 2.8), layout="constrained")
-result = ep.imshow_log(loop_image(0), ax=ax, extent=EXTENT, floor=1e-11, vmax=1.0)
-ep.label_lod(ax)
+result = ep.plot.imshow_log(loop_image(0), ax=ax, extent=EXTENT, floor=1e-11, vmax=1.0)
+ep.plot.label_lod(ax)
 
 with tempfile.TemporaryDirectory() as tmp_dir:
     gif = Path(tmp_dir) / "loop.gif"
     player = Path(tmp_dir) / "loop.html"
 
-    with ep.record(fig, gif, player, fps=10, dpi=100) as rec:
+    with ep.render.record(fig, gif, player, fps=10, dpi=100) as rec:
         for k in range(N_FRAMES):
             result.update(loop_image(k))
             rec.frame()
@@ -131,8 +131,8 @@ wins over the figure's, which makes setting `fig.dpi` a non-fix.
 
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(3.8, 2.8), layout="constrained")
-result = ep.imshow_log(loop_image(0), ax=ax, extent=EXTENT, floor=1e-11, vmax=1.0)
-ep.label_lod(ax)
+result = ep.plot.imshow_log(loop_image(0), ax=ax, extent=EXTENT, floor=1e-11, vmax=1.0)
+ep.plot.label_lod(ax)
 title = ax.set_title("iteration 0")
 
 
@@ -141,7 +141,7 @@ def draw(fig, k):
     title.set_text(f"iteration {k}")
 
 
-anim = ep.animate(fig, draw, N_FRAMES, fps=10)
+anim = ep.render.animate(fig, draw, N_FRAMES, fps=10)
 print("frames:", anim.n_frames)
 HTML(anim.jshtml(dpi=100))
 ```
@@ -159,7 +159,7 @@ reads a knob, and it also reads the three frame fields: `"t"` (seconds),
 hides an unread knob from `plan.unused_knobs()`.
 
 ```{code-cell} python
-tl = ep.Timeline({"x": 0.0})
+tl = ep.clock.Timeline({"x": 0.0})
 tl.section("intro")
 tl.move("go", 1.0, to={"x": 1.0})
 plan = tl.at_fps(10)
@@ -179,7 +179,7 @@ is shown rather than executed for that reason.
 anim.save("loop.mp4", "loop.gif", dpi=120)
 video = anim.video("loop.mp4", dpi=120)
 
-with ep.record(fig, "loop.mp4", **ep.PRESETS["talk"]) as rec:
+with ep.render.record(fig, "loop.mp4", **ep.render.PRESETS["talk"]) as rec:
     for k in range(N_FRAMES):
         result.update(loop_image(k))
         rec.frame()
@@ -214,7 +214,7 @@ last frame, and `("span", "mid")` picks the start, middle or last frame. Span
 names need the `Plan` the frames were laid out by.
 
 ```{code-cell} python
-tl = ep.Timeline()
+tl = ep.clock.Timeline()
 tl.hold(0.5, name="open")
 tl.hold(0.5, name="close")
 plan = tl.at_fps(4)
@@ -227,7 +227,7 @@ ax.set_ylim(0, 8)
 with tempfile.TemporaryDirectory() as tmp_dir:
     tmp = Path(tmp_dir)
     stills = {tmp / "open.png": "open", tmp / "at_1s.png": 0.75}
-    with ep.record(
+    with ep.render.record(
         fig, tmp / "spans.html", fps=4, dpi=80, plan=plan, stills=stills
     ) as rec:
         for k in range(plan.n_frames):
@@ -255,7 +255,7 @@ frame rate it was bound with, so `.save` and `.video` take a dpi alone and a
 preset reaches them one value at a time.
 
 ```{code-cell} python
-for name, settings in ep.PRESETS.items():
+for name, settings in ep.render.PRESETS.items():
     print(f"{name:>7}: {settings}")
 ```
 
@@ -285,7 +285,7 @@ It also sets constant quality, the animation tune, a keyframe every two
 seconds so a reader scrubbing a clip lands quickly, and `+faststart`.
 
 ```{code-cell} python
-for key, value in ep.ENCODER_PROFILE.items():
+for key, value in ep.render.ENCODER_PROFILE.items():
     print(f"{key:>11}: {value}")
 ```
 

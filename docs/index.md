@@ -80,9 +80,9 @@ mode's savefig policy.
 ```python
 import eyepiece as ep
 
-result = ep.imshow_log(psf, extent=ep.extent_lod_from_pixels(psf.shape[0], 0.25))
-ep.label_lod(result.ax)
-ep.save_fig(result.fig, "psf")
+result = ep.plot.imshow_log(psf, extent=ep.plot.extent_lod_from_pixels(psf.shape[0], 0.25))
+ep.plot.label_lod(result.ax)
+ep.render.save_fig(result.fig, "psf")
 ```
 
 The same call given an axes draws into that axes instead, which is what
@@ -94,7 +94,7 @@ assembled. Multi-panel primitives take an `axes=` sequence in place of
 import matplotlib.pyplot as plt
 
 fig, axes = plt.subplots(1, 3, layout="constrained")
-row = ep.compare_row(
+row = ep.plot.compare_row(
     [before, after, model], titles=["Before", "After", "Model"], axes=axes
 )
 ```
@@ -105,14 +105,14 @@ data before display also return an `.update` that re-applies the same
 transform, so a frame costs one `set_data` call.
 
 ```python
-result = ep.imshow_log(cube[0])
+result = ep.plot.imshow_log(cube[0])
 
 
 def draw(fig, k):
     result.update(cube[k])
 
 
-ep.animate(result.fig, draw, len(cube), fps=10).save("run.mp4", "run.gif")
+ep.render.animate(result.fig, draw, len(cube), fps=10).save("run.mp4", "run.gif")
 ```
 
 `animate` binds a figure, a draw function, and a frame source, and renders
@@ -121,7 +121,7 @@ the caller already owns, a simulation stepping forward for instance, use
 `record` instead and take a frame whenever there is something to show.
 
 ```python
-with ep.record(result.fig, "run.mp4", "run.gif", fps=10) as rec:
+with ep.render.record(result.fig, "run.mp4", "run.gif", fps=10) as rec:
     for state in simulation:
         result.update(state.image)
         rec.frame()

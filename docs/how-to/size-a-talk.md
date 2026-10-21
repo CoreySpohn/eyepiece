@@ -25,7 +25,7 @@ import eyepiece as ep
 
 hwostyle.use("dark")
 height_px, dpi = 360, 90
-with plt.rc_context(ep.talk_rc(height_px, dpi=dpi)):
+with plt.rc_context(ep.style.talk_rc(height_px, dpi=dpi)):
     plt.rcParams["savefig.dpi"] = dpi
     fig, ax = plt.subplots(figsize=(6.4, height_px / dpi), dpi=dpi,
                            layout="constrained")
@@ -33,9 +33,9 @@ with plt.rc_context(ep.talk_rc(height_px, dpi=dpi)):
     ax.plot(x, 1 - np.exp(-4 * x))
     ax.set(xlabel="exposure", ylabel="fraction detected",
            title="More exposure, fewer new detections", xlim=(0, 1), ylim=(0, 1))
-    print("Body fraction:", ep.TALK_FRACTIONS["body"])
+    print("Body fraction:", ep.style.TALK_FRACTIONS["body"])
     print("Body size (pt):", plt.rcParams["font.size"])
-    print("Video cap style:", ep.VIDEO_RC["lines.solid_capstyle"])
+    print("Video cap style:", ep.style.VIDEO_RC["lines.solid_capstyle"])
     plt.show()
 ```
 

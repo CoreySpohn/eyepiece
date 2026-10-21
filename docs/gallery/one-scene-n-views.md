@@ -121,8 +121,8 @@ the point: a frame index means the same instant in every panel because every
 panel indexes the same array.
 
 ```{code-cell} python
-STYLES = ep.SourceStyles(["star", "b", "c"])
-FRAME = ep.Frame(half_fov_lod=HALF_FOV_LOD, pixscale_lod=2.0 * HALF_FOV_LOD / N)
+STYLES = ep.style.SourceStyles(["star", "b", "c"])
+FRAME = ep.plot.Frame(half_fov_lod=HALF_FOV_LOD, pixscale_lod=2.0 * HALF_FOV_LOD / N)
 EPOCHS = np.linspace(0.0, 1.0, 20)
 
 print("b:", STYLES["b"], " c:", STYLES["c"])
@@ -151,7 +151,7 @@ def build_views(fig, styles, frame, epochs):
 
     for name in ORBITS:
         style = styles[name]
-        ep.fading_track(track(name), ax=ax_sky, color=style["color"])
+        ep.plot.fading_track(track(name), ax=ax_sky, color=style["color"])
         (markers["sky"][name],) = ax_sky.plot(
             [], [], ls="none", marker=style["marker"], color=style["color"], ms=7
         )
@@ -161,9 +161,9 @@ def build_views(fig, styles, frame, epochs):
     ax_sky.set_ylim(extent[2], extent[3])
     ax_sky.set_aspect("equal")
     ax_sky.set_title("sky plane")
-    ep.label_lod(ax_sky)
+    ep.plot.label_lod(ax_sky)
 
-    image = ep.imshow_log(
+    image = ep.plot.imshow_log(
         detector_image(epochs[0]), ax=ax_image, extent=extent,
         floor=1e-9, vmax=1.0, colorbar=False,
     )
@@ -239,7 +239,7 @@ names agree exactly and a figure built by one script matches a figure built
 by another with no synchronization between them.
 
 ```{code-cell} python
-elsewhere = ep.SourceStyles(["star", "b", "c"])
+elsewhere = ep.style.SourceStyles(["star", "b", "c"])
 print(elsewhere["b"] == STYLES["b"], elsewhere["c"] == STYLES["c"])
 ```
 
@@ -262,7 +262,7 @@ because they are refreshed at the same rate.
 fig = plt.figure(figsize=(7.2, 2.4), layout="constrained")
 views = build_views(fig, STYLES, FRAME, EPOCHS)
 
-anim = ep.animate(fig, lambda fig, k: show(views, EPOCHS, k), len(EPOCHS), fps=8)
+anim = ep.render.animate(fig, lambda fig, k: show(views, EPOCHS, k), len(EPOCHS), fps=8)
 HTML(anim.jshtml(dpi=100))
 ```
 

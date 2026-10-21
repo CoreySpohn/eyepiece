@@ -68,7 +68,7 @@ x = np.linspace(0.08, 0.92, 120)
 y = 0.25 + 0.5 * np.sin(np.pi * (x - 0.08) / 1.68)
 (halo,) = ax.plot(x, y, color="0.8", lw=9, solid_capstyle="round")
 (curve,) = ax.plot(x, y, color="C0", lw=2.5)
-reveal = ep.head_draw(curve, behind={curve: halo}, ease="linear")
+reveal = ep.motion.head_draw(curve, behind={curve: halo}, ease="linear")
 show_strip(fig, reveal.update, (0.25, 0.6, 1.0))
 ```
 
@@ -84,11 +84,11 @@ drawn tip on every frame.
 fig, ax = board()
 x = np.linspace(0.1, 0.9, 100)
 (curve,) = ax.plot(x, 0.25 + 0.5 * x**2, color="C0", lw=2)
-count = ep.readout(ep.Anchor.from_data(ax, (0.12, 0.82)), 0.0,
+count = ep.motion.readout(ep.motion.Anchor.from_data(ax, (0.12, 0.82)), 0.0,
                    fmt=".2f", digits=3, fontsize=18)
-rule = ep.ruler(ax, (0.1, 0.14), (0.1, 0.14), "x = 0.10", head_scale=0)
-head = ep.head_draw(curve, ease="linear")
-measure = ep.ruler_readout(
+rule = ep.plot.ruler(ax, (0.1, 0.14), (0.1, 0.14), "x = 0.10", head_scale=0)
+head = ep.motion.head_draw(curve, ease="linear")
+measure = ep.motion.ruler_readout(
     head, readout=count, value=lambda x, y: y,
     ruler=rule, ruler_to=lambda x, y: (x, 0.14),
     ruler_text=lambda x, y: f"x = {x:.2f}",
@@ -110,7 +110,7 @@ fig, ax = board()
 (mark,) = ax.plot([0.42], [0.42], "o", color="C0", ms=8)
 label = ax.annotate("planet b", (0.42, 0.42), xytext=(12, 14),
                     textcoords="offset points", color=mark.get_color(), fontsize=16)
-stage = ep.Stage({"label": label})
+stage = ep.motion.Stage({"label": label})
 
 
 def arrive(u):
@@ -131,10 +131,10 @@ should arrive in reading order, with each glyph traced before it fills.
 ```{code-cell} python
 fig, ax = board()
 label = ax.text(0.08, 0.67, "planet signal", color="C0", fontsize=20)
-formula = ep.equation(ep.Anchor.from_data(ax, (0.48, 0.32)),
+formula = ep.motion.equation(ep.motion.Anchor.from_data(ax, (0.48, 0.32)),
                       r"$C = F_p / F_s$", fontsize=25)
 fig.canvas.draw()
-scribe = ep.write(label)
+scribe = ep.motion.write(label)
 
 
 def write_both(u):
@@ -155,14 +155,14 @@ appearance unchanged.
 ```{code-cell} python
 fig, ax = board()
 label = ax.text(0.5, 0.5, "the answer", ha="center", va="center", fontsize=22)
-flash = ep.circumscribe(label, style="flash", time_width=0.25, pad_pt=8, lw=2.5)
+flash = ep.motion.circumscribe(label, style="flash", time_width=0.25, pad_pt=8, lw=2.5)
 
 
 def draw_flash(fig, k):
     flash.update(k / 29)
 
 
-movie = HTML(ep.animate(fig, draw_flash, 30, fps=15).jshtml(dpi=90))
+movie = HTML(ep.render.animate(fig, draw_flash, 30, fps=15).jshtml(dpi=90))
 plt.close(fig)
 movie
 ```
@@ -177,7 +177,7 @@ emphasis before it returns to the original appearance.
 ```{code-cell} python
 fig, ax = board()
 (line,) = ax.plot([0.15, 0.85], [0.5, 0.5], "o-", color="C0", lw=2, ms=6)
-pulse = ep.indicate(line, shape="plateau", scale=1.8)
+pulse = ep.motion.indicate(line, shape="plateau", scale=1.8)
 show_strip(fig, pulse.update, (0.0, 0.35, 0.65, 1.0))
 ```
 
@@ -191,12 +191,12 @@ together into an answer the viewer can read.
 ```{code-cell} python
 fig, ax = board()
 (line,) = ax.plot([0.12, 0.85], [0.35, 0.6], color="C0", lw=2)
-count = ep.readout(ep.Anchor.from_data(ax, (0.16, 0.78)), 42,
+count = ep.motion.readout(ep.motion.Anchor.from_data(ax, (0.16, 0.78)), 42,
                    fmt="d", digits=2, fontsize=20)
-rule = ep.ruler(ax, (0.12, 0.18), (0.85, 0.18), "measured", head_scale=0)
-land = ep.click(line, dot=ep.Anchor.from_data(ax, (0.85, 0.6)),
+rule = ep.plot.ruler(ax, (0.12, 0.18), (0.85, 0.18), "measured", head_scale=0)
+land = ep.motion.click(line, dot=ep.motion.Anchor.from_data(ax, (0.85, 0.6)),
                 readout=count, ruler=rule)
-tl = ep.Timeline()
+tl = ep.clock.Timeline()
 beat = tl.click("answer")
 plan = tl.at_fps(10)
 show_strip(fig, land.update, (0.0, 0.5, 1.0),
@@ -216,7 +216,7 @@ its stroke and head scaled together.
 
 ```{code-cell} python
 fig, ax = board()
-vector = ep.arrow((0.15, 0.25), (0.85, 0.75), ax=ax, grow="scaled",
+vector = ep.motion.arrow((0.15, 0.25), (0.85, 0.75), ax=ax, grow="scaled",
                    color="C0", lw=3, head_size=1.6)
 show_strip(fig, vector.update, (0.2, 0.55, 1.0))
 ```
@@ -237,7 +237,7 @@ ax.spines["bottom"].set_linewidth(1.5)
 for name in ("left", "right", "top"):
     ax.spines[name].set_visible(False)
 fig.canvas.draw()
-build = ep.build_axes(ax, axis="x", style="staccato")
+build = ep.motion.build_axes(ax, axis="x", style="staccato")
 show_strip(fig, build.update, (0.2, 0.55, 0.8, 1.0))
 ```
 
@@ -250,10 +250,10 @@ fade toward each other while the matching equation terms travel.
 
 ```{code-cell} python
 fig, ax = board()
-at = ep.Anchor.from_data(ax, (0.5, 0.5))
-eq_a = ep.equation(at, r"${{l:x}}+{{r:y}}-c$", fontsize=29)
-eq_b = ep.equation(at, r"${{l:x}}+{{r:y}}=d^2$", fontsize=29)
-change = ep.transform(eq_a, eq_b, fade_toward=True)
+at = ep.motion.Anchor.from_data(ax, (0.5, 0.5))
+eq_a = ep.motion.equation(at, r"${{l:x}}+{{r:y}}-c$", fontsize=29)
+eq_b = ep.motion.equation(at, r"${{l:x}}+{{r:y}}=d^2$", fontsize=29)
+change = ep.motion.transform(eq_a, eq_b, fade_toward=True)
 show_strip(fig, change.update, (0.0, 0.4, 0.7, 1.0))
 ```
 
@@ -269,8 +269,8 @@ fig, ax = board(figsize=(3.0, 2.5))
 yy, xx = np.mgrid[-4:5, -4:5]
 rate = 0.2 + 3 * np.exp(-(xx**2 + yy**2) / 3)
 exposure = np.linspace(0, 2, 9)
-channel = ep.arrivals(rate, exposure, seed=7)
-mark = ep.photons(channel, ax=ax, norm="linear", cmap="magma")
+channel = ep.motion.arrivals(rate, exposure, seed=7)
+mark = ep.motion.photons(channel, ax=ax, norm="linear", cmap="magma")
 ax.set(xlim=(-0.5, 8.5), ylim=(-0.5, 8.5))
 fig.colorbar(mark.artists["image"], ax=ax, label="counts", shrink=0.8)
 show_strip(fig, mark.update, (0.0, 0.55, 1.0))
@@ -292,7 +292,7 @@ fig.subplots_adjust(left=0.1, right=0.96, bottom=0.22, top=0.76, wspace=0.65)
 x = np.linspace(0, 1, 40)
 slopes = np.random.default_rng(8).normal(0.5, 0.3, 12)
 draws = np.stack([np.column_stack((x, slope * x)) for slope in slopes])
-mark = ep.hop(draws, ax=curves, rate=4, ghosts=3,
+mark = ep.plot.hop(draws, ax=curves, rate=4, ghosts=3,
               tally=slopes > 0.5, tally_ax=tally, kind="fraction")
 curves.set(xlabel="time", ylabel="position")
 tally.set(xlabel="draws", ylabel="fraction above 0.5")
@@ -313,7 +313,7 @@ fig, ax = plt.subplots(figsize=(3.6, 2.5), dpi=90)
 fig.subplots_adjust(left=0.18, bottom=0.22, right=0.95, top=0.95)
 points = np.random.default_rng(2).normal(size=(24, 2))
 weights = np.exp(-0.5 * ((points[:, 0] - 0.6)**2 + points[:, 1]**2) / 0.5)
-mark = ep.weighted_draws(points, weights, ax=ax, max_size=160, resample=4)
+mark = ep.plot.weighted_draws(points, weights, ax=ax, max_size=160, resample=4)
 ax.set(xlim=(-2.2, 2.4), ylim=(-2.6, 2.1), xlabel="parameter a", ylabel="parameter b")
 show_strip(fig, mark.update, (0.0, 0.5, 1.0),
            ("weighted", "resampling", "offspring counts / n"))

@@ -134,7 +134,7 @@ Rank is set by value, meaning distance from the background, not by hue:
 | Data | The thing the figure is about |
 | Answer | At most one mark per panel: the decision, the threshold crossing |
 
-`eyepiece.SourceStyles` and the neutral ramp exist to make this mechanical:
+`eyepiece.style.SourceStyles` and the neutral ramp exist to make this mechanical:
 scenery takes a neutral resolved against the live background, and data takes a
 palette slot. Scenery never takes a palette slot, and the text color is reserved
 for type and for the Answer rank. On a dark background this is the commonest

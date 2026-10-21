@@ -39,27 +39,7 @@ import hwostyle
 import matplotlib.pyplot as plt
 import numpy as np
 
-import eyepiece.mpl as mpl
-from eyepiece.prepared import (
-    ArrayChannel,
-    AxisSpec,
-    Clock,
-    ImageView,
-    Label,
-    Path,
-    Points,
-    Region,
-    Scale,
-    Sequence,
-    TrackView,
-    find_element,
-    map_rgba,
-    normalize_values,
-    replace_elements,
-    resolve_bounds,
-    weight_opacity,
-)
-from eyepiece.style import SourceCast, snapshot_profile
+import eyepiece as ep
 
 hwostyle.use("dark")
 # Docs-build only, to keep the baked page images small. A real figure script
@@ -112,11 +92,11 @@ data = np.ma.masked_array(
     np.array([[1e-9, 2e-9], [np.nan, 5e-12]]),
     mask=[[False, True], [False, False]],
 )
-axes = AxisSpec("x (pixel)", "y (pixel)", (0.0, 2.0), (0.0, 2.0))
-scale = Scale("log", vmin=1e-10, vmax=1e-8, floor=1e-10)
-view = ImageView("demo", data, axes, scale, quantity="contrast")
+axes = ep.prepared.AxisSpec("x (pixel)", "y (pixel)", (0.0, 2.0), (0.0, 2.0))
+scale = ep.prepared.Scale("log", vmin=1e-10, vmax=1e-8, floor=1e-10)
+view = ep.prepared.ImageView("demo", data, axes, scale, quantity="contrast")
 print("valid from the mask:\n", view.valid)
-print("display values:\n", normalize_values(view.data, valid=view.valid, scale=scale))
+print("display values:\n", ep.prepared.normalize_values(view.data, valid=view.valid, scale=scale))
 ```
 
 The masked pixel and the NaN are both invalid, and both display as masked.
@@ -141,10 +121,10 @@ when the data are constant, which needs explicit bounds instead.
 
 ```{code-cell} python
 frames = [(np.array([1.0, np.nan]), None), (np.array([-3.0, 2.0]), None)]
-print("linear   ", resolve_bounds(frames, kind="linear"))
-print("symmetric", resolve_bounds(frames, kind="symmetric"))
+print("linear   ", ep.prepared.resolve_bounds(frames, kind="linear"))
+print("symmetric", ep.prepared.resolve_bounds(frames, kind="symmetric"))
 try:
-    resolve_bounds([(np.array([np.nan, np.inf]), None)], kind="linear")
+    ep.prepared.resolve_bounds([(np.array([np.nan, np.inf]), None)], kind="linear")
 except ValueError as err:
     print("error:", err)
 ```
@@ -167,15 +147,15 @@ rebuilding anything, and every branch it did not touch is the same object
 afterwards, arrays included.
 
 ```{code-cell} python
-star = Points("star", np.array([[0.0, 0.0]]))
-path = Path("path", np.array([[0.0, 0.0], [1.0, 1.0]]), source_id="planet b")
-track = TrackView(
-    "sky", AxisSpec("x", "y", (-1.0, 2.0), (-1.0, 2.0)), marks=(star, path)
+star = ep.prepared.Points("star", np.array([[0.0, 0.0]]))
+path = ep.prepared.Path("path", np.array([[0.0, 0.0], [1.0, 1.0]]), source_id="planet b")
+track = ep.prepared.TrackView(
+    "sky", ep.prepared.AxisSpec("x", "y", (-1.0, 2.0), (-1.0, 2.0)), marks=(star, path)
 )
-moved = replace_elements(
-    track, {"star": Points("star", np.array([[0.5, 0.5]]))}
+moved = ep.prepared.replace_elements(
+    track, {"star": ep.prepared.Points("star", np.array([[0.5, 0.5]]))}
 )
-print(find_element(moved, "path") is path, find_element(moved, "star") is star)
+print(ep.prepared.find_element(moved, "path") is path, ep.prepared.find_element(moved, "star") is star)
 ```
 
 ## Sequences and physical time
@@ -208,23 +188,23 @@ conversion does not fall back one sample. With samples at 0, 1, and 10, time
 
 ```{code-cell} python
 cube = np.arange(3 * 2 * 2, dtype=float).reshape(3, 2, 2)
-template = ImageView(
+template = ep.prepared.ImageView(
     "image",
     cube[0],
-    AxisSpec("x", "y", (0.0, 2.0), (0.0, 2.0)),
-    Scale("linear", 0.0, 11.0),
+    ep.prepared.AxisSpec("x", "y", (0.0, 2.0), (0.0, 2.0)),
+    ep.prepared.Scale("linear", 0.0, 11.0),
     quantity="counts",
-    marks=(Label("clock", "", (0.03, 0.95)),),
+    marks=(ep.prepared.Label("clock", "", (0.03, 0.95)),),
 )
-sequence = Sequence(
+sequence = ep.prepared.Sequence(
     template,
     times=[0.0, 1.0, 10.0],
     time_unit="s",
-    channels=(ArrayChannel("image", "data", cube), Clock("clock")),
+    channels=(ep.prepared.ArrayChannel("image", "data", cube), ep.prepared.Clock("clock")),
 )
 for t in (-1.0, 0.0, 0.5, 1.0, 5.0, 10.0, 12.0):
     sample = sequence.at(t)
-    text = find_element(sample.view, "clock").text
+    text = ep.prepared.find_element(sample.view, "clock").text
     print(f"t = {t:5.1f}: sample {sample.index}, clock reads {text!r}")
 ```
 
@@ -317,7 +297,7 @@ phase = np.linspace(0.0, 2.0 * np.pi, 120)
 radii = [70.0, 85.0, 100.0]
 weights = [0.2, 1.0, 0.5]
 paths = tuple(
-    Path(
+    ep.prepared.Path(
         f"candidate/{k}",
         np.column_stack([a * np.cos(phase), 0.6 * a * np.sin(phase)]),
         source_id="planet b",
@@ -326,7 +306,7 @@ paths = tuple(
     for k, (a, w) in enumerate(zip(radii, weights, strict=True))
 )
 observed = np.array([[80.0, 25.0], [np.nan, np.nan], [-60.0, 40.0]])
-observations = Points(
+observations = ep.prepared.Points(
     "observations",
     observed,
     source_id="planet b",
@@ -334,26 +314,26 @@ observations = Points(
     yerr=np.array([6.0, 0.0, 6.0]),
     label="observed",
 )
-sky = TrackView(
+sky = ep.prepared.TrackView(
     "sky",
-    AxisSpec(
+    ep.prepared.AxisSpec(
         "RA offset (mas)", "Dec offset (mas)", (-120.0, 120.0), (-90.0, 90.0),
         x_reverse=True,
     ),
     marks=(
-        Region("iwa", np.array([0.0, 0.0]), outer_radius=40.0, label="IWA"),
+        ep.prepared.Region("iwa", np.array([0.0, 0.0]), outer_radius=40.0, label="IWA"),
         *paths,
         observations,
-        Points("star", np.array([[0.0, 0.0]])),
+        ep.prepared.Points("star", np.array([[0.0, 0.0]])),
     ),
 )
-cast = SourceCast(["planet b"])
-profile = snapshot_profile(
+cast = ep.style.SourceCast(["planet b"])
+profile = ep.style.snapshot_profile(
     text_size_pt=plt.rcParams["font.size"],
     stroke_width_pt=plt.rcParams["lines.linewidth"],
 )
 fig, ax = plt.subplots(figsize=(4.4, 3.4), layout="constrained")
-result = mpl.render(sky, ax=ax, cast=cast, profile=profile)
+result = ep.mpl.render(sky, ax=ax, cast=cast, profile=profile)
 print(sorted(result.parts))
 print("path opacities:", [round(result.parts[p.id].get_alpha(), 3) for p in paths])
 ```
@@ -380,7 +360,7 @@ does, and a lone point set is drawn at 0.80. A figure whose claim depends on
 the weights themselves still owes them a quantitative axis.
 
 ```{code-cell} python
-print(weight_opacity([0.2, 1.0, 0.5]), weight_opacity([3.0]))
+print(ep.prepared.weight_opacity([0.2, 1.0, 0.5]), ep.prepared.weight_opacity([3.0]))
 ```
 
 A few drawing rules hold in both renderers:
@@ -418,13 +398,13 @@ visibility, so a part the caller hid stays hidden.
 ```{code-cell} python
 still = sequence.frame(0)
 fig, ax = plt.subplots(figsize=(3.2, 2.6), layout="constrained")
-panel = mpl.render(still, ax=ax, profile=profile)
+panel = ep.mpl.render(still, ax=ax, profile=profile)
 panel.update(sequence.frame(2))
-print(find_element(panel.view, "clock").text)
+print(ep.prepared.find_element(panel.view, "clock").text)
 
-rescaled = replace_elements(
+rescaled = ep.prepared.replace_elements(
     still,
-    {"image": ImageView("image", cube[0], still.axes, Scale("linear", 0.0, 99.0),
+    {"image": ep.prepared.ImageView("image", cube[0], still.axes, ep.prepared.Scale("linear", 0.0, 99.0),
                         quantity="counts", marks=still.marks)},
 )
 try:
@@ -435,7 +415,7 @@ plt.close(fig)
 ```
 
 `eyepiece.mpl.animate(sequence, *, run_time, fps=30, ...)` renders frame 0
-and plays the schedule through `update`, returning an `eyepiece.Animation`
+and plays the schedule through `update`, returning an `eyepiece.render.Animation`
 that writes through `.save`, `.jshtml`, or `.video`, like any other eyepiece
 animation.
 

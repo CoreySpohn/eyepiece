@@ -34,13 +34,13 @@ import matplotlib.pyplot as plt
 import eyepiece as ep
 
 hwostyle.use("dark")
-tl = ep.Timeline({"height": 1.0}, tempo=ep.Tempo(factor=1.0))
+tl = ep.clock.Timeline({"height": 1.0}, tempo=ep.clock.Tempo(factor=1.0))
 tl.hold(0.5, name="open")
 tl.run("rise", 1.0, to={"height": 3.0})
 tl.hold(0.5, name="settled")
 plan = tl.at_fps(10)
 fig, ax = plt.subplots(figsize=(3.0, 2.2), layout="constrained")
-(line,) = ax.plot([0, 1], [0, 1], color=ep.neutral(0.85))
+(line,) = ax.plot([0, 1], [0, 1], color=ep.style.neutral(0.85))
 ax.set(xlim=(0, 1), ylim=(0, 4), xlabel="x", ylabel="height")
 fig.canvas.draw()
 fig.set_layout_engine("none")
@@ -52,7 +52,7 @@ def draw(k):
 
 with tempfile.TemporaryDirectory() as directory:
     path = Path(directory) / "rise.html"
-    page = ep.to_scrubber(fig, draw, plan, "height", [1.0, 1.5, 2.0, 2.5, 3.0],
+    page = ep.render.to_scrubber(fig, draw, plan, "height", [1.0, 1.5, 2.0, 2.5, 3.0],
                           path, dpi=80, unit="m")
     print(f"{path.name}: {path.stat().st_size} bytes, 5 samples")
 plt.close(fig)

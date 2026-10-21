@@ -221,17 +221,17 @@ the axes background to the text color that `neutral` draws. The kinds are:
 ## halo_faults
 
 Labels use backing boxes, as `callout` does by default and as
-`bbox=ep.backing()` draws explicitly. `halo_faults(fig)` lists visible text
+`bbox=ep.style.backing()` draws explicitly. `halo_faults(fig)` lists visible text
 artists with `matplotlib.patheffects.withStroke`. It returns one `HaloFault`
 per artist, with the artist, its text and a detail naming it. Hidden, blank
 and transparent text is skipped. A box does not excuse a halo on the same
 text. Halos on lines and marks are outside this check.
 
 ```python
-import eyepiece.testing as ept
+import eyepiece as ep
 
-faults = ept.halo_faults(fig)
-ept.assert_no_halos(fig)
+faults = ep.testing.halo_faults(fig)
+ep.testing.assert_no_halos(fig)
 ```
 
 `assert_no_halos` raises `HaloError` with the findings in its `faults`

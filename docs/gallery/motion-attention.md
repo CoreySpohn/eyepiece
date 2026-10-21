@@ -53,7 +53,7 @@ height = np.exp(-0.5 * ((0.35 - 0.25) / 0.1) ** 2) / (0.1 * np.sqrt(2.0 * np.pi)
 
 fig, (top, bottom) = plt.subplots(2, 1, figsize=(6.0, 3.6), layout="constrained")
 top.plot(grid, np.exp(-0.5 * ((grid - 0.25) / 0.1) ** 2) / (0.1 * np.sqrt(2.0 * np.pi)))
-top.axvline(0.35, lw=0.8, color=ep.neutral(0.5))
+top.axvline(0.35, lw=0.8, color=ep.style.neutral(0.5))
 (read,) = top.plot([0.35], [height], "o", ms=6)
 (landed,) = bottom.plot([0.25], [height], "o", ms=6, color=read.get_color())
 top.set(xlim=(-0.2, 0.8), ylim=(0.0, 4.6), ylabel="density")
@@ -63,8 +63,8 @@ bottom.set(xlim=(-0.2, 0.8), ylim=(0.0, 4.6), xlabel="mean", ylabel="likelihood"
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-carry = ep.flight(read, ep.Anchor.from_artist(landed), fig=fig, arc=0.15)
-note = ep.callout(read, "its height is the likelihood")
+carry = ep.motion.flight(read, ep.motion.Anchor.from_artist(landed), fig=fig, arc=0.15)
+note = ep.motion.callout(read, "its height is the likelihood")
 
 
 def grab(flight_u, landed_shown):
@@ -115,7 +115,7 @@ for ax, progress in zip(panels, (0.0, 0.5, 1.0), strict=True):
     (curve,) = ax.plot(x, np.sin(np.log(x)), lw=2)
     ax.set(xscale="log", xlim=(1, 100), ylim=(-1.2, 1.2),
            xlabel="x", title=f"progress {progress:.1f}")
-    reveal = ep.draw_on(curve)
+    reveal = ep.motion.draw_on(curve)
     reveal.update(progress)
 plt.show()
 ```
@@ -147,22 +147,22 @@ star.set(xlim=(-1.0, 1.0), ylim=(-1.0, 1.0), xlabel="x", ylabel="y")
 speed.set(xlim=(0.0, 1.0), ylim=(-1.0, 1.0), xlabel="phase", ylabel="velocity")
 star.set_aspect("equal")
 orbit = np.linspace(0.0, 2.0 * np.pi, 200)
-star.plot(0.6 * np.cos(orbit), 0.6 * np.sin(orbit), color=ep.neutral(0.4))
+star.plot(0.6 * np.cos(orbit), 0.6 * np.sin(orbit), color=ep.style.neutral(0.4))
 (stub,) = star.plot([0.6, 0.6], [0.0, 0.3], lw=3.0, color="C1", solid_capstyle="butt")
 (orbiter,) = star.plot([0.6], [0.0], "o", ms=7, color="C0")
-speed.plot(orbit / (2.0 * np.pi), 0.5 * np.sin(orbit), color=ep.neutral(0.4))
+speed.plot(orbit / (2.0 * np.pi), 0.5 * np.sin(orbit), color=ep.style.neutral(0.4))
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-row = ep.term_row(
-    ep.Anchor.from_data(speed, (0.05, -0.8)), [r"$v_r$", "=", "0.30"], ha="left"
+row = ep.motion.term_row(
+    ep.motion.Anchor.from_data(speed, (0.05, -0.8)), [r"$v_r$", "=", "0.30"], ha="left"
 )
-ring = ep.circumscribe(orbiter, shape="ellipse", pad_pt=5.0)
-pulse = ep.indicate(stub)
-turn = ep.flight(
-    stub, ep.Anchor.from_data(speed, (0.0, 0.3)), fig=fig, turn_deg=90.0, arc=0.2
+ring = ep.motion.circumscribe(orbiter, shape="ellipse", pad_pt=5.0)
+pulse = ep.motion.indicate(stub)
+turn = ep.motion.flight(
+    stub, ep.motion.Anchor.from_data(speed, (0.0, 0.3)), fig=fig, turn_deg=90.0, arc=0.2
 )
-tie = ep.link(orbiter, ep.Anchor.from_data(speed, (0.0, 0.0)))
+tie = ep.motion.link(orbiter, ep.motion.Anchor.from_data(speed, (0.0, 0.0)))
 
 
 def grab(ring_u, pulse_u, turn_u, link_u):
@@ -205,17 +205,17 @@ glyphs overlap one another and `lw` the pen width.
 `equation(...).update(u, reveal="write")` writes an equation the same way.
 
 ```{code-cell} python
-import eyepiece.testing as ept
+import eyepiece as ep
 
 fig = plt.figure(figsize=(9.0, 1.2), dpi=100)
 note = fig.text(0.04, 0.4, r"Contrast $C = \frac{F_p}{F_s}$", fontsize=26)
 fig.canvas.draw()
-scribe = ep.write(note, lag=0.6)
+scribe = ep.motion.write(note, lag=0.6)
 
 shown, cells = plt.subplots(1, 5, figsize=(9.0, 1.0), layout="constrained")
 for cell, u in zip(cells, (0.15, 0.3, 0.5, 0.75, 1.0), strict=True):
     scribe.update(u)
-    ept.assert_readable(fig)
+    ep.testing.assert_readable(fig)
     fig.canvas.draw()
     cell.imshow(np.asarray(fig.canvas.buffer_rgba()).copy(), interpolation="nearest")
     cell.set_title(f"u = {u:g}", fontsize="small")
@@ -230,14 +230,13 @@ ghost too, because the ghost reads the text's color and opacity as it draws.
 ## Caption placement and wrapping
 
 A caption at the player's default position, the bottom of the picture, lands
-on the figure's own bottom line. `eyepiece.testing.caption_line` finds the
+on the figure's own bottom line. `eyepiece.narration.caption_line` finds the
 `line:` setting of a WebVTT cue that keeps the captions clear of the text the
 figure shows at the times the captions are on screen. The cue itself is wrapped
 at a clause boundary, 42 characters to a line and two lines to a cue.
 
 ```{code-cell} python
-import eyepiece.testing as ept
-from eyepiece import narration as nr
+import eyepiece as ep
 from matplotlib.patches import Rectangle
 
 fig = plt.figure(figsize=(7.0, 3.6), dpi=100)
@@ -245,18 +244,18 @@ fig.text(0.5, 0.88, "Two kinds of world", fontsize=16, ha="center")
 fig.text(0.5, 0.5, "band present: 0.24 of the sky", fontsize=14, ha="center")
 fig.text(0.5, 0.05, "what is left: area 0.24 and 0.07", fontsize=14, ha="center")
 
-line = ept.caption_line(fig)
+line = ep.narration.caption_line(fig)
 
 sentence = (
     "Water worlds with the band cover 0.24, and dry worlds with the band "
     "cover 0.07."
 )
 words = sentence.split()
-line_of_text = nr.Line("a", sentence, pad_after_s=0.0)
-spoken = nr.Spoken(
-    "x", 5.0, tuple(nr.Word(w, i * 5 / 14, (i + 1) * 5 / 14) for i, w in enumerate(words))
+line_of_text = ep.narration.Line("a", sentence, pad_after_s=0.0)
+spoken = ep.narration.Spoken(
+    "x", 5.0, tuple(ep.narration.Word(w, i * 5 / 14, (i + 1) * 5 / 14) for i, w in enumerate(words))
 )
-cues = nr.captions(nr.Narration(nr.Script((line_of_text,)), {"a": spoken}))
+cues = ep.narration.captions(ep.narration.Narration(ep.narration.Script((line_of_text,)), {"a": spoken}))
 
 top = 1.0 - line / 100.0
 fig.add_artist(Rectangle((0.1, top - 0.14), 0.8, 0.14, transform=fig.transFigure,
@@ -299,8 +298,8 @@ ax.set_axis_off()
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-line = ep.words(
-    ep.Anchor.from_data(ax, (0.03, 0.3)),
+line = ep.motion.words(
+    ep.motion.Anchor.from_data(ax, (0.03, 0.3)),
     r"the prior times the likelihood is the $p(\theta \mid d)$",
     fontsize=15,
     colors={1: "C0", 4: "C1"},
@@ -336,7 +335,7 @@ import eyepiece as ep
 
 fig, ax = plt.subplots()
 label = ax.text(0.2, 0.5, "the prior", fontsize=20)
-mark = ep.underline(label)
+mark = ep.motion.underline(label)
 mark.update(0.5)
 fig.canvas.draw()
 ```
@@ -349,7 +348,7 @@ rise, hold, and fall durations are normalized to the progress interval.
 ```python
 import eyepiece as ep
 
-assert ep.pulse_shape(0) == ep.pulse_shape(1) == 0
-assert ep.pulse_shape(0.5) == 1
-levels = [ep.pulse_shape(u, rise=1, hold=2, fall=1) for u in [0, 0.25, 0.5, 1]]
+assert ep.clock.pulse_shape(0) == ep.clock.pulse_shape(1) == 0
+assert ep.clock.pulse_shape(0.5) == 1
+levels = [ep.clock.pulse_shape(u, rise=1, hold=2, fall=1) for u in [0, 0.25, 0.5, 1]]
 ```

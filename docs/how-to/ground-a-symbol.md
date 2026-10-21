@@ -25,17 +25,16 @@ import matplotlib.pyplot as plt
 from IPython.display import display
 
 import eyepiece as ep
-import eyepiece.testing as ept
 
 hwostyle.use("dark")
-motifs = ep.MotifSet.default()
+motifs = ep.motifs.MotifSet.default()
 line_kw = motifs["planet"].line_kw()
 line_kw["ls"] = "-"
 fig, ax = plt.subplots(figsize=(4.6, 2.8), layout="constrained")
 (line,) = ax.plot([0, 0.25, 0.5, 0.75, 1], [0.2, 0.35, 0.5, 0.35, 0.2],
                   **line_kw)
 ax.set(xlim=(0, 1), ylim=(0, 1), xlabel="Orbital phase", ylabel="Planet flux")
-eq = ep.equation(ep.Anchor.from_data(ax, (0.5, 0.82)),
+eq = ep.motion.equation(ep.motion.Anchor.from_data(ax, (0.5, 0.82)),
                  r"$F = {{flux:F_p}} / F_s$", fontsize=24)
 eq.bind("flux", line, motif="planet")
 ```
@@ -47,7 +46,7 @@ is their ratio. For term syntax and transforms, see the
 ## Cue both at once
 
 ```{code-cell} python
-pulse = ep.indicate(eq.linked("flux"))
+pulse = ep.motion.indicate(eq.linked("flux"))
 pulse.update(0.5)
 display(fig)
 pulse.update(1.0)
@@ -66,7 +65,7 @@ def symbol_first(t):
     line.set_alpha(0.0 if t < 1.0 else 1.0)
 
 
-faults = ept.grounding_faults(eq, at=symbol_first, times=[0.0, 1.0])
+faults = ep.testing.grounding_faults(eq, at=symbol_first, times=[0.0, 1.0])
 print([(fault.kind, fault.term, fault.time_s) for fault in faults])
 
 
@@ -75,12 +74,12 @@ def mark_first(t):
     eq.update(0.0 if t < 1.0 else 1.0)
 
 
-print(ept.grounding_faults(eq, at=mark_first, times=[0.0, 1.0]))
+print(ep.testing.grounding_faults(eq, at=mark_first, times=[0.0, 1.0]))
 plt.close(fig)
 ```
 
 The first order reports `symbol-first` and `no-referent` for `flux` at zero
 seconds, and the corrected order prints `[]`.
 An unbound colored term also reports `no-referent`, wrong term or mark ink
-reports `color-mismatch`, and `ept.assert_grounded` raises `GroundingError`
+reports `color-mismatch`, and `ep.testing.assert_grounded` raises `GroundingError`
 for findings in a test.

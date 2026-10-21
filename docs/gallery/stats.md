@@ -82,7 +82,7 @@ title here is therefore set on the figure the caller owns.
 n = len(PARAMS)
 fig, axes = plt.subplots(n, n, figsize=(6.2, 5.6), layout="constrained")
 
-tri = ep.corner(
+tri = ep.plot.corner(
     posterior,
     PARAMS,
     truths=TRUTHS,
@@ -109,7 +109,7 @@ outside the grid is consumed.
 
 ```{code-cell} python
 wide = COV * 2.4
-overlay = ep.corner_overlay(
+overlay = ep.plot.corner_overlay(
     [posterior, draw(1, shift=0.35, cov=wide)],
     PARAMS,
     labels=LABELS,
@@ -145,7 +145,7 @@ def rayleigh_pdf(a):
 
 
 fig, ax = plt.subplots(figsize=(5.4, 3.2), layout="constrained")
-res = ep.hist_vs_pdf(
+res = ep.plot.hist_vs_pdf(
     amplitude,
     rayleigh_pdf,
     ax=ax,
@@ -181,8 +181,8 @@ ax.scatter(pair[0], pair[1], s=3, alpha=0.25, edgecolors="none")
 one_sigma_kw = {"lw": 2, "label": r"$1\sigma$"}
 two_sigma_kw = {"lw": 2, "ls": "--", "label": r"$2\sigma$"}
 
-one = ep.cov_ellipse(mean, cov, ax=ax, n_sigma=1, ellipse_kw=one_sigma_kw)
-two = ep.cov_ellipse(mean, cov, ax=ax, n_sigma=2, ellipse_kw=two_sigma_kw)
+one = ep.plot.cov_ellipse(mean, cov, ax=ax, n_sigma=1, ellipse_kw=one_sigma_kw)
+two = ep.plot.cov_ellipse(mean, cov, ax=ax, n_sigma=2, ellipse_kw=two_sigma_kw)
 ax.set_xlabel(LABELS["period"])
 ax.set_ylabel(LABELS["amplitude"])
 ax.legend(loc="upper left")
@@ -216,7 +216,7 @@ looks = rng.exponential(1.0, 240)
 
 fig, ax = plt.subplots(figsize=(6.4, 3.6), layout="constrained")
 ax.set(xlabel="frames averaged", ylabel="intensity / mean")
-res = ep.convergence(
+res = ep.plot.convergence(
     looks,
     ax=ax,
     refs=[1.0, np.log(2.0)],
@@ -236,7 +236,7 @@ at three counts, as three frames of that animation would be.
 fig, axes = plt.subplots(1, 3, figsize=(9.0, 2.6), layout="constrained",
                          sharey=True)
 for ax, k in zip(axes, [10, 60, 240]):
-    frame = ep.convergence(looks, ax=ax, refs=1.0, ref_labels="mean", band=0.1)
+    frame = ep.plot.convergence(looks, ax=ax, refs=1.0, ref_labels="mean", band=0.1)
     frame.update(k)
     ax.set_title(f"{k} frames")
 ```
@@ -273,7 +273,7 @@ brightness = np.abs(1.0 + 0.35 * drift * np.exp(1j * 0.6 * t_hours)) ** 2
 fig, axes = plt.subplots(1, 2, figsize=(9.0, 2.8), layout="constrained",
                          sharey=True)
 for ax, k in zip(axes, [90, 241]):
-    trace = ep.signed_trace(brightness, ax=ax, x=t_hours, level=1.0,
+    trace = ep.plot.signed_trace(brightness, ax=ax, x=t_hours, level=1.0,
                             level_label="static")
     trace.update(k)
     ax.set(xlabel="time (h)", title=f"{t_hours[k - 1]:.1f} h")
@@ -310,7 +310,7 @@ edges = np.arange(0.0, 6.01, 0.25)
 fig, axes = plt.subplots(1, 3, figsize=(9.6, 2.6), layout="constrained",
                          sharey=True)
 for ax, k in zip(axes, [6, 60, 400]):
-    hist = ep.hist_fill(looks, edges, ax=ax, law=lambda v: np.exp(-v),
+    hist = ep.plot.hist_fill(looks, edges, ax=ax, law=lambda v: np.exp(-v),
                         law_label="exponential", law_label_x=1.4, rug=12)
     hist.update(k, rug_alpha=max(0.0, 1.0 - k / 60.0), show_law=k == 400)
     ax.set(xlabel="intensity / mean", title=f"{k} samples")
@@ -328,7 +328,7 @@ A neutral tone follows the active background and text colors.
 ```{code-cell} python
 fig, ax = plt.subplots(layout="constrained")
 for level in (0.2, 0.5, 0.8):
-    ax.axhline(level, color=ep.neutral(level))
+    ax.axhline(level, color=ep.style.neutral(level))
 plt.show()
 ```
 
@@ -339,8 +339,8 @@ under the active style, so a mark keeps its meaning across modes.
 
 ```{code-cell} python
 fig, ax = plt.subplots(layout="constrained")
-ax.axvline(0.3, color=ep.role("alert"))
-ax.axvline(0.7, color=ep.role("model"))
+ax.axvline(0.3, color=ep.style.role("alert"))
+ax.axvline(0.7, color=ep.style.role("model"))
 plt.show()
 ```
 
@@ -351,7 +351,7 @@ A background-colored box keeps a label readable over plotted marks.
 ```{code-cell} python
 fig, ax = plt.subplots(layout="constrained")
 ax.plot([0, 1], [0, 1])
-ax.text(0.5, 0.5, "reference", bbox=ep.backing())
+ax.text(0.5, 0.5, "reference", bbox=ep.style.backing())
 plt.show()
 ```
 
@@ -366,5 +366,5 @@ import eyepiece as ep
 
 fig, ax = plt.subplots()
 ax.plot([0, 1, 2], [1, 3, 2])
-ep.quiet_spines(ax, level=0.4)
+ep.style.quiet_spines(ax, level=0.4)
 ```

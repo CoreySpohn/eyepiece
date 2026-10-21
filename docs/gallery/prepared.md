@@ -26,24 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from IPython.display import HTML
 
-import eyepiece.mpl as mpl
-from eyepiece.prepared import (
-    ArrayChannel,
-    AxisSpec,
-    Clock,
-    CurveView,
-    ImageView,
-    Label,
-    PanelGroup,
-    Path,
-    PathWindow,
-    Points,
-    Region,
-    Scale,
-    Sequence,
-    resolve_bounds,
-)
-from eyepiece.style import SourceCast, snapshot_profile
+import eyepiece as ep
 
 hwostyle.use("dark")
 # Docs-build only, to keep the baked page images small. A real figure script
@@ -51,8 +34,8 @@ hwostyle.use("dark")
 plt.rcParams["savefig.dpi"] = 120
 
 # One cast and one profile for every output on this page.
-CAST = SourceCast(["annulus"])
-PROFILE = snapshot_profile(
+CAST = ep.style.SourceCast(["annulus"])
+PROFILE = ep.style.snapshot_profile(
     text_size_pt=plt.rcParams["font.size"],
     stroke_width_pt=plt.rcParams["lines.linewidth"],
 )
@@ -104,25 +87,25 @@ in_annulus = (r > 4.0) & (r < 6.0)
 trace = np.array([np.nanmean(frame.data[in_annulus]) for frame in cube])
 trace_xy = np.column_stack([times_s, trace])
 
-_, vmax = resolve_bounds(
+_, vmax = ep.prepared.resolve_bounds(
     ((frame.data, ~frame.mask) for frame in cube), kind="log"
 )
-scale = Scale("log", vmin=vmax * 1e-3, vmax=vmax, floor=vmax * 1e-3)
+scale = ep.prepared.Scale("log", vmin=vmax * 1e-3, vmax=vmax, floor=vmax * 1e-3)
 
-image = ImageView(
+image = ep.prepared.ImageView(
     "image",
     cube[0],
-    AxisSpec("x (λ/D)", "y (λ/D)", (-HALF, HALF), (-HALF, HALF)),
+    ep.prepared.AxisSpec("x (λ/D)", "y (λ/D)", (-HALF, HALF), (-HALF, HALF)),
     scale,
     quantity="contrast",
     marks=(
-        Region("annulus", np.array([0.0, 0.0]), outer_radius=6.0, inner_radius=4.0),
-        Label("clock", "", (0.04, 0.95)),
+        ep.prepared.Region("annulus", np.array([0.0, 0.0]), outer_radius=6.0, inner_radius=4.0),
+        ep.prepared.Label("clock", "", (0.04, 0.95)),
     ),
 )
-trace_view = CurveView(
+trace_view = ep.prepared.CurveView(
     "trace",
-    AxisSpec(
+    ep.prepared.AxisSpec(
         "time (s)",
         "annulus mean contrast",
         (0.0, float(times_s[-1])),
@@ -130,19 +113,19 @@ trace_view = CurveView(
         aspect="auto",
     ),
     marks=(
-        Path("history", trace_xy, source_id="annulus", label="annulus mean"),
-        Points("head", trace_xy[:1], source_id="annulus"),
+        ep.prepared.Path("history", trace_xy, source_id="annulus", label="annulus mean"),
+        ep.prepared.Points("head", trace_xy[:1], source_id="annulus"),
     ),
 )
-sequence = Sequence(
-    PanelGroup("speckles", (image, trace_view)),
+sequence = ep.prepared.Sequence(
+    ep.prepared.PanelGroup("speckles", (image, trace_view)),
     times=times_s,
     time_unit="s",
     channels=(
-        ArrayChannel("image", "data", cube),
-        PathWindow("history"),
-        ArrayChannel("head", "xy", trace_xy[:, None, :]),
-        Clock("clock", fmt="t = {value:.0f} {unit}"),
+        ep.prepared.ArrayChannel("image", "data", cube),
+        ep.prepared.PathWindow("history"),
+        ep.prepared.ArrayChannel("head", "xy", trace_xy[:, None, :]),
+        ep.prepared.Clock("clock", fmt="t = {value:.0f} {unit}"),
     ),
 )
 print(f"{len(sequence.times)} samples over {times_s[-1]:.0f} s, scale {scale.vmin:.2g} to {scale.vmax:.2g}")
@@ -159,7 +142,7 @@ under it keep their colors.
 fig, axes = plt.subplots(
     1, 2, figsize=(7.4, 3.0), width_ratios=[1.0, 1.25], layout="constrained"
 )
-still = mpl.render(sequence.frame(12), axes=axes, cast=CAST, profile=PROFILE)
+still = ep.mpl.render(sequence.frame(12), axes=axes, cast=CAST, profile=PROFILE)
 ```
 
 ## A strip of selected epochs
@@ -174,14 +157,14 @@ picks = [0, 15, 29]
 fig, grid = plt.subplots(
     2, 3, figsize=(8.0, 4.6), height_ratios=[1.6, 1.0], layout="constrained"
 )
-strip = mpl.render(
+strip = ep.mpl.render(
     sequence.strip(picks), axes=grid.T.ravel(), cast=CAST, profile=PROFILE
 )
 ```
 
 ## A movie
 
-`mpl.animate` renders frame 0, then plays the shared schedule: thirty output
+`ep.mpl.animate` renders frame 0, then plays the shared schedule: thirty output
 frames here, evenly spaced in physical time from the first sample through
 the last, each showing the sample acquired at or before its time. The image,
 the trace head, and the clock always name the same sample, and the image is
@@ -193,7 +176,7 @@ frames rather than inventing states that were never observed.
 fig, axes = plt.subplots(
     1, 2, figsize=(6.4, 2.6), width_ratios=[1.0, 1.25], layout="constrained"
 )
-movie = mpl.animate(
+movie = ep.mpl.animate(
     sequence, run_time=3.0, fps=10, axes=axes, cast=CAST, profile=PROFILE
 )
 print("frames:", movie.n_frames)

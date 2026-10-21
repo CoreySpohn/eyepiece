@@ -24,14 +24,14 @@ import eyepiece as ep
 hwostyle.use("dark")
 x = np.linspace(1.0, 12.0, 100)
 fig, ax = plt.subplots(figsize=(5.0, 3.0), layout="constrained")
-(curve,) = ax.plot(x, 1e-7 * (1.0 + x) ** -3, color=ep.neutral(0.85))
+(curve,) = ax.plot(x, 1e-7 * (1.0 + x) ** -3, color=ep.style.neutral(0.85))
 ax.set(xlim=(1, 12), ylim=(1e-11, 2e-8), yscale="log",
        xlabel="separation [lambda/D]", ylabel="contrast", title="Starlight profile")
 fig.canvas.draw()
 fig.set_layout_engine("none")
-stage = ep.Stage({"panel": ax})
-content = ep.Stage({"profile": [curve]})
-build = ep.build_axes(ax, title=True)
+stage = ep.motion.Stage({"panel": ax})
+content = ep.motion.Stage({"profile": [curve]})
+build = ep.motion.build_axes(ax, title=True)
 
 
 def draw(panel_u, axes_u, profile_u):

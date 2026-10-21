@@ -26,7 +26,7 @@ hwostyle.use("dark")
 x, y = np.meshgrid(np.linspace(-3, 3, 32), np.linspace(-3, 3, 32))
 cube = np.array([amplitude * np.exp(-(x**2 + y**2))
                  for amplitude in (1.0, 0.5, 0.25, 0.5)])
-result = ep.imshow_log(cube[0], vmin=1e-5, vmax=1.0, floor=1e-5, colorbar=False)
+result = ep.plot.imshow_log(cube[0], vmin=1e-5, vmax=1.0, floor=1e-5, colorbar=False)
 result.fig.set_size_inches(3.0, 2.6)
 result.ax.set(xlim=(-0.5, 31.5), ylim=(-0.5, 31.5), title="PSF")
 result.fig.canvas.draw()
@@ -37,7 +37,7 @@ def draw(fig, k):
     result.update(cube[k])
 
 
-anim = ep.animate(result.fig, draw, len(cube), fps=4)
+anim = ep.render.animate(result.fig, draw, len(cube), fps=4)
 HTML(anim.jshtml(dpi=80, on_rescale="raise"))
 ```
 

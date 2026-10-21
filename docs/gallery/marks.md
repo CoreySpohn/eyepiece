@@ -33,7 +33,7 @@ fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 x = np.arange(4)
 ax.plot(x, [0.2, 0.6, 0.8, 0.9])
 in_range = np.array([True, False, False, True])
-ep.shade_intervals(x, ~in_range, ax=ax)
+ep.plot.shade_intervals(x, ~in_range, ax=ax)
 ax.set(xlabel="position", ylabel="response")
 ```
 
@@ -47,7 +47,7 @@ curve between samples is steep.
 ```{code-cell} python
 fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 ax.plot([0, 1, 2], [0.5, 1.3, 0.9])
-ep.ref_line(ax, 1, "threshold", text_kw={"fontsize": 9})
+ep.plot.ref_line(ax, 1, "threshold", text_kw={"fontsize": 9})
 ax.set(xlabel="position", ylabel="response")
 ```
 
@@ -64,7 +64,7 @@ fig, ax = plt.subplots(figsize=(5, 3), layout="constrained")
 values = np.array([0.1, 0.02, 0.0, 0.005])
 floor = 1e-4
 ax.plot(np.arange(4), np.where(values == 0, floor, values), "o")
-ep.log_zero_floor(ax, floor)
+ep.plot.log_zero_floor(ax, floor)
 ax.set(xlabel="sample", ylabel="error")
 ```
 

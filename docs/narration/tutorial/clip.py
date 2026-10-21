@@ -8,7 +8,6 @@ import numpy as np
 from matplotlib.patches import Rectangle
 
 import eyepiece as ep
-from eyepiece import narration as nr
 
 
 def caption_steps(plan, cues):
@@ -25,7 +24,7 @@ def caption_steps(plan, cues):
 
 def make_timeline(narration):
     """Place the tutorial 2 reveals on the marked spoken words."""
-    tl = ep.Timeline(narration=narration)
+    tl = ep.clock.Timeline(narration=narration)
     tl.line("panel")
     tl.enter("panel", 1.5)
     tl.line("image")
@@ -68,10 +67,10 @@ class Scene:
             1, 2, figsize=(7.5, 5.4), dpi=80, layout="constrained"
         )
         self.fig.get_layout_engine().set(rect=(0, 0.24, 1, 0.76))
-        self.result = ep.imshow_log(
+        self.result = ep.plot.imshow_log(
             field,
             ax=image_ax,
-            extent=ep.extent_lod_from_pixels(n, 24.0 / (n - 1)),
+            extent=ep.plot.extent_lod_from_pixels(n, 24.0 / (n - 1)),
             vmin=1e-12,
             vmax=1e-7,
             floor=1e-12,
@@ -85,7 +84,7 @@ class Scene:
             yticks=[-10, 0, 10],
         )
         (self.curve,) = profile_ax.plot(
-            coordinate, profile, color=ep.neutral(0.85), lw=2
+            coordinate, profile, color=ep.style.neutral(0.85), lw=2
         )
         (self.marker,) = profile_ax.plot(
             [1.5],
@@ -109,7 +108,7 @@ class Scene:
                 1,
                 0.22,
                 transform=self.fig.transFigure,
-                facecolor=ep.neutral(0.08),
+                facecolor=ep.style.neutral(0.08),
                 edgecolor="none",
                 zorder=0,
             )
@@ -121,22 +120,23 @@ class Scene:
             ha="center",
             va="center",
             fontsize=17,
-            color=ep.neutral(0.95),
+            color=ep.style.neutral(0.95),
             linespacing=1.3,
         )
         self.fig.canvas.draw()
         self.fig.set_layout_engine("none")
-        self.labels = ep.Stage(
+        self.labels = ep.motion.Stage(
             {
                 "labels": [ax.xaxis.label for ax in (image_ax, profile_ax)]
                 + [ax.yaxis.label for ax in (image_ax, profile_ax)]
             }
         )
         self.builds = [
-            ep.build_axes(ax, label=False, title=True) for ax in (image_ax, profile_ax)
+            ep.motion.build_axes(ax, label=False, title=True)
+            for ax in (image_ax, profile_ax)
         ]
-        self.reveal = ep.draw_on(self.curve)
-        self.emphasis = ep.indicate(self.marker, scale=1.5)
+        self.reveal = ep.motion.draw_on(self.curve)
+        self.emphasis = ep.motion.indicate(self.marker, scale=1.5)
         self.moves = {self.curve: "profile"}
         plt.close(self.fig)
 
@@ -149,4 +149,4 @@ class Scene:
         self.reveal.update(plan.value(k, "profile"))
         self.marker.set_alpha(plan.value(k, "profile"))
         self.emphasis.update(plan.value(k, "indicate.marker"))
-        self.caption.set_text(nr.caption_at(cues, k / plan.fps))
+        self.caption.set_text(ep.narration.caption_at(cues, k / plan.fps))

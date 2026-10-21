@@ -12,13 +12,13 @@ import the script module's dependencies.
 import sys
 from pathlib import Path
 
-from eyepiece import narration as nr
+import eyepiece as ep
 
 tutorial_dir = Path("docs/narration/tutorial")
 sys.path.insert(0, str(tutorial_dir.resolve()))
 from script import SCRIPT
 
-nr.check_script_speech(SCRIPT)
+ep.narration.check_script_speech(SCRIPT)
 SCRIPT.to_json("/tmp/tutorial-script.json")
 ```
 

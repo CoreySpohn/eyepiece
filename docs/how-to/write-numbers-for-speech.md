@@ -13,7 +13,7 @@ kernelspec:
 # Write numbers for speech
 
 Keep the figure's numeric format when forming a spoken value, then expand
-its operators and units with `nr.say`. Written notation can have several
+its operators and units with `ep.narration.say`. Written notation can have several
 readings, so use words that state the intended operation or unit.
 
 | Written form | Spoken wording |
@@ -25,37 +25,37 @@ readings, so use words that state the intended operation or unit.
 | `a/b` | a divided by b |
 | `mas` | milliarcseconds |
 
-`nr.say` retains digits for the voice to read while expanding scientific
+`ep.narration.say` retains digits for the voice to read while expanding scientific
 notation, signs, percentages, and supported units. Use the same source value
 and format specification as the figure.
 
 ```{code-cell} python
-from eyepiece import narration as nr
+import eyepiece as ep
 
-print(nr.say(1e-15, ".0e"))
-print(nr.say(3e-8, ".0e"))
-print(nr.say(12, "g", unit="mas"))
-print(nr.say(-0.126, ".1%"))
+print(ep.narration.say(1e-15, ".0e"))
+print(ep.narration.say(3e-8, ".0e"))
+print(ep.narration.say(12, "g", unit="mas"))
+print(ep.narration.say(-0.126, ".1%"))
 ```
 
 Check draft text with `speech_faults` to find notation that needs wording.
 The checker recognizes operators such as exponents and slashes, but it does
 not identify every ambiguous abbreviation. Expand units such as `mas` with
-`nr.say(..., unit="mas")` even when the checker reports no fault.
+`ep.narration.say(..., unit="mas")` even when the checker reports no fault.
 
 ```{code-cell} python
 draft = "The level is 1e-15, or 3 x 10^-8 +/- a/b, at ~ 12 mas."
-for fault in nr.speech_faults(draft):
+for fault in ep.narration.speech_faults(draft):
     print(f"{fault.token}: {fault.kind}")
 
-line = nr.Line(
+line = ep.narration.Line(
     "level",
-    f"The level is {nr.say(1e-15, '.0e')} at {nr.say(12, 'g', unit='mas')}.",
+    f"The level is {ep.narration.say(1e-15, '.0e')} at {ep.narration.say(12, 'g', unit='mas')}.",
     display="The level is 1e-15 at 12 mas.",
 )
-script = nr.Script((line,))
-nr.check_script_speech(script)
-assert nr.speech_faults(line.spoken) == []
+script = ep.narration.Script((line,))
+ep.narration.check_script_speech(script)
+assert ep.narration.speech_faults(line.spoken) == []
 print(line.spoken)
 ```
 
@@ -75,15 +75,14 @@ values cannot match merely because both are below the plain absolute floor.
 
 ```python
 import matplotlib.pyplot as plt
-from eyepiece import narration as nr
-import eyepiece.testing as ept
+import eyepiece as ep
 
-screen, spoken = nr.scientific(1.3e-4, ".1e")
+screen, spoken = ep.narration.scientific(1.3e-4, ".1e")
 fig, ax = plt.subplots()
 label = ax.text(0.5, 0.5, screen)
-line = nr.Line("value", "The value is " + spoken + ".")
-narration = nr.Narration.estimated(nr.Script((line,)))
-faults = ept.timing_faults(
+line = ep.narration.Line("value", "The value is " + spoken + ".")
+narration = ep.narration.Narration.estimated(ep.narration.Script((line,)))
+faults = ep.testing.timing_faults(
     narration, at=lambda t: None, readouts={("value", 3): label},
     ceiling=200, short_ceiling=200,
 )

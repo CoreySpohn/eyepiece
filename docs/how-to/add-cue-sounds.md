@@ -34,16 +34,16 @@ in a readout and leave it silent.
 
 ## The three voices
 
-`nr.CueEvents` holds what the voices play, in seconds on the clip's clock, and
-`nr.cue_track` turns it into samples. Read the times and the counts from the
+`ep.narration.CueEvents` holds what the voices play, in seconds on the clip's clock, and
+`ep.narration.cue_track` turns it into samples. Read the times and the counts from the
 same plan frames the picture draws, so picture and sound cannot disagree.
 
 ```{code-cell} python
 import numpy as np
 
-from eyepiece import narration as nr
+import eyepiece as ep
 
-events = nr.CueEvents(
+events = ep.narration.CueEvents(
     count_times=(1.0, 3.0),
     count_values=(4.0, 16.0),
     reference=4.0,
@@ -51,20 +51,20 @@ events = nr.CueEvents(
     sting_s=4.8,
     bell_at=8.0,
 )
-track = nr.cue_track(events, 5.0, rate=48000, seed=0)
+track = ep.narration.cue_track(events, 5.0, rate=48000, seed=0)
 print(f"{len(track)} samples, peak {20 * np.log10(np.abs(track).max()):.1f} dBFS")
 ```
 
-- `nr.count_tone`: a sine at 220 Hz x count / reference, gliding without a
+- `ep.narration.count_tone`: a sine at 220 Hz x count / reference, gliding without a
   phase jump, with a 40 ms attack and a 250 ms decay that ends at the last
   knot. An optional octave bell (440 Hz, 60 ms) rings once where the count
   first reaches `bell_at`.
-- `nr.pixel_ticks`: one 4 ms raised-cosine click at 2.4 kHz per time, each
+- `ep.narration.pixel_ticks`: one 4 ms raised-cosine click at 2.4 kHz per time, each
   moved by at most 1 ms by a seeded generator, so a fast run does not buzz.
-- `nr.click_sting`: 90 ms of 880 Hz and 1318.5 Hz (a fifth) with a soft
+- `ep.narration.click_sting`: 90 ms of 880 Hz and 1318.5 Hz (a fifth) with a soft
   attack, ending exactly at its time, which is the end of the click's swell.
 
-Pass the events to `nr.audio_track(..., cues=events)`. The cues are synthesized
+Pass the events to `ep.narration.audio_track(..., cues=events)`. The cues are synthesized
 at fixed levels and mixed before the loudness pass. Count-tone and tick
 windows duck the speech through the same fades that duck it elsewhere, while
 the bed keeps its level. With `cues=None` the track is unchanged, byte for byte.

@@ -24,9 +24,9 @@ import eyepiece as ep
 hwostyle.use("dark")
 plt.rcParams["savefig.dpi"] = 100
 fig, axes = plt.subplots(1, 2, figsize=(7, 3), layout="constrained")
-ep.interval_points([0, 1, 2], [0, 2, 3], lo=[0, 1.5, 2.4],
+ep.plot.interval_points([0, 1, 2], [0, 2, 3], lo=[0, 1.5, 2.4],
                    hi=[0.4, 2.8, 3.5], ax=axes[0])
-ep.interval_points([0, 1, 2], [0, 2, 3], hi=[0.4, 2.8, 3.5],
+ep.plot.interval_points([0, 1, 2], [0, 2, 3], hi=[0.4, 2.8, 3.5],
                    orient="h", ax=axes[1])
 axes[0].set(xlabel="position", ylabel="value", title="Two endpoints")
 axes[1].set(xlabel="value", ylabel="position", title="Upper endpoint only")

@@ -32,7 +32,7 @@ Here a third label hangs four pixels into the second row of a step list, which
 is the kind of collision no exception reports.
 
 ```{code-cell} python
-import eyepiece.testing as ept
+import eyepiece as ep
 
 fig = plt.figure(figsize=(6.0, 2.4), dpi=100)
 fig.text(0.05, 0.8, "1  Steer the beam", fontsize=14)
@@ -40,7 +40,7 @@ row = fig.text(0.05, 0.62, "2  Hold the star on the mask", fontsize=14)
 fig.canvas.draw()
 low = row.get_window_extent().y0
 label = fig.text(0.05, (low + 4.0) / fig.bbox.height, "axis label", fontsize=14, va="top")
-for fault in ept.readability_faults(fig):
+for fault in ep.testing.readability_faults(fig):
     print(fault)
 ```
 
@@ -57,7 +57,7 @@ its last frame lands 60 pixels past the end of the ease, and a second label
 that should stay put creeps by 3 pixels.
 
 ```{code-cell} python
-import eyepiece.testing as ept
+import eyepiece as ep
 from matplotlib.patches import Rectangle
 from matplotlib.transforms import IdentityTransform
 
@@ -75,7 +75,7 @@ def at(t):
     anchor.set_x(0.05 + 0.005 * u)
 
 
-for fault in ept.motion_faults(fig, at, ept.Window(0.0, 2.0), rest=[anchor]):
+for fault in ep.testing.motion_faults(fig, at, ep.testing.Window(0.0, 2.0), rest=[anchor]):
     print(fault)
 ```
 
@@ -95,15 +95,14 @@ a recording loop. Checking does not write any files.
 ```{code-cell} python
 import matplotlib.pyplot as plt
 import eyepiece as ep
-import eyepiece.testing as ept
 from matplotlib.lines import Line2D
 from matplotlib.transforms import IdentityTransform
 
 fig = plt.figure(figsize=(4.0, 2.0), dpi=100)
-dot = Line2D([40], [80], marker="o", color=ep.neutral(1.0), linestyle="none",
+dot = Line2D([40], [80], marker="o", color=ep.style.neutral(1.0), linestyle="none",
              transform=IdentityTransform())
 fig.add_artist(dot)
-timeline = ep.Timeline({"x": 40.0})
+timeline = ep.clock.Timeline({"x": 40.0})
 timeline.hold(0.3)
 timeline.run("slide", 0.8, to={"x": 48.0})
 timeline.hold(0.3)
@@ -114,7 +113,7 @@ def draw(k):
     dot.set_xdata([plan.value(k, "x")])
 
 
-report = ept.assert_clip(fig, draw, plan, moves={dot: "slide"})
+report = ep.testing.assert_clip(fig, draw, plan, moves={dot: "slide"})
 print(report)
 plt.show()
 ```
@@ -145,15 +144,14 @@ reported.
 ```{code-cell} python
 import matplotlib.pyplot as plt
 import eyepiece as ep
-import eyepiece.testing as ept
 from matplotlib.lines import Line2D
 from matplotlib.transforms import IdentityTransform
 
 fig = plt.figure(figsize=(4.0, 2.0), dpi=100)
-dot = Line2D([40], [80], marker="o", color=ep.neutral(1.0), linestyle="none",
+dot = Line2D([40], [80], marker="o", color=ep.style.neutral(1.0), linestyle="none",
              transform=IdentityTransform())
 fig.add_artist(dot)
-timeline = ep.Timeline({"x": 40.0}, tempo=ep.Tempo(factor=1.0))
+timeline = ep.clock.Timeline({"x": 40.0}, tempo=ep.clock.Tempo(factor=1.0))
 timeline.hold(0.5)
 timeline.hold(0.5, name="next_position", to={"x": 160.0})
 timeline.hold(0.5, to={"x": 280.0})
@@ -165,54 +163,54 @@ def draw(k):
 
 
 print(plan.step_frames())  # (5, 10)
-print(ept.assert_clip(fig, draw, plan))
+print(ep.testing.assert_clip(fig, draw, plan))
 # Additional declarations can use either form, even for the same frame.
-print(ept.assert_clip(fig, draw, plan, steps=[5, "next_position"]))
+print(ep.testing.assert_clip(fig, draw, plan, steps=[5, "next_position"]))
 plt.show()
 ```
 
 ## Numbers for the voice
 
-Use the figure's value and format specification with `nr.say` so the spoken
+Use the figure's value and format specification with `ep.narration.say` so the spoken
 digits keep the same precision. Exponents, percentages and units become
 words the voice reads correctly; captions can retain the compact notation.
-`nr.check_script_speech` checks spoken text before synthesis and can also be
-called without a speech engine. A fault raises `nr.SpeechTextError` with the
-line key and offending token. `nr.speech_faults` inspects text directly.
+`ep.narration.check_script_speech` checks spoken text before synthesis and can also be
+called without a speech engine. A fault raises `ep.narration.SpeechTextError` with the
+line key and offending token. `ep.narration.speech_faults` inspects text directly.
 
 ```{code-cell} python
-from eyepiece import narration as nr
+import eyepiece as ep
 
 contrast = 3e-8
-spoken = f"The contrast is {nr.say(contrast, '.0e')}."
-line = nr.Line("contrast", spoken, display=f"The contrast is {contrast:.0e}.")
-script = nr.Script((line,))
-nr.check_script_speech(script)
+spoken = f"The contrast is {ep.narration.say(contrast, '.0e')}."
+line = ep.narration.Line("contrast", spoken, display=f"The contrast is {contrast:.0e}.")
+script = ep.narration.Script((line,))
+ep.narration.check_script_speech(script)
 print(line.spoken)
 print(line.display)
-print(nr.say(-0.126, ".1%"))
-print(nr.say(0.943, ".3f"))
-print(nr.say(0.55, ".2f", unit="um"))
-print(nr.speech_faults(line.spoken))
+print(ep.narration.say(-0.126, ".1%"))
+print(ep.narration.say(0.943, ".3f"))
+print(ep.narration.say(0.55, ".2f", unit="um"))
+print(ep.narration.speech_faults(line.spoken))
 ```
 
 ## Captions at a playback time
 
-`nr.caption_at(cues, t)` returns the text to show at time `t` in seconds.
+`ep.narration.caption_at(cues, t)` returns the text to show at time `t` in seconds.
 A cue includes its start and excludes its end; gaps and times outside the
-cues return an empty string. Generate the cues once with `nr.captions` and
+cues return an empty string. Generate the cues once with `ep.narration.captions` and
 look up the text as the playback clock advances. Cue and line breaks keep
 bracketed text together and avoid either side of a token with no letters or
 digits, such as `/` or `-`. If every break is forbidden, the usual split
 still lets a long sentence fit.
 
 ```{code-cell} python
-from eyepiece import narration as nr
+import eyepiece as ep
 
-line = nr.Line("ratio", "Compute a / b - 1; cap +/-1% applies.")
-script = nr.Script((line,))
-narration = nr.Narration(script, {"ratio": nr.estimate(line)})
-cues = nr.captions(narration, max_chars=14)
-print(nr.caption_at(cues, cues[0][0]))
-print(repr(nr.caption_at(cues, cues[-1][1])))
+line = ep.narration.Line("ratio", "Compute a / b - 1; cap +/-1% applies.")
+script = ep.narration.Script((line,))
+narration = ep.narration.Narration(script, {"ratio": ep.narration.estimate(line)})
+cues = ep.narration.captions(narration, max_chars=14)
+print(ep.narration.caption_at(cues, cues[0][0]))
+print(repr(ep.narration.caption_at(cues, cues[-1][1])))
 ```

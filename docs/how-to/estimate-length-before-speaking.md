@@ -13,21 +13,21 @@ kernelspec:
 # Estimate length before speaking
 
 Estimate speech duration while drafting a script, before installing or running
-the speech engine. `nr.estimate` counts the spoken forms of numbers and
+the speech engine. `ep.narration.estimate` counts the spoken forms of numbers and
 allows short pauses for punctuation. The estimate excludes line padding and
 animation holds, and cached word times replace it for a finished render.
 
 ```{code-cell} python
-from eyepiece import narration as nr
+import eyepiece as ep
 
-script = nr.Script((
-    nr.Line("open", "First the axes appear."),
-    nr.Line("profile", "The row profile reaches a relative intensity of 0.943."),
+script = ep.narration.Script((
+    ep.narration.Line("open", "First the axes appear."),
+    ep.narration.Line("profile", "The row profile reaches a relative intensity of 0.943."),
 ))
-nr.check_script_speech(script)
+ep.narration.check_script_speech(script)
 total_s = 0.0
 for line in script.lines:
-    spoken = nr.estimate(line)
+    spoken = ep.narration.estimate(line)
     total_s += spoken.duration_s
     print(f"{line.key}: {spoken.duration_s:.2f} s")
 print(f"Estimated speech: {total_s:.2f} s")

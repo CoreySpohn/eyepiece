@@ -47,19 +47,19 @@ fig, (left, right) = plt.subplots(
 )
 left.set(xlim=(0.05, 0.75), ylim=(0.5, 2.0), xlabel="albedo", ylabel="radius")
 right.set(xlim=(0.0, 8.0), xlabel="row total")
-(curve,) = left.plot(albedo, 0.3 / albedo**0.5 + 0.2, color=ep.neutral(0.7))
+(curve,) = left.plot(albedo, 0.3 / albedo**0.5 + 0.2, color=ep.style.neutral(0.7))
 fig.canvas.draw()
 fig.set_layout_engine("none")
 
-build = ep.build_axes(right)
-stage = ep.Stage({"scenery": [curve]})
-start = ep.Anchor.from_data(left, (0.0875, 0.8))
-end = ep.Anchor.from_data(left, (0.4, 0.8))
+build = ep.motion.build_axes(right)
+stage = ep.motion.Stage({"scenery": [curve]})
+start = ep.motion.Anchor.from_data(left, (0.0875, 0.8))
+end = ep.motion.Anchor.from_data(left, (0.4, 0.8))
 landing = (
-    ep.Anchor.from_data(right, (0.0, 0.8)),
-    ep.Anchor.from_data(right, (row.sum(), 0.8)),
+    ep.motion.Anchor.from_data(right, (0.0, 0.8)),
+    ep.motion.Anchor.from_data(right, (row.sum(), 0.8)),
 )
-gather = ep.collapse(
+gather = ep.motion.collapse(
     left, cells, row, start, end, fig=fig, colors=plt.cm.Greys(row), color="C3",
     to=landing,
 )
@@ -101,8 +101,8 @@ import eyepiece as ep
 
 fig, ax = plt.subplots()
 ax.plot([0, 1], [0, 1])
-tag = ep.carried_tag(ax, "(from clip 1)", corner="upper right")
-stage = ep.Stage({"panel": ax})
+tag = ep.motion.carried_tag(ax, "(from clip 1)", corner="upper right")
+stage = ep.motion.Stage({"panel": ax})
 stage.set(dimmed=["panel"])
 stage.rest()
 ```

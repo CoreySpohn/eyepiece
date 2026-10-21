@@ -36,9 +36,8 @@ import json
 import matplotlib.pyplot as plt
 
 import eyepiece as ep
-from eyepiece import narration as nr
 
-tl = ep.Timeline(tempo=ep.Tempo(factor=1.0, settle_s=0.5))
+tl = ep.clock.Timeline(tempo=ep.clock.Tempo(factor=1.0, settle_s=0.5))
 tl.enter("planet", also=("label",))
 rest = tl.settle()
 gone = tl.leave("planet", also=("label",))
@@ -56,7 +55,7 @@ Declare intentional overlap with `with_=`: grouping does not disable the
 rule that subjects normally enter one at a time.
 
 ```{code-cell} python
-tl = ep.Timeline()
+tl = ep.clock.Timeline()
 with tl.together():
     first = tl.enter("planet", 0.4)
     tl.enter("orbit", 0.8, with_=(first.name,))
@@ -76,7 +75,7 @@ subjects arrive one at a time. This group starts at 0.0, 0.5, and 1.0 s;
 the following hold starts at the last entry's end, 1.4 s.
 
 ```{code-cell} python
-tl = ep.Timeline()
+tl = ep.clock.Timeline()
 tl.stagger("enter", ["planet", "orbit", "label"], each_s=0.5, seconds=0.4)
 tl.hold(0.4, name="inspect")
 plan = tl.at_fps(10)
@@ -90,7 +89,7 @@ for ax, schedule, title in zip(
     spans = list(schedule.spans.values())
     for row, span in enumerate(spans):
         ax.barh(row, span.end_s - span.start_s, left=span.start_s,
-                height=0.55, color=ep.role("data"))
+                height=0.55, color=ep.style.role("data"))
     ax.set_yticks(range(len(spans)), [span.name for span in spans])
     ax.invert_yaxis()
     ax.set(xlabel="presentation time [s]", title=title, xlim=(0, 1.9))
@@ -100,7 +99,7 @@ plt.show()
 `tl.stagger("indicate", ...)` and `tl.stagger("circumscribe", ...)` place
 attention spans without advancing the cursor, since those spans do not
 extend their section. Add a hold to keep them in the clip. The separate
-function `ep.stagger(u, rank, span=...)` divides the progress of one move
+function `ep.clock.stagger(u, rank, span=...)` divides the progress of one move
 among its items; it does not place timeline spans.
 
 ## Read a cue's word time
@@ -112,16 +111,16 @@ same mark to `enter(cue=...)` applies the entry lead once, starting the entry
 at 0.9 s. `at=tl.cue(...)` instead would start exactly on the word.
 
 ```{code-cell} python
-script = nr.Script((nr.Line("reveal", "Here is the {show:planet}planet."),))
-narration = nr.Narration(script, {
-    "reveal": nr.Spoken("reveal", 1.6, (
-        nr.Word("Here", 0.0, 0.3),
-        nr.Word("is", 0.3, 0.5),
-        nr.Word("the", 0.5, 1.0),
-        nr.Word("planet.", 1.0, 1.6),
+script = ep.narration.Script((ep.narration.Line("reveal", "Here is the {show:planet}planet."),))
+narration = ep.narration.Narration(script, {
+    "reveal": ep.narration.Spoken("reveal", 1.6, (
+        ep.narration.Word("Here", 0.0, 0.3),
+        ep.narration.Word("is", 0.3, 0.5),
+        ep.narration.Word("the", 0.5, 1.0),
+        ep.narration.Word("planet.", 1.0, 1.6),
     )),
 })
-tl = ep.Timeline(narration=narration)
+tl = ep.clock.Timeline(narration=narration)
 tl.line("reveal")
 word = tl.cue("show:planet")
 tl.enter("planet", cue="show:planet")
@@ -142,7 +141,7 @@ checks use it to recognize deliberate silence, and report speech over the
 hero or a second hero declaration. See {doc}`check-timing` for the checks.
 
 ```{code-cell} python
-tl = ep.Timeline({"reveal": 0.0})
+tl = ep.clock.Timeline({"reveal": 0.0})
 sweep = tl.run("sweep", 1.2, to={"reveal": 1.0})
 tl.hero(sweep)
 tl.hold(0.8, name="answer")
@@ -161,7 +160,7 @@ is paced to 1 s. `kind` selects existing timeline rules; it is not a new
 event type. A progress-only span can omit `to=` and use `plan.progress()`.
 
 ```{code-cell} python
-tl = ep.Timeline({"blend": 0.0}, tempo=ep.Tempo(factor=2.0))
+tl = ep.clock.Timeline({"blend": 0.0}, tempo=ep.clock.Tempo(factor=2.0))
 custom = tl.span("crossfade", 1.0, kind="move", to={"blend": 1.0},
                  paced=False, ease="cosine", extends=True)
 tl.hold(0.5, name="inspect")
@@ -181,7 +180,7 @@ gets 1 s to be read under the tempo stated here. The plan schedules text;
 the draw function still owns the text artist and its opacity.
 
 ```{code-cell} python
-tl = ep.Timeline(tempo=ep.Tempo(factor=1.0, base_s=0.5, word_s=0.25))
+tl = ep.clock.Timeline(tempo=ep.clock.Tempo(factor=1.0, base_s=0.5, word_s=0.25))
 tl.caption("result", "Planet found")
 plan = tl.at_fps(10)
 print(plan.spans_json())
@@ -197,7 +196,7 @@ caption is removed. Clearing without `at=` advances the cursor through
 the 0.3 s departure.
 
 ```{code-cell} python
-tl = ep.Timeline(tempo=ep.Tempo(factor=1.0, base_s=0.5, word_s=0.25))
+tl = ep.clock.Timeline(tempo=ep.clock.Tempo(factor=1.0, base_s=0.5, word_s=0.25))
 tl.caption("first", "Planet found", leaves="next")
 tl.read("Planet found", name="read_first")
 tl.caption("second", "Orbit measured", leaves="next")
@@ -212,17 +211,17 @@ In a narrated clip `leaves="next"` is the default, and speech supplies
 the reading time. `leaves="never"` keeps a caption for the rest of the
 clip and does not queue it for `clear_caption()`; use `"next"` for a caption
 you intend to clear. On-screen captions differ from subtitle tracks made
-by `nr.captions`; see {doc}`burn-captions-into-a-band` for subtitles.
+by `ep.narration.captions`; see {doc}`burn-captions-into-a-band` for subtitles.
 
 ## Land a click and keep its hold
 
 `tl.click()` creates a linear `click.<target>` knob over 0.6 s and follows
 it with a separate 1.5 s hold. Both durations stay fixed under the tempo,
 so this clip lasts 2.1 s even at factor 0.5. Use the knob with the visual
-`ep.click` move, binding it as in {doc}`bind-a-move-to-a-knob`.
+`ep.motion.click` move, binding it as in {doc}`bind-a-move-to-a-knob`.
 
 ```{code-cell} python
-tl = ep.Timeline(tempo=ep.Tempo(factor=0.5))
+tl = ep.clock.Timeline(tempo=ep.clock.Tempo(factor=0.5))
 tl.click("answer")
 plan = tl.at_fps(10)
 print(plan.spans_json())
@@ -241,7 +240,7 @@ remain in `plan.spans`. `holds=False` removes every span whose kind is
 leaving the other times unchanged.
 
 ```{code-cell} python
-tl = ep.Timeline()
+tl = ep.clock.Timeline()
 tl.enter("planet", 0.6333333)
 tl.settle()
 tl.move("measure", 0.7333333)

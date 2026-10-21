@@ -20,18 +20,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import eyepiece as ep
-import eyepiece.testing as ept
 
 hwostyle.use("dark")
 x = np.array([0.2, 0.5, 0.8])
 y = np.array([0.3, 0.7, 0.4])
 fig, ax = plt.subplots(figsize=(4.6, 2.8), dpi=100, layout="constrained")
-ax.plot(x, y, color=ep.neutral(0.6))
+ax.plot(x, y, color=ep.style.neutral(0.6))
 (marker,) = ax.plot([x[0]], [y[0]], "o", color=hwostyle.palette[0], ms=8)
 ax.set(xlim=(0, 1), ylim=(0, 1), xticks=[], yticks=[])
 fig.canvas.draw()
 fig.set_layout_engine("none")
-tl = ep.Timeline({"sample": 0}, tempo=ep.Tempo(factor=1.0))
+tl = ep.clock.Timeline({"sample": 0}, tempo=ep.clock.Tempo(factor=1.0))
 for index in range(len(x)):
     tl.hold(0.5, name=f"sample_{index}", to={"sample": index})
 plan = tl.at_fps(10)
@@ -43,7 +42,7 @@ def draw(k):
 
 
 print(plan.step_frames())
-print(ept.assert_clip(fig, draw, plan))
+print(ep.testing.assert_clip(fig, draw, plan))
 plt.show()
 ```
 

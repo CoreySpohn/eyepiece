@@ -27,7 +27,7 @@ plt.rcParams["savefig.dpi"] = 110
 
 N = 96
 PIXSCALE_LOD = 0.3
-EXTENT = ep.extent_lod_from_pixels(N, PIXSCALE_LOD)
+EXTENT = ep.plot.extent_lod_from_pixels(N, PIXSCALE_LOD)
 u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
 x, y = np.meshgrid(u, u)
 r, theta = np.hypot(x, y), np.arctan2(y, x)
@@ -54,7 +54,7 @@ edges = np.concatenate([u - half, [u[-1] + half]])
 ex, ey = np.meshgrid(edges, edges)
 corners = np.stack([ex, ey], axis=-1)
 keep = r <= 13.0
-quads = ep.pixel_quads(corners, keep)
+quads = ep.motion.pixel_quads(corners, keep)
 
 # Angles of each pixel's corners taken on its own center's branch, so pixels
 # straddling the cut at 180 degrees are not torn across the panel.
@@ -76,7 +76,7 @@ def unroll(t):
 
 fig, axes = plt.subplots(1, 3, figsize=(7.5, 2.6), layout="constrained")
 for axis, t in zip(axes, (0.0, 0.55, 1.0), strict=True):
-    res = ep.quad_image(FIELD, corners, ax=axis, keep=keep, norm=NORM)
+    res = ep.motion.quad_image(FIELD, corners, ax=axis, keep=keep, norm=NORM)
     res.update(quads=unroll(t))
     axis.set_xlim(-14 if t < 1 else 0, 14)
     axis.set_ylim(-14, 14)
@@ -98,18 +98,18 @@ ring lights as a circle on the left and as a column on the right.
 
 ```{code-cell} python
 fig, (left, right) = plt.subplots(1, 2, figsize=(6.0, 3.0), layout="constrained")
-ep.imshow_log(FIELD, ax=left, extent=EXTENT, vmin=NORM.vmin, vmax=NORM.vmax,
+ep.plot.imshow_log(FIELD, ax=left, extent=EXTENT, vmin=NORM.vmin, vmax=NORM.vmax,
               floor=NORM.vmin, colorbar=False)
-unrolled = ep.quad_image(FIELD, corners, ax=right, keep=keep, norm=NORM)
+unrolled = ep.motion.quad_image(FIELD, corners, ax=right, keep=keep, norm=NORM)
 unrolled.update(quads=unroll(1.0))
 right.set_xlim(0, 13)
 right.set_ylim(-13, 13)
 right.set_xlabel(r"separation [$\lambda/D$]")
 right.set_ylabel("angle around the star")
 right.set_yticks([])
-ep.label_lod(left)
+ep.plot.label_lod(left)
 
-linked = ep.brush([left, right], [quads, unroll(1.0)], FIELD[keep], norm=NORM, veil_alpha=0.72)
+linked = ep.motion.brush([left, right], [quads, unroll(1.0)], FIELD[keep], norm=NORM, veil_alpha=0.72)
 linked.update(np.abs(r[keep] - 8.0) <= half)
 plt.show()
 ```
@@ -139,7 +139,7 @@ fig.set_layout_engine("none")
 phi = np.linspace(0.0, 2.0 * np.pi, 160, endpoint=False)
 ring = np.c_[np.cos(phi), np.sin(phi)]
 box = np.array([[0.9, 0.9], [-0.9, 0.9], [-0.9, -0.9], [0.9, -0.9]])
-turn = ep.morph(
+turn = ep.motion.morph(
     ring,
     box[::-1],
     ax=ax,
@@ -199,7 +199,7 @@ into the numbers of a worked example: the left side stays, the bar stretches,
 the numerator and denominator become their numbers, and the result arrives last.
 
 ```{code-cell} python
-import eyepiece.testing as ept
+import eyepiece as ep
 
 BAYES_A = (
     r"${{lhs:\mathrm{Pr}(H|E)=}}\frac{{num:\mathrm{Pr}(E|H)\,\mathrm{Pr}(H)}}"
@@ -213,10 +213,10 @@ fig = plt.figure(figsize=(7.6, 2.4))
 board = fig.add_axes([0, 0, 1, 1])
 board.set(xlim=(0, 1), ylim=(0, 1))
 board.axis("off")
-left = ep.Anchor.from_data(board, (0.06, 0.5))
-bayes_a = ep.equation(left, BAYES_A, fontsize=34, ha="left")
-bayes_b = ep.equation(left, BAYES_B, fontsize=34, ha="left")
-bayes = ep.transform(bayes_a, bayes_b, stagger=0.55)
+left = ep.motion.Anchor.from_data(board, (0.06, 0.5))
+bayes_a = ep.motion.equation(left, BAYES_A, fontsize=34, ha="left")
+bayes_b = ep.motion.equation(left, BAYES_B, fontsize=34, ha="left")
+bayes = ep.motion.transform(bayes_a, bayes_b, stagger=0.55)
 
 # A beat of A, the move, a beat of B; the move's progress is uneased.
 N_BAYES = 60
@@ -228,8 +228,8 @@ def draw_bayes(fig, k):
 
 for k in (0, N_BAYES - 1):
     draw_bayes(fig, k)
-    ept.assert_readable(fig)
-HTML(ep.animate(fig, draw_bayes, N_BAYES, fps=20).jshtml(dpi=80))
+    ep.testing.assert_readable(fig)
+HTML(ep.render.animate(fig, draw_bayes, N_BAYES, fps=20).jshtml(dpi=80))
 ```
 
 A replaced tag changes shape by default. The outlines of the old glyphs turn
@@ -253,10 +253,10 @@ def bayes_move(replace):
     board = fig.add_axes([0, 0, 1, 1])
     board.set(xlim=(0, 1), ylim=(0, 1))
     board.axis("off")
-    left = ep.Anchor.from_data(board, (0.06, 0.5))
-    eq_a = ep.equation(left, BAYES_A, fontsize=34, ha="left")
-    eq_b = ep.equation(left, BAYES_B, fontsize=34, ha="left")
-    return fig, ep.transform(eq_a, eq_b, stagger=0.55, replace=replace)
+    left = ep.motion.Anchor.from_data(board, (0.06, 0.5))
+    eq_a = ep.motion.equation(left, BAYES_A, fontsize=34, ha="left")
+    eq_b = ep.motion.equation(left, BAYES_B, fontsize=34, ha="left")
+    return fig, ep.motion.transform(eq_a, eq_b, stagger=0.55, replace=replace)
 
 
 for replace in ("fade", "morph"):
@@ -265,7 +265,7 @@ for replace in ("fade", "morph"):
     def draw(fig, k, move=move):
         move.update(min(1.0, max(0.0, (k - 12) / 36)))
 
-    display(HTML(ep.animate(fig, draw, N_BAYES, fps=20).jshtml(dpi=80)))
+    display(HTML(ep.render.animate(fig, draw, N_BAYES, fps=20).jshtml(dpi=80)))
 ```
 
 Most rearrangements keep most glyphs, and then the move is mostly travel.
@@ -281,10 +281,10 @@ fig = plt.figure(figsize=(6.4, 2.0))
 board = fig.add_axes([0, 0, 1, 1])
 board.set(xlim=(0, 1), ylim=(0, 1))
 board.axis("off")
-middle = ep.Anchor.from_data(board, (0.5, 0.5))
-pyth_a = ep.equation(middle, r"$a^2+{{b:b^2}}=c^2$", fontsize=40)
-pyth_b = ep.equation(middle, r"$a^2=c^2-{{b:b^2}}$", fontsize=40)
-pyth = ep.transform(pyth_a, pyth_b, stagger=0.7, arc=0.7)
+middle = ep.motion.Anchor.from_data(board, (0.5, 0.5))
+pyth_a = ep.motion.equation(middle, r"$a^2+{{b:b^2}}=c^2$", fontsize=40)
+pyth_b = ep.motion.equation(middle, r"$a^2=c^2-{{b:b^2}}$", fontsize=40)
+pyth = ep.motion.transform(pyth_a, pyth_b, stagger=0.7, arc=0.7)
 N_PYTH = 60
 
 
@@ -294,8 +294,8 @@ def draw_pyth(fig, k):
 
 for k in (0, N_PYTH - 1):
     draw_pyth(fig, k)
-    ept.assert_readable(fig)
-HTML(ep.animate(fig, draw_pyth, N_PYTH, fps=20).jshtml(dpi=80))
+    ep.testing.assert_readable(fig)
+HTML(ep.render.animate(fig, draw_pyth, N_PYTH, fps=20).jshtml(dpi=80))
 ```
 
 Unsupported in this version: ``usetex``, several math spans in one string, and

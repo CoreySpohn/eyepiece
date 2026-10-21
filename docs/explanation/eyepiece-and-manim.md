@@ -56,18 +56,18 @@ def sample(fig, update):
 
 # FadeIn: the caller's artist stays on its axes; Stage owns its opacity.
 fig, ax = small_figure()
-(line,) = ax.plot([0.1, 0.9], [0.3, 0.7], color=ep.neutral(0.8))
+(line,) = ax.plot([0.1, 0.9], [0.3, 0.7], color=ep.style.neutral(0.8))
 original_alpha = line.get_alpha()
-stage = ep.Stage({"mark": line})
+stage = ep.motion.Stage({"mark": line})
 sample(fig, lambda u: stage.weigh({"mark": u}, ease="smoothstep"))
 assert line.get_alpha() == original_alpha
 plt.close(fig)
 
 # Create: a temporary line draws the cut path, then the source returns.
 fig, ax = small_figure()
-(line,) = ax.plot([0.1, 0.5, 0.9], [0.2, 0.8, 0.4], color=ep.neutral(0.8))
+(line,) = ax.plot([0.1, 0.5, 0.9], [0.2, 0.8, 0.4], color=ep.style.neutral(0.8))
 original = np.column_stack(line.get_data()).copy()
-reveal = ep.draw_on(line, ease="linear")
+reveal = ep.motion.draw_on(line, ease="linear")
 sample(fig, reveal.update)
 assert line.get_visible()
 assert np.array_equal(np.column_stack(line.get_data()), original)
@@ -75,9 +75,9 @@ plt.close(fig)
 
 # Indicate: size and tint return to the caller's original style.
 fig, ax = small_figure()
-(line,) = ax.plot([0.2, 0.8], [0.5, 0.5], color=ep.neutral(0.8), lw=2)
+(line,) = ax.plot([0.2, 0.8], [0.5, 0.5], color=ep.style.neutral(0.8), lw=2)
 original_color = line.get_color()
-pulse = ep.indicate(line)
+pulse = ep.motion.indicate(line)
 sample(fig, pulse.update)
 assert line.get_linewidth() == 2
 assert line.get_color() == original_color
@@ -85,20 +85,20 @@ plt.close(fig)
 
 # Circumscribe: the figure-level outline is absent at both endpoints.
 fig, ax = small_figure()
-note = ax.text(0.5, 0.5, "signal", ha="center", color=ep.neutral(0.8))
+note = ax.text(0.5, 0.5, "signal", ha="center", color=ep.style.neutral(0.8))
 fig.canvas.draw()
 original = np.asarray(fig.canvas.buffer_rgba()).copy()
-ring = ep.circumscribe(note, color=ep.neutral(0.8))
+ring = ep.motion.circumscribe(note, color=ep.style.neutral(0.8))
 sample(fig, ring.update)
 assert np.array_equal(np.asarray(fig.canvas.buffer_rgba()), original)
 plt.close(fig)
 
 # Write: the ghost traces glyphs and hands back the original Text.
 fig, ax = small_figure()
-note = ax.text(0.5, 0.5, "signal", ha="center", color=ep.neutral(0.8))
+note = ax.text(0.5, 0.5, "signal", ha="center", color=ep.style.neutral(0.8))
 fig.canvas.draw()
 original = np.asarray(fig.canvas.buffer_rgba()).copy()
-scribe = ep.write(note)
+scribe = ep.motion.write(note)
 sample(fig, scribe.update)
 assert note.get_visible()
 assert np.array_equal(np.asarray(fig.canvas.buffer_rgba()), original)
@@ -106,9 +106,9 @@ plt.close(fig)
 
 # Transform: only an equation replacement is claimed here.
 fig, ax = small_figure()
-a = ep.equation(ax, r"${{term:x}}$", fontsize=20, colors={"term": ep.neutral(0.8)})
-b = ep.equation(ax, r"${{term:y}}$", fontsize=20, colors={"term": ep.neutral(0.8)})
-change = ep.transform(a, b, replace="morph")
+a = ep.motion.equation(ax, r"${{term:x}}$", fontsize=20, colors={"term": ep.style.neutral(0.8)})
+b = ep.motion.equation(ax, r"${{term:y}}$", fontsize=20, colors={"term": ep.style.neutral(0.8)})
+change = ep.motion.transform(a, b, replace="morph")
 sample(fig, change.update)
 assert not any(g.get_visible() for g in a.artists["glyphs"])
 assert all(g.get_visible() for g in b.artists["glyphs"])
@@ -116,9 +116,9 @@ plt.close(fig)
 
 # TransformMatchingTex: named groups constrain glyph-identity matching.
 fig, ax = small_figure()
-a = ep.equation(ax, r"${{x:x}}+{{y:y}}$", fontsize=20, colors={"x": ep.neutral(0.8), "y": ep.neutral(0.8)})
-b = ep.equation(ax, r"${{y:y}}+{{x:x}}$", fontsize=20, colors={"x": ep.neutral(0.8), "y": ep.neutral(0.8)})
-change = ep.transform(a, b, arc=0.4)
+a = ep.motion.equation(ax, r"${{x:x}}+{{y:y}}$", fontsize=20, colors={"x": ep.style.neutral(0.8), "y": ep.style.neutral(0.8)})
+b = ep.motion.equation(ax, r"${{y:y}}+{{x:x}}$", fontsize=20, colors={"x": ep.style.neutral(0.8), "y": ep.style.neutral(0.8)})
+change = ep.motion.transform(a, b, arc=0.4)
 sample(fig, change.update)
 assert change.pairs
 assert not any(g.get_visible() for g in a.artists["glyphs"])
@@ -129,17 +129,17 @@ plt.close(fig)
 curves = ("linear", "smoothstep", "smootherstep", "cosine", "back_out", "running_start")
 for kind in curves:
     fig, ax = small_figure()
-    (line,) = ax.plot([0.1, 0.9], [0.3, 0.7], color=ep.neutral(0.8))
-    reveal = ep.draw_on(line, ease=kind)
+    (line,) = ax.plot([0.1, 0.9], [0.3, 0.7], color=ep.style.neutral(0.8))
+    reveal = ep.motion.draw_on(line, ease=kind)
     sample(fig, reveal.update)
-    assert ep.ease(0.0, kind=kind) == 0.0
-    assert np.isfinite(ep.ease(0.5, kind=kind))
-    assert ep.ease(1.0, kind=kind) == 1.0
+    assert ep.clock.ease(0.0, kind=kind) == 0.0
+    assert np.isfinite(ep.clock.ease(0.5, kind=kind))
+    assert ep.clock.ease(1.0, kind=kind) == 1.0
     plt.close(fig)
 
 fig, ax = small_figure()
-(line,) = ax.plot([0.1, 0.9], [0.3, 0.7], color=ep.neutral(0.8))
-reveal = ep.draw_on(line, ease=lambda u: u**2)
+(line,) = ax.plot([0.1, 0.9], [0.3, 0.7], color=ep.style.neutral(0.8))
+reveal = ep.motion.draw_on(line, ease=lambda u: u**2)
 sample(fig, reveal.update)
 assert line.get_visible()
 plt.close(fig)
@@ -153,45 +153,45 @@ rows = [
     ),
     (
         "Create",
-        '`ep.draw_on(line, ease="linear")`',
+        '`ep.motion.draw_on(line, ease="linear")`',
         "Line2D paths only, no general mobject creation. The caller's source "
         "is hidden behind a temporary cut line until the end; the clock supplies progress.",
     ),
     (
         "Indicate",
-        "`ep.indicate(line)`",
+        "`ep.motion.indicate(line)`",
         "Pulses width, marker or font size and tint, rather than scaling arbitrary "
         "geometry. Borrows the artist and returns its style; the clock supplies pulse progress.",
     ),
     (
         "Circumscribe",
-        '`ep.circumscribe(note, color=ep.neutral(0.8))`',
+        '`ep.motion.circumscribe(note, color=ep.style.neutral(0.8))`',
         "Draws and fades a figure-owned outline around the borrowed target's "
         "display box. The clock supplies ring progress; no target geometry moves.",
     ),
     (
         "Write",
-        "`ep.write(note)`",
+        "`ep.motion.write(note)`",
         "Traces Matplotlib Text glyphs with a figure-owned ghost, then restores "
         "the caller's Text. No general mobject writing; the clock supplies progress.",
     ),
     (
         "Transform",
-        '`ep.transform(a, b, replace="morph")`',
+        '`ep.motion.transform(a, b, replace="morph")`',
         "Morphs replaced equation outlines, moves matches and fades unpaired "
         "glyphs. Owns both equations' visibility, ending on b. The clock supplies "
         "progress; there is no arbitrary mobject Transform counterpart.",
     ),
     (
         "TransformMatchingTex",
-        "`ep.transform(a, b, arc=0.4)`",
+        "`ep.motion.transform(a, b, arc=0.4)`",
         "Matches font and glyph identities within shared term tags, then untagged "
         "runs. Owns both equations' visibility; the clock supplies progress. Uses "
         "mathtext, not TeX token matching; no usetex counterpart.",
     ),
     (
         "rate functions (smooth, linear, and the named ease family)",
-        "`ep.ease(u, kind=kind)` and `ep.draw_on(line, ease=...)`",
+        "`ep.clock.ease(u, kind=kind)` and `ep.motion.draw_on(line, ease=...)`",
         "linear, smoothstep, smootherstep, cosine, back_out and running_start "
         "are available; smooth is not a named alias. No complete Manim rate-function "
         "catalog or aliases such as ease_in_sine. A callable such as u**2 gives another "
@@ -213,12 +213,12 @@ presence and path-progress knobs for the same two calls checked above.
 
 ```{code-cell} python
 fig, ax = small_figure()
-(line,) = ax.plot([0.1, 0.9], [0.3, 0.7], color=ep.neutral(0.8))
-(marker,) = ax.plot([0.1], [0.3], "o", color=ep.neutral(0.8))
+(line,) = ax.plot([0.1, 0.9], [0.3, 0.7], color=ep.style.neutral(0.8))
+(marker,) = ax.plot([0.1], [0.3], "o", color=ep.style.neutral(0.8))
 original_alpha = marker.get_alpha()
-stage = ep.Stage({"mark": marker})
-reveal = ep.draw_on(line)
-tl = ep.Timeline({"path": 0.0})
+stage = ep.motion.Stage({"mark": marker})
+reveal = ep.motion.draw_on(line)
+tl = ep.clock.Timeline({"path": 0.0})
 tl.enter("mark", 0.5)
 tl.move("reveal", 0.5, to={"path": 1.0}, ease="linear")
 plan = tl.at_fps(6)

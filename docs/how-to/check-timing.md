@@ -15,7 +15,7 @@ kernelspec:
 Use `eyepiece.testing.timing_faults` to check speech rate (160 words per
 minute, with a 166 words per minute allowance for lines of at most 10 words),
 the heard gap between lines, and the cue, undeclared silence, and hero span
-rules of `nr.check_silence`. Pass `source` to find a still screen under speech,
+rules of `ep.narration.check_silence`. Pass `source` to find a still screen under speech,
 or `readouts` and `at` to check that a number lands on its word.
 Findings are returned as `TimingFault` objects; `assert_timing` takes the same
 arguments and raises `TimingError` when there are findings.
@@ -27,27 +27,26 @@ start. The first line is deliberately fast, and its 0.15 s trailing pad leaves
 less than the default 0.4 s heard gap before the next line.
 
 ```{code-cell} python
-from eyepiece import narration as nr
-from eyepiece.testing import timing_faults
+import eyepiece as ep
 
-script = nr.Script((
-    nr.Line("quick", "Watch {show:panel}this change.", pad_after_s=0.15),
-    nr.Line("measured", "We measured {show:count}8 epochs."),
+script = ep.narration.Script((
+    ep.narration.Line("quick", "Watch {show:panel}this change.", pad_after_s=0.15),
+    ep.narration.Line("measured", "We measured {show:count}8 epochs."),
 ))
-narration = nr.Narration(script, {
-    "quick": nr.Spoken("quick", 0.75, (
-        nr.Word("Watch", 0.0, 0.25),
-        nr.Word("this", 0.25, 0.5),
-        nr.Word("change.", 0.5, 0.75),
+narration = ep.narration.Narration(script, {
+    "quick": ep.narration.Spoken("quick", 0.75, (
+        ep.narration.Word("Watch", 0.0, 0.25),
+        ep.narration.Word("this", 0.25, 0.5),
+        ep.narration.Word("change.", 0.5, 0.75),
     )),
-    "measured": nr.Spoken("measured", 2.0, (
-        nr.Word("We", 0.0, 0.5),
-        nr.Word("measured", 0.5, 1.0),
-        nr.Word("8", 1.0, 1.5),
-        nr.Word("epochs.", 1.5, 2.0),
+    "measured": ep.narration.Spoken("measured", 2.0, (
+        ep.narration.Word("We", 0.0, 0.5),
+        ep.narration.Word("measured", 0.5, 1.0),
+        ep.narration.Word("8", 1.0, 1.5),
+        ep.narration.Word("epochs.", 1.5, 2.0),
     )),
 })
-for fault in timing_faults(narration):
+for fault in ep.testing.timing_faults(narration):
     print(fault.kind, fault.key, fault.message)
 ```
 
@@ -65,7 +64,7 @@ def source(t):
     return np.full((54, 96, 3), shade, dtype=np.uint8)
 
 
-for fault in timing_faults(narration, source=source):
+for fault in ep.testing.timing_faults(narration, source=source):
     if fault.kind == "still-speech":
         print(fault.kind, fault.key, fault.message)
 ```
@@ -90,7 +89,7 @@ def at(t):
     text.set_text("18 epochs" if t < 2.4 else "8 epochs")
 
 
-for fault in timing_faults(narration, at=at, readouts={("measured", 2): text}):
+for fault in ep.testing.timing_faults(narration, at=at, readouts={("measured", 2): text}):
     if fault.kind == "number-late":
         print(fault.kind, fault.key, fault.message)
 plt.close(fig)
@@ -110,13 +109,13 @@ from pathlib import Path
 
 from IPython.display import Image, display
 
-from eyepiece.testing import review_sheet
+import eyepiece as ep
 
 rate = 8000
 times = np.arange(int(narration.total_s * rate)) / rate
 samples = 0.2 * np.sin(2 * np.pi * 220 * times)
 with tempfile.TemporaryDirectory() as directory:
-    path = review_sheet(
+    path = ep.testing.review_sheet(
         Path(directory) / "timing.png",
         source,
         narration=narration,

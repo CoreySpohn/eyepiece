@@ -31,7 +31,7 @@ def plot_psf(psf_or_array, *, ax=None, imshow_kw=None):
     import eyepiece as ep
 
     array = getattr(psf_or_array, "intensity", psf_or_array)
-    return ep.imshow_log(array, ax=ax, imshow_kw=imshow_kw)
+    return ep.plot.imshow_log(array, ax=ax, imshow_kw=imshow_kw)
 ```
 
 ```python

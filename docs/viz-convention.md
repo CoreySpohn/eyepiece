@@ -48,12 +48,12 @@ small helper keeps the error message actionable:
 def eyepiece():
     """Import eyepiece, or raise with the install hint."""
     try:
-        import eyepiece
+        import eyepiece as ep
     except ImportError:
         raise ImportError(
             "mylib.viz requires eyepiece: pip install 'mylib[viz]'"
         ) from None
-    return eyepiece
+    return ep
 ```
 
 A `viz/` package re-exports its functions lazily through the module-level
@@ -135,7 +135,7 @@ def plot_thing(
 
 Named parameters for what the function owns semantically, per-target keyword
 dicts for everything routed onward, no flat `**kwargs`, and an
-`eyepiece.PlotResult` or `eyepiece.MosaicResult` on the way out. `ax=None`
+`eyepiece.plot.PlotResult` or `eyepiece.plot.MosaicResult` on the way out. `ax=None`
 creates a figure, an axes passed in is drawn into and nothing else is
 touched. The return rule governs Matplotlib plotting functions. A preparation
 function, described below, returns prepared records instead, and a
@@ -161,14 +161,14 @@ def plot_psf(psf, *, ax=None, pixscale_lod=0.25, imshow_kw=None, cbar_kw=None):
     """Draw a PSF, log-scaled, on a lambda/D grid."""
     ep = eyepiece()
     arr = np.asarray(getattr(psf, "intensity", psf), dtype=float)
-    result = ep.imshow_log(
+    result = ep.plot.imshow_log(
         arr,
         ax=ax,
-        extent=ep.extent_lod_from_pixels(arr.shape[-1], pixscale_lod),
+        extent=ep.plot.extent_lod_from_pixels(arr.shape[-1], pixscale_lod),
         imshow_kw=imshow_kw,
         cbar_kw=cbar_kw,
     )
-    ep.label_lod(result.ax)
+    ep.plot.label_lod(result.ax)
     return result
 ```
 
@@ -200,7 +200,7 @@ a figure your function created. Figure-level artists, cross-panel arrows and
 display data, taking a log, unwrapping a phase, collapsing a wavelength
 axis, passes an `update` through the result so an animation loop mutates
 artists without re-deriving the transform. Animations build on
-`eyepiece.record` and `eyepiece.animate`, and an animated figure must fit
+`eyepiece.render.record` and `eyepiece.render.animate`, and an animated figure must fit
 the figure size it declares, because the frame-grab path offers no
 tight-bounding-box rescue. A plot family that has a preparation function
 needs no updater of its own: its frames are prepared once, and the prepared
@@ -230,33 +230,25 @@ from mylib._require import eyepiece
 
 def prepare_psf_cube(cube_or_thing, *, times_s, pixscale_lod, bounds=None):
     """Prepare a time series of PSFs as a replayable image sequence."""
-    eyepiece()  # raises with the install hint when the extra is missing
-    from eyepiece.prepared import (
-        ArrayChannel,
-        AxisSpec,
-        ImageView,
-        Scale,
-        Sequence,
-        resolve_bounds,
-    )
+    ep = eyepiece()  # raises with the install hint when the extra is missing
 
     cube = np.asarray(getattr(cube_or_thing, "intensity", cube_or_thing))
     half = cube.shape[-1] * pixscale_lod / 2.0
-    vmin, vmax = resolve_bounds(
+    vmin, vmax = ep.prepared.resolve_bounds(
         ((frame, None) for frame in cube), kind="log", bounds=bounds
     )
-    image = ImageView(
+    image = ep.prepared.ImageView(
         "psf",
         cube[0],
-        AxisSpec("x (lambda/D)", "y (lambda/D)", (-half, half), (-half, half)),
-        Scale("log", vmin, vmax, floor=vmin),
+        ep.prepared.AxisSpec("x (lambda/D)", "y (lambda/D)", (-half, half), (-half, half)),
+        ep.prepared.Scale("log", vmin, vmax, floor=vmin),
         quantity="intensity",
     )
-    return Sequence(
+    return ep.prepared.Sequence(
         image,
         times=times_s,
         time_unit="s",
-        channels=(ArrayChannel("psf", "data", cube),),
+        channels=(ep.prepared.ArrayChannel("psf", "data", cube),),
     )
 ```
 
@@ -326,7 +318,7 @@ every figure:
 ```python
 import eyepiece as ep
 
-styles = ep.SourceStyles(["star", "planet b", "planet c"])
+styles = ep.style.SourceStyles(["star", "planet b", "planet c"])
 ```
 
 `SourceStyles` assigns each name a color from the active palette in
