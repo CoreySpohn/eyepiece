@@ -55,8 +55,8 @@ _CMAP_ROLES = (
 _BAD_RGBA = (255, 0, 255, 255)
 
 # Marker cycle for `SourceCast.marker`, matching the one `SourceStyles`
-# (`eyepiece.layout`) already assigns colors and markers from, so a cast
-# and a legacy `SourceStyles` built from the same names agree on marker.
+# (`eyepiece.layout`) assigns markers from, so a cast and a `SourceStyles`
+# built from the same names agree on marker.
 _MARKERS = ("o", "s", "D", "^", "v", "P")
 
 
@@ -232,6 +232,12 @@ class SourceCast:
     the two separate is what lets one cast be reused against any profile
     (a dark-mode snapshot, a light-mode one, a future palette) without
     rebuilding it.
+
+    `eyepiece.SourceStyles` is the Matplotlib-side counterpart: it resolves
+    each name's color when it is built, for the primitives that draw
+    straight onto an Axes. Use a cast with the prepared-view renderers
+    (`eyepiece.mpl`, `eyepiece.manim`), and `eyepiece.MotifSet` when an
+    object should keep its look by key rather than by list position.
 
     Args:
         names: Source names, in slot-assignment order. Every name must be

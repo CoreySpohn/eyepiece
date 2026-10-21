@@ -160,6 +160,10 @@ class SourceStyles:
     separate calls -- agree exactly; nothing here depends on set or dict
     iteration order or any other source of nondeterminism.
 
+    This is the Matplotlib-side assignment. The prepared-view renderers take
+    an `eyepiece.style.SourceCast`, which fixes the same slots and markers
+    but leaves the color to a `RenderProfile` at render time.
+
     Args:
         names: Source names, in the order colors and markers are
             assigned.
