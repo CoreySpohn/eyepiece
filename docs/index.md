@@ -264,6 +264,7 @@ how-to/check-timing
 how-to/ground-a-symbol
 how-to/publish-a-scrubber-page
 how-to/add-cue-sounds
+how-to/render-a-clip-in-parallel
 ```
 
 ```{toctree}
