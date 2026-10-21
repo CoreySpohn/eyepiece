@@ -5,8 +5,10 @@ import hashlib
 import math
 import os
 import shutil
+import tempfile
 import uuid
 from collections.abc import Callable, Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from functools import partial
 from numbers import Integral, Real
@@ -186,11 +188,14 @@ def _variant_video(
     if target is None:
         target = out_dir / f"{spec.slug}-{variant.name}.mp4"
     target.parent.mkdir(parents=True, exist_ok=True)
-    silent = (
-        target.with_name(f".{target.stem}.silent.mp4") if variant.narrated else target
-    )
-    muxed = target.with_name(f".{target.stem}.mux.mp4")
-    try:
+    with (
+        tempfile.TemporaryDirectory(
+            prefix=f".{target.stem}.narration-", dir=target.parent
+        )
+        if variant.narrated
+        else nullcontext()
+    ) as scratch:
+        silent = Path(scratch) / "silent.mp4" if variant.narrated else target
         result = render_frames(
             partial(spec.build, venue, variant.mode),
             spec.frames,
@@ -211,13 +216,10 @@ def _variant_video(
         if variant.narrated:
             from eyepiece import narration
 
+            muxed = Path(scratch) / "mux.mp4"
             narration.mux(silent, audio, muxed)
             os.replace(muxed, target)
         return target, result.frames
-    finally:
-        if variant.narrated:
-            silent.unlink(missing_ok=True)
-            muxed.unlink(missing_ok=True)
 
 
 def _adopt_video(spec, variant, venue, out_dir, target, hold, audio, workers):

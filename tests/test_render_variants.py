@@ -315,7 +315,7 @@ def test_mux_failure_preserves_target_and_cleans_scratch(clip, tmp_path, monkeyp
             workers=1,
         )
     assert target.read_bytes() == b"existing video"
-    assert list(tmp_path.glob(".*.mp4")) == []
+    assert list(tmp_path.rglob("*.mp4")) == [target]
     assert manifest.entry(spec.slug, "doc-light-narrated") is None
 
 
@@ -586,7 +586,7 @@ def test_modes_use_active_backgrounds(clip, tmp_path):
     assert colors[0] != colors[1]
 
 
-def test_stale_narrated_scratch_is_overwritten(clip, tmp_path):
+def test_narrated_render_preserves_files_with_former_scratch_names(clip, tmp_path):
     audio = write_audio(tmp_path / "track.wav")
     spec = replace(clip, audio=lambda variant: audio)
     requested = [Variant("doc", "light", True)]
@@ -602,7 +602,10 @@ def test_stale_narrated_scratch_is_overwritten(clip, tmp_path):
     )[0].rendered
     assert builds(tmp_path / "builds")["doc-light"] == count + 1
     assert target.read_bytes() == before
-    assert list(tmp_path.glob(".*.mp4")) == []
+    for suffix in ("silent", "mux"):
+        assert (
+            tmp_path / f".{target.stem}.{suffix}.mp4"
+        ).read_bytes() == b"stale partial video"
 
 
 def test_variants_resume_their_own_chunks(clip, tmp_path, monkeypatch):
@@ -719,6 +722,41 @@ def test_invalid_target_rejected_before_build(clip, tmp_path, target):
             workers=1,
         )
     assert not (tmp_path / "builds").exists()
+
+
+@pytest.mark.parametrize("suffix", ["silent", "mux"])
+def test_custom_targets_survive_narration_scratch_collision(clip, tmp_path, suffix):
+    audio = write_audio(tmp_path / "track.wav")
+    silent_target = Path(f".clip.{suffix}.mp4")
+    saved = {}
+
+    def after(variant, out_dir):
+        if not variant.narrated:
+            saved["silent"] = (out_dir / silent_target).read_bytes()
+        return []
+
+    spec = replace(
+        clip,
+        audio=lambda variant: audio,
+        target_for=lambda variant: "clip.mp4" if variant.narrated else silent_target,
+        after=after,
+    )
+    requested = [Variant("doc", "light"), Variant("doc", "dark", True)]
+    manifest = Manifest(tmp_path / "manifest.json")
+    results = render_variants(spec, requested, tmp_path, manifest=manifest, workers=1)
+    assert all(result.rendered for result in results)
+    assert [result.outputs for result in results] == [
+        [silent_target.as_posix()],
+        ["clip.mp4"],
+    ]
+    assert (tmp_path / silent_target).read_bytes() == saved["silent"]
+    assert decode(tmp_path / "clip.mp4").shape[0] == spec.frames
+    loaded = Manifest.load(manifest.path)
+    assert all(
+        loaded.current(spec.slug, result.variant.name, result.key) for result in results
+    )
+    kept = render_variants(spec, requested, tmp_path, manifest=loaded, workers=1)
+    assert not any(result.rendered for result in kept)
 
 
 def test_duplicate_targets_rejected_before_build(clip, tmp_path):
