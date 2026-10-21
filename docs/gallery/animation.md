@@ -245,8 +245,7 @@ with tempfile.TemporaryDirectory() as tmp_dir:
 emits a `RuntimeWarning` once, `"ignore"` skips the check for a rescaling that
 is the point, and `"raise"` throws `ScaleDriftError` and deletes every file the
 call had started, so a batch render never leaves a movie with a quietly
-changing axis behind. It replaces `allow_rescale`, which still works for one
-release and warns that it is deprecated.
+changing axis behind.
 
 ## Presets
 

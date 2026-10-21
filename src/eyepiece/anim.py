@@ -626,7 +626,6 @@ def record(
     plan=None,
     stills_dpi=None,
     snap=False,
-    allow_rescale=None,
 ):
     """Open every output file at once and record `fig` frame by frame.
 
@@ -714,9 +713,6 @@ def record(
             and jumping a pixel; a frame then matches a snapped still of the
             same state only to within half a pixel. True keeps the snapping
             of a still.
-        allow_rescale: Deprecated; `True` means ``on_rescale="ignore"``. It
-            warns with a `DeprecationWarning` and will be removed in a later
-            release.
 
     Yields:
         A recorder with `.frame()` and `.hold(n)`.
@@ -731,7 +727,8 @@ def record(
             or if the block exits without ever grabbing a frame, or before
             the frame a still asked for.
     """
-    on_rescale = _resolve_on_rescale(on_rescale, allow_rescale)
+    if on_rescale not in _ON_RESCALE:
+        raise ValueError(f"on_rescale must be one of {_ON_RESCALE}, got {on_rescale!r}")
     still_frames = _resolve_stills(stills, plan, fps)
     if plan is not None:
         plan._read.clear()
@@ -819,25 +816,6 @@ def _warn_unused_knobs(plan):
             RuntimeWarning,
             stacklevel=3,
         )
-
-
-def _resolve_on_rescale(on_rescale, allow_rescale):
-    """The effective `on_rescale`, folding in the deprecated `allow_rescale`."""
-    if on_rescale not in _ON_RESCALE:
-        raise ValueError(f"on_rescale must be one of {_ON_RESCALE}, got {on_rescale!r}")
-    if allow_rescale is None:
-        return on_rescale
-    warnings.warn(
-        "record(allow_rescale=) is deprecated; pass on_rescale='ignore' instead of "
-        "allow_rescale=True (the default on_rescale='warn' is allow_rescale=False)",
-        DeprecationWarning,
-        stacklevel=4,
-    )
-    if allow_rescale:
-        if on_rescale == "raise":
-            raise ValueError("allow_rescale=True contradicts on_rescale='raise'")
-        return "ignore"
-    return on_rescale
 
 
 def _resolve_stills(stills, plan, fps):

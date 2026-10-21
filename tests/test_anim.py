@@ -917,33 +917,6 @@ def test_on_rescale_rejects_unknown_value(tmp_path):
     plt.close(fig)
 
 
-def test_allow_rescale_deprecation_warns_once_and_still_works(tmp_path):
-    fig, ax = plt.subplots()
-    (line,) = ax.plot([0, 1], [0, 5.3])
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        with record(fig, tmp_path / "a.gif", fps=5, allow_rescale=True) as rec:
-            _drifting(fig, ax, line, rec)
-    assert [w.category for w in caught] == [DeprecationWarning]
-    assert "on_rescale" in str(caught[0].message)
-    assert caught[0].filename == __file__
-    plt.close(fig)
-
-
-def test_allow_rescale_false_keeps_the_check_and_conflict_is_an_error(tmp_path):
-    fig, ax = plt.subplots()
-    (line,) = ax.plot([0, 1], [0, 5.3])
-    with pytest.warns(DeprecationWarning), pytest.warns(RuntimeWarning):
-        with record(fig, tmp_path / "f.gif", fps=5, allow_rescale=False) as rec:
-            _drifting(fig, ax, line, rec)
-    with pytest.warns(DeprecationWarning), pytest.raises(ValueError, match="contra"):
-        with record(
-            fig, tmp_path / "g.gif", fps=5, allow_rescale=True, on_rescale="raise"
-        ):
-            pass
-    plt.close(fig)
-
-
 def _stills_figure():
     fig, ax = plt.subplots(figsize=(2.4, 1.8))
     (line,) = ax.plot([0, 1], [0, 1])
