@@ -137,27 +137,22 @@ the clip's clock and nothing about what the clip does with them.
 `Narration.place(key, start_s, end_s=None)` lays one line on the clock, purely;
 a cue is the start of its word, with no lead.
 
-The clip places its moves on the words through `eyepiece.Timeline`. A
-verb with no `at=` starts on its mark: `enter`, `text` and `caption` on
-`show:<name>` a tenth of a second ahead of the word, `pulse` on
-`indicate:<name>` centered on the word, `ring` on `circumscribe:<name>`
-starting on the word, and `move` on `move:<name>`. A mark in the current or an
-earlier line can be named with `cue="kind:target"`, and a mark in a later line
-cannot be waited on. A line lasts until its speech and padding end or until
-its last moving span ends plus 0.6 s, whichever is later, and the next line
-starts there; the pulses and rings of a line never hold it open. This replaces
-the hand-typed holds, the per-line minimum lengths and the second layout pass.
-A span whose mark falls while the cursor is still busy starts late; up to
-`max_late_s` (0.5 s by default, a `Timeline` argument) that is noted, and
-beyond it the timeline raises, naming the span, its cue word and the seconds.
-Line keys and section names have a namespace of their own, so a line and a
-span may share a name. A mid-clip still is the last frame of a span with
-`stills={"x.png": (span, "last")}`, not `span.end`.
-
-`Narration(min_s=)` and `Narration.load(..., min_s=)` still work for one
-minor release and warn with a `DeprecationWarning`: the value is a duration
-from the start of each line, and `ends=` (an absolute end time) or a
-`Timeline` replaces it.
+The clip places its moves on the words through `eyepiece.Timeline`. A verb
+with no `at=` starts on its mark: `enter`, `text` and `caption` on
+`show:<name>` a tenth of a second ahead of the word, `indicate` on
+`indicate:<name>` centered on the word, `circumscribe` on
+`circumscribe:<name>` starting on the word, and `move` on `move:<name>`. A
+mark in the current or an earlier line can be named with `cue="kind:target"`,
+and a mark in a later line cannot be waited on. A line lasts until its speech
+and padding end or until its last moving span ends plus 0.6 s, whichever is
+later, and the next line starts there; the indications and outlines of a line
+never hold it open. This replaces the hand-typed holds, the per-line minimum
+lengths and the second layout pass. A span whose mark falls while the cursor
+is still busy starts late; up to `max_late_s` (0.5 s by default, a `Timeline`
+argument) that is noted, and beyond it the timeline raises, naming the span,
+its cue word and the seconds. Line keys and section names have a namespace of
+their own, so a line and a span may share a name. A mid-clip still is the last
+frame of a span with `stills={"x.png": (span, "last")}`, not `span.end`.
 
 See {doc}`../tutorials/narrated` for a clip that places these spans and
 {doc}`../how-to/bind-a-move-to-a-knob` for the draw function.
@@ -167,12 +162,12 @@ that object is the one `audio_track`, `mux` and the captions take. A line must
 be opened for every line of the script, and a mark that no verb fires is a
 fault, so a retyped line cannot leave a cue silent. The same function with
 `narration=None` builds the silent clip: `section(name)` replaces `line(key)`,
-captions leave once read, and a pulse or ring placed only by a cue is skipped
-and recorded in `plan.faults` as information. `cues` lists every cue, and
-`check(kinds=..., targets=...)` raises on a mark the clip does not handle, and
-with `used=True` on one it never asked for. Narration measures the pace of the
-speech, so it takes the place of `Tempo` for the lines it covers. A transition
-is eased and overlapped with the speech, for example with
+captions leave once read, and an indication or outline placed only by a cue is
+skipped and recorded in `plan.faults` as information. `cues` lists every cue,
+and `check(kinds=..., targets=...)` raises on a mark the clip does not handle,
+and with `used=True` on one it never asked for. Narration measures the pace of
+the speech, so it takes the place of `Tempo` for the lines it covers. A
+transition is eased and overlapped with the speech, for example with
 `Stage.weigh(levels, ease="smoothstep")`.
 
 ## Audio and captions

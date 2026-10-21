@@ -218,7 +218,7 @@ def test_staccato_clip_has_no_motion_fault(seconds):
     fig, ax = _axes()
     build = ep.build_axes(ax, style="staccato")
     faults = ept.motion_faults(
-        fig, lambda t: build.update(t / seconds), ept.Span(0, seconds), moves=[build]
+        fig, lambda t: build.update(t / seconds), ept.Window(0, seconds), moves=[build]
     )
     assert faults == []
 

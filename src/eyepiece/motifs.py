@@ -29,6 +29,7 @@ Example::
 """
 
 import dataclasses
+import warnings
 from collections.abc import Mapping
 
 import hwostyle
@@ -330,7 +331,7 @@ def _label_in(role, mark, mode):
 
 
 def resolve_role(role, mode=None):
-    """Hex color for a motif role or neutral rank.
+    """Deprecated: use `eyepiece.role`, which takes a rank and ``mode=`` too.
 
     Args:
         role: A hwostyle color role (``"star"``, ``"model"``) or a neutral rank
@@ -338,18 +339,15 @@ def resolve_role(role, mode=None):
         mode: A hwostyle mode name, or None for the active mode.
 
     Returns:
-        A hex string.
-
-    Raises:
-        KeyError: If the name is neither a role nor a rank.
+        A hex string, the same as ``eyepiece.role(role, mode=mode)``.
     """
-    ranks = _ranks()
-    if role in ranks:
-        level = ranks[role]
-        if level is None:
-            return _role_in(role, mode)
-        return _neutral_in(level, mode)
-    return _role_in(role, mode)
+    warnings.warn(
+        "eyepiece.motifs.resolve_role is deprecated; use "
+        "eyepiece.role(name, mode=...), which resolves neutral ranks too",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _style.role(role, mode=mode)
 
 
 def is_hue_role(role):
@@ -409,11 +407,11 @@ class Motif:
     @property
     def color(self):
         """The color in the active mode, resolved now."""
-        return resolve_role(self.role)
+        return _style.role(self.role)
 
     def resolve(self, mode=None):
         """The color in a named mode, or in the active mode when None."""
-        return resolve_role(self.role, mode)
+        return _style.role(self.role, mode=mode)
 
     def resolve_label(self, mode=None):
         """Text color for this motif's label in a mode (the active one when None).
@@ -744,4 +742,4 @@ class MotifSet(Mapping):
         return _style.dim_level()
 
 
-__all__ = ["AcceptedPair", "Motif", "MotifSet", "is_hue_role", "resolve_role"]
+__all__ = ["AcceptedPair", "Motif", "MotifSet", "is_hue_role"]

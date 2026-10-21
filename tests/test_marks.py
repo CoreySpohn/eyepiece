@@ -16,7 +16,9 @@ import eyepiece as ep
     ],
 )
 def test_excluded_run_midpoints(orient, log, x, expected):
-    result = ep.spans(x, ~np.array([True, False, False, True]), orient=orient, log=log)
+    result = ep.shade_intervals(
+        x, ~np.array([True, False, False, True]), orient=orient, log=log
+    )
     assert isinstance(result, ep.PlotResult)
     assert set(result.artists) == {"fill"}
     assert len(result.artists["fill"]) == 1
@@ -32,7 +34,7 @@ def test_excluded_run_midpoints(orient, log, x, expected):
 
 def test_true_mask_shades_end_runs():
     x = [0, 1, 2, 3]
-    result = ep.spans(x, [True, False, False, True])
+    result = ep.shade_intervals(x, [True, False, False, True])
     patches = result.artists["fill"]
     np.testing.assert_allclose([p.get_x() for p in patches], [-0.5, 2.5])
     np.testing.assert_allclose([p.get_width() for p in patches], [1, 1])
@@ -43,7 +45,7 @@ def test_true_mask_shades_end_runs():
 def test_infinite_intervals_clip_to_handed_limits(orient):
     fig, ax = plt.subplots()
     ax.set(xlim=(2, 8), ylim=(2, 8))
-    result = ep.spans(
+    result = ep.shade_intervals(
         intervals=[[-np.inf, 4], [6, np.inf]],
         ax=ax,
         orient=orient,
@@ -63,15 +65,15 @@ def test_infinite_intervals_clip_to_handed_limits(orient):
 
 
 def test_run_endpoints_empty_and_singleton():
-    result = ep.spans([0, 2, 4], [True, False, True])
+    result = ep.shade_intervals([0, 2, 4], [True, False, True])
     np.testing.assert_allclose([p.get_x() for p in result.artists["fill"]], [-1, 3])
     np.testing.assert_allclose([p.get_width() for p in result.artists["fill"]], [2, 2])
     plt.close(result.fig)
     for x, mask in [([], []), ([1], [False])]:
-        result = ep.spans(x, mask)
+        result = ep.shade_intervals(x, mask)
         assert not result.artists["fill"]
         plt.close(result.fig)
-    result = ep.spans([1], [True], log=True)
+    result = ep.shade_intervals([1], [True], log=True)
     patch = result.artists["fill"][0]
     np.testing.assert_allclose(
         [patch.get_x(), patch.get_width()], [10**-0.5, 10**0.5 - 10**-0.5]
@@ -138,7 +140,7 @@ def test_floor_tick_and_break(axis, break_mark):
 @pytest.mark.parametrize(
     "draw",
     [
-        lambda ax: ep.spans([0, 1], [False, True], ax=ax),
+        lambda ax: ep.shade_intervals([0, 1], [False, True], ax=ax),
         lambda ax: ep.ref_line(ax, 1, "reference"),
         lambda ax: ep.log_zero_floor(ax, 1e-3),
     ],
@@ -164,17 +166,17 @@ def test_invalid_floor(floor):
 
 def test_invalid_spans():
     with pytest.raises(ValueError, match="positive"):
-        ep.spans([0, 1], [True, False], log=True)
+        ep.shade_intervals([0, 1], [True, False], log=True)
     with pytest.raises(ValueError, match=r"expected.*received"):
-        ep.spans([1, 2], [True])
+        ep.shade_intervals([1, 2], [True])
     with pytest.raises(ValueError, match="either"):
-        ep.spans([1], [True], intervals=[[0, 2]])
+        ep.shade_intervals([1], [True], intervals=[[0, 2]])
 
 
 def test_passthrough_aliases_override_defaults():
     from matplotlib.colors import to_rgba
 
-    result = ep.spans([0, 1], [False, True], fill_kw={"fc": "red"})
+    result = ep.shade_intervals([0, 1], [False, True], fill_kw={"fc": "red"})
     np.testing.assert_allclose(
         result.artists["fill"][0].get_facecolor(), to_rgba("red")
     )

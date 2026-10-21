@@ -29,9 +29,9 @@ def test_collapse_copy_is_continuous():
     hwostyle.use("dark")
     ns = {"np": np, "plt": plt, "ep": ep}
     exec(_gallery_cell("motion-staging", "gather = ep.collapse("), ns)
-    ept.assert_motion(ns["fig"], lambda t: ns["gather"].update(t / 2), ept.Span(0, 2))
+    ept.assert_motion(ns["fig"], lambda t: ns["gather"].update(t / 2), ept.Window(0, 2))
     ept.assert_motion(
-        ns["fig"], lambda t: ns["gather"].update(1, carry=t / 2), ept.Span(0, 2)
+        ns["fig"], lambda t: ns["gather"].update(1, carry=t / 2), ept.Window(0, 2)
     )
     without_landing = ep.collapse(
         ns["left"],
@@ -43,7 +43,7 @@ def test_collapse_copy_is_continuous():
         colors="C3",
     )
     ept.assert_motion(
-        ns["fig"], lambda t: without_landing.update(t / 2), ept.Span(0, 2)
+        ns["fig"], lambda t: without_landing.update(t / 2), ept.Window(0, 2)
     )
 
 
@@ -61,7 +61,7 @@ def test_morph_ghost_fades_continuously_at_both_ends():
         a_kw={"edgecolor": "C0", "facecolor": "none"},
         b_kw={"edgecolor": "C1", "facecolor": "C1", "alpha": 0.4},
     )
-    ept.assert_motion(fig, lambda t: move.update(t / 2), ept.Span(0, 2))
+    ept.assert_motion(fig, lambda t: move.update(t / 2), ept.Window(0, 2))
 
 
 def test_follow_zoom_halos_fade_continuously():
@@ -69,7 +69,7 @@ def test_follow_zoom_halos_fade_continuously():
     ax.imshow(np.zeros((20, 20)), extent=(-6, 6, -4, 4), vmin=-1, vmax=1)
     ax.set(xlim=(-6, 6), ylim=(-4, 4), xticks=[], yticks=[])
     move = ep.follow_zoom(ax, (-2, -1), size=0.36)
-    ept.assert_motion(fig, lambda t: move.update(t / 2), ept.Span(0, 2))
+    ept.assert_motion(fig, lambda t: move.update(t / 2), ept.Window(0, 2))
 
 
 def test_gallery_emphasis_labels_stay_inside_frame():
@@ -77,7 +77,7 @@ def test_gallery_emphasis_labels_stay_inside_frame():
     ns = {"np": np, "plt": plt, "ep": ep}
     exec(_gallery_cell("motion-attention", "ring = ep.circumscribe(orbiter"), ns)
     fig = ns["fig"]
-    ept.assert_motion(fig, lambda t: ns["pulse"].update(t / 2), ept.Span(0, 2))
+    ept.assert_motion(fig, lambda t: ns["pulse"].update(t / 2), ept.Window(0, 2))
 
 
 def test_gallery_quad_image_unroll_settles_continuously():
@@ -103,7 +103,7 @@ def test_gallery_quad_image_unroll_settles_continuously():
     ax.set(xlim=(-14, 14), ylim=(-14, 14), xticks=[], yticks=[])
     move = ep.quad_image(np.arange(4).reshape(2, 2), corners, ax=ax)
     ept.assert_motion(
-        fig, lambda t: move.update(quads=ns["unroll"](t / 2)), ept.Span(0, 2)
+        fig, lambda t: move.update(quads=ns["unroll"](t / 2)), ept.Window(0, 2)
     )
 
 

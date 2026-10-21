@@ -292,6 +292,10 @@ def render(view, *, ax=None, axes=None, cast=None, profile=None):
 def animate(sequence, *, run_time, fps=30, ax=None, axes=None, cast=None, profile=None):
     """Play a prepared `Sequence` through the multi-sink `eyepiece.Animation`.
 
+    `eyepiece.animate` takes a figure and a draw callable instead of a
+    sequence; this function builds both from the sequence and calls it.
+    `eyepiece.manim.animate` plays the same sequence in Manim.
+
     Output frames follow `sequence.schedule(run_time=run_time, fps=fps)`:
     `ceil(run_time * fps)` physical times spanning the first through the
     last sample, so the encoded duration is that count over `fps` and the

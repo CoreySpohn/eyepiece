@@ -123,6 +123,10 @@ class _SequencePlayback(manim.Animation):
 def animate(sequence, *, cast=None, profile=None):
     """Render a prepared `Sequence` for replayable Manim playback.
 
+    `eyepiece.mpl.animate` plays the same sequence through Matplotlib, and
+    `eyepiece.animate` takes a Matplotlib figure and a draw callable in place
+    of a sequence.
+
     The clip shows frame 0 until played or seeked. No scientific
     calculation happens after this call: playback and seeking only index
     the sequence's prepared arrays and update the rendered mobjects.

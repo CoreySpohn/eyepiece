@@ -36,17 +36,18 @@ PLANET_XY = (8.0 * np.cos(2.4), 8.0 * np.sin(2.4))
 
 ## A timeline
 
-A `Timeline` declares named spans in seconds. A span is the one primitive:
-a hold, a subject entering or leaving, a move, a caption arriving, a pulse,
-a ring. Each span writes the knobs it names, and `Timeline.at_fps` derives
-every knob on every frame from them, so a draw function never sees time. A
-hold may step knobs when it starts, a new title for instance; a move ramps
-numeric knobs (linearly, or in log space for widths and other scales) and
-changes nothing else, so text never arrives during motion. `read` sizes a
-hold from the words on screen by the reading rule of `Tempo`. Resolving the
-timeline for a frame rate gives a `Plan`, whose frames are plain dicts, one
-per frame, and whose `progress` reads any span's clock. Here the zoom span
-writes no knob: its clock drives a camera path in the {doc}`camera catalog <motion-camera>`.
+A `Timeline` declares named spans in seconds. A span is the one primitive: a
+hold, a subject entering or leaving, a move, a caption arriving, an
+indication, an outline. Each span writes the knobs it names, and
+`Timeline.at_fps` derives every knob on every frame from them, so a draw
+function never sees time. A hold may step knobs when it starts, a new title
+for instance; a move ramps numeric knobs (linearly, or in log space for widths
+and other scales) and changes nothing else, so text never arrives during
+motion. `read` sizes a hold from the words on screen by the reading rule of
+`Tempo`. Resolving the timeline for a frame rate gives a `Plan`, whose frames
+are plain dicts, one per frame, and whose `progress` reads any span's clock.
+Here the zoom span writes no knob: its clock drives a camera path in the
+{doc}`camera catalog <motion-camera>`.
 
 ```{code-cell} python
 FULL = (0.0, 0.0, 28.0)
@@ -102,20 +103,20 @@ after another without float drift (a `Time` adds exactly). Without `at=`, a
 span starts at the cursor `now` and moves it on; with `at=` it starts where
 told and the cursor stays. `together` starts a group at `now` and `stagger`
 spaces its targets. A subject span writes the knob of its own name, so
-`enter("star")` ramps `star` from 0 to 1, `pulse("speckle")` ramps
-`pulse.speckle`, and a caption writes `caption.<name>`.
+`enter("star")` ramps `star` from 0 to 1, `indicate("speckle")` ramps
+`indicate.speckle`, and a caption writes `caption.<name>`.
 
 Given a `Narration`, the same function lays each span on the word that names
-it. A mark `{show:star}` starts `enter("star")` a tenth of a second before
-the word, `{indicate:speckle}` centers the pulse on its word, and
-`{circumscribe:halo}` starts the ring on it. Lines open in script order with
-`line`, and a line lasts until its speech and padding end or its last
+it. A mark `{show:star}` starts `enter("star")` a tenth of a second before the
+word, `{indicate:speckle}` centers the indication on its word, and
+`{circumscribe:halo}` starts the outline on it. Lines open in script order
+with `line`, and a line lasts until its speech and padding end or its last
 moving span ends plus 0.6 s, whichever is later. Run without a narration, the
 function builds the silent clip: sections replace lines, a caption leaves once
-it has been read, and a pulse or ring that only a cue places is skipped and
-recorded in `plan.faults` as information. The plan also lists its events
-(starts, middles, ends and cues, each with the frame that shows it) and the
-frames a contact sheet should draw.
+it has been read, and an indication or outline that only a cue places is
+skipped and recorded in `plan.faults` as information. The plan also lists its
+events (starts, middles, ends and cues, each with the frame that shows it) and
+the frames a contact sheet should draw.
 
 ```{code-cell} python
 from eyepiece import narration as nr
@@ -141,10 +142,10 @@ def clip(narration=None):
     part = tl.line if narration is not None else tl.section
     part("find")
     tl.enter("star")
-    tl.pulse("speckle")
+    tl.indicate("speckle")
     part("reveal")
     tl.enter("planet", caption="a planet, 1e-10 of the star")
-    tl.ring("halo")
+    tl.circumscribe("halo")
     return tl
 
 

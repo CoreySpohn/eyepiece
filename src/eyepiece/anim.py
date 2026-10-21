@@ -67,9 +67,10 @@ The mechanics this module does own, each closing a specific trap:
 `record(fig, "talk.mp4", **PRESETS["talk"])`. The ``talk`` preset runs at
 60 fps: the default ease moves fastest at mid-move, and 30 fps still judders
 there on turns and camera moves. ``talk_60`` is the same pair under its old
-name. The documentation presets run at 30 fps, which keeps a slow move smooth
-and costs little in bytes for flat graphics. `talk_rc` sizes type and strokes
-for a talk frame from its height; documentation figures keep their own sizes.
+name; reading it warns with a `DeprecationWarning`. The documentation presets
+run at 30 fps, which keeps a slow move smooth and costs little in bytes for
+flat graphics. `talk_rc` sizes type and strokes for a talk frame from its
+height; documentation figures keep their own sizes.
 ``doc_hd`` rasterizes at 200 dpi, the resolution of a documentation still,
 so a clip beside its still is not visibly softer on a 2x screen.
 
@@ -83,6 +84,7 @@ import tempfile
 import warnings
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
+from types import MappingProxyType
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -99,14 +101,45 @@ from eyepiece._ffmpeg import (
 )
 from eyepiece._motion import frame_count
 
-PRESETS = {
-    "talk": {"fps": 60, "dpi": 120},
-    "talk_60": {"fps": 60, "dpi": 120},
-    "gif": {"fps": 8, "dpi": 85},
-    "jshtml": {"fps": 14, "dpi": 100},
-    "docs": {"fps": 30, "dpi": 100},
-    "doc_hd": {"fps": 30, "dpi": 200},
-}
+
+class _Presets(dict):
+    """The preset table; reading a deprecated key warns and names its successor."""
+
+    _RENAMED = MappingProxyType({"talk_60": "talk"})
+
+    def __getitem__(self, key):
+        """The preset `key`, with a warning when `key` is a deprecated name."""
+        self._warn(key)
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        """The preset `key`, or `default`; a deprecated name warns as for `[]`."""
+        if key not in self:
+            return default
+        self._warn(key)
+        return super().__getitem__(key)
+
+    def _warn(self, key):
+        # Called directly from each public method, so stacklevel 3 is the caller.
+        if key in self._RENAMED:
+            warnings.warn(
+                f"PRESETS[{key!r}] is deprecated; use PRESETS"
+                f"[{self._RENAMED[key]!r}], the same fps and dpi",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+
+
+PRESETS = _Presets(
+    {
+        "talk": {"fps": 60, "dpi": 120},
+        "talk_60": {"fps": 60, "dpi": 120},
+        "gif": {"fps": 8, "dpi": 85},
+        "jshtml": {"fps": 14, "dpi": 100},
+        "docs": {"fps": 30, "dpi": 100},
+        "doc_hd": {"fps": 30, "dpi": 200},
+    }
+)
 
 # Line ends and corners for video: butt caps, so a line is exactly as long as
 # it is measured (a projecting cap adds half the width at each end), and round
@@ -593,7 +626,6 @@ def record(
     plan=None,
     stills_dpi=None,
     snap=False,
-    allow_rescale=None,
 ):
     """Open every output file at once and record `fig` frame by frame.
 
@@ -671,7 +703,8 @@ def record(
             knob the draw function never read (through `Plan.value`,
             `Plan.frames` or `Plan.progress`) and every knob that never
             changes over the clip: a clip whose concept is motion needs a knob
-            that moves. The ``pulse.*`` and ``ring.*`` knobs are exempt.
+            that moves. The ``indicate.*`` and ``circumscribe.*`` knobs are
+            exempt, as `Plan.unused_knobs` describes.
         stills_dpi: Dpi of the stills; None uses the first sink's dpi, which
             makes a still pixel-identical to that sink's frame.
         snap: Whether Agg snaps markers, axis-aligned lines and rectilinear
@@ -680,9 +713,6 @@ def record(
             and jumping a pixel; a frame then matches a snapped still of the
             same state only to within half a pixel. True keeps the snapping
             of a still.
-        allow_rescale: Deprecated; `True` means ``on_rescale="ignore"``. It
-            warns with a `DeprecationWarning` and will be removed in a later
-            release.
 
     Yields:
         A recorder with `.frame()` and `.hold(n)`.
@@ -697,7 +727,8 @@ def record(
             or if the block exits without ever grabbing a frame, or before
             the frame a still asked for.
     """
-    on_rescale = _resolve_on_rescale(on_rescale, allow_rescale)
+    if on_rescale not in _ON_RESCALE:
+        raise ValueError(f"on_rescale must be one of {_ON_RESCALE}, got {on_rescale!r}")
     still_frames = _resolve_stills(stills, plan, fps)
     if plan is not None:
         plan._read.clear()
@@ -785,25 +816,6 @@ def _warn_unused_knobs(plan):
             RuntimeWarning,
             stacklevel=3,
         )
-
-
-def _resolve_on_rescale(on_rescale, allow_rescale):
-    """The effective `on_rescale`, folding in the deprecated `allow_rescale`."""
-    if on_rescale not in _ON_RESCALE:
-        raise ValueError(f"on_rescale must be one of {_ON_RESCALE}, got {on_rescale!r}")
-    if allow_rescale is None:
-        return on_rescale
-    warnings.warn(
-        "record(allow_rescale=) is deprecated; pass on_rescale='ignore' instead of "
-        "allow_rescale=True (the default on_rescale='warn' is allow_rescale=False)",
-        DeprecationWarning,
-        stacklevel=4,
-    )
-    if allow_rescale:
-        if on_rescale == "raise":
-            raise ValueError("allow_rescale=True contradicts on_rescale='raise'")
-        return "ignore"
-    return on_rescale
 
 
 def _resolve_stills(stills, plan, fps):
@@ -1238,6 +1250,11 @@ def animate(fig, draw, frames, *, fps=10, n_frames=None):
     build new ones -- this module never clears anything, so re-plotting each
     frame would stack artists up. To animate in redraw style instead, call
     `ax.clear()` inside `draw`.
+
+    Two functions share the name and take a prepared `Sequence` instead of a
+    figure and a draw callable: `eyepiece.mpl.animate` plays one through this
+    function, and `eyepiece.manim.animate` plays one in Manim. Use this one
+    when the caller owns the figure and the per-frame update.
 
     Example::
 

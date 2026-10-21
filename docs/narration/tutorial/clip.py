@@ -33,7 +33,7 @@ def make_timeline(narration):
     tl.line("profile")
     tl.enter("profile", 2.0)
     tl.line("marker")
-    tl.pulse("marker")
+    tl.indicate("marker")
     tl.line("close")
     return tl
 
@@ -148,5 +148,5 @@ class Scene:
         self.result.artists["image"].set_alpha(plan.value(k, "image"))
         self.reveal.update(plan.value(k, "profile"))
         self.marker.set_alpha(plan.value(k, "profile"))
-        self.emphasis.update(plan.value(k, "pulse.marker"))
+        self.emphasis.update(plan.value(k, "indicate.marker"))
         self.caption.set_text(nr.caption_at(cues, k / plan.fps))

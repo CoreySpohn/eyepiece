@@ -172,7 +172,7 @@ def spans_json_plan():
         tl.move("go", 0.7222222, to={"x": 1.0})
         tl.settle()
         reading = tl.read("three short words", name="reading")
-        tl.pulse("subject", at=reading.start)
+        tl.indicate("subject", at=reading.start)
         tl.click("subject")
         tl.caption("label", "two words")
     return tl.at_fps(30)
@@ -183,7 +183,7 @@ def test_spans_json_without_holds_keeps_every_other_span(spans_json_plan):
     expected_names = {
         "subject",
         "go",
-        "pulse.subject",
+        "indicate.subject",
         "click.subject",
         "label",
         "label.leave",
@@ -192,7 +192,7 @@ def test_spans_json_without_holds_keeps_every_other_span(spans_json_plan):
         "hold",
         "enter",
         "move",
-        "pulse",
+        "indicate",
         "run",
         "caption",
         "leave",
@@ -519,27 +519,27 @@ def test_bad_arguments_are_refused_with_the_valid_choices():
 def test_a_pulse_past_the_end_is_truncated_at_the_clip_and_recorded():
     tl = ep.Timeline()
     tl.hold(1.0)
-    tl.pulse("p", at=0.5)
+    tl.indicate("p", at=0.5)
     plan = tl.at_fps(10)
     assert plan.n_frames == 10
-    span = plan.spans["pulse.p"]
+    span = plan.spans["indicate.p"]
     assert (span.k0, span.n) == (5, 9)  # the speed is kept: 0.9 s is 9 frames
     assert _codes(plan) == ["clamped-to-clip"]
     assert plan.faults[0].severity == "info"
     assert "truncated by 4 frames" in plan.faults[0].message
-    assert plan.value(9, "pulse.p") == pytest.approx(plan.progress(9, "pulse.p"))
-    assert plan.progress(9, "pulse.p") == pytest.approx(5 / 9)
+    assert plan.value(9, "indicate.p") == pytest.approx(plan.progress(9, "indicate.p"))
+    assert plan.progress(9, "indicate.p") == pytest.approx(5 / 9)
 
 
 def test_a_truncated_pulse_runs_at_full_speed_not_compressed():
     tl = ep.Timeline()
     tl.hold(1.0)
-    tl.pulse("p", at=0.1)
-    full = tl.at_fps(30).spans["pulse.p"].n
+    tl.indicate("p", at=0.1)
+    full = tl.at_fps(30).spans["indicate.p"].n
     tl2 = ep.Timeline()
     tl2.hold(1.0)
-    tl2.pulse("p", at=0.5)
-    cut = tl2.at_fps(30).spans["pulse.p"]
+    tl2.indicate("p", at=0.5)
+    cut = tl2.at_fps(30).spans["indicate.p"]
     assert cut.n == full == 27
 
 
@@ -614,7 +614,7 @@ def test_a_caption_declared_with_its_subject_arrives_before_it_in_a_silent_clip(
 def test_pulses_and_leaves_may_overlap_motion():
     tl = ep.Timeline({"x": 0.0})
     m = tl.move("m", 2.0, to={"x": 1.0})
-    tl.pulse("p", at=m.start + 0.2)
+    tl.indicate("p", at=m.start + 0.2)
     tl.leave("gone", 0.5, at=m.start + 0.5)
     tl.at_fps(10)
 
@@ -817,7 +817,7 @@ def test_stagger_chains_extending_verbs_and_leaves_now_after_the_group():
 def test_stagger_of_a_pulse_does_not_move_now():
     tl = ep.Timeline()
     tl.hold(1.0)
-    spans = tl.stagger("pulse", ["a", "b"], each_s=0.3)
+    spans = tl.stagger("indicate", ["a", "b"], each_s=0.3)
     assert [float(s.start) for s in spans] == [1.0, 1.3]
     assert tl.now == 1.0
 
@@ -843,7 +843,7 @@ def test_a_section_ends_at_its_last_extending_span_not_at_a_pulse():
     tl = ep.Timeline()
     one = tl.section("one")
     e = tl.enter("e", 1.0)
-    tl.pulse("p", at=e.start + 0.5)
+    tl.indicate("p", at=e.start + 0.5)
     two = tl.section("two")
     assert one.end == 1.0 and two.start == 1.0
 
@@ -861,7 +861,7 @@ def test_a_tempo_paces_holds_enters_and_moves_but_not_runs_or_attention():
     h = tl.hold(1.0)
     e = tl.enter("e", 1.0)
     r = tl.run("r", 1.0, to={"p": 1.0})
-    p = tl.pulse("t", at=0.0)
+    p = tl.indicate("t", at=0.0)
     assert h.end - h.start == 2.0 and e.end - e.start == 2.0
     assert r.end - r.start == 1.0
     assert p.end - p.start == pytest.approx(0.9)
@@ -928,19 +928,19 @@ def test_a_never_caption_stays_and_a_next_caption_leaves_when_the_next_arrives()
 def test_an_attention_span_placed_only_by_a_cue_is_skipped_and_recorded():
     tl = ep.Timeline()
     tl.enter("a", 1.0)
-    skipped = tl.pulse("a")
-    placed = tl.pulse("a", at=0.0)
+    skipped = tl.indicate("a")
+    placed = tl.indicate("a", at=0.0)
     plan = tl.at_fps(10)
     assert skipped.extends is False and skipped.start == skipped.end
-    assert plan.spans["pulse.a"].start_s == 0.0
+    assert plan.spans["indicate.a"].start_s == 0.0
     infos = [f for f in plan.faults if f.code == "skipped"]
     assert len(infos) == 1 and infos[0].severity == "info"
-    assert placed.name == "pulse.a"
+    assert placed.name == "indicate.a"
 
     only = ep.Timeline()
     only.hold(1.0)
-    only.pulse("z")
-    assert only.at_fps(10).value(5, "pulse.z") == 0.0
+    only.indicate("z")
+    assert only.at_fps(10).value(5, "indicate.z") == 0.0
 
 
 def test_a_cue_is_ignored_without_narration_and_line_needs_one():
@@ -1081,7 +1081,7 @@ def test_unused_knobs_counts_value_frames_and_progress_reads_and_skips_pulse_kno
     tl = ep.Timeline({"a": 0.0, "b": 0.0, "c": 0.0, "d": 1.0})
     tl.move("go", 1.0, to={"a": 1.0, "b": 2.0})
     tl.move("go2", 1.0, to={"c": 1.0})
-    tl.pulse("t", at=0.1)
+    tl.indicate("t", at=0.1)
     plan = tl.at_fps(10)
     unread, constant = plan.unused_knobs()
     assert unread == ("a", "b", "c", "d") and constant == ("d",)
@@ -1090,7 +1090,7 @@ def test_unused_knobs_counts_value_frames_and_progress_reads_and_skips_pulse_kno
     plan.progress(0, "go2")
     unread, constant = plan.unused_knobs()
     assert unread == ("d",) and constant == ("d",)
-    assert not any(k.startswith("pulse.") for k in (*unread, *constant))
+    assert not any(k.startswith("indicate.") for k in (*unread, *constant))
 
 
 def _field_plan():

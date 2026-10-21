@@ -102,13 +102,13 @@ def to_scrubber(
     samples to make that image the rest state itself.
 
     Chapters: each span a narration cue of its own line targets (the span
-    named by the cue's target, or its ``pulse.`` or ``ring.`` span) becomes a
-    button that jumps to the sample nearest the cue's frame; when no span has
-    a cue, every span of the plan becomes a button that jumps to the sample
-    nearest the span's first frame. With a
-    narration, the spoken text of each line is listed under the figure and
-    the line running at the slider's frame is highlighted; a plan with no
-    narration has no transcript.
+    named by the cue's target, or its ``indicate.`` or ``circumscribe.``
+    span) becomes a button that jumps to the sample nearest the cue's frame;
+    when no span has a cue, every span of the plan becomes a button that
+    jumps to the sample nearest the span's first frame. With a narration,
+    the spoken text of each line is listed under the figure and the line
+    running at the slider's frame is highlighted; a plan with no narration
+    has no transcript.
 
     Example::
 

@@ -27,16 +27,16 @@ ax.set(xlim=(0, 1), ylim=(0, 1))
 pulse = ep.indicate(marker, scale=1.5)
 tl = ep.Timeline(tempo=ep.Tempo(factor=1.0))
 tl.section("Marker")
-tl.pulse("marker", at=tl.now)
+tl.indicate("marker", at=tl.now)
 tl.hold(1.5, name="watch")
 plan = tl.at_fps(10)
 
 
 def draw(k):
-    pulse.update(plan.value(k, "pulse.marker"))
+    pulse.update(plan.value(k, "indicate.marker"))
 
 
-draw(plan.frame_of("pulse.marker", "mid"))
+draw(plan.frame_of("indicate.marker", "mid"))
 plt.show()
 ```
 

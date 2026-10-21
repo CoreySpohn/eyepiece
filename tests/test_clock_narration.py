@@ -132,19 +132,19 @@ def bayes_clock(narration=None, strict=True):
     tl.enter("square")
     line("water")
     tl.enter("water", caption=CAPS["water"])
-    tl.pulse("water_label")
+    tl.indicate("water_label")
     line("band_h")
     tl.enter("band_h", caption=CAPS["band_h"])
-    tl.pulse("band_h_label")
+    tl.indicate("band_h_label")
     line("band_n")
     tl.enter("band_n")
-    tl.pulse("band_n_label")
+    tl.indicate("band_n_label")
     line("rule")
     tl.enter("rule", 0.75, caption=CAPS["rule"])
     line("areas")
     tl.enter("areas", 0.5, caption=CAPS["areas"])
-    tl.ring("area_h")
-    tl.ring("area_n")
+    tl.circumscribe("area_h")
+    tl.circumscribe("area_n")
     line("stretch")
     tl.enter("dim", 0.5, also=("rect_in",), caption=CAPS["stretch"], cue="move:dim")
     tl.move("stretch", 1.75, to=1.0)
@@ -156,7 +156,7 @@ def bayes_clock(narration=None, strict=True):
     if narration is not None:
         tl.clear_caption(at=eq.start)
     for name in ("num", "den", "prior", "post"):
-        tl.pulse(name)
+        tl.indicate(name)
     if narration is None:
         tl.hold(END_S)
     return tl
@@ -305,13 +305,13 @@ def test_span_starts_match_the_hand_placed_ones_within_a_millisecond(bayes):
             word("stretch", "move", "dim") - SHOW_LEAD_S,
         ),
         "stretch": word("stretch", "move", "stretch"),
-        "ring.area_h": word("areas", "circumscribe", "area_h"),
-        "ring.area_n": word("areas", "circumscribe", "area_n"),
-        "pulse.water_label": pulse("water", "water_label"),
-        "pulse.band_h_label": pulse("band_h", "band_h_label"),
-        "pulse.band_n_label": pulse("band_n", "band_n_label"),
-        "pulse.num": pulse("result", "num"),
-        "pulse.post": pulse("result", "post"),
+        "circumscribe.area_h": word("areas", "circumscribe", "area_h"),
+        "circumscribe.area_n": word("areas", "circumscribe", "area_n"),
+        "indicate.water_label": pulse("water", "water_label"),
+        "indicate.band_h_label": pulse("band_h", "band_h_label"),
+        "indicate.band_n_label": pulse("band_n", "band_n_label"),
+        "indicate.num": pulse("result", "num"),
+        "indicate.post": pulse("result", "post"),
     }
     for name, start in want.items():
         assert plan.spans[name].start_s == pytest.approx(start, abs=1e-3), name
@@ -373,10 +373,10 @@ def test_one_function_builds_the_silent_clip_too():
     )
     skipped = [f for f in plan.faults if f.code == "skipped"]
     assert len(skipped) == 9 and {f.severity for f in skipped} == {"info"}
-    assert not any(n.startswith(("pulse.", "ring.")) for n in plan.spans)
+    assert not any(n.startswith(("indicate.", "circumscribe.")) for n in plan.spans)
     assert plan.value(plan.n_frames - 1, "stretch") == 1.0
     assert plan.value(plan.n_frames - 1, "caption.cap_water") == 0.0
-    assert plan.value(plan.n_frames - 1, "pulse.num") == 0.0
+    assert plan.value(plan.n_frames - 1, "indicate.num") == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -387,10 +387,10 @@ def test_each_span_starts_on_its_word_and_the_cue_events_follow_the_words():
     small = nr.Narration.load(SMALL, DATA)
     tl = ep.Timeline(narration=small)
     tl.line("open")
-    star = tl.pulse("star")
+    star = tl.indicate("star")
     tl.line("leak")
-    speckle = tl.pulse("speckle")
-    planet = tl.ring("planet")
+    speckle = tl.indicate("speckle")
+    planet = tl.circumscribe("planet")
     assert star.start == pytest.approx(1.3 - 0.45)
     assert speckle.start == pytest.approx(3.4 - 0.45)
     assert planet.start == pytest.approx(4.3)
@@ -415,7 +415,7 @@ def test_lines_open_in_script_order_and_every_line_must_open():
     with pytest.raises(KeyError, match="no line named"):
         tl.line("nope")
     tl.line("open")
-    tl.pulse("star")
+    tl.indicate("star")
     with pytest.raises(ValueError, match=r"never opened.*\['leak'\]"):
         tl.at_fps(30)
 
@@ -426,9 +426,9 @@ def test_a_mark_no_verb_fires_is_a_fault():
     def build(strict):
         tl = ep.Timeline(narration=small, strict=strict)
         tl.line("open")
-        tl.pulse("star")
+        tl.indicate("star")
         tl.line("leak")
-        tl.pulse("speckle")
+        tl.indicate("speckle")
         return tl
 
     with pytest.raises(ValueError, match="circumscribe:planet is fired by no verb"):
@@ -441,14 +441,14 @@ def test_a_verb_with_no_inferred_mark_names_the_marks_the_line_has():
     tl = ep.Timeline(narration=small)
     tl.line("open")
     with pytest.raises(ValueError, match=r"no mark 'indicate:moon'.*indicate:star"):
-        tl.pulse("moon")
+        tl.indicate("moon")
     quiet = ep.Timeline(narration=small, strict=False)
     quiet.line("open")
-    quiet.pulse("moon")
-    quiet.pulse("star")
+    quiet.indicate("moon")
+    quiet.indicate("star")
     quiet.line("leak")
-    quiet.pulse("speckle")
-    quiet.ring("planet")
+    quiet.indicate("speckle")
+    quiet.circumscribe("planet")
     assert _codes(quiet.at_fps(30)) == ["missing-mark"]
 
 
@@ -457,7 +457,7 @@ def test_a_cue_in_a_later_line_cannot_be_waited_on():
     tl = ep.Timeline(narration=small)
     tl.line("open")
     with pytest.raises(ValueError, match="comes after the current line"):
-        tl.pulse("speckle", cue="indicate:speckle")
+        tl.indicate("speckle", cue="indicate:speckle")
     with pytest.raises(ValueError, match="comes after the current line"):
         tl.cue("indicate:speckle")
 
@@ -470,8 +470,8 @@ def _late_clock(over_s, **kwargs):
     tl.hold(small.cue("open", "indicate", "star") + over_s)
     tl.move("star", 0.3, cue="indicate:star")
     tl.line("leak")
-    tl.pulse("speckle")
-    tl.ring("planet")
+    tl.indicate("speckle")
+    tl.circumscribe("planet")
     return tl
 
 
@@ -511,7 +511,7 @@ def test_a_caption_the_next_caption_replaces_needs_no_read_time_when_narrated():
     tl.caption("first", LONG_CAPTION, cue="indicate:star")
     tl.line("leak")
     tl.caption("second", "the next one", leaves="never", cue="indicate:speckle")
-    tl.ring("planet")
+    tl.circumscribe("planet")
     plan = tl.at_fps(30)
     assert "short-read" not in _codes(plan)
     assert plan.spans["first.leave"].start_s < plan.spans["first"].start_s + 60
@@ -529,34 +529,34 @@ def test_a_cue_in_an_earlier_line_is_clamped_to_the_line_and_flagged():
     small = nr.Narration.load(SMALL, DATA)
     tl = ep.Timeline(narration=small)
     tl.line("open")
-    tl.pulse("star")
+    tl.indicate("star")
     tl.line("leak")
-    tl.pulse("speckle")
-    tl.ring("planet")
-    again = tl.pulse("star", cue="indicate:star")
+    tl.indicate("speckle")
+    tl.circumscribe("planet")
+    again = tl.indicate("star", cue="indicate:star")
     assert again.start == 2.1
     assert tl.cue("indicate:star") == pytest.approx(1.3)
     plan = tl.at_fps(30)
     assert plan.spans[again.name].clamped is True
-    assert plan.spans["pulse.speckle"].clamped is False
+    assert plan.spans["indicate.speckle"].clamped is False
 
 
 def test_a_motion_longer_than_its_line_pushes_the_next_line_and_its_cues():
     small = nr.Narration.load(SMALL, DATA)
     tl = ep.Timeline(narration=small)
     tl.line("open")
-    tl.pulse("star")
+    tl.indicate("star")
     tl.move("long", 4.0, at=0.0)
     tl.line("leak")
-    tl.pulse("speckle")
-    tl.ring("planet")
+    tl.indicate("speckle")
+    tl.circumscribe("planet")
     assert tl.cue("circumscribe:planet") == pytest.approx(4.3 + 4.6 - 2.1)
     plan = tl.at_fps(30)
     opened, leak = plan.narration.beat("open"), plan.narration.beat("leak")
     assert opened.end_s == pytest.approx(4.0 + 0.6)
     assert leak.start_s == pytest.approx(4.6)
     shift = 4.6 - 2.1
-    assert plan.spans["ring.planet"].start_s == pytest.approx(4.3 + shift)
+    assert plan.spans["circumscribe.planet"].start_s == pytest.approx(4.3 + shift)
     assert plan.n_frames == ep.frame_count(leak.end_s, 30)
 
 
@@ -604,11 +604,11 @@ def test_the_rebuilt_narration_feeds_the_audio_track_with_the_solved_starts(tmp_
     small = nr.Narration.load(SMALL, DATA)
     tl = ep.Timeline(narration=small)
     tl.line("open")
-    tl.pulse("star")
+    tl.indicate("star")
     tl.move("long", 4.0, at=0.0)
     tl.line("leak")
-    tl.pulse("speckle")
-    tl.ring("planet")
+    tl.indicate("speckle")
+    tl.circumscribe("planet")
     solved = tl.narration
     assert solved is not small and small.beat("leak").start_s == 2.1
     for line in SMALL.lines:
@@ -638,11 +638,11 @@ def test_place_is_pure_and_the_clock_never_changes_the_narration_it_was_given():
     assert one == two and one.start_s == 3.0
     tl = ep.Timeline(narration=small)
     tl.line("open")
-    tl.pulse("star")
+    tl.indicate("star")
     tl.move("long", 4.0, at=0.0)
     tl.line("leak")
-    tl.pulse("speckle")
-    tl.ring("planet")
+    tl.indicate("speckle")
+    tl.circumscribe("planet")
     tl.at_fps(30)
     assert [(b.start_s, b.end_s) for b in small.beats] == before
 

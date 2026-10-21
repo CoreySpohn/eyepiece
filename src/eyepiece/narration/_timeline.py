@@ -19,7 +19,6 @@ This module imports only the standard library.
 
 import json
 import re
-import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -235,10 +234,6 @@ class Narration:
             by default.
         ends: Mapping from line key to the absolute time its beat must last
             until: the motion that must finish inside the line.
-        min_s: Deprecated; use `ends`. Mapping from line key to the least
-            length of its beat, a duration from the line's own start. It
-            warns with a `DeprecationWarning` and will be removed in the
-            next minor release.
 
     Raises:
         KeyError: If `starts`, `ends` or `spoken` names a line the script
@@ -247,21 +242,12 @@ class Narration:
             starts before the one before it ends.
     """
 
-    def __init__(self, script, spoken, *, starts=None, ends=None, min_s=None):
+    def __init__(self, script, spoken, *, starts=None, ends=None):
         """Place every line, in order, one after another."""
         starts = dict(starts or {})
         ends = dict(ends or {})
-        min_s = dict(min_s or {})
-        if min_s:
-            warnings.warn(
-                "Narration(min_s=) is deprecated; pass ends= (an absolute end "
-                "time per line), or build the clip with a Timeline, which solves "
-                "the line ends itself",
-                DeprecationWarning,
-                stacklevel=2,
-            )
         keys = {line.key for line in script.lines}
-        for name, given in (("starts", starts), ("ends", ends), ("min_s", min_s)):
+        for name, given in (("starts", starts), ("ends", ends)):
             unknown = set(given) - keys
             if unknown:
                 raise KeyError(f"{name} names unknown lines {sorted(unknown)}")
@@ -291,10 +277,6 @@ class Narration:
                     f"before it ends at {clock} s"
                 )
             end_s = ends.get(line.key)
-            if line.key in min_s:
-                # min_s is a duration from the line's own start.
-                held = start + min_s[line.key]
-                end_s = held if end_s is None else max(end_s, held)
             beat = self.place(line.key, start, end_s=end_s)
             self.beats.append(beat)
             clock = beat.end_s
@@ -343,8 +325,7 @@ class Narration:
         Args:
             script: The `Script`.
             cache_dir: Directory `synthesize` wrote its JSON into.
-            **kwargs: Passed to `Narration`: ``starts``, ``ends``, and the
-                deprecated ``min_s`` (which warns there).
+            **kwargs: Passed to `Narration`: ``starts`` and ``ends``.
 
         Raises:
             MissingSynthesisError: If a line has no cached timing.
