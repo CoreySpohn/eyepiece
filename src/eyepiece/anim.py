@@ -67,9 +67,10 @@ The mechanics this module does own, each closing a specific trap:
 `record(fig, "talk.mp4", **PRESETS["talk"])`. The ``talk`` preset runs at
 60 fps: the default ease moves fastest at mid-move, and 30 fps still judders
 there on turns and camera moves. ``talk_60`` is the same pair under its old
-name. The documentation presets run at 30 fps, which keeps a slow move smooth
-and costs little in bytes for flat graphics. `talk_rc` sizes type and strokes
-for a talk frame from its height; documentation figures keep their own sizes.
+name; reading it warns with a `DeprecationWarning`. The documentation presets
+run at 30 fps, which keeps a slow move smooth and costs little in bytes for
+flat graphics. `talk_rc` sizes type and strokes for a talk frame from its
+height; documentation figures keep their own sizes.
 ``doc_hd`` rasterizes at 200 dpi, the resolution of a documentation still,
 so a clip beside its still is not visibly softer on a 2x screen.
 
@@ -83,6 +84,7 @@ import tempfile
 import warnings
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
+from types import MappingProxyType
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -99,14 +101,45 @@ from eyepiece._ffmpeg import (
 )
 from eyepiece._motion import frame_count
 
-PRESETS = {
-    "talk": {"fps": 60, "dpi": 120},
-    "talk_60": {"fps": 60, "dpi": 120},
-    "gif": {"fps": 8, "dpi": 85},
-    "jshtml": {"fps": 14, "dpi": 100},
-    "docs": {"fps": 30, "dpi": 100},
-    "doc_hd": {"fps": 30, "dpi": 200},
-}
+
+class _Presets(dict):
+    """The preset table; reading a deprecated key warns and names its successor."""
+
+    _RENAMED = MappingProxyType({"talk_60": "talk"})
+
+    def __getitem__(self, key):
+        """The preset `key`, with a warning when `key` is a deprecated name."""
+        self._warn(key)
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        """The preset `key`, or `default`; a deprecated name warns as for `[]`."""
+        if key not in self:
+            return default
+        self._warn(key)
+        return super().__getitem__(key)
+
+    def _warn(self, key):
+        # Called directly from each public method, so stacklevel 3 is the caller.
+        if key in self._RENAMED:
+            warnings.warn(
+                f"PRESETS[{key!r}] is deprecated; use PRESETS"
+                f"[{self._RENAMED[key]!r}], the same fps and dpi",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+
+
+PRESETS = _Presets(
+    {
+        "talk": {"fps": 60, "dpi": 120},
+        "talk_60": {"fps": 60, "dpi": 120},
+        "gif": {"fps": 8, "dpi": 85},
+        "jshtml": {"fps": 14, "dpi": 100},
+        "docs": {"fps": 30, "dpi": 100},
+        "doc_hd": {"fps": 30, "dpi": 200},
+    }
+)
 
 # Line ends and corners for video: butt caps, so a line is exactly as long as
 # it is measured (a projecting cap adds half the width at each end), and round

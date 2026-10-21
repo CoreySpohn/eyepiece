@@ -1,5 +1,7 @@
 """Renamed public names: each old name warns and resolves to its replacement."""
 
+import warnings
+
 import pytest
 from matplotlib.colors import to_hex
 
@@ -91,3 +93,48 @@ def test_old_span_kinds_warn_and_place_as_the_new_kind(old, new):
         placed.ease,
     )
 
+
+def test_talk_60_preset_warns_and_is_the_talk_pair():
+    with pytest.warns(DeprecationWarning, match=r"PRESETS\['talk'\]"):
+        old = ep.PRESETS["talk_60"]
+    assert old == ep.PRESETS["talk"]
+    with pytest.warns(DeprecationWarning):
+        assert ep.PRESETS.get("talk_60") == ep.PRESETS["talk"]
+    assert ep.PRESETS.get("nope", 1) == 1
+
+
+def _warned_here(call):
+    """Run `call` and return the files its deprecation warnings point at."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        call()
+    return [w.filename for w in caught if w.category is DeprecationWarning]
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: ept.Span,
+        lambda: ep.spans,
+        lambda: motifs.resolve_role("planet"),
+        lambda: ep.Timeline().pulse("dot", at=0.0),
+        lambda: ep.Timeline().ring("dot", at=0.0),
+        lambda: ep.Timeline({"k": 0.0}).span("k", 0.5, kind="pulse", to=1.0),
+        lambda: ep.Timeline().stagger("pulse", ["a", "b"], each_s=0.3),
+        lambda: ep.PRESETS["talk_60"],
+        lambda: ep.PRESETS.get("talk_60"),
+    ],
+    ids=[
+        "testing.Span",
+        "spans",
+        "resolve_role",
+        "pulse",
+        "ring",
+        "span-kind",
+        "stagger",
+        "preset",
+        "preset-get",
+    ],
+)
+def test_each_deprecation_warns_once_at_the_callers_line(call):
+    assert _warned_here(call) == [__file__]

@@ -268,10 +268,10 @@ once, which is what the recording above did to put the gif and the player on
 the same rasterization.
 
 The `talk` preset runs at 60 fps: the default ease moves fastest at mid-move,
-and turns and camera moves still judder there at 30 fps. `talk_60` is the
-same pair under its old name. The documentation presets run at 30 fps,
-because flat graphics cost almost nothing extra in bytes and a slow move at
-10 fps reads as a series of jumps. `doc_hd`
+and turns and camera moves still judder there at 30 fps. `talk_60` is the same
+pair under its old name, deprecated: reading it warns. The documentation
+presets run at 30 fps, because flat graphics cost almost nothing extra in
+bytes and a slow move at 10 fps reads as a series of jumps. `doc_hd`
 rasterizes at 200 dpi, the resolution of a documentation still, so a clip
 beside its still is not visibly softer on a high-density screen.
 

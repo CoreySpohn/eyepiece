@@ -55,7 +55,6 @@ def _flat_frames(n, size):
 def test_talk_runs_at_60_fps_and_docs_at_30_with_a_still_resolution_doc():
     assert PRESETS["talk"] == {"fps": 60, "dpi": 120}
     assert PRESETS["docs"]["fps"] == 30
-    assert PRESETS["talk_60"] == {"fps": 60, "dpi": 120}
     assert PRESETS["doc_hd"] == {"fps": 30, "dpi": 200}
     assert PRESETS["gif"] == {"fps": 8, "dpi": 85}
 
