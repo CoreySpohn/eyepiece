@@ -11,7 +11,7 @@ holds recurring styles, ``prepared`` holds scene records, and ``mpl`` and
 The root keeps ten stable shortcuts: ``Timeline``, ``Plan``, ``Tempo``,
 ``PlotResult``, ``MosaicResult``, ``MotionContract``, ``animate``, ``record``,
 ``save_fig``, and ``__version__``. Every former root path still resolves
-silently in 0.17; star imports and discovery favor the small root and task
+silently in 0.16; star imports and discovery favor the small root and task
 namespaces. Existing deprecated aliases keep their warnings.
 
 Example::
@@ -234,7 +234,7 @@ _LAZY_EXPORTS = {
     name: target for name, target in _EXPORT_TARGETS.items() if name in __all__
 }
 
-# Silent compatibility in 0.17. A later release will make these root paths
+# Silent compatibility in 0.16. A later release will make these root paths
 # warn once at the caller, then remove them after a migration release.
 _LEGACY_ROOT = {
     name: target for name, target in _EXPORT_TARGETS.items() if name not in __all__
