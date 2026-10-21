@@ -33,7 +33,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | start several moves at the same moment | `tl.together()` | Used as a `with` block: every span in it starts at `now` | [motion-clock](../gallery/motion-clock.md) (prose) |
 | step through targets one after another | `tl.stagger(verb, targets, each_s=)` | Calls a verb per target, `each_s` apart | [motion-clock](../gallery/motion-clock.md) (prose) |
 | stagger items inside one beat (rings, pixels) | `stagger(u, rank, span=0.35)` | Per-item progress from one beat's progress | API reference; [motion-clock](../gallery/motion-clock.md) (prose) |
-| find when a cue word is said | `tl.cue("kind:target")` | The word start of a cue mark, as a `Time`; `enter`, `leave`, `text`, `move`, `span`, `caption`, `pulse` and `ring` also take `cue=` | API reference; `cue=` in [narration-design](../explanation/narration-design.md) (prose) |
+| find when a cue word is said | `tl.cue("kind:target")` | The word start of a cue mark, as a `Time`; `enter`, `leave`, `text`, `move`, `span`, `caption`, `indicate` and `circumscribe` also take `cue=` | API reference; `cue=` in [narration-design](../explanation/narration-design.md) (prose) |
 | declare the hero beat (stillness, one move, silence) | `tl.hero(span)`, `plan.hero_windows()` | Marks the span the silence and timing checks treat as deliberate | API reference |
 | mark sections of a clip | `tl.section(name)` | Opens a named section; the plan's frames carry it | [animation](../gallery/animation.md), [build-up](../tutorials/build-up.md) |
 | a span the verbs do not cover | `tl.span(name, seconds, kind=, paced=, ease=, extends=)` | Every default stated explicitly | API reference |
@@ -74,9 +74,9 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| light the thing the narration names | `indicate(artists, scale=, strength=, shape=)`, placed by `tl.pulse(target)` | Swells and tints toward the text ink, then returns exactly | [motion-attention](../gallery/motion-attention.md), [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
+| light the thing the narration names | `indicate(artists, scale=, strength=, shape=)`, placed by `tl.indicate(target)` | Swells and tints toward the text ink, then returns exactly | [motion-attention](../gallery/motion-attention.md), [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
 | a plateau pulse (emphasis held at its peak) | `indicate(..., shape="plateau")` | Up 35%, hold 30%, down 35% | [contract](../explanation/contract.md) (prose) |
-| outline a thing, then let it go | `circumscribe(target, shape=, style="trace")`, placed by `tl.ring(target)` | Outline draws on, then fades | [motion-attention](../gallery/motion-attention.md) (`circumscribe`), [motion-clock](../gallery/motion-clock.md) (`tl.ring`) |
+| outline a thing, then let it go | `circumscribe(target, shape=, style="trace")`, placed by `tl.circumscribe(target)` | Outline draws on, then fades | [motion-attention](../gallery/motion-attention.md) (`circumscribe`), [motion-clock](../gallery/motion-clock.md) (`tl.circumscribe`) |
 | pass a comet around a thing | `circumscribe(target, style="flash")` | A tapered comet runs once around the outline | [contract](../explanation/contract.md) (prose) |
 | put a no-hue cue behind the subject | `MotifSet.default()["cue"].patch_kw()` on a patch you draw | Text-ink band, ring or underlay behind the subject | [motifs](../gallery/motifs.md) (no function; hand-built patch) |
 | a short caption beside the thing it names | `callout(target, text, side=, rise_pt=)` | Caption with an optional leader, rising into place | [motion-attention](../gallery/motion-attention.md) |
@@ -129,13 +129,13 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 |---|---|---|---|
 | a labeled threshold or reference line | `ref_line(ax, value, label, orient=, where=)` | Line with its label pinned to an axes edge | [marks](../gallery/marks.md) |
 | a reference line with its own reveal beat | `ref_line(...)`, then `draw_on(result.artists["line"])` and a `Stage` group for its label, on a `tl.enter` span | No single move: compose the still with a reveal | [marks](../gallery/marks.md) (still only) |
-| shade excluded intervals | `spans(x, mask, intervals=)` | Masked runs as bands | [marks](../gallery/marks.md) |
+| shade excluded intervals | `shade_intervals(x, mask, intervals=)` | Masked runs as bands | [marks](../gallery/marks.md) |
 | a zero row on a log axis | `log_zero_floor(ax, floor)` | Zero row at a display floor with a break mark | [marks](../gallery/marks.md) |
 | a labeled bracket | `bracket(ax, x0, x1, y, text, depth=)` | Square bracket labeled on its far side | [scene](../gallery/scene.md) |
 | a label that reads over marks or pixels | `backing(alpha=)` | `bbox` plate in the background color | [stats](../gallery/stats.md) |
 | a dashed circle or path legible on any pixels | `overlay_circle`, `overlay_line` | Dashed mark with an underlay | [images](../gallery/images.md) |
 | a neutral scenery tone | `neutral(level)` | Gray between background and text ink | [stats](../gallery/stats.md) |
-| the brand color of a role | `role(name)`, `motifs.resolve_role(role, mode=)` | Hex color for a role | [stats](../gallery/stats.md); `resolve_role` API reference |
+| the brand color of a role | `role(name, mode=)` | Hex color for a named role or a neutral rank, in the active or a given mode | [stats](../gallery/stats.md) |
 | a pixel-edge extent and matching axis labels | `extent_lod_from_pixels`, `extent_lod`, `extent_arcsec`, `extent_au`, `label_lod`, `label_arcsec`, `label_au` | Extents and labels for image axes | [images](../gallery/images.md) (`extent_lod_from_pixels`, `label_lod`), [profiles](../gallery/profiles.md) (prose: `extent_arcsec`, `extent_au`); the rest API reference |
 | one field of view across panels | `Frame(half_fov_lod, pixscale_lod=)` | Shared extent for panels of one scene | [one-scene-n-views](../gallery/one-scene-n-views.md) |
 
@@ -226,7 +226,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
 | check a clip for motion, text and timing faults in one call | `ept.check_clip(fig, draw, plan)`, `ept.assert_clip`, `ept.ClipReport` | Re-renders the plan-driven clip without writing files and collects readability, motion and meaning findings, plan faults, unread knobs and speaking pace | [check-a-clip](../how-to/check-a-clip.md), [motion-checks](../gallery/motion-checks.md); `ClipReport` (prose) |
-| check the path between states | `ept.motion_faults(fig, at, times, moves=, steps=, hops=)`, `ept.assert_motion`, `ept.Span` | Jumps, dead moves, drift, tears, overlap | [motion-checks](../gallery/motion-checks.md), [clip-checks](../reference/clip-checks.md); `assert_motion` (prose) |
+| check the path between states | `ept.motion_faults(fig, at, times, moves=, steps=, hops=)`, `ept.assert_motion`, `ept.Window` | Jumps, dead moves, drift, tears, overlap | [motion-checks](../gallery/motion-checks.md), [clip-checks](../reference/clip-checks.md); `assert_motion` (prose) |
 | declare what a move may move | `MotionContract`, `PlotResult.contract` | The geometry a move promises | [motion-contract](../reference/motion-contract.md) (prose) |
 | check text overlap, size and containment | `ept.readability_faults`, `ept.assert_readable` | Readability findings at sample times | [motion-checks](../gallery/motion-checks.md) (`readability_faults`), [motion-attention](../gallery/motion-attention.md) (`assert_readable`) |
 | check timing: pace, gaps, still screens, numbers | `ept.timing_faults(narration, plan=, source=, at=, readouts=)`, `ept.assert_timing` | Timing findings on the encode or a render callable | [check-timing](../how-to/check-timing.md); `assert_timing` (prose) |
@@ -287,3 +287,18 @@ names are the records those calls return and the constants they read.
 | size text for a venue | `ept.VENUES`, `ept.VENUE_FPS` | Smallest readable text size in output pixels per venue; the rate a clip is sampled at when `times` is a `Span` | API reference |
 | catch a scale or connector problem | `ScaleDriftError`, `AttentionFault` | Raised by `record(on_rescale="raise")`; raised by `audit` when a strict leader or link breaks a rule | `ScaleDriftError` in [clock](../explanation/clock.md) (prose), `AttentionFault` in [attention-moves](../reference/attention-moves.md) (prose) |
 | check the installed version | `__version__` | The package version | API reference |
+
+## Deprecated names
+
+These names still work for one minor release and warn with a `DeprecationWarning` that names the
+replacement. They are out of every `__all__`, and they go away in the next minor release.
+
+| Deprecated | Use instead | Note |
+|---|---|---|
+| `ept.Span(start, stop)` | `ept.Window(start, stop)` | The same check window, renamed apart from the timeline record `Span` |
+| `spans(x, mask)` | `shade_intervals(x, mask)` | The same function and signature |
+| `motifs.resolve_role(role, mode)` | `role(name, mode=)` | `role` also takes the neutral ranks |
+| `tl.pulse(target)` | `tl.indicate(target)` | The verb is named for the move it places; its knob is `indicate.<target>` |
+| `tl.ring(target)` | `tl.circumscribe(target)` | The same, with the knob `circumscribe.<target>` |
+| `tl.span(..., kind="pulse")`, `kind="ring"` | `kind="indicate"`, `kind="circumscribe"` | Span kinds follow the verbs |
+| `PRESETS["talk_60"]` | `PRESETS["talk"]` | The same fps and dpi pair |
