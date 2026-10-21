@@ -302,7 +302,7 @@ names are the records those calls return and the constants they read.
 | list the kinds a check reports | `testing.KINDS`, `testing.MOTION_KINDS`, `testing.MEANING_KINDS`, `testing.MOTIF_KINDS`, `testing.GROUNDING_KINDS`, `testing.TIMING_KINDS` | The fault kinds of the readability, motion, meaning, motif, grounding and timing checks | `TIMING_KINDS` in [clip-checks](../reference/clip-checks.md) (prose); the rest API reference |
 | size text for a venue | `testing.VENUES`, `testing.VENUE_FPS` | Smallest readable text size in output pixels per venue; the rate a clip is sampled at when `times` is a `testing.Window` | API reference |
 | catch a scale or connector problem | `render.ScaleDriftError`, `testing.AttentionFault` | Raised by `record(on_rescale="raise")`; raised by `testing.audit` when a strict leader or link breaks a rule | `render.ScaleDriftError` in [clock](../explanation/clock.md) (prose), `testing.AttentionFault` in [attention-moves](../reference/attention-moves.md) (prose) |
-| check the installed version | `__version__` | The package version | API reference |
+| check the installed version | `__version__` | The package version, available only at `ep.__version__` | API reference |
 
 ## Deprecated names
 

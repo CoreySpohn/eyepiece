@@ -10,9 +10,6 @@ from typing import TYPE_CHECKING
 from eyepiece import _lazy_lookup
 
 if TYPE_CHECKING:
-    from eyepiece import (
-        __version__,
-    )
     from eyepiece._ffmpeg import (
         ENCODER_PROFILE,
     )
@@ -74,7 +71,6 @@ __all__ = [
     "Variant",
     "VariantResult",
     "Venue",
-    "__version__",
     "animate",
     "assert_frames_pure",
     "content_key",
@@ -106,7 +102,6 @@ _EXPORTS = {
     "Variant": ("eyepiece._render_variants", "Variant"),
     "VariantResult": ("eyepiece._render_variants", "VariantResult"),
     "Venue": ("eyepiece._render_variants", "Venue"),
-    "__version__": ("eyepiece", "__version__"),
     "animate": ("eyepiece.anim", "animate"),
     "assert_frames_pure": ("eyepiece._render_pool", "assert_frames_pure"),
     "content_key": ("eyepiece._render_keys", "content_key"),

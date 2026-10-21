@@ -181,7 +181,6 @@ def test_facade_exports_exactly_the_public_names():
         "PRESETS",
         "RawSink",
         "ScaleDriftError",
-        "__version__",
         "animate",
         "file_metadata",
         "provenance_fields",

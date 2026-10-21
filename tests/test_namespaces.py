@@ -79,7 +79,7 @@ assert not any(name.startswith('matplotlib') for name in sys.modules)
 
 
 def test_task_assignments_cover_every_former_root_name_once():
-    assigned = []
+    assigned = ["__version__"]
     for namespace in (*NAMESPACES, "motifs"):
         module = importlib.import_module(f"eyepiece.{namespace}")
         for name in module.__all__:
@@ -453,3 +453,11 @@ assert 'eyepiece.motion' not in sys.modules
         [sys.executable, "-c", code], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_version_has_only_its_root_home():
+    assert isinstance(ep.__version__, str)
+    assert "__version__" not in ep.render.__all__
+    assert "__version__" not in dir(ep.render)
+    with pytest.raises(AttributeError, match="__version__"):
+        _ = ep.render.__version__
