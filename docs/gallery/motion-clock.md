@@ -697,3 +697,22 @@ def draw_flight(fig, k):
 draw_flight(fig, 0)
 HTML(ep.animate(fig, draw_flight, N_FLIGHT, fps=14).jshtml(dpi=80))
 ```
+
+## Declare an instant cut
+
+A cut changes state on one frame and consumes no time. It may be placed by
+`at` or an explicit narration `cue`. `check_clip` reads its declaration from
+the plan, so the jump is accepted with the other checks still active.
+
+```python
+import eyepiece as ep
+
+tl = ep.Timeline({"panel": 0})
+tl.hold(0.5)
+tl.cut("switch", to={"panel": 1})
+tl.hold(0.5)
+plan = tl.at_fps(30)
+assert plan.value(14, "panel") == 0
+assert plan.value(15, "panel") == 1
+assert plan.step_frames() == (15,)
+```
