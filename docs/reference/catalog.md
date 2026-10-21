@@ -22,28 +22,28 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | lay out a clip in seconds, one clock for every move | `Timeline(knobs, tempo=, narration=)`, then `tl.at_fps(fps)` returns a `Plan` | Spans declared in seconds; the plan resolves them for one frame rate | [motion-clock](../gallery/motion-clock.md), [clock](../explanation/clock.md), [build-up](../tutorials/build-up.md) |
 | open the next spoken line | `tl.line(key)` | Places the line's speech on the clock and closes the previous line | [narrated](../tutorials/narrated.md) (tutorial script) |
 | bring a subject in on the word that names it | `tl.enter(name, seconds=0.6, cue=)` | Knob `name` ramps 0 to 1; with a cue it starts 0.1 s before the cue word | [motion-clock](../gallery/motion-clock.md), [narrated](../tutorials/narrated.md) |
-| take a subject away | `tl.leave(name, seconds=0.3)` | Knob `name` ramps back to 0 | API reference |
+| take a subject away | `tl.leave(name, seconds=0.3)` | Knob `name` ramps back to 0 | [timeline-verbs](../how-to/timeline-verbs.md) |
 | bring text in, or a label as the move it names settles | `tl.text(name, names=)` | Text knob ramps in; with `names=` it may start over the named move's last quarter | [motion-clock](../gallery/motion-clock.md), [motion-attention](../gallery/motion-attention.md) |
 | move a value to a target, eased | `tl.move(name, seconds, to=, space="log")` | Knobs move to targets on the ease, optionally in log space | [motion-clock](../gallery/motion-clock.md), [animation](../gallery/animation.md) |
 | run at a constant rate (a physical clock, a sweep) | `tl.run(name, seconds, to=)` | Linear in time, never paced or eased | [build-up](../tutorials/build-up.md), [check-a-clip](../how-to/check-a-clip.md) |
 | hold the picture for a time | `tl.hold(seconds, to=)` | A span in which nothing moves; `to` steps knobs at its start | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
 | hold the picture until a time computed elsewhere | `tl.wait_until(*times)` | Extends the section to that time without placing a span | [motion-clock](../gallery/motion-clock.md), [clock](../explanation/clock.md) |
 | hold long enough to read some text | `tl.read(text)`, `Tempo.read_s(text)` | Hold of `factor * (base_s + word_s * words)` | [motion-clock](../gallery/motion-clock.md), [motion-camera](../gallery/motion-camera.md) |
-| rest after a new subject or an axis build | `tl.settle()`, `Tempo.rest_s` | Rest for the tempo's settle time | API reference; `rest_s` in [attention-moves](../reference/attention-moves.md) (prose) |
-| start several moves at the same moment | `tl.together()` | Used as a `with` block: every span in it starts at `now` | [motion-clock](../gallery/motion-clock.md) (prose) |
-| step through targets one after another | `tl.stagger(verb, targets, each_s=)` | Calls a verb per target, `each_s` apart | [motion-clock](../gallery/motion-clock.md) (prose) |
+| rest after a new subject or an axis build | `tl.settle()`, `Tempo.rest_s` | Rest for the tempo's settle time | [timeline-verbs](../how-to/timeline-verbs.md) |
+| start several moves at the same moment | `tl.together()` | Used as a `with` block: every span in it starts at `now` | [timeline-verbs](../how-to/timeline-verbs.md) |
+| step through targets one after another | `tl.stagger(verb, targets, each_s=)` | Calls a verb per target, `each_s` apart | [timeline-verbs](../how-to/timeline-verbs.md) |
 | stagger items inside one beat (rings, pixels) | `stagger(u, rank, span=0.35)` | Per-item progress from one beat's progress | API reference; [motion-clock](../gallery/motion-clock.md) (prose) |
-| find when a cue word is said | `tl.cue("kind:target")` | The word start of a cue mark, as a `Time`; `enter`, `leave`, `text`, `move`, `span`, `caption`, `indicate` and `circumscribe` also take `cue=` | API reference; `cue=` in [narration-design](../explanation/narration-design.md) (prose) |
-| declare the hero beat (stillness, one move, silence) | `tl.hero(span)`, `plan.hero_windows()` | Marks the span the silence and timing checks treat as deliberate | API reference |
+| find when a cue word is said | `tl.cue("kind:target")` | The word start of a cue mark, as a `Time`; `enter`, `leave`, `text`, `move`, `span`, `caption`, `indicate` and `circumscribe` also take `cue=` | [timeline-verbs](../how-to/timeline-verbs.md) |
+| declare the hero beat (stillness, one move, silence) | `tl.hero(span)`, `plan.hero_windows()` | Marks the span the silence and timing checks treat as deliberate | [timeline-verbs](../how-to/timeline-verbs.md) |
 | mark sections of a clip | `tl.section(name)` | Opens a named section; the plan's frames carry it | [animation](../gallery/animation.md), [build-up](../tutorials/build-up.md) |
-| a span the verbs do not cover | `tl.span(name, seconds, kind=, paced=, ease=, extends=)` | Every default stated explicitly | API reference |
+| a span the verbs do not cover | `tl.span(name, seconds, kind=, paced=, ease=, extends=)` | Every default stated explicitly | [timeline-verbs](../how-to/timeline-verbs.md) |
 | read a knob on a frame | `plan.value(k, knob)` | The value of a knob at frame `k` | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md), [motion-clock](../gallery/motion-clock.md) |
 | read a span's progress on a frame | `plan.progress(k, span, eased=)` | 0 before the span, 1 from its end | [motion-clock](../gallery/motion-clock.md), [motion-camera](../gallery/motion-camera.md) |
 | find the frame of a span's start, middle or end | `plan.frame_of(span, where=)` | Frame index of a span's state | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
 | list the clip's moments | `plan.events()`, `plan.review_frames()` | Timed events; frames a contact sheet draws | [motion-clock](../gallery/motion-clock.md) |
 | list frames where a knob steps | `plan.step_frames()` | Frames where a step write changes a knob | [step-through-discrete-values](../how-to/step-through-discrete-values.md) |
 | find knobs the draw never reads | `plan.unused_knobs()` | Unread and never-changing knobs | [animation](../gallery/animation.md) |
-| write span times to a manifest | `plan.spans_json(holds=)` | Each span's start and end in seconds, rounded to the millisecond; `holds=False` leaves out holds | API reference |
+| write span times to a manifest | `plan.spans_json(holds=)` | Each span's start and end in seconds, rounded to the millisecond; `holds=False` leaves out holds | [timeline-verbs](../how-to/timeline-verbs.md) |
 | set the pace of the whole clip in one place | `Tempo(factor, base_s, word_s, settle_s)` | One factor scales moves, holds, reading and settles | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md), [motion-clock](../gallery/motion-clock.md) |
 | ease a progress value | `ease(u, kind)` | Eased progress with fixed ends, for the kinds `"smooth"` (the sigmoid default), `"smoothstep"`, `"smootherstep"`, `"cosine"`, `"linear"`, `"back_out"` and `"running_start"` | [attention-moves](../reference/attention-moves.md), [motion-clock](../gallery/motion-clock.md) |
 | add seconds exactly | `Time` | A float that adds exactly | [clock](../explanation/clock.md) (prose) |
@@ -215,7 +215,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 |---|---|---|---|
 | captions in a band | `nr.captions(narration)`, `nr.caption_at(cues, t)` on a text in a band you reserve | Caption cues wrapped to reading limits | [narrated](../tutorials/narrated.md), [burn-captions-into-a-band](../how-to/burn-captions-into-a-band.md) (band built by hand) |
 | place captions clear of the figure's text | `ept.caption_line(fig, at=, times=)` | WebVTT `line:` percentage | [motion-attention](../gallery/motion-attention.md) |
-| an on-figure caption on the clip's clock | `tl.caption(name, text, leaves=)`, `tl.clear_caption()` | Caption knob that leaves once read or on the next | API reference |
+| an on-figure caption on the clip's clock | `tl.caption(name, text, leaves=)`, `tl.clear_caption()` | Caption knob that leaves once read or on the next | [timeline-verbs](../how-to/timeline-verbs.md) |
 | caption files | `nr.write_captions(narration, stem)`, `nr.write_vtt`, `nr.write_srt` | WebVTT and SRT | [narrated](../tutorials/narrated.md) (`write_captions`); `write_vtt` and `write_srt` in [narration-design](../explanation/narration-design.md) (prose) |
 | chapter markers | `nr.write_chapters(narration, path, titles=)` | WebVTT chapters, one cue per beat | [check-narration-and-motion](../how-to/check-narration-and-motion.md) |
 | cue sounds | `nr.CueEvents`, `nr.cue_track`, `nr.count_tone`, `nr.pixel_ticks`, `nr.click_sting`, `nr.audio_track(..., cues=)` | Count tone, pixel ticks, click sting | [add-cue-sounds](../how-to/add-cue-sounds.md) (`CueEvents`, `cue_track`; the rest prose) |

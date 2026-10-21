@@ -300,6 +300,7 @@ task: {doc}`bring a panel in <how-to/bring-a-panel-in>`,
 {doc}`measure and land an answer <how-to/land-an-answer>`,
 {doc}`size a figure for a talk <how-to/size-a-talk>`,
 {doc}`bind a move to a knob <how-to/bind-a-move-to-a-knob>`,
+{doc}`schedule Timeline verbs <how-to/timeline-verbs>`,
 {doc}`declare a cast <how-to/declare-a-cast>`,
 {doc}`check a clip <how-to/check-a-clip>`,
 {doc}`step through discrete values <how-to/step-through-discrete-values>`,
@@ -335,6 +336,7 @@ how-to/draw-a-line-on
 how-to/land-an-answer
 how-to/size-a-talk
 how-to/bind-a-move-to-a-knob
+how-to/timeline-verbs
 how-to/declare-a-cast
 how-to/check-a-clip
 how-to/step-through-discrete-values
