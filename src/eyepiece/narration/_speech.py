@@ -121,6 +121,45 @@ def say(value, spec="g", *, unit=None, signed=False) -> str:
     return text
 
 
+def scientific(value, spec=".1e"):
+    r"""Format one value as screen mathtext and matching spoken notation.
+
+    The selected precision applies to both strings. Exponents are written
+    as words for speech; `say` supplies the mantissa and its sign.
+
+    Args:
+        value: A finite number.
+        spec: An exponential Python format such as ".1e" or ".0e".
+
+    Returns:
+        ``(screen, spoken)``; for 1.3e-4 these are
+        ``$1.3\times10^{-4}$`` and "1.3 times ten to the minus four".
+        Bind the first word of `spoken` to the screen artist in the number
+        gate, just as for a plain number.
+
+    Example::
+
+        screen, spoken = nr.scientific(1.3e-4)
+        label = ax.text(0.5, 0.5, screen)
+        line = nr.Line("value", "It is {show:value}" + spoken + ".")
+    """
+    from ._timeline import _integer_words
+
+    if not math.isfinite(value):
+        raise ValueError("scientific notation needs a finite number")
+    text = format(value, spec).strip()
+    match = re.fullmatch(r"([+-]?\d+(?:\.\d+)?)[eE]([+-]?\d+)", text)
+    if match is None:
+        raise ValueError("scientific needs an exponential format such as '.1e'")
+    mantissa, power = match[1], int(match[2])
+    screen = rf"${mantissa}\times10^{{{power}}}$"
+    direction = "minus " if power < 0 else ""
+    decimals = len(mantissa.partition(".")[2])
+    spoken = f"{say(float(mantissa), f'.{decimals}f')} "
+    spoken += f"times ten to the {direction}{_integer_words(abs(power))}"
+    return screen, spoken
+
+
 def speech_faults(text: str) -> list[SpeechFault]:
     """Find notation that the speech engine can misread, in reading order.
 
@@ -207,31 +246,29 @@ def _numbers(words):
     """The numbers a line says, as the index of the first word of each.
 
     A run of number words (``twenty one``, ``one hundred and five``,
-    ``three point five``) is one number, as is each token of digits.
+    ``three point five``) is one number, as is each token of digits. A
+    scientific phrase ends after one valid signed integer exponent.
     """
-    found, run = [], False
+    found, end = [], 0
     for i, word in enumerate(words):
-        bare = _bare(word)
-        if _DIGITS.match(word):
-            found.append(i)
-            run = False
+        if i < end:
             continue
-        is_number = bare in _NUMBER_WORDS
-        if bare == "one" and not run:
+        bare = _bare(word)
+        is_number = bool(_DIGITS.match(word)) or bare in _NUMBER_WORDS
+        if bare == "one":
             after = i and _bare(words[i - 1]) in _ONE_AFTER
             before = i + 1 < len(words) and (
                 _bare(words[i + 1]) in _ONE_BEFORE
                 or _bare(words[i + 1]) in _NUMBER_WORDS
             )
             is_number = bool(after or before)
-        joins = run and (
-            bare in ("and", "point")
-            and i + 1 < len(words)
-            and _bare(words[i + 1]) in _NUMBER_WORDS
-        )
-        if is_number and not run:
-            found.append(i)
-        run = is_number or joins
+        if not is_number:
+            continue
+        found.append(i)
+        try:
+            _, end = _value_end(words, i)
+        except (ValueError, IndexError):
+            end = i + 1
     return found
 
 
@@ -343,7 +380,7 @@ _VALUE_SCALES = {
 }
 
 
-def _spoken_value(words, index):
+def _plain_value(words, index):
     """The value of the number that starts at ``words[index]``.
 
     Reads a token of digits (``96``, ``3.5``, ``1,000``, ``40%``) or a run of
@@ -354,8 +391,11 @@ def _spoken_value(words, index):
         ValueError: If the word does not start a number.
     """
     word = words[index]
+    if _bare(word) in ("minus", "plus"):
+        value, end = _plain_value(words, index + 1)
+        return (-value if _bare(word) == "minus" else value), end
     if _DIGITS.match(word):
-        return float(word.strip(".,;:?!\"'()[]%").replace(",", ""))
+        return float(word.strip(".,;:?!\"'()[]%").replace(",", "")), index + 1
     total = current = 0.0
     seen = False
     i = index
@@ -378,19 +418,71 @@ def _spoken_value(words, index):
             continue
         elif seen and bare == "point":
             digits = ""
-            for later in words[i + 1 :]:
+            end = i + 1
+            for later in words[end:]:
                 got = _VALUE_ONES.get(_bare(later))
                 if got is None or got > 9:
                     break
                 digits += str(int(got))
-            return total + current + (float("0." + digits) if digits else 0.0)
+                end += 1
+            return total + current + (float("0." + digits) if digits else 0.0), end
         else:
             break
         seen = True
         i += 1
     if not seen:
         raise ValueError(f"{word!r} is not a number")
-    return total + current
+    return total + current, i
+
+
+def _exponent_value(words, index):
+    """Read one signed integer, stopping at punctuation or invalid number grammar."""
+    from ._timeline import _integer_words
+
+    word = words[index]
+    if _bare(word) in ("minus", "plus"):
+        value, end = _exponent_value(words, index + 1)
+        return (-value if _bare(word) == "minus" else value), end
+    if _DIGITS.match(word):
+        return _plain_value(words, index)
+    best = None
+    tokens = []
+    for i in range(index, len(words)):
+        bare = _bare(words[i])
+        if bare not in _NUMBER_WORDS and bare != "and":
+            break
+        tokens.append(bare)
+        value, _ = _plain_value(tokens, 0)
+        # Use the formatter's integer grammar, with its optional "and".
+        grammar = _integer_words(int(value)).replace(" and ", " (?:and )?")
+        if re.fullmatch(grammar, " ".join(tokens)):
+            best = value, i + 1
+        if words[i].rstrip("\"')]").endswith((".", ",", ";", ":", "?", "!")):
+            break
+    if best is None:
+        raise ValueError(f"{word!r} is not an integer")
+    return best
+
+
+def _value_end(words, index):
+    """A signed quantity, including a scientific exponent, and its end index."""
+    value, end = _plain_value(words, index)
+    if [_bare(w) for w in words[end : end + 4]] == ["times", "ten", "to", "the"]:
+        try:
+            power, power_end = _exponent_value(words, end + 4)
+        except (ValueError, IndexError):
+            return value, end
+        if not power.is_integer() or (
+            power_end < len(words) and _bare(words[power_end]) == "point"
+        ):
+            raise ValueError("a scientific exponent must be an integer")
+        value, end = float(f"{value}e{int(power)}"), power_end
+    return value, end
+
+
+def _spoken_value(words, index):
+    """The signed value of a plain or scientific number at this word."""
+    return _value_end(words, index)[0]
 
 
 @dataclass(frozen=True)
@@ -439,7 +531,9 @@ def check_number_sync(
             With a `plan` it is floored at one frame, so a readout drawn on
             the word's frame does not flag.
         value_tol: Largest difference, in the readout's units, between two
-            values that count as equal.
+            values that count as equal. For scientific phrases it is also
+            capped at 1e-9 times the magnitude of the spoken value, so tiny
+            nonzero quantities cannot match zero.
 
     Returns:
         The findings, in binding order; empty when every readout lands.
@@ -456,7 +550,13 @@ def check_number_sync(
         key, index = _word_key(binding["word_key"])
         beat = narration.beat(key)
         words = narration.script.line(key).words
-        spoken = _spoken_value(words, index)
+        spoken, number_end = _value_end(words, index)
+        phrase = " ".join(_bare(w) for w in words[index:number_end])
+        tolerance = (
+            min(value_tol, abs(spoken) * 1e-9)
+            if "times ten to the" in phrase
+            else value_tol
+        )
         start = beat.words[index].start_s
         lo, hi = _span_of(binding["span"], plan)
         values = sorted(
@@ -470,8 +570,8 @@ def check_number_sync(
             )
         label = f"line {key!r} says {words[index]!r} ({spoken:g})"
 
-        def off(a, b):
-            return abs(a - b) > value_tol
+        def off(a, b, tolerance=tolerance):
+            return abs(a - b) > tolerance
 
         if off(values[-1][1], spoken):
             faults.append(
@@ -497,7 +597,7 @@ def check_number_sync(
                         settled,
                     )
                 )
-        faults += _path_faults(values, spoken, value_tol, label, key, index)
+        faults += _path_faults(values, spoken, tolerance, label, key, index)
     return faults
 
 

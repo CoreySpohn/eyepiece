@@ -134,3 +134,103 @@ def test_a_plan_floors_the_settle_tolerance_at_one_frame():
     values = _count(0.0, WORD + 0.03, 0.0, 96.0)
     assert [f.code for f in _check(values)] == ["late-settle"]
     assert _check(values, plan=_Plan()) == []
+
+
+@pytest.mark.parametrize("value", [1.3e-4, 1e-8, -2.5e2, 1000])
+def test_scientific_spoken_value_matches_the_numeric_counter(value):
+    _, spoken = nr.scientific(value, ".1e")
+    script = nr.Script((nr.Line("n", "The value is " + spoken + "."),))
+    narration = nr.Narration.estimated(script)
+    assert (
+        nr.check_number_sync(
+            narration,
+            [
+                {
+                    "word_key": ("n", 3),
+                    "span": (0, narration.total_s),
+                    "values": [(0, value), (narration.total_s, value)],
+                }
+            ],
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "spoken",
+    ["one point three times ten to the minus four", "1.3 times ten to the minus 4"],
+)
+def test_scientific_gate_accepts_word_and_digit_exponents(spoken):
+    script = nr.Script((nr.Line("n", spoken),))
+    narration = nr.Narration.estimated(script)
+    assert (
+        nr.check_number_sync(
+            narration,
+            [
+                {
+                    "word_key": ("n", 0),
+                    "span": (0, narration.total_s),
+                    "values": [(0, 1.3e-4), (narration.total_s, 1.3e-4)],
+                }
+            ],
+        )
+        == []
+    )
+
+
+def test_scientific_sync_rejects_zero_for_a_very_small_nonzero_value():
+    _, spoken = nr.scientific(1e-15, ".0e")
+    narration = nr.Narration.estimated(nr.Script((nr.Line("n", spoken),)))
+    faults = nr.check_number_sync(
+        narration,
+        [
+            {
+                "word_key": ("n", 0),
+                "span": (0, narration.total_s),
+                "values": [(0, 0), (narration.total_s, 0)],
+            }
+        ],
+    )
+    assert "contradicts" in [fault.code for fault in faults]
+
+
+@pytest.mark.parametrize(
+    "power, value",
+    [
+        ("three, and five", 1000),
+        ("three; and five", 1000),
+        ("three and five", 1000),
+        ("three five", 1000),
+        ("twenty one, and five", 1e21),
+        ("twenty one and five", 1e21),
+        ("minus three, and five", 1e-3),
+        ("one hundred and five, and five", 1e105),
+    ],
+)
+def test_scientific_exponent_stops_after_one_valid_signed_integer(power, value):
+    script = nr.Script((nr.Line("n", f"1 times ten to the {power} planets."),))
+    narration = nr.Narration.estimated(script)
+    binding = {
+        "word_key": ("n", 0),
+        "span": (0, narration.total_s),
+        "values": [(0, value), (narration.total_s, value)],
+    }
+    assert nr.check_number_sync(narration, [binding]) == []
+
+
+@pytest.mark.parametrize("power", ["3.5", "three point five"])
+def test_scientific_exponent_must_be_an_integer(power):
+    narration = nr.Narration.estimated(
+        nr.Script((nr.Line("n", f"1 times ten to the {power}"),))
+    )
+    with pytest.raises(ValueError, match="exponent must be an integer"):
+        nr.check_number_sync(
+            narration,
+            [
+                {
+                    "word_key": ("n", 0),
+                    "span": (0, narration.total_s),
+                    "values": [(0, 1)],
+                }
+            ],
+        )

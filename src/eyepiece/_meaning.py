@@ -278,6 +278,8 @@ def _parts_of(artist, gid, key, fig, renderer, backgrounds, owner=None):
     around a name is read; a gray backing box is not a mark and is skipped.
     `owner` is the text whose box this is.
     """
+    if getattr(artist, "_eyepiece_furniture", False):
+        return []
     dpi = fig.dpi
     host = artist if owner is None else owner
     bg = _background(host, fig, backgrounds)

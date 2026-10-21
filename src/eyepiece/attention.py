@@ -56,7 +56,7 @@ from matplotlib.transforms import (
 )
 
 from eyepiece import _style
-from eyepiece._motion import DEFAULT_EASE, _unsnapped
+from eyepiece._motion import DEFAULT_EASE, _unsnapped, pulse_shape
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._motion import stagger as _stagger
 from eyepiece._result import MosaicResult, MotionContract, PlotResult
@@ -1825,7 +1825,11 @@ class Stage:
                         f"{name!r} holds a {type(item).__name__}, and a data "
                         f"mark never drifts"
                     )
-            self._lifts[name] = [_Lift(item) for item in self._items[name]]
+            self._lifts[name] = [
+                _Lift(item)
+                for item in self._items[name]
+                if not getattr(item, "_eyepiece_furniture", False)
+            ]
         for lift in self._lifts[name]:
             dpi = lift.text.get_figure(root=True).dpi
             if lift_pt * dpi / 72.0 > _LIFT_MAX_PX + 1e-9:
@@ -2497,9 +2501,7 @@ def _pulse(u, shape):
     if u <= 0.0 or u >= 1.0:
         return 0.0
     if shape == "plateau":
-        # Up on the ease over the first `_PLATEAU_RISE`, hold, and back down.
-        edge = min(u, 1.0 - u) / _PLATEAU_RISE
-        return 1.0 if edge >= 1.0 else float(_ease(edge, DEFAULT_EASE))
+        return pulse_shape(u)
     return math.sin(math.pi * u) ** 2
 
 
@@ -3294,6 +3296,120 @@ def circumscribe(
 
     update(1.0)
     return PlotResult(ax=target.axes, artists={"line": line}, update=update)
+
+
+class _Underline(Line2D):
+    """A baseline stroke measured with the renderer that draws its text."""
+
+    def __init__(self, target, *, offset, linewidth, color, **kw):
+        super().__init__([], [], transform=IdentityTransform(), **kw)
+        self._target = target
+        self._offset = offset
+        self._width = linewidth
+        self._override_color = color
+        self._fraction = 0.0
+        self._opacity = 0.0
+
+    def draw(self, renderer):
+        text = self._target
+        if not self.get_visible() or not text.get_visible() or self._fraction <= 0:
+            return
+        # Measuring a word also lays out its parent line at its current anchor.
+        text.get_window_extent(renderer)
+        _, info, _ = text._get_layout(renderer)
+        _, metrics, origin = info[0]
+        position = text.get_transform().transform(text.get_unitless_position())
+        size = text.get_fontsize()
+        offset_px = _pixels(renderer, _root_figure(text), self._offset * size)
+        local = np.array([[0, -offset_px], [metrics[0] * self._fraction, -offset_px]])
+        points = Affine2D().rotate_deg(text.get_rotation()).transform(local)
+        points += position + origin
+        self.set_data(points[:, 0], points[:, 1])
+        self.set_linewidth(self._width * size)
+        self.set_color(
+            text.get_color() if self._override_color is None else self._override_color
+        )
+        opacity = to_rgba(text.get_color(), text.get_alpha())[3]
+        if self._override_color is not None:
+            opacity *= to_rgba(self._override_color)[3]
+        self.set_alpha(self._opacity * opacity)
+        super().draw(renderer)
+
+
+def underline(
+    text_artist, *, color=None, offset=0.3, linewidth=0.06,
+    draw=0.4, hold=0.25, ease=DEFAULT_EASE, zorder=21,
+):  # fmt: skip
+    """Draw a baseline underline from left to right, hold it, then fade it.
+
+    The stroke follows the text at draw time, including a word returned by
+    `words`, alignment, rotation, font size, and layout changes. It never
+    changes the target. At both ends and at rest it is absent, leaving the
+    still pixel-exact. Progress is absolute and may be revisited in any order.
+
+    Args:
+        text_artist: A single-line Matplotlib Text, including one of `words`.
+        color: Stroke color. None follows the current text color. The stroke
+            follows the effective text opacity and multiplies it by any
+            explicit stroke color opacity and the animation fade.
+        offset: Distance below the baseline, as a fraction of font size.
+        linewidth: Stroke width, as a fraction of font size.
+        draw: Fraction of progress spent drawing on, in (0, 1).
+        hold: Fraction spent at full width and opacity; draw + hold < 1.
+        ease: Easing kind or callable applied to the draw and fade phases.
+        zorder: Drawing order among the figure's children.
+
+    Returns:
+        A PlotResult with ``artists["line"]``, ``update(u)``, and a motion
+        contract declaring only the stroke as moving and the text at rest.
+
+    Example::
+
+        label = ax.text(0.2, 0.5, "the prior")
+        mark = ep.underline(label)
+        mark.update(0.5)
+    """
+    if not isinstance(text_artist, Text):
+        raise TypeError("underline needs a Text artist")
+    if "\n" in text_artist.get_text():
+        raise ValueError("underline needs single-line text")
+    draw, hold, offset, linewidth = map(float, (draw, hold, offset, linewidth))
+    if not (0 < draw < 1 and 0 <= hold < 1 - draw):
+        raise ValueError("underline needs 0 < draw and 0 <= hold with draw + hold < 1")
+    if not (
+        math.isfinite(offset)
+        and offset >= 0
+        and math.isfinite(linewidth)
+        and linewidth > 0
+    ):
+        raise ValueError("underline offset must be nonnegative and linewidth positive")
+    line = _Underline(
+        text_artist,
+        offset=offset,
+        linewidth=linewidth,
+        color=color,
+        solid_capstyle="butt",
+        zorder=zorder,
+    )
+    line.set_snap(False)
+    line.set_clip_on(False)
+    line.set_in_layout(False)
+    _root_figure(text_artist).add_artist(line)
+
+    def update(u):
+        u = _check_u(u)
+        line.set_visible(0 < u < 1)
+        line._fraction = min(1.0, max(0.0, _ease(min(u / draw, 1.0), ease)))
+        fade = max(0.0, (u - draw - hold) / (1 - draw - hold))
+        line._opacity = 1.0 - min(1.0, max(0.0, _ease(fade, ease)))
+
+    update(1.0)
+    return PlotResult(
+        ax=text_artist.axes,
+        artists={"line": line},
+        update=update,
+        contract=MotionContract(moves=(line,), rest=(text_artist,)),
+    )
 
 
 # Morph

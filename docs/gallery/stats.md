@@ -354,3 +354,17 @@ ax.plot([0, 1], [0, 1])
 ax.text(0.5, 0.5, "reference", bbox=ep.backing())
 plt.show()
 ```
+
+## Quiet the panel frame
+
+Keep the left and bottom spines on a curve or scatter panel. Pass a neutral
+level to soften them using the active mode. This leaves rcParams unchanged.
+
+```python
+import matplotlib.pyplot as plt
+import eyepiece as ep
+
+fig, ax = plt.subplots()
+ax.plot([0, 1, 2], [1, 3, 2])
+ep.quiet_spines(ax, level=0.4)
+```

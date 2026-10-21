@@ -831,3 +831,37 @@ def test_a_small_label_on_its_cue_counts_as_an_arrival(arrival):
     assert [f.kind for f in faults if f.kind == "still-speech"] == (
         [] if arrival else ["still-speech"]
     )
+
+
+@pytest.mark.parametrize("value", [1.3e-4, 1e-8, 1e-15, 1000, -2.5e2, 0])
+def test_scientific_pair_round_trips_through_the_screen_number_gate(readout, value):
+    screen, spoken = nr.scientific(value, ".1e")
+    line = nr.Line("scientific", "The value is " + spoken + ".")
+    narration = nr.Narration.estimated(nr.Script((line,)))
+    readout.set_text(screen)
+    kwargs = dict(
+        at=lambda t: None,
+        readouts={("scientific", 3): readout},
+        ceiling=200,
+        short_ceiling=200,
+    )
+    assert ept.timing_faults(narration, **kwargs) == []
+    readout.set_text(nr.scientific(value * 10 if value else 1, ".1e")[0])
+    assert "number-late" in [f.kind for f in ept.timing_faults(narration, **kwargs)]
+
+
+@pytest.mark.parametrize("shown", ["0", "0.000000000000002", "0.000000000000001"])
+def test_scientific_speech_uses_relative_tolerance_for_decimal_readouts(readout, shown):
+    _, spoken = nr.scientific(1e-15, ".0e")
+    narration = nr.Narration.estimated(nr.Script((nr.Line("tiny", spoken),)))
+    readout.set_text(shown)
+    faults = ept.timing_faults(
+        narration,
+        at=lambda t: None,
+        readouts={("tiny", 0): readout},
+        ceiling=200,
+        short_ceiling=200,
+    )
+    assert [f.kind for f in faults] == (
+        [] if shown == "0.000000000000001" else ["number-late"]
+    )

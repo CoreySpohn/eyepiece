@@ -544,3 +544,37 @@ def pixel_quads(corners, keep=None):
     if keep.shape != quads.shape[:2]:
         raise ValueError(f"keep must be {quads.shape[:2]}, got {keep.shape}")
     return quads[keep]
+
+
+def pulse_shape(u, *, rise=0.35, hold=0.3, fall=0.35, ease=DEFAULT_EASE):
+    """Rise to one, hold a plateau, and fall to zero over progress [0, 1].
+
+    Args:
+        u: Finite scalar progress. Outside [0, 1] the shape is zero.
+        rise: Positive relative duration of the rise.
+        hold: Nonnegative relative duration of the plateau.
+        fall: Positive relative duration of the fall. Phase durations are
+            normalized by their sum, so (1, 1, 2) gives quarters, then half.
+        ease: Easing kind or callable used on each edge, clipped to [0, 1].
+
+    Returns:
+        A float in [0, 1], exactly zero at the ends and one on the plateau.
+
+    Example::
+
+        strength = ep.pulse_shape(0.5)
+        held = ep.pulse_shape(0.4, rise=1, hold=2, fall=1)
+    """
+    u, rise, hold, fall = map(float, (u, rise, hold, fall))
+    total = rise + hold + fall
+    if not all(math.isfinite(x) for x in (u, rise, hold, fall, total)):
+        raise ValueError("pulse progress and durations must be finite")
+    if rise <= 0 or hold < 0 or fall <= 0:
+        raise ValueError("pulse rise and fall must be positive and hold nonnegative")
+    if u <= 0 or u >= 1:
+        return 0.0
+    rise, fall = rise / total, fall / total
+    if rise <= u <= 1 - fall:
+        return 1.0
+    edge = u / rise if u < rise else (1 - u) / fall
+    return min(1.0, max(0.0, _apply_ease(edge, ease)))

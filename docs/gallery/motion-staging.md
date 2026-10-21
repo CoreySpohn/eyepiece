@@ -86,3 +86,23 @@ plt.show()
 In a clip the frame's time sets each move's progress, so any frame draws
 itself from its state alone, and the last frame, with every move at rest,
 is the composite still.
+
+## Mark a carried panel
+
+Use a small relay note when a panel returns from the preceding clip. The
+tag uses the active neutral ramp and stays a fixed distance from the top
+corner. It fades with the panel, is not lifted as an arriving label, and
+is furniture to meaning and text-size checks. Overlap and clipping checks
+still apply.
+
+```python
+import matplotlib.pyplot as plt
+import eyepiece as ep
+
+fig, ax = plt.subplots()
+ax.plot([0, 1], [0, 1])
+tag = ep.carried_tag(ax, "(from clip 1)", corner="upper right")
+stage = ep.Stage({"panel": ax})
+stage.set(dimmed=["panel"])
+stage.rest()
+```

@@ -324,3 +324,32 @@ given to `Anchor.from_artist`, `Stage`, `indicate`, or `callout`, and the
 colors pick out the two factors the sentence names. In a clip the reveal runs
 before the caption's words are spoken, and the words that stay on screen are
 the same texts that the later moves point at.
+
+## Underline a word
+
+`underline` follows a single text or one artist from `words` at draw time.
+The line draws on, holds, and fades, leaving the still unchanged.
+
+```python
+import matplotlib.pyplot as plt
+import eyepiece as ep
+
+fig, ax = plt.subplots()
+label = ax.text(0.2, 0.5, "the prior", fontsize=20)
+mark = ep.underline(label)
+mark.update(0.5)
+fig.canvas.draw()
+```
+
+## Use the plateau shape
+
+`pulse_shape` is the shape used by plateau indications and clicks. Relative
+rise, hold, and fall durations are normalized to the progress interval.
+
+```python
+import eyepiece as ep
+
+assert ep.pulse_shape(0) == ep.pulse_shape(1) == 0
+assert ep.pulse_shape(0.5) == 1
+levels = [ep.pulse_shape(u, rise=1, hold=2, fall=1) for u in [0, 0.25, 0.5, 1]]
+```

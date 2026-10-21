@@ -62,3 +62,30 @@ print(line.spoken)
 `display=` keeps compact notation in captions while `spoken` supplies the
 voice. Keep the same sentence count in both versions to preserve caption
 timing within the line. See {doc}`../explanation/narration-design` for supported units.
+
+## Pair scientific notation with speech
+
+`scientific` returns mathtext and spoken text from one value and exponential
+format. It uses the same rounded mantissa in both. Bind the first word of
+the spoken quantity to the screen artist in the number gate. Both gates
+read the exponent as part of the value, and `lint_script` counts it as one
+quantity. Scientific screen comparisons and spoken synchronization use a relative
+tolerance cap, so small
+values cannot match merely because both are below the plain absolute floor.
+
+```python
+import matplotlib.pyplot as plt
+from eyepiece import narration as nr
+import eyepiece.testing as ept
+
+screen, spoken = nr.scientific(1.3e-4, ".1e")
+fig, ax = plt.subplots()
+label = ax.text(0.5, 0.5, screen)
+line = nr.Line("value", "The value is " + spoken + ".")
+narration = nr.Narration.estimated(nr.Script((line,)))
+faults = ept.timing_faults(
+    narration, at=lambda t: None, readouts={("value", 3): label},
+    ceiling=200, short_ceiling=200,
+)
+assert faults == []
+```

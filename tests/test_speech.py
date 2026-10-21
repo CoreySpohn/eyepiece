@@ -299,3 +299,31 @@ def test_speech_helpers_are_public():
     ):
         assert name in nr.__all__
         assert getattr(nr, name) is not None
+
+
+@pytest.mark.parametrize(
+    "value, spec, screen, spoken",
+    [
+        (1.3e-4, ".1e", r"$1.3\times10^{-4}$", "1.3 times ten to the minus four"),
+        (1e-8, ".0e", r"$1\times10^{-8}$", "1 times ten to the minus eight"),
+        (1000, ".0e", r"$1\times10^{3}$", "1 times ten to the three"),
+        (-2.5e2, ".1e", r"$-2.5\times10^{2}$", "minus 2.5 times ten to the two"),
+        (0, ".0e", r"$0\times10^{0}$", "0 times ten to the zero"),
+    ],
+)
+def test_scientific_pairs_screen_and_spoken_notation(value, spec, screen, spoken):
+    assert nr.scientific(value, spec) == (screen, spoken)
+    script = nr.Script((nr.Line("n", "It is {show:n}" + spoken + "."),))
+    assert nr.speech_faults(spoken) == []
+    assert nr.lint_script(script) == []
+
+
+@pytest.mark.parametrize("value, spec", [(float("nan"), ".1e"), (1, ".1f")])
+def test_scientific_rejects_nonfinite_values_and_nonscientific_formats(value, spec):
+    with pytest.raises(ValueError):
+        nr.scientific(value, spec)
+
+
+def test_scientific_number_detection_keeps_currency_linting_supported():
+    script = nr.Script((nr.Line("cost", "It costs {show:cost}$5."),))
+    assert nr.lint_script(script) == []

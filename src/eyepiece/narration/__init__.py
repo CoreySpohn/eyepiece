@@ -52,6 +52,7 @@ from ._speech import (
     check_silence,
     lint_script,
     say,
+    scientific,
     speech_faults,
 )
 from ._timeline import (
@@ -101,6 +102,7 @@ __all__ = [
     "parse_cues",
     "pixel_ticks",
     "say",
+    "scientific",
     "sentences",
     "speech_faults",
     "write_captions",

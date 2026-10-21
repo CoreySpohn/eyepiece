@@ -12,9 +12,11 @@ Frame rules, applied to every conversion of seconds to frames:
 - A span from ``s`` to ``e`` seconds covers frames ``k0 = frame_count(s)``
   up to ``k1 = max(k0 + 1, frame_count(e))``, ``n = k1 - k0`` of them. A span
   rounded up to one frame is a fault.
-- Its progress is 0 before ``k0``, ``ease((k - k0 + 1) / n)`` on frame ``k``
-  of the span, and exactly 1 from ``k1`` on, so the last frame shows the
-  target exactly.
+- An explicit `Timeline.cut` has zero duration, k0 = k1, and declares an
+  intended step. Its progress is 1 on its first changed frame, k0.
+- A non-cut span's progress is 0 before ``k0``, and
+  ``ease((k - k0 + 1) / n)`` on frame ``k`` of the span, and exactly 1
+  from ``k1`` on, so the last frame shows the target exactly.
 - Times are exact sums, never accumulated floats.
 
 A clip with a `eyepiece.narration.Narration` places each span on the word that
@@ -64,6 +66,7 @@ _MARKS = {
     "caption": ("show", SHOW_LEAD_S),
     "indicate": ("indicate", 0.5 * PULSE_S),
     "circumscribe": ("circumscribe", 0.0),
+    "underline": ("underline", 0.0),
     "pulse": ("indicate", 0.5 * PULSE_S),
     "ring": ("circumscribe", 0.0),
     "move": ("move", 0.0),
@@ -71,7 +74,7 @@ _MARKS = {
 # Kind names before 0.16: the deprecated `Timeline.pulse` and `Timeline.ring`
 # still make them, and `Timeline.span` accepts them with a warning.
 _OLD_KINDS = {"pulse": "indicate", "ring": "circumscribe"}
-_ATTENTION = ("indicate", "circumscribe", *_OLD_KINDS)
+_ATTENTION = ("indicate", "circumscribe", "underline", *_OLD_KINDS)
 _MOTION = ("enter", "move", "run")
 _ARRIVAL = ("text", "caption")
 _KINDS = (
@@ -84,11 +87,12 @@ _KINDS = (
     "run",
     "indicate",
     "circumscribe",
+    "underline",
     "line",
 )
-_ATTENTION_KNOBS = ("indicate.", "circumscribe.", "pulse.", "ring.")
-_UNPACED = ("text", "caption", "indicate", "circumscribe", "run", *_OLD_KINDS)
-_LINEAR = ("hold", "indicate", "circumscribe", "run", *_OLD_KINDS)
+_ATTENTION_KNOBS = ("indicate.", "circumscribe.", "underline.", "pulse.", "ring.")
+_UNPACED = ("text", "caption", *_ATTENTION, "run")
+_LINEAR = ("hold", *_ATTENTION, "run")
 
 
 def _exact(value):
@@ -142,7 +146,8 @@ class Span:
         name: Unique among the timeline's span and knob names (lines and
             sections have a namespace of their own).
         kind: One of ``hold``, ``enter``, ``leave``, ``text``, ``caption``,
-            ``move``, ``run``, ``indicate``, ``circumscribe``, ``line``.
+            ``move``, ``run``, ``indicate``, ``circumscribe``, ``underline``,
+            ``cut``, ``line``.
         section: Name of the section or line it was declared in ("" if none).
         start_s: Start in seconds, exact before frame rounding.
         end_s: End in seconds.
@@ -1156,6 +1161,37 @@ class Timeline:
             self._pair(cap, span)
         return span
 
+    def cut(self, name, *, to=None, at=None, cue=None):
+        """Declare an instant state change without consuming time.
+
+        Numeric and categorical targets step on the cut frame. With no
+        target, the span declares a cut driven by ``plan.progress``.
+        `check_clip` accepts that frame as an intended discontinuity.
+
+        Args:
+            name: Unique span name; also the knob for a scalar `to`.
+            to: A target value or dict of declared knob targets.
+            at: Time in seconds or Time; None uses now or an explicit cue.
+            cue: Full ``kind:target`` narration cue with no lead time.
+
+        Returns:
+            A zero-duration Span. Its resolved k0 and k1 are equal; start,
+            middle, and settled events all name the first changed frame.
+
+        Example::
+
+            tl = ep.Timeline({"state": 0})
+            tl.cut("switch", to={"state": 1}, at=0.5)
+            tl.hold(1)
+            plan = tl.at_fps(30)
+        """
+        writes = self._writes_of(to, name, step_only=True)
+        start, advance, _, clamped, _ = self._start_for("cut", at, cue, name)
+        return self._add(
+            name, "cut", start, Fraction(0), writes, ease="linear",
+            advance=advance, clamped=clamped,
+        )  # fmt: skip
+
     def run(self, name, seconds, *, to=None, at=None):
         """A linear run in seconds on screen, a rate: not paced, not eased.
 
@@ -1228,6 +1264,19 @@ class Timeline:
             The `Span`.
         """
         return self._attention("circumscribe", target, RING_S, at, cue)
+
+    def underline(self, target, *, at=None, cue=None):
+        """Place an `eyepiece.underline` on its cue for 1.3 seconds.
+
+        Knob ``underline.<target>`` runs from 0 to 1. The span does not
+        extend its section and a silent clip needs an explicit `at`.
+
+        Example::
+
+            tl.underline("prior", at=0.2)
+            tl.hold(2)
+        """
+        return self._attention("underline", target, RING_S, at, cue)
 
     def pulse(self, target, *, at=None, cue=None):
         """Deprecated: use `indicate`.
@@ -1311,8 +1360,8 @@ class Timeline:
             seconds: Seconds (paced by the tempo when `paced`).
             kind: One of ``hold``, ``enter``, ``leave``, ``text``,
                 ``caption``, ``move``, ``run``, ``indicate``,
-                ``circumscribe``. ``pulse`` and ``ring``, their names before
-                0.16, still work and warn.
+                ``circumscribe``, ``underline``. ``pulse`` and ``ring``, their
+                names before 0.16, still work and warn.
             to: A number for knob `name`, or a dict of knob targets; None is a
                 progress-only span. A ``hold`` steps its targets at the start.
             paced: Pace by the tempo; None follows the kind.
@@ -1501,10 +1550,11 @@ class Timeline:
         for name, s in self._spans.items():
             k0 = frame_count(float(s._t0), fps)
             raw = frame_count(float(s._t1), fps)
-            k1 = max(k0 + 1, raw)
+            is_cut = s.kind == "cut"
+            k1 = k0 if is_cut else max(k0 + 1, raw)
             if s.extends:
-                n_frames = max(n_frames, k1)
-            spans[name] = replace(s, k0=k0, k1=k1, collapsed=raw <= k0)
+                n_frames = max(n_frames, k0 + 1 if is_cut else k1)
+            spans[name] = replace(s, k0=k0, k1=k1, collapsed=not is_cut and raw <= k0)
         for name, s in list(spans.items()):
             if s.k1 > n_frames:
                 # Truncate at the clip end and keep the speed: the span keeps
@@ -1555,7 +1605,7 @@ class Timeline:
             for w in self._writes[name]:
                 by_knob.setdefault(w.knob, []).append((s, w))
         values = {}
-        steps = set()
+        steps = {s.k0 for s in spans.values() if s.kind == "cut"}
         for knob in self._known:
             initial = self._initial.get(knob, 0.0)
             vals = [initial] * n
@@ -1852,9 +1902,9 @@ class Plan:
         if where == "start":
             return s.k0
         if where == "mid":
-            return s.k0 + (s.n - 1) // 2
+            return s.k0 + max(0, s.n - 1) // 2
         if where == "last":
-            return s.k1 - 1
+            return max(s.k0, s.k1 - 1)
         raise ValueError(f"where is start, mid or last, got {where!r}")
 
     def _make_events(self):
@@ -1866,11 +1916,18 @@ class Plan:
             out.append(Event(name, what, kind, t, frame, max(frame - 1, 0), section))
 
         for name, s in self.spans.items():
-            mid = s.k0 + (s.n - 1) // 2
+            mid = self.frame_of(name, "mid")
             event(f"{name}.start", "start", s.kind, s.start_s, s.k0, s.section)
             event(f"{name}.mid", "mid", s.kind, 0.5 * (s.start_s + s.end_s), mid,
                   s.section)  # fmt: skip
-            event(f"{name}.end", "end", s.kind, s.end_s, s.k1 - 1, s.section)
+            event(
+                f"{name}.end",
+                "end",
+                s.kind,
+                s.end_s,
+                self.frame_of(name, "last"),
+                s.section,
+            )
         for name, key, a, b, k0, k1 in self._sections:
             if key is not None:
                 event(f"line:{name}.start", "line-start", "", a, k0, name)
@@ -1909,7 +1966,7 @@ class Plan:
     def step_frames(self) -> tuple[int, ...]:
         """Return sorted unique frames where a step write changes a knob value.
 
-        A hold with ``to`` or another write in step space declares a step.
+        A `Timeline.cut`, a hold with ``to``, or a step-space write declares a step.
         Non-numeric targets also step at the span start. Frame k is the first
         frame showing the new value; a write of the value already held does
         not count. At frame zero the comparison is with the initial value.
@@ -1924,7 +1981,7 @@ class Plan:
         """
         frames = set()
         for e in self.events():
-            if e.what == "cue":
+            if e.what == "cue" or e.kind == "cut":
                 frames.update((e.frame, e.before))
             elif e.what in ("mid", "end", "section-end"):
                 frames.add(e.frame)

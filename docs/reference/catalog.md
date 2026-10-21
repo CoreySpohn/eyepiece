@@ -26,6 +26,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | bring text in, or a label as the move it names settles | `tl.text(name, names=)` | Text knob ramps in; with `names=` it may start over the named move's last quarter | [motion-clock](../gallery/motion-clock.md), [motion-attention](../gallery/motion-attention.md) |
 | move a value to a target, eased | `tl.move(name, seconds, to=, space="log")` | Knobs move to targets on the ease, optionally in log space | [motion-clock](../gallery/motion-clock.md), [animation](../gallery/animation.md) |
 | run at a constant rate (a physical clock, a sweep) | `tl.run(name, seconds, to=)` | Linear in time, never paced or eased | [build-up](../tutorials/build-up.md), [check-a-clip](../how-to/check-a-clip.md) |
+| change state instantly at a declared cut | `tl.cut(name, to=, at=, cue=)` | Zero-duration span; strict builds and clip checks accept the step | [motion-clock](../gallery/motion-clock.md) |
 | hold the picture for a time | `tl.hold(seconds, to=)` | A span in which nothing moves; `to` steps knobs at its start | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
 | hold the picture until a time computed elsewhere | `tl.wait_until(*times)` | Extends the section to that time without placing a span | [motion-clock](../gallery/motion-clock.md), [clock](../explanation/clock.md) |
 | hold long enough to read some text | `tl.read(text)`, `Tempo.read_s(text)` | Hold of `factor * (base_s + word_s * words)` | [motion-clock](../gallery/motion-clock.md), [motion-camera](../gallery/motion-camera.md) |
@@ -74,8 +75,9 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
+| underline words for a beat | `underline(text_artist, color=, ease=)`, placed by `tl.underline(target)` | Draws along the baseline, holds, then fades | [motion-attention](../gallery/motion-attention.md) |
 | light the thing the narration names | `indicate(artists, scale=, strength=, shape=)`, placed by `tl.indicate(target)` | Swells and tints toward the text ink, then returns exactly | [motion-attention](../gallery/motion-attention.md), [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
-| a plateau pulse (emphasis held at its peak) | `indicate(..., shape="plateau")` | Up 35%, hold 30%, down 35% | [contract](../explanation/contract.md) (prose) |
+| a plateau pulse (emphasis held at its peak) | `pulse_shape(u, rise=, hold=, fall=, ease=)`, `indicate(..., shape="plateau")` | One shared shape: up 35%, hold 30%, down 35% by default | [motion-attention](../gallery/motion-attention.md) |
 | outline a thing, then let it go | `circumscribe(target, shape=, style="trace")`, placed by `tl.circumscribe(target)` | Outline draws on, then fades | [motion-attention](../gallery/motion-attention.md) (`circumscribe`), [motion-clock](../gallery/motion-clock.md) (`tl.circumscribe`) |
 | pass a comet around a thing | `circumscribe(target, style="flash")` | A tapered comet runs once around the outline | [contract](../explanation/contract.md) (prose) |
 | put a no-hue cue behind the subject | `MotifSet.default()["cue"].patch_kw()` on a patch you draw | Text-ink band, ring or underlay behind the subject | [motifs](../gallery/motifs.md) (no function; hand-built patch) |
@@ -127,13 +129,16 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
+| separate end labels of nearby curves | `spread_labels(labels, min_gap=)` | Least squared vertical movement, order preserved, inside the axes | [profiles](../gallery/profiles.md) |
 | a labeled threshold or reference line | `ref_line(ax, value, label, orient=, where=)` | Line with its label pinned to an axes edge | [marks](../gallery/marks.md) |
 | a reference line with its own reveal beat | `ref_line(...)`, then `draw_on(result.artists["line"])` and a `Stage` group for its label, on a `tl.enter` span | No single move: compose the still with a reveal | [marks](../gallery/marks.md) (still only) |
 | shade excluded intervals | `shade_intervals(x, mask, intervals=)` | Masked runs as bands | [marks](../gallery/marks.md) |
 | a zero row on a log axis | `log_zero_floor(ax, floor)` | Zero row at a display floor with a break mark | [marks](../gallery/marks.md) |
 | a labeled bracket | `bracket(ax, x0, x1, y, text, depth=)` | Square bracket labeled on its far side | [scene](../gallery/scene.md) |
+| mark a panel carried from a previous clip | `carried_tag(ax, text, corner=)` | Fixed neutral italic furniture in a top corner | [motion-staging](../gallery/motion-staging.md) |
 | a label that reads over marks or pixels | `backing(alpha=)` | `bbox` plate in the background color | [stats](../gallery/stats.md) |
 | a dashed circle or path legible on any pixels | `overlay_circle`, `overlay_line` | Dashed mark with an underlay | [images](../gallery/images.md) |
+| quiet the frame of a line or scatter panel | `quiet_spines(ax, keep=, level=)` | Hides unkept spines and optionally softens the rest | [stats](../gallery/stats.md) |
 | a neutral scenery tone | `neutral(level)` | Gray between background and text ink | [stats](../gallery/stats.md) |
 | the brand color of a role | `role(name, mode=)` | Hex color for a named role or a neutral rank, in the active or a given mode | [stats](../gallery/stats.md) |
 | a pixel-edge extent and matching axis labels | `extent_lod_from_pixels`, `extent_lod`, `extent_arcsec`, `extent_au`, `label_lod`, `label_arcsec`, `label_au` | Extents and labels for image axes | [images](../gallery/images.md) (`extent_lod_from_pixels`, `label_lod`), [profiles](../gallery/profiles.md) (prose: `extent_arcsec`, `extent_au`); the rest API reference |
@@ -203,6 +208,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | lay the measured speech on the clock | `nr.Narration.load(script, cache_dir)`, `nr.Narration.place`, `nr.Narration.beat`, `nr.Narration.cue`, `nr.Narration.cues`, `nr.Narration.start`, `nr.Narration.end`, `nr.Narration.total_s` | Beats, words and cue times on one clock | [narrated](../tutorials/narrated.md), [check-timing](../how-to/check-timing.md); `place`, `beat` and `cue` (prose) |
 | list what is heard and what is silent | `nr.Narration.audit()` | One row per beat | API reference |
 | check every cue mark is handled | `nr.Narration.check(kinds=, targets=, used=)` | Raises on a cue the clip never fires | API reference |
+| pair a scientific value on screen with speech | `nr.scientific(value, spec)` | Mathtext and spoken wording from one rounded value; both number gates read the full quantity | [write-numbers-for-speech](../how-to/write-numbers-for-speech.md) |
 | write numbers for speech | `nr.say(value, spec, unit=)` | Notation expanded for the voice | [write-numbers-for-speech](../how-to/write-numbers-for-speech.md) |
 | find text the voice will misread | `nr.speech_faults(text)`, `nr.check_script_speech(script)`, `nr.lint_script(script)` | Notation and wording findings | [write-numbers-for-speech](../how-to/write-numbers-for-speech.md), [check-narration-and-motion](../how-to/check-narration-and-motion.md) |
 | land a counter on its spoken number | `nr.check_number_sync(narration, bindings, plan=)` | Counter reaches the number as it is said | [check-narration-and-motion](../how-to/check-narration-and-motion.md) |

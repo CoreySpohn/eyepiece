@@ -385,3 +385,31 @@ def backing(alpha=0.85):
         "facecolor": face,
         "edgecolor": "none",
     }
+
+
+def quiet_spines(ax, *, keep=("left", "bottom"), level=None):
+    """Keep selected axes spines and optionally soften their neutral tone.
+
+    This styles one axes without changing rcParams. A repeated call gives
+    the same visibility, including restoring any kept spine previously hidden.
+
+    Args:
+        ax: The axes to style.
+        keep: Names of spines to show. The others are hidden.
+        level: None preserves kept colors; a value in [0, 1] uses `neutral`.
+
+    Example::
+
+        ep.quiet_spines(ax, level=0.4)
+    """
+    keep = set(keep)
+    unknown = keep.difference(ax.spines)
+    if unknown:
+        raise ValueError(f"unknown spine names: {sorted(unknown)}")
+    if level is not None and not 0 <= float(level) <= 1:
+        raise ValueError("spine level must be in [0, 1]")
+    color = None if level is None else neutral(level)
+    for name, spine in ax.spines.items():
+        spine.set_visible(name in keep)
+        if name in keep and color is not None:
+            spine.set_color(color)
