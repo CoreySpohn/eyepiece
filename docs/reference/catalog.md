@@ -84,7 +84,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | a line from a mark in one panel to a mark in another | `link(source, target, fig=)` | Grows a connector across panels | [motion-attention](../gallery/motion-attention.md) |
 | carry a copy of a mark across panels | `flight(source, destination, fig=, arc=)` | A copy flies and crossfades | [motion-attention](../gallery/motion-attention.md) |
 | dim the whole figure outside a region | `spotlight(fig, rects, strength=)` | Background-colored veil with holes | [motion-camera](../gallery/motion-camera.md) |
-| light the same objects in several panels | `brush(axes, quads, values, dim=)` | Lights matching pixels, dims the rest | [motion-equations](../gallery/motion-equations.md) |
+| light the same objects in several panels | `brush(axes, quads, values, veil_alpha=)` | Lights matching pixels; `veil_alpha` is veil opacity | [motion-equations](../gallery/motion-equations.md) |
 | name a point of the figure (data point or part of an artist) | `Anchor(ax=, xy=)`, `Anchor.from_artist(artist, loc=)` | A point resolved in display space at draw time | [motion-attention](../gallery/motion-attention.md), [attention-moves](../reference/attention-moves.md) (prose) |
 | check every leader and link | `audit(fig)`, `AttentionFault` | Connector-rule check | [motion-camera](../gallery/motion-camera.md); `AttentionFault` in [motion-attention](../gallery/motion-attention.md) (prose) |
 | a magnified inset that follows a moving point | `follow_zoom(ax, target, zoom=)` | Haloed inset with connectors | [motion-camera](../gallery/motion-camera.md) |
@@ -302,3 +302,6 @@ replacement. They are out of every `__all__`, and they go away in the next minor
 | `tl.ring(target)` | `tl.circumscribe(target)` | The same, with the knob `circumscribe.<target>` |
 | `tl.span(..., kind="pulse")`, `kind="ring"` | `kind="indicate"`, `kind="circumscribe"` | Span kinds follow the verbs |
 | `PRESETS["talk_60"]` | `PRESETS["talk"]` | The same fps and dpi pair |
+
+`brush(dim=)` is a deprecated spelling of `brush(veil_alpha=)`, with the same
+opacity value. `Stage(dim=)` continues to mean contrast retained.

@@ -1,5 +1,7 @@
 """Morphs: an image drawn as movable pixel quads, and linked brushing."""
 
+import warnings
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
@@ -170,4 +172,21 @@ def test_brush_veils_each_panel_in_its_own_background():
     veils = res.artists["fill"]
     assert veils[0].get_facecolor()[:3] == pytest.approx((0.0, 0.0, 0.0))
     assert veils[1].get_facecolor()[:3] == pytest.approx(to_rgba("#334455")[:3])
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("alpha", [0.0, 0.3, 0.72, 1.0, None])
+def test_brush_veil_alpha_and_deprecated_dim_keep_the_same_opacity(alpha):
+    fig, axes, quads, values = _two_panels()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        current = ep.brush(axes, quads, values, veil_alpha=alpha)
+    assert not [w for w in caught if w.category is DeprecationWarning]
+    with pytest.warns(DeprecationWarning, match="veil_alpha") as caught:
+        legacy = ep.brush(axes, quads, values, dim=alpha)
+    assert len(caught) == 1
+    assert caught[0].filename == __file__
+    for result in (current, legacy):
+        result.update(values > 9.0)
+        assert [v.get_alpha() for v in result.artists["fill"]] == [alpha, alpha]
     plt.close(fig)

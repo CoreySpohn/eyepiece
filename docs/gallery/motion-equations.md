@@ -86,6 +86,11 @@ for axis, t in zip(axes, (0.0, 0.55, 1.0), strict=True):
 plt.show()
 ```
 
+`brush(veil_alpha=0.72)` controls the veil opacity applied to unselected
+objects. `Stage(dim=...)` instead controls contrast retained. The old
+`brush(dim=...)` spelling keeps its opacity meaning and warns to use
+`veil_alpha`.
+
 `brush` is how the image and its unrolled copy show that they hold the same
 pixels without an arrow drawn between them. It veils both panels in their
 background color and redraws the chosen pixels above the veil in each, so one
@@ -104,7 +109,7 @@ right.set_ylabel("angle around the star")
 right.set_yticks([])
 ep.label_lod(left)
 
-linked = ep.brush([left, right], [quads, unroll(1.0)], FIELD[keep], norm=NORM)
+linked = ep.brush([left, right], [quads, unroll(1.0)], FIELD[keep], norm=NORM, veil_alpha=0.72)
 linked.update(np.abs(r[keep] - 8.0) <= half)
 plt.show()
 ```
