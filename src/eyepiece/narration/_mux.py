@@ -635,6 +635,10 @@ def captions(
 ):
     """The script as caption cues, wrapped and split to reading limits.
 
+    These are subtitle cues for a caption track (`write_vtt`, `write_srt`),
+    not on-screen text: `eyepiece.Timeline.caption` places a caption in the
+    picture, and `eyepiece.callout` labels a subject.
+
     A sentence becomes one cue. A sentence that does not fit in `max_lines`
     lines of `max_chars` characters, or that lasts longer than `max_cue_s`,
     is split first at a clause boundary (after a comma, colon, semicolon or

@@ -1275,6 +1275,10 @@ def callout(
 ):
     """Write a short caption beside the thing it describes.
 
+    A callout is a label tied to its subject. `eyepiece.Timeline.caption`
+    times a caption on the clock, and `eyepiece.narration.captions` builds
+    subtitle cues from the narration.
+
     The caption is anchored to its subject, so it moves with it, and it is
     short: a reader takes it in at a glance, at the place they are already
     looking. It sits `offset_pt` off the subject's box on one `side`; given

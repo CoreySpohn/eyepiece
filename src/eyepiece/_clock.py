@@ -1060,6 +1060,11 @@ class Timeline:
     def caption(self, name, text, *, leaves=None, at=None, cue=None, names=None):
         """A caption arrives over 0.4 s: knob ``caption.<name>`` ramps 0 to 1.
 
+        This places on-screen caption text on the clock. Two other names
+        differ: `eyepiece.narration.captions` builds the subtitle cues of the
+        narration for a caption track, and `eyepiece.callout` draws a short
+        label beside the subject it names.
+
         It leaves once read (arrival plus `Tempo.read_s`), when the next
         caption arrives, or never. The default is to leave once read in a
         silent clip and when the next caption arrives in a narrated one.
@@ -1347,6 +1352,9 @@ class Timeline:
 
     def stagger(self, verb, targets, *, each_s, **kwargs):
         """Call `verb` on each target, each one `each_s` seconds after the last.
+
+        This staggers whole spans on the clock; `eyepiece.stagger` staggers
+        the items of one move within its progress.
 
         Every call is placed with ``at=``, so none of them moves ``now``
         by itself. When the verb extends its section (``enter``, ``leave``,

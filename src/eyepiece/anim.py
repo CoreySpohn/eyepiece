@@ -1240,6 +1240,11 @@ def animate(fig, draw, frames, *, fps=10, n_frames=None):
     frame would stack artists up. To animate in redraw style instead, call
     `ax.clear()` inside `draw`.
 
+    Two functions share the name and take a prepared `Sequence` instead of a
+    figure and a draw callable: `eyepiece.mpl.animate` plays one through this
+    function, and `eyepiece.manim.animate` plays one in Manim. Use this one
+    when the caller owns the figure and the per-frame update.
+
     Example::
 
         result = imshow_log(frames_data[0])
