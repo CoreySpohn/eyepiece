@@ -26,7 +26,6 @@ import eyepiece.render as render
 from eyepiece import _render_chunks as chunk_protocol
 from eyepiece import _render_pool as pool
 from eyepiece._ffmpeg import resolve_ffmpeg
-from eyepiece.anim import _agg_canvas, _rc_overrides, _Recorder
 
 
 def read_pixels(path):
@@ -55,22 +54,22 @@ def test_poster_matches_raster_and_decoded_video(tmp_path):
     def reference(settle_index):
         with matplotlib.rc_context(matplotlib.rcParamsDefault):
             setup_style()
-            with (
-                matplotlib.rc_context(rc),
-                matplotlib.rc_context(_rc_overrides([], snap=False)),
-            ):
+            with matplotlib.rc_context(rc):
                 fig, draw = build_poster_clip()
+                destination = tmp_path / f"reference-{settle_index}.png"
                 try:
-                    with _agg_canvas(fig):
+                    with ep.record(
+                        fig,
+                        tmp_path / "reference.mp4",
+                        fps=12,
+                        dpi=100,
+                        stills={destination: 1 / 12},
+                    ) as rec:
                         draw(fig, frames[settle_index])
-                        _Recorder(fig, [], {"frames": 0}, 100)._freeze_layout()
-                        fig.dpi = 100
+                        rec.frame()
                         draw(fig, frames[2])
-                        fig.canvas.draw()
-                        width, height = fig.canvas.get_width_height()
-                        return np.asarray(fig.canvas.buffer_rgba())[
-                            : height // 2 * 2, : width // 2 * 2
-                        ].copy()
+                        rec.frame()
+                    return read_pixels(destination)
                 finally:
                     plt.close(fig)
 
@@ -509,3 +508,17 @@ def test_variant_poster_validation_precedes_any_build(tmp_path, poster):
             workers=1,
         )
     assert not (tmp_path / "builds").exists()
+
+
+def test_still_savefig_kwargs_preserve_exact_pixel_size(tmp_path):
+    path = ep.render_still(
+        build_still,
+        tmp_path / "fixed.png",
+        dpi=100,
+        bbox_inches=None,
+        facecolor="red",
+        edgecolor="red",
+    )
+    with Image.open(path) as image:
+        assert image.size == (200, 100)
+        assert image.convert("RGBA").getpixel((0, 0)) == (255, 0, 0, 255)

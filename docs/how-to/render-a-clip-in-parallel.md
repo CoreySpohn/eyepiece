@@ -133,13 +133,24 @@ assert serial.path.read_bytes() == path.read_bytes()
 `resumed` (reused chunks), `workers`, and elapsed `seconds`. `workers=1`
 renders in the same process with the same code and gives the same bytes.
 Pass style changes explicitly through `setup=` and `rc=` so every worker
-receives them.
+receives them. Builders run before recording rc overrides, just as a figure
+built before entering `record`. The driver resizes the figure to even
+pixels before frame zero, using the same adjustment as the H.264 movie
+writer. Layout settles at the output dpi. Your draw function runs at the
+figure's own dpi, and each frame is captured at the output dpi through
+`savefig`. With the same style, frames, and encoder settings, this matches
+`record` frame bytes, including odd-sized figures. `RawSink` also strips
+container metadata and uses bitexact ffmpeg flags. For an identical MP4
+file from `record`, pass `extra_ffmpeg_args=["-fflags", "+bitexact",
+"-flags:v", "+bitexact", "-map_metadata", "-1"]` there too.
 
 ## Resume after a crash
 
 Pass a `content_key` as `key=` and rerun with the same inputs, settings,
 and `work_dir` after a crash. Complete chunks with matching identities and
-checksums are reused. A failed render leaves the destination video untouched.
+checksums are reused. Chunks from the earlier crop-based rasterizer are
+invalidated automatically, including with a manually supplied key. A failed
+render leaves the destination video untouched.
 Change the key whenever an input changes.
 
 Chunk files live in `work_dir`, which must be a dedicated empty folder or a
@@ -174,12 +185,18 @@ print(f"Reused {recovered.resumed} complete chunks")
 
 With `resume=False` or `key=None`, chunks are never reused and are deleted
 as they are consumed. With a key and resume enabled, chunks remain until
-the video succeeds, then are deleted unless `keep_chunks=True`.
+the video succeeds, then are deleted unless `keep_chunks=True`. Successful
+renders also remove worker claim and control files. The ownership marker,
+retained chunks, and unrelated files remain.
 
 ## Name the content inputs
 
 `content_key` hashes the script, clock, module sources, data, settings, and
-package and ffmpeg versions. Include fps, dpi, encoder options, rc, holds,
+package and ffmpeg versions. It always includes a SHA-256 source hash of
+the eyepiece package: sorted logical relative paths and bytes of every
+`.py` file, excluding `__pycache__`. Editable source changes therefore
+invalidate keys even when `eyepiece.__version__` stays the same. Absolute
+installation paths do not affect the hash. Include fps, dpi, encoder options, rc, holds,
 and frame items or count in `settings`. Include the source and inputs of a
 `frame_at` callable too, when using one.
 
@@ -259,6 +276,33 @@ counts, and render settings. Current entries skip rendering. The driver
 saves it automatically; unchanged JSON keeps its modification time.
 A `Manifest` file has a single writer. Serialize calls that write the same
 file, even when their clips or output directories differ.
+
+### Choose output paths
+
+By default, each video is `<slug>-<variant>.mp4` under `out_dir`.
+`ClipSpec.target_for(variant)` can return a different relative `.mp4` path,
+including nested folders. Each requested variant must have a unique target.
+Posters follow the video parent and stem.
+Output destinations do not affect content keys. Changing a destination
+renders there even if the old manifest entry is current.
+
+The `after(variant, out_dir)` callback keeps receiving the output root.
+Use the same path function to place captions or other companions beside
+the video, and return their paths so the manifest tracks them.
+
+```python
+def target_for(variant):
+    return Path(variant.venue) / f"marker-{variant.name}.mp4"
+
+
+def after(variant, out_dir):
+    captions = out_dir / target_for(variant).with_suffix(".vtt")
+    captions.write_text("WEBVTT\n", encoding="utf-8")
+    return [captions]
+
+
+nested_spec = replace(spec, target_for=target_for, after=after)
+```
 
 ### Keep data scales fixed
 
@@ -490,7 +534,11 @@ frame index. Its PNG matches the worker raster at that index. Use the same
 `dpi`, `setup`, and `rc` as the video.
 
 `render_still` takes a builder returning a figure and saves it through
-`save_fig` as PNG, PDF, or SVG. `same_picture` compares PNG channel levels
+`save_fig` as PNG, PDF, or SVG. Pass savefig keywords directly to override
+style defaults. For a fixed-size image, use
+`ep.render_still(clip.build_still, output / "fixed.png", dpi=dpi, bbox_inches=None)`;
+this preserves the figure's full pixel dimensions instead of cropping to its
+artists. `same_picture` compares PNG channel levels
 with a tolerance and can ignore a bottom band, such as a provenance stamp.
 
 ```{code-cell} python

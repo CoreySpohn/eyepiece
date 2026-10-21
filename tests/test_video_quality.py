@@ -422,9 +422,13 @@ def test_the_phase_ring_has_no_dark_stripe_at_its_segment_joints():
 
 
 def test_the_phasor_ring_uses_the_same_seamless_stroke():
-    ring = ep.phasor([1.0], ring=True).artists["collection"]
-    assert ring.get_capstyle() == "round" and ring.get_joinstyle() == "round"
-    assert len(ring.get_segments()) == 180
+    result = ep.phasor([1.0], ring=True)
+    try:
+        ring = result.artists["collection"]
+        assert ring.get_capstyle() == "round" and ring.get_joinstyle() == "round"
+        assert len(ring.get_segments()) == 180
+    finally:
+        plt.close(result.fig)
 
 
 @needs_ffmpeg

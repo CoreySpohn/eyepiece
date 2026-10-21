@@ -25,7 +25,7 @@ from eyepiece._render_pool import (
 def render_poster(
     build, frames, index, path, *, dpi, frame_at=None, setup=None, rc=None
 ) -> Path:
-    """Atomically save a worker's even-cropped frame pixels as a PNG.
+    """Atomically save a worker's frame pixels after even-size adjustment as a PNG.
 
     Layout is frozen after drawing frame zero, exactly as for a video worker.
     The PNG contains RGBA pixels without metadata. Figure, style, and rc state
@@ -72,7 +72,9 @@ def render_poster(
     return path
 
 
-def render_still(build, path, *, dpi=None, setup=None, rc=None, metadata=None) -> Path:
+def render_still(
+    build, path, *, dpi=None, setup=None, rc=None, metadata=None, **savefig_kwargs
+) -> Path:
     """Build and save a deterministic still through eyepiece.save_fig.
 
     Default style state, setup, and rc are applied in the same order as for
@@ -85,6 +87,8 @@ def render_still(build, path, *, dpi=None, setup=None, rc=None, metadata=None) -
         setup: Callable run before applying rc and building the figure.
         rc: Matplotlib overrides held open during building and saving.
         metadata: Optional format-specific metadata passed to save_fig.
+        **savefig_kwargs: Extra savefig options passed to save_fig, overriding
+            style defaults. Use bbox_inches=None to preserve the figure size.
 
     Returns:
         The saved Path returned by save_fig.
@@ -105,6 +109,7 @@ def render_still(build, path, *, dpi=None, setup=None, rc=None, metadata=None) -
             overrides["dpi"] = dpi
         if metadata is not None:
             overrides["metadata"] = metadata
+        overrides.update(savefig_kwargs)
         return eyepiece.save_fig(fig, path.name, dir=path.parent, **overrides)
 
 

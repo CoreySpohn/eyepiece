@@ -270,3 +270,19 @@ def draw_rescale_clip(fig, frame, *, drift_at):
 def build_rescale_variant(venue, mode, **kwargs):
     """Adapt the data-scale probe to the variant builder contract."""
     return build_rescale_clip(**kwargs)
+
+
+def build_record_clip():
+    """Exercise odd raster sizing, build-time line caps, and label measurement."""
+    fig, ax = plt.subplots(figsize=(3.21, 1.81), dpi=73, layout="constrained")
+    ax.plot([0.2, 0.8], [0.4, 0.6], linewidth=5)
+    ax.set(xlim=(0, 1), ylim=(0, 1), xlabel="Layout label")
+    fig.text(0.5, 0.9, "Measured label", fontsize=9)
+    return fig, draw_record_clip
+
+
+def draw_record_clip(fig, frame):
+    """Place a label using the figure's current renderer before capture."""
+    label = fig.texts[0]
+    width = label.get_window_extent(fig.canvas.get_renderer()).width
+    label.set_x((fig.axes[0].bbox.x0 + width * 0.1) / fig.bbox.width + frame * 0.1)

@@ -5,8 +5,10 @@ import hashlib
 import math
 import os
 import shutil
+import tempfile
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from functools import partial
 from numbers import Integral, Real
@@ -126,6 +128,10 @@ class ClipSpec:
         frame_at_for: Optional parent-only callable taking a Variant and
             overriding frame_at with a picklable index-to-item callable or None.
             Its behavior must be represented by clock or named source inputs.
+        target_for: Optional parent-only callable taking a Variant and returning
+            a unique .mp4 path relative to out_dir. None uses <slug>-<variant>.mp4.
+            Posters use the same parent and stem. The after callback can use
+            this callable to place companion outputs beside the video.
         adopt_build: Optional picklable builder with the same signature as
             build, reproducing videos made with an older figure or stamp.
     """
@@ -150,6 +156,7 @@ class ClipSpec:
     frames_for: object = None
     frame_at_for: object = None
     adopt_build: object = None
+    target_for: Callable[[Variant], str | Path] | None = None
 
 
 class VariantResult(NamedTuple):
@@ -180,9 +187,15 @@ def _variant_video(
 
     if target is None:
         target = out_dir / f"{spec.slug}-{variant.name}.mp4"
-    silent = out_dir / f".{target.stem}.silent.mp4" if variant.narrated else target
-    muxed = out_dir / f".{target.stem}.mux.mp4"
-    try:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with (
+        tempfile.TemporaryDirectory(
+            prefix=f".{target.stem}.narration-", dir=target.parent
+        )
+        if variant.narrated
+        else nullcontext()
+    ) as scratch:
+        silent = Path(scratch) / "silent.mp4" if variant.narrated else target
         result = render_frames(
             partial(spec.build, venue, variant.mode),
             spec.frames,
@@ -196,20 +209,17 @@ def _variant_video(
             extra_ffmpeg_args=spec.extra_ffmpeg_args,
             setup=partial(hwostyle.use, variant.mode),
             rc=dict(venue.rc or {}),
-            work_dir=out_dir / f".chunks-{target.stem}",
+            work_dir=target.parent / f".chunks-{target.stem}",
             key=key,
             on_rescale=spec.on_rescale,
         )
         if variant.narrated:
             from eyepiece import narration
 
+            muxed = Path(scratch) / "mux.mp4"
             narration.mux(silent, audio, muxed)
             os.replace(muxed, target)
         return target, result.frames
-    finally:
-        if variant.narrated:
-            silent.unlink(missing_ok=True)
-            muxed.unlink(missing_ok=True)
 
 
 def _adopt_video(spec, variant, venue, out_dir, target, hold, audio, workers):
@@ -230,7 +240,7 @@ def _adopt_video(spec, variant, venue, out_dir, target, hold, audio, workers):
         return filecmp.cmp(scratch, target, shallow=False)
     finally:
         scratch.unlink(missing_ok=True)
-        shutil.rmtree(out_dir / f".chunks-{scratch.stem}", ignore_errors=True)
+        shutil.rmtree(scratch.parent / f".chunks-{scratch.stem}", ignore_errors=True)
 
 
 def render_variants(
@@ -300,7 +310,9 @@ def render_variants(
             matplotlib.RcParams(venue.rc or {})
         except (KeyError, ValueError, TypeError) as exc:
             raise ValueError(f"Venue {venue.name}: invalid rc settings: {exc}") from exc
+    out_dir = Path(out_dir).resolve()
     resolved = []
+    targets = set()
     for variant in requested:
         if (
             not isinstance(variant.mode, str)
@@ -344,9 +356,26 @@ def render_variants(
             )
         if variant.narrated and spec.audio is None:
             raise ValueError(f"Narrated variant {variant.name} requires audio")
-        resolved.append((variant, variant_spec, count))
+        relative_target = Path(
+            spec.target_for(variant)
+            if spec.target_for is not None
+            else f"{spec.slug}-{variant.name}.mp4"
+        )
+        target = (out_dir / relative_target).resolve()
+        if (
+            relative_target.is_absolute()
+            or not target.is_relative_to(out_dir)
+            or target.suffix.lower() != ".mp4"
+        ):
+            raise ValueError(
+                "target_for must return an .mp4 target relative to out_dir"
+            )
+        if target in targets:
+            raise ValueError(f"Duplicate variant target: {relative_target}")
+        targets.add(target)
+        resolved.append((variant, variant_spec, count, target))
     jobs = []
-    for variant, variant_spec, count in resolved:
+    for variant, variant_spec, count, target in resolved:
         venue = venues[variant.venue]
         hold = tuple(frame_count(seconds, venue.fps) for seconds in spec.hold_s)
         audio = Path(spec.audio(variant)) if variant.narrated else None
@@ -373,16 +402,14 @@ def render_variants(
             },
             extra=extra,
         )
-        jobs.append((variant, variant_spec, count, venue, hold, audio, key))
-    out_dir = Path(out_dir).resolve()
+        jobs.append((variant, variant_spec, count, venue, hold, audio, key, target))
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
     try:
-        for variant, variant_spec, count, venue, hold, audio, key in jobs:
+        for variant, variant_spec, count, venue, hold, audio, key, target in jobs:
             entry = manifest.entry(spec.slug, variant.name)
-            target = out_dir / f"{spec.slug}-{variant.name}.mp4"
             expected = [target]
-            poster = out_dir / f"{spec.slug}-{variant.name}-poster.png"
+            poster = target.with_name(f"{target.stem}-poster.png")
             if spec.poster is not None and not variant.narrated:
                 expected.append(poster)
             recorded = (
@@ -416,7 +443,15 @@ def render_variants(
                     frames = count + sum(hold)
                 else:
                     target, frames = _variant_video(
-                        variant_spec, variant, venue, out_dir, key, hold, audio, workers
+                        variant_spec,
+                        variant,
+                        venue,
+                        out_dir,
+                        key,
+                        hold,
+                        audio,
+                        workers,
+                        target=target,
                     )
                 outputs = [target]
                 if spec.poster is not None and not variant.narrated:

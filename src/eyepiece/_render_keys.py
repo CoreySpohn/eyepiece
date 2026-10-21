@@ -178,6 +178,9 @@ def content_key(
     dtype, distinct from Python scalars. Floating-point bits, including signed
     zero and NaN payloads, are preserved. Paths contribute file bytes, never
     absolute filenames.
+    The eyepiece package source is always included: every .py file is hashed
+    by logical relative path and bytes, using the same rules as modules.
+    Source edits in editable installs invalidate keys without a version bump.
     Output destinations and provenance stamps are not implicit inputs.
 
     Args:
@@ -197,7 +200,8 @@ def content_key(
 
     Returns:
         A SHA-256 hex digest including eyepiece, matplotlib, numpy, hwostyle,
-        and ffmpeg versions. Unavailable versions are recorded as None.
+        and ffmpeg versions, and the eyepiece source hash. Unavailable versions
+        are recorded as None.
 
     Raises:
         TypeError: If a value is unsupported or an array has an object dtype.
@@ -210,6 +214,7 @@ def content_key(
         if not isinstance(value, (list, tuple)):
             raise TypeError(f"{name} must be a list or tuple")
     values = {
+        "eyepiece_source": hashlib.sha256(_module_source(eyepiece)).hexdigest(),
         "script": script,
         "clock": clock,
         "modules": tuple(_module_source(module) for module in modules),

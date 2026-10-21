@@ -12,7 +12,8 @@ from contextlib import contextmanager
 
 import numpy as np
 
-_SCHEMA = 1
+# Version 2 uses record-compatible figure sizing and draw state.
+_SCHEMA = 2
 _SCALE_SCHEMA = 1
 _MAGIC = b"EPCHUNK\0"
 _HEADER = struct.Struct("!8sI32sIII")
@@ -208,5 +209,10 @@ def _workspace(folder):
             ):
                 path.unlink()
         yield
+        # The render's inner ExitStack has stopped every worker before this
+        # success cleanup. Keep resumable chunks and caller-owned files.
+        for path in folder.iterdir():
+            if _PROTOCOL_NAME.fullmatch(path.name):
+                path.unlink(missing_ok=True)
     finally:
         lock.unlink(missing_ok=True)
