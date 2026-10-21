@@ -36,9 +36,25 @@ def _is_null(contour):
     return bool(np.all(contour == contour[0, 0]))
 
 
-def _distance_to(points, curve_points):
-    d = np.linalg.norm(points[:, None] - curve_points[None], axis=-1)
-    return d.min(axis=1).max()
+def _distance_to(points, curve_points, reach=0.05):
+    """Largest distance from any of `points` to its nearest curve point.
+
+    Exact whenever the answer is below `reach`, and `inf` otherwise. Only the
+    reference points inside the x-window of each point are compared: the full
+    (n, m) table for a 12-glyph group reaches tens of gigabytes.
+    """
+    order = np.argsort(curve_points[:, 0])
+    ref = curve_points[order]
+    xs = ref[:, 0]
+    lo = np.searchsorted(xs, points[:, 0] - reach, side="left")
+    hi = np.searchsorted(xs, points[:, 0] + reach, side="right")
+    worst = 0.0
+    for p, i, j in zip(points, lo, hi, strict=True):
+        if i == j:
+            return np.inf
+        nearest = np.sqrt(np.min(np.sum((ref[i:j] - p) ** 2, axis=1)))
+        worst = max(worst, float(nearest))
+    return worst if worst < reach else np.inf
 
 
 def test_to_cubic_round_trips_lines_quadratics_and_cubics():
@@ -198,6 +214,19 @@ def test_twelve_glyphs_into_four_stack_copies_of_the_four():
         assert _distance_to(ref[::200], back) < 5e-3
     for pair_a, pair_b in zip(al.a, al.b, strict=True):
         assert [len(c) for c in pair_a] == [len(c) for c in pair_b]
+
+
+def test_aligning_a_dozen_glyphs_keeps_the_curve_counts_small():
+    sources = [_glyph(c) for c in "Pr(E|H)Pr(H)"[:12]]
+    targets = [_glyph(c) for c in "0.24"]
+    al = _bezier.align_groups(sources, targets)
+    original = [sum(len(c) for c in g) for g in sources]
+    for k, (pair_a, pair_b) in enumerate(zip(al.a, al.b, strict=True)):
+        total = sum(len(c) for c in pair_a)
+        assert total == sum(len(c) for c in pair_b)
+        # Splitting adds curves to the shorter side only, never multiplies them.
+        assert total <= 2 * max(original[k], 12)
+    assert sum(sum(len(c) for c in g) for g in al.a) < 400
 
 
 def test_four_glyphs_into_twelve_stack_copies_of_the_four():
