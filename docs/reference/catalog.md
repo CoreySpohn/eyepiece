@@ -107,14 +107,14 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| land a composite in one beat (the click) | `click(lines, dot=, readout=, ruler=, swell=1.55)`, placed by `tl.click(target)` | 0.6 s: ink swells on a plateau, end dot grows, number sets bold, ruler recedes; 1.5 s hold after | [contract](../explanation/contract.md) (prose); full example only in `docs/narration/cues_sweep/sweep.py` |
+| land a composite in one beat (the click) | `click(lines, dot=, readout=, ruler=, swell=1.55)`, placed by `tl.click(target)` | 0.6 s: ink swells on a plateau, end dot grows, number sets bold, ruler recedes; 1.5 s hold after | [land-an-answer](../how-to/land-an-answer.md) |
 | a chime at the click | `nr.click_sting(t_end, duration_s=)` | Two-note sting ending with the swell | [add-cue-sounds](../how-to/add-cue-sounds.md) (prose) |
 
 ## 6. Numbers, readouts and equations
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| a readout that ticks with a mark | `ruler_readout(head, readout=, value=, ruler=, ruler_to=)` | One knob drives the head, a ruler and a counter read off the tip | [contract](../explanation/contract.md) (prose) |
+| a readout that ticks with a mark | `ruler_readout(head, readout=, value=, ruler=, ruler_to=)` | One knob drives the head, a ruler and a counter read off the tip | [land-an-answer](../how-to/land-an-answer.md) |
 | a number that counts without jitter | `readout(at, value, fmt=, digits=, signed=)` | Fixed digit slots; `set` chains the next value | [motion-clock](../gallery/motion-clock.md) |
 | a dimension arrow with a label | `ruler(ax, p0, p1, text)` | Dimension arrow with a backed label | [images](../gallery/images.md) |
 | label an exposure time on a log clock | `exposure_text(seconds)` | `2.8 h`, `11.6 d` | [motion-clock](../gallery/motion-clock.md) |
@@ -154,7 +154,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| show a posterior as weighted draws | `weighted_draws(points, weights, encode="area"/"alpha", resample=)` | True-scale weights; optional resampling beat | [contract](../explanation/contract.md) (prose) |
+| show a posterior as weighted draws | `weighted_draws(points, weights, encode="area"/"alpha", resample=)` | True-scale weights; optional resampling beat | [weighted-draws](../gallery/weighted-draws.md) |
 | play draws one at a time with ghosts and a tally | `hop(draws, rate=, ghosts=, tally=)` | Steady draw rate, aging ghosts, running tally | [motion-clock](../gallery/motion-clock.md) |
 | samples converging on a reference | `convergence(values, refs=, running=)` | Samples beside a running mean or sum | [stats](../gallery/stats.md) |
 | a triangle plot | `corner`, `corner_overlay` | 1D and 2D marginals | [stats](../gallery/stats.md) |
@@ -188,7 +188,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | check a hue keeps one meaning in a clip, and across clips | `ept.meaning_faults(fig, at, times, keys=)`, `ept.meaning_faults_chain(clips)`, `ept.assert_meaning`, `ept.meaning_report` | Colors with two meanings; hue memory across clips; the findings as text | [declare-a-cast](../how-to/declare-a-cast.md) (`meaning_faults`, `meaning_report`), [clip-checks](../reference/clip-checks.md) (prose) |
 | check a motif set can be read | `ept.motif_faults`, `ept.motif_margins`, `ept.assert_motifs` | Separation in each mode and under color-vision deficiency | [motifs](../gallery/motifs.md); `assert_motifs` in [contract](../explanation/contract.md) (prose) |
 | whether a role spends a hue | `motifs.is_hue_role(role)` | Hue role, gray or rank | API reference |
-| size type and strokes for a talk frame | `talk_rc(height_px, dpi=)`, `TALK_FRACTIONS`, `VIDEO_RC` | Fractions of frame height for title, body, ticks, strokes | API reference |
+| size type and strokes for a talk frame | `talk_rc(height_px, dpi=)`, `TALK_FRACTIONS`, `VIDEO_RC` | Fractions of frame height for title, body, ticks, strokes | [size-a-talk](../how-to/size-a-talk.md) |
 | video-safe dark colors | `use_video(on)`, `video_roles()` | The dark-video role table | [contract](../explanation/contract.md) (prose) |
 | let slow moves glide | `unsnapped(artists)`; `record(snap=False)` is the default | Pixel snapping off | [contract](../explanation/contract.md) (prose) |
 
