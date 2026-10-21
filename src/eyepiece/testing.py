@@ -1915,6 +1915,11 @@ def _check_shape_class(trace, pieces, tol):
 def _check_overlap(trace, candidates, allowed, tol, move_tol):
     found = []
     runs = {}
+    # Cut moves can carry many captions, with an allowance for every pair.
+    # Index once rather than scanning all pairs for each pair in every frame.
+    allowances = {}
+    for pair, lo, hi in allowed:
+        allowances.setdefault(pair, []).append((lo, hi))
     cand = [a for a in trace.order if a in candidates]
     for k in range(len(trace.times)):
         here = [
@@ -1933,8 +1938,8 @@ def _check_overlap(trace, candidates, allowed, tol, move_tol):
                 # a sample, so an allowance over a span holds that far past
                 # either end of it, where the span's own motion is seen.
                 if any(
-                    p == pair and lo - _WINDOW_S <= t <= hi + _WINDOW_S
-                    for p, lo, hi in allowed
+                    lo - _WINDOW_S <= t <= hi + _WINDOW_S
+                    for lo, hi in allowances.get(pair, ())
                 ):
                     continue
                 x = _intersect(trace.seen(a, k), trace.seen(b, k))
