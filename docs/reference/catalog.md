@@ -22,7 +22,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | lay out a clip in seconds, one clock for every move | `Timeline(knobs, tempo=, narration=)`, then `tl.at_fps(fps)` returns a `Plan` | Spans declared in seconds; the plan resolves them for one frame rate | [motion-clock](../gallery/motion-clock.md), [clock](../explanation/clock.md), [build-up](../tutorials/build-up.md) |
 | open the next spoken line | `tl.line(key)` | Places the line's speech on the clock and closes the previous line | [narrated](../tutorials/narrated.md) (tutorial script) |
 | bring a subject in on the word that names it | `tl.enter(name, seconds=0.6, cue=)` | Knob `name` ramps 0 to 1; with a cue it starts 0.1 s before the cue word | [motion-clock](../gallery/motion-clock.md), [narrated](../tutorials/narrated.md) |
-| take a subject away | `tl.leave(name, seconds=0.3)` | Knob `name` ramps back to 0 | API reference |
+| take a subject away | `tl.leave(name, seconds=0.3)` | Knob `name` ramps back to 0 | [timeline-verbs](../how-to/timeline-verbs.md) |
 | bring text in, or a label as the move it names settles | `tl.text(name, names=)` | Text knob ramps in; with `names=` it may start over the named move's last quarter | [motion-clock](../gallery/motion-clock.md), [motion-attention](../gallery/motion-attention.md) |
 | move a value to a target, eased | `tl.move(name, seconds, to=, space="log")` | Knobs move to targets on the ease, optionally in log space | [motion-clock](../gallery/motion-clock.md), [animation](../gallery/animation.md) |
 | run at a constant rate (a physical clock, a sweep) | `tl.run(name, seconds, to=)` | Linear in time, never paced or eased | [build-up](../tutorials/build-up.md), [check-a-clip](../how-to/check-a-clip.md) |
@@ -30,21 +30,21 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | hold the picture for a time | `tl.hold(seconds, to=)` | A span in which nothing moves; `to` steps knobs at its start | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
 | hold the picture until a time computed elsewhere | `tl.wait_until(*times)` | Extends the section to that time without placing a span | [motion-clock](../gallery/motion-clock.md), [clock](../explanation/clock.md) |
 | hold long enough to read some text | `tl.read(text)`, `Tempo.read_s(text)` | Hold of `factor * (base_s + word_s * words)` | [motion-clock](../gallery/motion-clock.md), [motion-camera](../gallery/motion-camera.md) |
-| rest after a new subject or an axis build | `tl.settle()`, `Tempo.rest_s` | Rest for the tempo's settle time | API reference; `rest_s` in [attention-moves](../reference/attention-moves.md) (prose) |
-| start several moves at the same moment | `tl.together()` | Used as a `with` block: every span in it starts at `now` | [motion-clock](../gallery/motion-clock.md) (prose) |
-| step through targets one after another | `tl.stagger(verb, targets, each_s=)` | Calls a verb per target, `each_s` apart | [motion-clock](../gallery/motion-clock.md) (prose) |
+| rest after a new subject or an axis build | `tl.settle()`, `Tempo.rest_s` | Rest for the tempo's settle time | [timeline-verbs](../how-to/timeline-verbs.md) |
+| start several moves at the same moment | `tl.together()` | Used as a `with` block: every span in it starts at `now` | [timeline-verbs](../how-to/timeline-verbs.md) |
+| step through targets one after another | `tl.stagger(verb, targets, each_s=)` | Calls a verb per target, `each_s` apart | [timeline-verbs](../how-to/timeline-verbs.md) |
 | stagger items inside one beat (rings, pixels) | `stagger(u, rank, span=0.35)` | Per-item progress from one beat's progress | API reference; [motion-clock](../gallery/motion-clock.md) (prose) |
-| find when a cue word is said | `tl.cue("kind:target")` | The word start of a cue mark, as a `Time`; `enter`, `leave`, `text`, `move`, `span`, `caption`, `indicate` and `circumscribe` also take `cue=` | API reference; `cue=` in [narration-design](../explanation/narration-design.md) (prose) |
-| declare the hero beat (stillness, one move, silence) | `tl.hero(span)`, `plan.hero_windows()` | Marks the span the silence and timing checks treat as deliberate | API reference |
+| find when a cue word is said | `tl.cue("kind:target")` | The word start of a cue mark, as a `Time`; `enter`, `leave`, `text`, `move`, `span`, `caption`, `indicate` and `circumscribe` also take `cue=` | [timeline-verbs](../how-to/timeline-verbs.md) |
+| declare the hero beat (stillness, one move, silence) | `tl.hero(span)`, `plan.hero_windows()` | Marks the span the silence and timing checks treat as deliberate | [timeline-verbs](../how-to/timeline-verbs.md) |
 | mark sections of a clip | `tl.section(name)` | Opens a named section; the plan's frames carry it | [animation](../gallery/animation.md), [build-up](../tutorials/build-up.md) |
-| a span the verbs do not cover | `tl.span(name, seconds, kind=, paced=, ease=, extends=)` | Every default stated explicitly | API reference |
+| a span the verbs do not cover | `tl.span(name, seconds, kind=, paced=, ease=, extends=)` | Every default stated explicitly | [timeline-verbs](../how-to/timeline-verbs.md) |
 | read a knob on a frame | `plan.value(k, knob)` | The value of a knob at frame `k` | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md), [motion-clock](../gallery/motion-clock.md) |
 | read a span's progress on a frame | `plan.progress(k, span, eased=)` | 0 before the span, 1 from its end | [motion-clock](../gallery/motion-clock.md), [motion-camera](../gallery/motion-camera.md) |
 | find the frame of a span's start, middle or end | `plan.frame_of(span, where=)` | Frame index of a span's state | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
 | list the clip's moments | `plan.events()`, `plan.review_frames()` | Timed events; frames a contact sheet draws | [motion-clock](../gallery/motion-clock.md) |
 | list frames where a knob steps | `plan.step_frames()` | Frames where a step write changes a knob | [step-through-discrete-values](../how-to/step-through-discrete-values.md) |
 | find knobs the draw never reads | `plan.unused_knobs()` | Unread and never-changing knobs | [animation](../gallery/animation.md) |
-| write span times to a manifest | `plan.spans_json(holds=)` | Each span's start and end in seconds, rounded to the millisecond; `holds=False` leaves out holds | API reference |
+| write span times to a manifest | `plan.spans_json(holds=)` | Each span's start and end in seconds, rounded to the millisecond; `holds=False` leaves out holds | [timeline-verbs](../how-to/timeline-verbs.md) |
 | set the pace of the whole clip in one place | `Tempo(factor, base_s, word_s, settle_s)` | One factor scales moves, holds, reading and settles | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md), [motion-clock](../gallery/motion-clock.md) |
 | ease a progress value | `ease(u, kind)` | Eased progress with fixed ends, for the kinds `"smooth"` (the sigmoid default), `"smoothstep"`, `"smootherstep"`, `"cosine"`, `"linear"`, `"back_out"` and `"running_start"` | [attention-moves](../reference/attention-moves.md), [motion-clock](../gallery/motion-clock.md) |
 | add seconds exactly | `Time` | A float that adds exactly | [clock](../explanation/clock.md) (prose) |
@@ -56,19 +56,19 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| draw a curve on at constant speed (the signature reveal) | `head_draw(lines, ease=, lag=, behind=)` | Arc-length draw (constant speed under a linear ease) with a bright head that dissolves at rest | [draw-a-line-on](../how-to/draw-a-line-on.md) |
+| draw a curve on at constant speed (the signature reveal) | `head_draw(lines, ease=, lag=, behind=)` | Arc-length draw (constant speed under a linear ease) with a bright head that dissolves at rest | [draw-a-line-on](../how-to/draw-a-line-on.md), [signature-moves](../gallery/signature-moves.md) |
 | reveal a line along its path, no head | `draw_on(lines, ease="linear")` | Steady display-space reveal | [draw-a-line-on](../how-to/draw-a-line-on.md), [motion-attention](../gallery/motion-attention.md) |
-| keep a halo or backing line behind the drawing head | `head_draw(..., behind={line: halo})` | Cuts the behind line to the drawn body | [contract](../explanation/contract.md) (prose) |
-| build an axis in front of the viewer, or a number line | `build_axes(ax, axis="x"/"y"/"both", style="sweep"/"staccato")` | Spine draws on, ticks and numbers arrive, label writes on | [bring-a-panel-in](../how-to/bring-a-panel-in.md), [motion-staging](../gallery/motion-staging.md), [build-up](../tutorials/build-up.md) |
-| grow an arrow or a vector | `arrow(tail, head, kind=, grow="length"/"scaled")` | Arrow that grows and moves without redraw | [motion-camera](../gallery/motion-camera.md) |
+| keep a halo or backing line behind the drawing head | `head_draw(..., behind={line: halo})` | Cuts the behind line to the drawn body | [signature-moves](../gallery/signature-moves.md) |
+| build an axis in front of the viewer, or a number line | `build_axes(ax, axis="x"/"y"/"both", style="sweep"/"staccato")` | Spine draws on, ticks and numbers arrive, label writes on | [bring-a-panel-in](../how-to/bring-a-panel-in.md), [motion-staging](../gallery/motion-staging.md), [build-up](../tutorials/build-up.md), [signature-moves](../gallery/signature-moves.md) |
+| grow an arrow or a vector | `arrow(tail, head, kind=, grow="length"/"scaled")` | Arrow that grows and moves without redraw | [motion-camera](../gallery/motion-camera.md), [signature-moves](../gallery/signature-moves.md) |
 | sweep an angle | `angle_arc(center, start, end, radius)` | Arc between two directions that can sweep | [motion-camera](../gallery/motion-camera.md) |
 | show north and east turning together | `compass(center, length, east=)` | Paired N and E arrows | [motion-camera](../gallery/motion-camera.md) |
-| write a label as if by hand | `write(text, draw=, lag=)` | Each glyph traced, then filled | [motion-attention](../gallery/motion-attention.md) |
+| write a label as if by hand | `write(text, draw=, lag=)` | Each glyph traced, then filled | [motion-attention](../gallery/motion-attention.md), [signature-moves](../gallery/signature-moves.md) |
 | reveal or color one word of a line | `words(at, string, by=)` | One text per word in a fixed layout | [motion-attention](../gallery/motion-attention.md) |
 | a track that fades into its own past | `fading_track(xy)` | Opacity ramps from tail to head | [scene](../gallery/scene.md) |
 | a 3D trajectory with a depth cue | `trail(xyz, depth=, marker_scale=)` | Connected path with a depth cue: the far side dashed, or markers sized by depth | [scene](../gallery/scene.md) |
 | a fan of candidate tracks by weight | `sky_fan(tracks, weights=)` | Tracks faded by weight | [scene](../gallery/scene.md) |
-| an image that develops from its photons | `arrivals(rate, exposure, seed=)`, `photons(arrivals)` | Seeded Poisson arrivals; newest photons flash | [motion-clock](../gallery/motion-clock.md) |
+| an image that develops from its photons | `arrivals(rate, exposure, seed=)`, `photons(arrivals)` | Seeded Poisson arrivals; newest photons flash | [motion-clock](../gallery/motion-clock.md), [signature-moves](../gallery/signature-moves.md) |
 | a histogram that fills as samples arrive | `hist_fill(values, ymax=, law=)` | Fills on a pinned scale | [stats](../gallery/stats.md) |
 
 ## 3. Point at the subject
@@ -77,9 +77,9 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 |---|---|---|---|
 | underline words for a beat | `underline(text_artist, color=, ease=)`, placed by `tl.underline(target)` | Draws along the baseline, holds, then fades | [motion-attention](../gallery/motion-attention.md) |
 | light the thing the narration names | `indicate(artists, scale=, strength=, shape=)`, placed by `tl.indicate(target)` | Swells and tints toward the text ink, then returns exactly | [motion-attention](../gallery/motion-attention.md), [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
-| a plateau pulse (emphasis held at its peak) | `pulse_shape(u, rise=, hold=, fall=, ease=)`, `indicate(..., shape="plateau")` | One shared shape: up 35%, hold 30%, down 35% by default | [motion-attention](../gallery/motion-attention.md) |
+| a plateau pulse (emphasis held at its peak) | `pulse_shape(u, rise=, hold=, fall=, ease=)`, `indicate(..., shape="plateau")` | One shared shape: up 35%, hold 30%, down 35% by default | [motion-attention](../gallery/motion-attention.md), [signature-moves](../gallery/signature-moves.md) |
 | outline a thing, then let it go | `circumscribe(target, shape=, style="trace")`, placed by `tl.circumscribe(target)` | Outline draws on, then fades | [motion-attention](../gallery/motion-attention.md) (`circumscribe`), [motion-clock](../gallery/motion-clock.md) (`tl.circumscribe`) |
-| pass a comet around a thing | `circumscribe(target, style="flash")` | A tapered comet runs once around the outline | [contract](../explanation/contract.md) (prose) |
+| pass a comet around a thing | `circumscribe(target, style="flash")` | A tapered comet runs once around the outline | [signature-moves](../gallery/signature-moves.md) |
 | put a no-hue cue behind the subject | `MotifSet.default()["cue"].patch_kw()` on a patch you draw | Text-ink band, ring or underlay behind the subject | [motifs](../gallery/motifs.md) (no function; hand-built patch) |
 | a short caption beside the thing it names | `callout(target, text, side=, rise_pt=)` | Caption with an optional leader, rising into place | [motion-attention](../gallery/motion-attention.md) |
 | a leader from a text to its mark | `leader(text, target)` | Leader line that obeys the connector rules | [attention-moves](../reference/attention-moves.md) (prose) |
@@ -98,7 +98,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | dim everything but the current subject | `Stage(groups, dim=)`, `stage.set(shown=, dimmed=)` | Groups set to shown, dimmed or absent | [motion-staging](../gallery/motion-staging.md), [bring-a-panel-in](../how-to/bring-a-panel-in.md) |
 | set some groups' presence and contrast, leave the rest | `stage.weigh(levels, ease=)` | Absolute levels per named group | [bring-a-panel-in](../how-to/bring-a-panel-in.md), [build-up](../tutorials/build-up.md) |
 | settle the scene by presence | `stage.weigh(levels)` | Arrival by opacity, no motion, driven by an entry knob such as one `tl.enter` or `tl.run` writes | [build-up](../tutorials/build-up.md) |
-| a label that arrives attached to its mark | `stage.weigh(levels, lift_pt=)` | Labels drift up at most 10 px as they fade in | [contract](../explanation/contract.md) (prose) |
+| a label that arrives attached to its mark | `stage.weigh(levels, lift_pt=)` | Labels drift up at most 10 px as they fade in | [signature-moves](../gallery/signature-moves.md) |
 | return every group to how it was drawn | `stage.rest()`, `stage.state()` | Rest state; the levels of a state | [bring-a-panel-in](../how-to/bring-a-panel-in.md) (`rest`); `state` API reference |
 | fade artists toward the background, or by opacity | `fade(target, level, by="color"/"alpha")`, `blend(color, level)` | Contrast blend (or opacity) that works in both modes | [scene](../gallery/scene.md), [motion-clock](../gallery/motion-clock.md) |
 | collect the artists a block adds | `capture(container)` | Context manager listing new artists | [scene](../gallery/scene.md) |
@@ -109,21 +109,21 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| land a composite in one beat (the click) | `click(lines, dot=, readout=, ruler=, swell=1.55)`, placed by `tl.click(target)` | 0.6 s: ink swells on a plateau, end dot grows, number sets bold, ruler recedes; 1.5 s hold after | [contract](../explanation/contract.md) (prose); full example only in `docs/narration/cues_sweep/sweep.py` |
+| land a composite in one beat (the click) | `click(lines, dot=, readout=, ruler=, swell=1.55)`, placed by `tl.click(target)` | 0.6 s: ink swells on a plateau, end dot grows, number sets bold, ruler recedes; 1.5 s hold after | [land-an-answer](../how-to/land-an-answer.md), [signature-moves](../gallery/signature-moves.md) |
 | a chime at the click | `nr.click_sting(t_end, duration_s=)` | Two-note sting ending with the swell | [add-cue-sounds](../how-to/add-cue-sounds.md) (prose) |
 
 ## 6. Numbers, readouts and equations
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| a readout that ticks with a mark | `ruler_readout(head, readout=, value=, ruler=, ruler_to=)` | One knob drives the head, a ruler and a counter read off the tip | [contract](../explanation/contract.md) (prose) |
+| a readout that ticks with a mark | `ruler_readout(head, readout=, value=, ruler=, ruler_to=)` | One knob drives the head, a ruler and a counter read off the tip | [land-an-answer](../how-to/land-an-answer.md), [signature-moves](../gallery/signature-moves.md) |
 | a number that counts without jitter | `readout(at, value, fmt=, digits=, signed=)` | Fixed digit slots; `set` chains the next value | [motion-clock](../gallery/motion-clock.md) |
 | a dimension arrow with a label | `ruler(ax, p0, p1, text)` | Dimension arrow with a backed label | [images](../gallery/images.md) |
 | label an exposure time on a log clock | `exposure_text(seconds)` | `2.8 h`, `11.6 d` | [motion-clock](../gallery/motion-clock.md) |
 | read counts and S/N off a photon image | `aperture_counts(mark, aperture, leak=)` | Numbers read from the drawn pixels | [motion-clock](../gallery/motion-clock.md) |
 | lay an equation out as separate terms | `term_row(at, terms)` | One text per term, each a target | [motion-attention](../gallery/motion-attention.md) |
-| an equation as glyph outlines with named terms | `equation(at, tex, fontsize=, colors=)` | Glyph groups per term; `update(reveal="write")` | [motion-equations](../gallery/motion-equations.md), [ground-a-symbol](../how-to/ground-a-symbol.md) |
-| carry one equation into another | `transform(eq_a, eq_b, key_map=, fade_toward=)` | Glyph-by-glyph transform | [motion-equations](../gallery/motion-equations.md) |
+| an equation as glyph outlines with named terms | `equation(at, tex, fontsize=, colors=)` | Glyph groups per term; `update(reveal="write")` | [motion-equations](../gallery/motion-equations.md), [ground-a-symbol](../how-to/ground-a-symbol.md), [signature-moves](../gallery/signature-moves.md) |
+| carry one equation into another | `transform(eq_a, eq_b, key_map=, fade_toward=)` | Glyph-by-glyph transform | [motion-equations](../gallery/motion-equations.md), [signature-moves](../gallery/signature-moves.md) |
 
 ## 7. Reference marks and furniture
 
@@ -159,8 +159,8 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
-| show a posterior as weighted draws | `weighted_draws(points, weights, encode="area"/"alpha", resample=)` | True-scale weights; optional resampling beat | [contract](../explanation/contract.md) (prose) |
-| play draws one at a time with ghosts and a tally | `hop(draws, rate=, ghosts=, tally=)` | Steady draw rate, aging ghosts, running tally | [motion-clock](../gallery/motion-clock.md) |
+| show a posterior as weighted draws | `weighted_draws(points, weights, encode="area"/"alpha", resample=)` | True-scale weights; optional resampling beat | [weighted-draws](../gallery/weighted-draws.md), [signature-moves](../gallery/signature-moves.md) |
+| play draws one at a time with ghosts and a tally | `hop(draws, rate=, ghosts=, tally=)` | Steady draw rate, aging ghosts, running tally | [motion-clock](../gallery/motion-clock.md), [signature-moves](../gallery/signature-moves.md) |
 | samples converging on a reference | `convergence(values, refs=, running=)` | Samples beside a running mean or sum | [stats](../gallery/stats.md) |
 | a triangle plot | `corner`, `corner_overlay` | 1D and 2D marginals | [stats](../gallery/stats.md) |
 | a covariance ellipse | `cov_ellipse(mean2, cov22, n_sigma=)` | n-sigma ellipse | [stats](../gallery/stats.md) |
@@ -193,7 +193,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 | check a hue keeps one meaning in a clip, and across clips | `ept.meaning_faults(fig, at, times, keys=)`, `ept.meaning_faults_chain(clips)`, `ept.assert_meaning`, `ept.meaning_report` | Colors with two meanings; hue memory across clips; the findings as text | [declare-a-cast](../how-to/declare-a-cast.md) (`meaning_faults`, `meaning_report`), [clip-checks](../reference/clip-checks.md) (prose) |
 | check a motif set can be read | `ept.motif_faults`, `ept.motif_margins`, `ept.assert_motifs` | Separation in each mode and under color-vision deficiency | [motifs](../gallery/motifs.md); `assert_motifs` in [contract](../explanation/contract.md) (prose) |
 | whether a role spends a hue | `motifs.is_hue_role(role)` | Hue role, gray or rank | API reference |
-| size type and strokes for a talk frame | `talk_rc(height_px, dpi=)`, `TALK_FRACTIONS`, `VIDEO_RC` | Fractions of frame height for title, body, ticks, strokes | API reference |
+| size type and strokes for a talk frame | `talk_rc(height_px, dpi=)`, `TALK_FRACTIONS`, `VIDEO_RC` | Fractions of frame height for title, body, ticks, strokes | [size-a-talk](../how-to/size-a-talk.md) |
 | video-safe dark colors | `use_video(on)`, `video_roles()` | The dark-video role table | [contract](../explanation/contract.md) (prose) |
 | let slow moves glide | `unsnapped(artists)`; `record(snap=False)` is the default | Pixel snapping off | [contract](../explanation/contract.md) (prose) |
 
@@ -221,7 +221,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 |---|---|---|---|
 | captions in a band | `nr.captions(narration)`, `nr.caption_at(cues, t)` on a text in a band you reserve | Caption cues wrapped to reading limits | [narrated](../tutorials/narrated.md), [burn-captions-into-a-band](../how-to/burn-captions-into-a-band.md) (band built by hand) |
 | place captions clear of the figure's text | `ept.caption_line(fig, at=, times=)` | WebVTT `line:` percentage | [motion-attention](../gallery/motion-attention.md) |
-| an on-figure caption on the clip's clock | `tl.caption(name, text, leaves=)`, `tl.clear_caption()` | Caption knob that leaves once read or on the next | API reference |
+| an on-figure caption on the clip's clock | `tl.caption(name, text, leaves=)`, `tl.clear_caption()` | Caption knob that leaves once read or on the next | [timeline-verbs](../how-to/timeline-verbs.md) |
 | caption files | `nr.write_captions(narration, stem)`, `nr.write_vtt`, `nr.write_srt` | WebVTT and SRT | [narrated](../tutorials/narrated.md) (`write_captions`); `write_vtt` and `write_srt` in [narration-design](../explanation/narration-design.md) (prose) |
 | chapter markers | `nr.write_chapters(narration, path, titles=)` | WebVTT chapters, one cue per beat | [check-narration-and-motion](../how-to/check-narration-and-motion.md) |
 | cue sounds | `nr.CueEvents`, `nr.cue_track`, `nr.count_tone`, `nr.pixel_ticks`, `nr.click_sting`, `nr.audio_track(..., cues=)` | Count tone, pixel ticks, click sting | [add-cue-sounds](../how-to/add-cue-sounds.md) (`CueEvents`, `cue_track`; the rest prose) |

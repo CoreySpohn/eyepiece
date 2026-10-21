@@ -196,3 +196,27 @@ def test_manim_parity_cell_lists_all_rows():
         "rate functions",
     ):
         assert re.search(rf'^\s+"{re.escape(name)}[", ]', code, re.M), name
+
+
+def test_land_an_answer_stays_inside_the_axes():
+    import matplotlib.pyplot as plt
+
+    import eyepiece.testing as ept
+
+    page = DOCS / "how-to" / "land-an-answer.md"
+    namespace = {}
+    figures_before = set(plt.get_fignums())
+    try:
+        for cell in check_page(page.read_text()):
+            exec(compile(cell, str(page), "exec"), namespace)
+        fig = namespace["fig"]
+        faults = ept.motion_faults(
+            fig,
+            lambda k: namespace["draw"](fig, k),
+            range(namespace["plan"].n_frames),
+            moves=[namespace["measured"], namespace["landing"]],
+        )
+        assert not [fault for fault in faults if fault.kind == "outside"]
+    finally:
+        for number in set(plt.get_fignums()) - figures_before:
+            plt.close(number)

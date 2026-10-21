@@ -4,6 +4,7 @@ import json
 import runpy
 import shutil
 import subprocess
+import wave
 from pathlib import Path
 
 import hwostyle
@@ -29,11 +30,6 @@ STYLE_STATE = (
     "palette",
     "cmaps",
     "roles",
-)
-
-pytestmark = pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
-    reason="the example writes MP4s through ffmpeg, and ffprobe reads them",
 )
 
 
@@ -98,6 +94,8 @@ def sweep_style_guard():
 
 @pytest.fixture(scope="module")
 def built(tmp_path_factory, sweep_style_guard, style_context):
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        pytest.skip("the example writes MP4s through ffmpeg, and ffprobe reads them")
     out = tmp_path_factory.mktemp("sweep")
     with style_context():
         yield {
@@ -134,6 +132,28 @@ def test_scene_restores_style_if_figure_creation_fails(monkeypatch):
     with pytest.raises(RuntimeError, match="figure creation failed"):
         SWEEP["Scene"](SWEEP["make_plan"](DURATION_S), dpi=SMALL_DPI)
     assert _style_state() == saved
+
+
+def test_silent_audio_writes_pcm_under_a_new_nested_path(tmp_path):
+    path = tmp_path / "new output" / "nested" / "track.wav"
+    plan = SWEEP["make_plan"](DURATION_S)
+    assert SWEEP["_audio"](plan, path, cues=False) == path
+    placeholders = list((path.parent / "lines").glob("*.wav"))
+    assert len(placeholders) == 1
+    with wave.open(str(placeholders[0]), "rb") as handle:
+        assert handle.getnchannels() == 1
+        assert handle.getsampwidth() == 2
+        assert handle.getframerate() == RATE
+        assert handle.getcomptype() == "NONE"
+        frames = handle.getnframes()
+        assert 0 < frames < DURATION_S * RATE
+        assert handle.readframes(frames) == bytes(2 * frames)
+    with wave.open(str(path), "rb") as handle:
+        assert handle.getnchannels() == 1
+        assert handle.getsampwidth() == 2
+        assert handle.getframerate() == RATE
+        assert handle.getnframes() == DURATION_S * RATE
+        assert handle.readframes(handle.getnframes()) == bytes(2 * handle.getnframes())
 
 
 def test_one_audio_and_one_video_stream_of_one_length(built):

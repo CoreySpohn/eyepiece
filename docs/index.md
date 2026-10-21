@@ -288,7 +288,9 @@ The tutorials build {doc}`a still <tutorials/still>`,
 {doc}`a silent build-up <tutorials/build-up>` and
 {doc}`a narrated clip <tutorials/narrated>` from start to finish. The motion
 galleries show each family of moves running:
+{doc}`signature moves <gallery/signature-moves>`,
 {doc}`clocks and readouts <gallery/motion-clock>`,
+{doc}`weighted draws <gallery/weighted-draws>`,
 {doc}`cameras and zooms <gallery/motion-camera>`,
 {doc}`attention moves <gallery/motion-attention>`,
 {doc}`staging <gallery/motion-staging>`,
@@ -296,7 +298,10 @@ galleries show each family of moves running:
 {doc}`clip checks <gallery/motion-checks>`. The how-to guides each solve one
 task: {doc}`bring a panel in <how-to/bring-a-panel-in>`,
 {doc}`draw a line on <how-to/draw-a-line-on>`,
+{doc}`measure and land an answer <how-to/land-an-answer>`,
+{doc}`size a figure for a talk <how-to/size-a-talk>`,
 {doc}`bind a move to a knob <how-to/bind-a-move-to-a-knob>`,
+{doc}`schedule Timeline verbs <how-to/timeline-verbs>`,
 {doc}`declare a cast <how-to/declare-a-cast>`,
 {doc}`check a clip <how-to/check-a-clip>`,
 {doc}`step through discrete values <how-to/step-through-discrete-values>`,
@@ -329,7 +334,10 @@ tutorials/narrated
 
 how-to/bring-a-panel-in
 how-to/draw-a-line-on
+how-to/land-an-answer
+how-to/size-a-talk
 how-to/bind-a-move-to-a-knob
+how-to/timeline-verbs
 how-to/declare-a-cast
 how-to/check-a-clip
 how-to/step-through-discrete-values
@@ -369,6 +377,8 @@ gallery/scene
 gallery/phasor
 gallery/animation
 gallery/motion
+gallery/signature-moves
+gallery/weighted-draws
 gallery/one-scene-n-views
 gallery/prepared
 gallery/motifs
