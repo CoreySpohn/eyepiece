@@ -8,7 +8,7 @@ Plotting and animation primitives for astronomical imaging simulations.
 recur across direct-imaging work: log-scaled and diverging image displays,
 side-by-side and A/B comparison panels, radial profiles and contrast curves,
 corner plots, orbit and sky-track scenes, optical-train schematics, and a
-multi-sink animation recorder that grabs frames once and writes them to any
+multi-sink animation recorder that draws each frame once and writes it to any
 combination of gif, mp4, and html. Every primitive takes plain arrays in and
 returns a small result object holding the axes and the artists it drew, so
 callers can update or extend a figure without re-deriving which line or
@@ -20,8 +20,8 @@ lays a clip out in seconds and resolves it into a per-frame plan, the moves
 transforms) are driven by that plan, `eyepiece.narration` places spoken
 lines and their cue words on the same clock, `eyepiece.testing` checks the
 finished clip for motion, readability, color-meaning and timing faults, and
-`eyepiece.render` renders its venue, mode and narration variants in
-parallel.
+`eyepiece.render` renders its venue, mode and narration variants, each
+with parallel frame workers.
 
 For a scene that has to appear more than once, eyepiece also offers prepared
 views: plain records of images, curves, tracks, and their marks, carrying
@@ -92,8 +92,8 @@ is the full table, one row per task, with the page that shows each name.
 
 ### Move the viewer's eye
 
-- **Draw on.** `head_draw` (the signature constant-speed reveal with a
-  bright head), `draw_on`, `build_axes`, `arrow`, `angle_arc`, `compass`,
+- **Draw on.** `head_draw` (the signature arc-length reveal with a bright
+  head), `draw_on`, `build_axes`, `arrow`, `angle_arc`, `compass`,
   `write` (a label traced as if by hand), and `words`.
 - **Point at the subject.** `indicate` (a pulse that returns exactly),
   `circumscribe`, `callout`, `leader`, `link`, `flight`, `spotlight`,
@@ -149,9 +149,10 @@ move's result carries,
 meaning per hue, within and across clips), `motif_faults` and
 `motif_margins`, `timing_faults` (pace, gaps, still screens, numbers said
 before they are shown), `speech_rate`, `grounding_faults` (equation terms
-without a referent), and `motion_ink`. Every check has an `assert_*` twin,
-`caption_line` places captions clear of the figure's text, and
-`review_sheet` draws a contact sheet at the cues and events that matter.
+without a referent), and `motion_ink` (how much of the motion is the
+quantity). The fault checks have `assert_*` twins that raise, `caption_line`
+places captions clear of the figure's text, and `review_sheet` draws a
+contact sheet at the cues and events that matter.
 
 ### Record and render
 
@@ -162,8 +163,8 @@ without a referent), and `motion_ink`. Every check has an `assert_*` twin,
   HTML page whose slider scrubs one knob).
 - **Render in parallel.** `ClipSpec`, `Venue`, `Variant` and `variants`
   describe a clip's venue, mode, and narration variants; `render_variants`
-  renders them keyed by `content_key` into a `Manifest`, resumably;
-  `render_frames` renders one clip in worker processes; `render_poster`,
+  renders each one keyed by `content_key` into a `Manifest`, resumably;
+  `render_frames` renders one clip's frames in worker processes; `render_poster`,
   `render_still`, and `same_picture` make and compare deterministic stills;
   `frame_faults` and `assert_frames_pure` check that frames do not depend
   on draw order.
@@ -175,8 +176,9 @@ without a referent), and `motion_ink`. Every check has an `assert_*` twin,
 - **`eyepiece.prepared`.** The frozen records (`ImageView`, `CurveView`,
   `TrackView`, `PanelGroup`, and the `Path`, `Points`, `Region`,
   `ReferenceLine`, and `Label` marks, with `AxisSpec` and `Scale`),
-  `Sequence` for replayable states over physical time, and the display
-  mapping. It imports only NumPy.
+  `Sequence` for replayable states over physical time with the
+  `ArrayChannel`, `PathWindow`, and `Clock` channels that change them, and
+  the display mapping. It imports only NumPy.
 - **`eyepiece.style`.** `SourceCast` for fixed source colors and markers, and
   `snapshot_profile`, which captures the active hwostyle appearance as a
   read-only `RenderProfile`.
@@ -196,10 +198,11 @@ ep.save_fig(result.fig, "psf")
 ```
 
 Every primitive returns a small result object carrying the axes it drew on
-and the artists it made (keyed by the `ARTIST_KEYS` vocabulary), so a caller
-can keep working on the figure without hunting for the objects again. An
-image primitive also returns an `.update` that redraws with new data through
-the same transform, which is what makes animation a few lines:
+and the artists it made (keyed by the common `ARTIST_KEYS` vocabulary), so a
+caller can keep working on the figure without hunting for the objects again.
+`imshow_log` and `imshow_diverging` also return an `.update` that redraws
+with new data through the same transform, which is what makes animation a
+few lines:
 
 ```python
 frames = [cube[k] for k in range(len(cube))]
@@ -233,9 +236,9 @@ fig, ax = plt.subplots(figsize=(12.8, 7.2), dpi=100, layout="constrained")
 reveal = ep.head_draw(curve)
 emphasis = ep.indicate(marker, scale=1.5)
 
-tl = ep.Timeline({"curve": 0.0})
+tl = ep.Timeline({"curve": 0.0, "pulse.marker": 0.0})
 tl.move("draw", 2.0, to={"curve": 1.0})
-tl.pulse("marker")
+tl.run("emphasize", 1.0, to={"pulse.marker": 1.0})
 tl.hold(1.5)
 plan = tl.at_fps(30)
 
@@ -269,10 +272,17 @@ movie.save("run.mp4")
 The same sequence plays in a talk through Manim:
 
 ```python
+import manim
+from matplotlib.colors import to_hex
+
 import eyepiece.manim as em
 
-clip = em.animate(sequence, cast=cast, profile=snapshot_profile())
-self.add(clip.mobject)  # inside a Manim Scene or Slide
+profile = snapshot_profile()
+clip = em.animate(sequence, cast=cast, profile=profile)
+# Inside a Manim Scene or Slide; the background follows the profile so its
+# text stays readable.
+self.camera.background_color = manim.ManimColor(to_hex(profile.background_color))
+self.add(clip.mobject)
 self.play(clip.playback(run_time=8))
 ```
 
@@ -327,7 +337,9 @@ pip install "eyepiece[slides]"
 Speech synthesis for narrated clips is the `[narration]` extra (Kokoro and
 soundfile). Kokoro pulls in torch and supports Python 3.10 to 3.12, so run
 the synthesis step in an environment of its own; loading cached speech,
-captions, and checks need only the base install.
+captions, and the narration checks need only the base install. The meaning
+and motif checks in `eyepiece.testing` measure color distances with
+`colorspacious`, which the `[test]` extra installs.
 
 ```bash
 pip install "eyepiece[narration]"
