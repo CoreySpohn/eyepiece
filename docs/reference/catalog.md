@@ -128,6 +128,7 @@ is `eyepiece.prepared`. `tl` is a `Timeline`, `plan` is the `Plan` from `tl.at_f
 
 | I want to... | Use | What it does | Shown in |
 |---|---|---|---|
+| separate end labels of nearby curves | `spread_labels(labels, min_gap=)` | Least squared vertical movement, order preserved, inside the axes | [profiles](../gallery/profiles.md) |
 | a labeled threshold or reference line | `ref_line(ax, value, label, orient=, where=)` | Line with its label pinned to an axes edge | [marks](../gallery/marks.md) |
 | a reference line with its own reveal beat | `ref_line(...)`, then `draw_on(result.artists["line"])` and a `Stage` group for its label, on a `tl.enter` span | No single move: compose the still with a reveal | [marks](../gallery/marks.md) (still only) |
 | shade excluded intervals | `shade_intervals(x, mask, intervals=)` | Masked runs as bands | [marks](../gallery/marks.md) |

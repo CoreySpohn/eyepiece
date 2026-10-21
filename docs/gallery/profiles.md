@@ -196,3 +196,22 @@ Unlike `plot_radial`, this function is told its units, since the pixel scale
 is an argument, so it defaults the x label to a lambda over D separation
 label. Everything else is handed straight to `plot_radial`, and the same
 `PlotResult` comes back.
+
+## Separate curve-end labels
+
+Lay out direct labels once after choosing the limits. `min_gap` is the gap
+between rendered label edges in points. Labels keep their vertical order
+and stay within the vertical axes bounds. A set too tall to fit raises.
+
+```python
+import matplotlib.pyplot as plt
+import eyepiece as ep
+
+fig, ax = plt.subplots()
+ax.set(xlim=(0, 1), ylim=(0, 1))
+labels = []
+for name, y in [("a", 0.50), ("b", 0.51), ("c", 0.52)]:
+    line, = ax.plot([0, 0.8], [0.2, y])
+    labels.append(ax.text(0.8, y, name, color=line.get_color(), va="center"))
+ep.spread_labels(labels, min_gap=3)
+```
