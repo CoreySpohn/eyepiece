@@ -65,7 +65,7 @@ for example `ep.plot.imshow_log(...)` or `ep.motion.indicate(...)`.
 The root keeps ten stable shortcuts: `Timeline`, `Plan`, `Tempo`,
 `PlotResult`, `MosaicResult`, `MotionContract`, `animate`, `record`,
 `save_fig`, and `__version__`. All former root paths still work silently in
-0.17, while star imports and discovery favor the small root. Deprecated
+0.16, while star imports and discovery favor the small root. Deprecated
 aliases keep their existing warnings. The
 [capability catalog](https://github.com/CoreySpohn/eyepiece/blob/main/docs/reference/catalog.md)
 lists every public name with its canonical path and a worked example.
@@ -352,7 +352,7 @@ between minor versions before 1.0. The
 [changelog](https://github.com/CoreySpohn/eyepiece/blob/main/CHANGELOG.md)
 records each change.
 
-Deprecated in 0.16 and still supported in 0.17, with a warning that names
+Deprecated in 0.16, with a warning that names
 the replacement: `eyepiece.testing.Span` (now `Window`), `spans` (now
 `shade_intervals`), `eyepiece.motifs.resolve_role` (now `role`, which
 takes `mode=`), `Timeline.pulse` and `Timeline.ring` (now `Timeline.indicate` and

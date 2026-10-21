@@ -27,7 +27,7 @@ the same objects lazily through the package lookup mechanism.
 The root exports only `Timeline`, `Plan`, `Tempo`, `PlotResult`, `MosaicResult`,
 `MotionContract`, `animate`, `record`, `save_fig`, and `__version__` through
 `__all__`. Root discovery also lists the task namespaces. Every former root
-path still works silently in 0.17 through `_LEGACY_ROOT`; do not warn on these
+path still works silently in 0.16 through `_LEGACY_ROOT`; do not warn on these
 paths yet. The 0.16 deprecated aliases keep their existing warnings.
 
 Keep namespace imports lazy. In particular, importing `ep.clock` or

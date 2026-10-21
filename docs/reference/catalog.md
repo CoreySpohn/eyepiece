@@ -16,7 +16,7 @@ for readability: `plot.` means `eyepiece.plot`, `clock.` means
 
 ## Legacy root paths
 
-In 0.17, every former root path still works silently and returns the same
+In 0.16, every former root path still works silently and returns the same
 object. New examples use the task namespaces. Root star imports expose only
 `Timeline`, `Plan`, `Tempo`, `PlotResult`, `MosaicResult`, `MotionContract`,
 `animate`, `record`, `save_fig`, and `__version__`; these stable shortcuts may
