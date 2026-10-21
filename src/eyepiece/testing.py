@@ -2202,7 +2202,8 @@ def motion_faults(
             every other artist. The group is reported as a ``"hop-rate"``
             fault when the declared rate, or the rate at which the clip
             actually redraws it, is above 8 draws per second, or the clip
-            redraws it faster than declared.
+            redraws it faster than declared. Every excessive one-second
+            window starting at an observed cut is reported.
         rest: Artists that must not move.
         groups: Groups that move rigidly: each a list of artists, or a dict
             ``{"artists": [...], "scales": True}`` for a group that scales.
@@ -2328,40 +2329,46 @@ def _check_hop_rate(trace, hop_groups, hop_cuts):
     found = []
     for (artists, rate), ks in zip(hop_groups, hop_cuts, strict=True):
         times = [trace.times[k] for k in ks]
-        counts = [
-            sum(1 for u in times[i:] if u < t + 1.0 - 1e-9) for i, t in enumerate(times)
-        ]
-        measured = float(max(counts, default=0))
-        first = ks[counts.index(max(counts))] if counts else 0
+        end = 0
+        windows = []
+        for i, t in enumerate(times):
+            while end < len(times) and times[end] < t + 1.0 - 1e-9:
+                end += 1
+            measured = float(end - i)
+            if measured > _MAX_HOP_RATE or measured > rate + 1.0:
+                windows.append((ks[i], measured))
+        # An excessive declaration is a fault even without observed cuts.
+        if not windows and rate > _MAX_HOP_RATE:
+            windows = [(ks[0] if ks else 0, 0.0)]
         label = trace.label(artists[0])
-        if rate > _MAX_HOP_RATE:
-            detail = (
-                f"{label} is declared at {rate:g} draws per second, "
-                f"above {_MAX_HOP_RATE:g}"
+        for first, measured in windows:
+            if rate > _MAX_HOP_RATE:
+                detail = (
+                    f"{label} is declared at {rate:g} draws per second, "
+                    f"above {_MAX_HOP_RATE:g}"
+                )
+            elif measured > _MAX_HOP_RATE:
+                detail = (
+                    f"{label} is redrawn {measured:g} times in a second, "
+                    f"above {_MAX_HOP_RATE:g}"
+                )
+            else:
+                detail = (
+                    f"{label} is redrawn {measured:g} times in a second, "
+                    f"declared {rate:g}"
+                )
+            box = trace.box(artists[0], first) if ks else None
+            found.append(
+                (
+                    first,
+                    "hop-rate",
+                    artists[0],
+                    None,
+                    box or (0.0, 0.0, *trace.size),
+                    detail,
+                    max(rate, measured),
+                )
             )
-        elif measured > _MAX_HOP_RATE:
-            detail = (
-                f"{label} is redrawn {measured:g} times in a second, "
-                f"above {_MAX_HOP_RATE:g}"
-            )
-        elif measured > rate + 1.0:
-            detail = (
-                f"{label} is redrawn {measured:g} times in a second, declared {rate:g}"
-            )
-        else:
-            continue
-        box = trace.box(artists[0], first) if ks else None
-        found.append(
-            (
-                first,
-                "hop-rate",
-                artists[0],
-                None,
-                box or (0.0, 0.0, *trace.size),
-                detail,
-                max(rate, measured),
-            )
-        )
     return found
 
 
