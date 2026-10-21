@@ -34,7 +34,7 @@ def measurement():
     )
     image.set(xlim=(-0.1, 1.1), ylim=(-0.4, 0.4), xlabel="radius")
     image.set_yticks([])
-    ax.set(xlim=(0, 1.05), ylim=(0, 115), xlabel="radius", ylabel="count")
+    ax.set(xlim=(-0.04, 1.05), ylim=(0, 115), xlabel="radius", ylabel="count")
     radius = np.linspace(0, 1, 120)
     (curve,) = ax.plot(radius, 100 * (1 - np.exp(-3 * radius)))
     count = ep.readout(
