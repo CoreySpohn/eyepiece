@@ -917,33 +917,6 @@ def test_on_rescale_rejects_unknown_value(tmp_path):
     plt.close(fig)
 
 
-def test_allow_rescale_deprecation_warns_once_and_still_works(tmp_path):
-    fig, ax = plt.subplots()
-    (line,) = ax.plot([0, 1], [0, 5.3])
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        with record(fig, tmp_path / "a.gif", fps=5, allow_rescale=True) as rec:
-            _drifting(fig, ax, line, rec)
-    assert [w.category for w in caught] == [DeprecationWarning]
-    assert "on_rescale" in str(caught[0].message)
-    assert caught[0].filename == __file__
-    plt.close(fig)
-
-
-def test_allow_rescale_false_keeps_the_check_and_conflict_is_an_error(tmp_path):
-    fig, ax = plt.subplots()
-    (line,) = ax.plot([0, 1], [0, 5.3])
-    with pytest.warns(DeprecationWarning), pytest.warns(RuntimeWarning):
-        with record(fig, tmp_path / "f.gif", fps=5, allow_rescale=False) as rec:
-            _drifting(fig, ax, line, rec)
-    with pytest.warns(DeprecationWarning), pytest.raises(ValueError, match="contra"):
-        with record(
-            fig, tmp_path / "g.gif", fps=5, allow_rescale=True, on_rescale="raise"
-        ):
-            pass
-    plt.close(fig)
-
-
 def _stills_figure():
     fig, ax = plt.subplots(figsize=(2.4, 1.8))
     (line,) = ax.plot([0, 1], [0, 1])
@@ -1018,7 +991,7 @@ def _knob_plan():
     tl.move("go", 1.0, to={"a": 1.0})
     tl.move("go2", 1.0, to={"unread": 1.0})
     tl.hold(0.5, name="end")
-    tl.pulse("target", at=0.2)
+    tl.indicate("target", at=0.2)
     return tl.at_fps(4)
 
 
@@ -1044,11 +1017,11 @@ def test_record_warns_once_about_unread_and_constant_knobs(tmp_path):
     assert "'a'" not in messages[0].split("constant")[1]
 
 
-def test_pulse_and_ring_knobs_are_exempt_from_both_warnings(tmp_path):
+def test_indicate_and_circumscribe_knobs_are_exempt_from_both_warnings(tmp_path):
     plan = _knob_plan()
-    assert "pulse.target" in plan.knobs
+    assert "indicate.target" in plan.knobs
     messages = _record_plan(tmp_path, plan, ("a", "b", "still", "unread"))
-    assert all("pulse.target" not in m for m in messages)
+    assert all("indicate.target" not in m for m in messages)
     plan2 = _knob_plan()
     messages = _record_plan(tmp_path, plan2, ("a", "unread", "still", "b"))
     assert not any("never read" in m for m in messages)

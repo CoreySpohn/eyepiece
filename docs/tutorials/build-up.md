@@ -74,12 +74,12 @@ plt.close(fig)
 ## Name the spans
 
 Use one section for each span so that review frames have useful labels.
-The emphasis run writes a pulse knob from zero to one, which makes `indicate`
+The emphasis run writes an indication knob from zero to one, which makes `indicate`
 grow and return to rest.
 
 ```{code-cell} python
 tl = ep.Timeline({"panel": 0.0, "image": 0.0, "profile": 0.0,
-                  "pulse.marker": 0.0}, tempo=ep.Tempo(factor=1.0))
+                  "indicate.marker": 0.0}, tempo=ep.Tempo(factor=1.0))
 tl.section("Panel")
 tl.run("panel_in", 1.5, to={"panel": 1.0})
 tl.section("Image")
@@ -87,7 +87,7 @@ tl.run("image_in", 1.5, to={"image": 1.0})
 tl.section("Profile")
 tl.run("profile_on", 2.0, to={"profile": 1.0})
 tl.section("Marker")
-tl.run("emphasize", 1.0, to={"pulse.marker": 1.0})
+tl.run("emphasize", 1.0, to={"indicate.marker": 1.0})
 tl.section("Hold")
 tl.hold(2.0, name="settled")
 plan = tl.at_fps(10)
@@ -109,7 +109,7 @@ def draw(k):
     result.artists["image"].set_alpha(plan.value(k, "image"))
     reveal.update(plan.value(k, "profile"))
     marker.set_alpha(plan.value(k, "profile"))
-    emphasis.update(plan.value(k, "pulse.marker"))
+    emphasis.update(plan.value(k, "indicate.marker"))
 
 
 def draw_frame(fig, k):

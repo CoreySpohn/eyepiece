@@ -170,7 +170,7 @@ def _narrated_plan(wpm=120, *, cue=False):
     tl = ep.Timeline(narration=narration)
     with tl.line("a"):
         if cue:
-            tl.pulse("dot")
+            tl.indicate("dot")
         else:
             tl.hold(0.5)
     return tl.at_fps(10)
@@ -241,7 +241,7 @@ def test_persistent_readability_fault_is_reported_once():
 def test_move_spans_support_names_spans_and_motion_declarations(form):
     fig, draw, plan, dot = _clip()
     span = plan.spans["slide"]
-    value = ept.Span(span.start_s, span.end_s) if form == "span" else "slide"
+    value = ept.Window(span.start_s, span.end_s) if form == "span" else "slide"
     moves = (
         [{"artists": [dot], "span": value}] if form == "declaration" else {dot: value}
     )

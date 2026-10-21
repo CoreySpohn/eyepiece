@@ -50,7 +50,7 @@ naming it in `waive` with a reason, and stays in `meaning_report`, whose all-pas
 
 `motion_faults(fig, at, times, moves=..., rest=..., groups=...)` is the same
 check for the path between two states rather than the states themselves. Given
-an `eyepiece.testing.Span(start, stop)` it poses the figure at every frame of
+an `eyepiece.testing.Window(start, stop)` it poses the figure at every frame of
 the venue's frame rate (30 per second for each venue; `fps=` overrides), always
 ending exactly on `stop`, draws it, and traces every visible artist, equation
 glyph paths and collections included, with the rendered frame when a pixel

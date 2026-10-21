@@ -34,7 +34,6 @@ check of the leaders and links.
 
 import math
 import re
-import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
@@ -1274,6 +1273,10 @@ def callout(
     line_kw=None,
 ):
     """Write a short caption beside the thing it describes.
+
+    A callout is a label tied to its subject. `eyepiece.Timeline.caption`
+    times a caption on the clock, and `eyepiece.narration.captions` builds
+    subtitle cues from the narration.
 
     The caption is anchored to its subject, so it moves with it, and it is
     short: a reader takes it in at a glance, at the place they are already
@@ -4001,7 +4004,6 @@ def write(
     lw=None,
     ease="linear",
     zorder=20,
-    overlap=None,
 ):
     """Write a text out by hand: each glyph traced with a thin pen, then filled.
 
@@ -4046,9 +4048,6 @@ def write(
         ease: An easing kind for `eyepiece.ease` for the beat as a whole.
             Inside each glyph's window progress is linear.
         zorder: Drawing order of the ghost among the figure's children.
-        overlap: Deprecated and ignored. Earlier versions faded the text in
-            over this share of the beat; glyph timing is now set by `lag`
-            and the hand-over by `draw`. Passing it warns.
 
     Returns:
         A `PlotResult` on the text's axes (None for text on the figure), with
@@ -4075,13 +4074,6 @@ def write(
     """
     if not isinstance(text, Text):
         raise TypeError(f"write takes a Text artist, got {type(text).__name__}")
-    if overlap is not None:
-        warnings.warn(
-            "write(overlap=) is ignored and will be removed; glyph timing is "
-            "set by lag and the hand-over by draw",
-            DeprecationWarning,
-            stacklevel=2,
-        )
     draw = float(draw)
     if not 0.0 < draw < 1.0:
         raise ValueError(f"write draw must be in (0, 1), got {draw}")

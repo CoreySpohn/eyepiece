@@ -245,8 +245,7 @@ with tempfile.TemporaryDirectory() as tmp_dir:
 emits a `RuntimeWarning` once, `"ignore"` skips the check for a rescaling that
 is the point, and `"raise"` throws `ScaleDriftError` and deletes every file the
 call had started, so a batch render never leaves a movie with a quietly
-changing axis behind. It replaces `allow_rescale`, which still works for one
-release and warns that it is deprecated.
+changing axis behind.
 
 ## Presets
 
@@ -268,10 +267,10 @@ once, which is what the recording above did to put the gif and the player on
 the same rasterization.
 
 The `talk` preset runs at 60 fps: the default ease moves fastest at mid-move,
-and turns and camera moves still judder there at 30 fps. `talk_60` is the
-same pair under its old name. The documentation presets run at 30 fps,
-because flat graphics cost almost nothing extra in bytes and a slow move at
-10 fps reads as a series of jumps. `doc_hd`
+and turns and camera moves still judder there at 30 fps. `talk_60` is the same
+pair under its old name, deprecated: reading it warns. The documentation
+presets run at 30 fps, because flat graphics cost almost nothing extra in
+bytes and a slow move at 10 fps reads as a series of jumps. `doc_hd`
 rasterizes at 200 dpi, the resolution of a documentation still, so a clip
 beside its still is not visibly softer on a high-density screen.
 

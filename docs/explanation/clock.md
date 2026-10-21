@@ -31,8 +31,8 @@ still checks that axes' color scale.
 ## One clock places everything timed
 
 The named span is the only timed primitive: a hold, a subject entering or
-leaving, a move, a caption, a pulse, a ring, a line of narration and a
-section are all spans of one `Timeline`, and the knobs a span writes are all a
+leaving, a move, a caption, an indication, an outline, a line of narration
+and a section are all spans of one `Timeline`, and the knobs a span writes are all a
 draw function reads, through `Plan.value(k, knob)`. A draw function never sees
 time. Times are exact sums, so `Time` handles place one span after another
 without drift. One rule turns seconds into frames everywhere: a span from `s`
@@ -43,7 +43,7 @@ half a frame rounds up. Two spans that write one knob on the same frame raise.
 The other checks are faults (text arriving over motion, a caption leaving
 before it is read, a span that rounds to no frames); a strict timeline raises
 them and any other records them in `Plan.faults`, with information-level
-entries for what the clock did on its own (a skipped pulse, a span truncated
+entries for what the clock did on its own (a skipped indication, a span truncated
 at the end of the clip).
 
 The cursor moves only where the author says. `wait_until(t)` moves it without
@@ -73,13 +73,14 @@ leaves without a read-time check; a silent clip keeps it.
 
 Narration is placement only. `Narration.place` lays one line on the clock and
 is pure, a cue is the start of its word with no lead, and the lead of each
-kind of move (a subject arrives 0.1 s ahead of its word, a pulse is centered
-on it, a ring starts on it) belongs to the clock, applied once. A line lasts
-until its speech and padding end or its last extending span ends plus 0.6 s,
-solved in one pass as the spans are placed; `Timeline.narration` returns the
-`Narration` with those starts and ends for `audio_track`, `mux` and the
-captions. The same function builds the silent clip: a pulse or ring placed
-only by a cue is skipped and recorded rather than placed at a guess.
+kind of move (a subject arrives 0.1 s ahead of its word, an indication is
+centered on it, an outline starts on it) belongs to the clock, applied once. A
+line lasts until its speech and padding end or its last extending span ends
+plus 0.6 s, solved in one pass as the spans are placed; `Timeline.narration`
+returns the `Narration` with those starts and ends for `audio_track`, `mux`
+and the captions. The same function builds the silent clip: an indication or
+outline placed only by a cue is skipped and recorded rather than placed at a
+guess.
 
 ## Stills come from the encode
 
@@ -96,8 +97,9 @@ frame of a span is `(span, "last")`, never `span.end`: the end time is the
 first instant after the span, and a time that rounds to the clip's frame count
 is past the last frame and is the "never written" error. A recording given its
 `plan` also warns once, as it closes, about every knob the draw function never
-read and every knob that never changes (the always-present `pulse.*` and
-`ring.*` knobs excepted), because a clip about motion needs a knob that moves.
+read and every knob that never changes (the always-present `indicate.*` and
+`circumscribe.*` knobs excepted), because a clip about motion needs a knob
+that moves.
 
 ## Attention moves sit on the figure
 

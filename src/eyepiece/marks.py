@@ -12,7 +12,7 @@ from eyepiece import _style
 from eyepiece._result import PlotResult
 
 
-def spans(
+def shade_intervals(
     x=None,
     mask=None,
     *,
@@ -25,6 +25,10 @@ def spans(
     fill_kw=None,
 ):
     """Shade masked runs or explicit intervals across a single Axes.
+
+    It was named ``spans`` before 0.16, a name that read like the timeline's
+    `Timeline.spans` and `Plan.spans`; ``eyepiece.spans`` still resolves to
+    this function with a `DeprecationWarning`.
 
     Args:
         x: Increasing one-dimensional sample positions. Unused in interval mode.
@@ -46,7 +50,7 @@ def spans(
     Example::
 
         import eyepiece as ep
-        result = ep.spans([0, 1, 2, 3], [False, True, True, False])
+        result = ep.shade_intervals([0, 1, 2, 3], [False, True, True, False])
     """
     if orient not in ("v", "h"):
         raise ValueError('orient must be "v" or "h"')

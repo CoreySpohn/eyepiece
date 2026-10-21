@@ -182,7 +182,7 @@ def cmap(name, override=None):
     return _as_colormap(value)
 
 
-def role(name, override=None):
+def role(name, override=None, *, mode=None):
     """Semantic brand color by role ("alert", "model", "reference", ...).
 
     The role resolves under the active hwostyle mode, or the light mode when
@@ -193,15 +193,24 @@ def role(name, override=None):
     outside the palette (positive, negative, posterior, truth), hwostyle's
     light-mode hex.
 
+    A neutral rank (``"hardware"``, ``"text"``, ...) names a gray, the same
+    tone `neutral` gives for that rank's level, so a `Motif` role, which is
+    either a color role or a rank, resolves through this one function.
+    `neutral` takes the level as a number, for a tone between the ranks.
+
     Args:
-        name: Role name, such as "alert", "model", "planet" or "reference".
+        name: Role name, such as "alert", "model", "planet" or "reference",
+            or a neutral rank such as "hardware" or "text".
         override: A color; wins when not None.
+        mode: A hwostyle mode name, such as "dark" or "paper", to resolve
+            the color in that mode without activating it; None uses the
+            active mode.
 
     Returns:
         A hex color string.
 
     Raises:
-        KeyError: If the name is not a known role.
+        KeyError: If the name is neither a known role nor a neutral rank.
 
     Example::
 
@@ -210,8 +219,24 @@ def role(name, override=None):
     """
     if override is not None:
         return override
+    # motifs imports this module, so its rank table is read at call time.
+    from eyepiece import motifs
+
+    ranks = motifs._ranks()
+    if ranks.get(name) is not None:
+        return motifs._neutral_in(ranks[name], mode)
+    if mode is not None:
+        return motifs._role_in(name, mode)
     if name not in _ROLE_FALLBACKS:
-        raise KeyError(f"No role {name!r}. Available: {sorted(_ROLE_FALLBACKS)}")
+        raise KeyError(
+            f"No role {name!r}. Available: {sorted(_ROLE_FALLBACKS)} and the "
+            f"neutral ranks {sorted(n for n, v in ranks.items() if v is not None)}"
+        )
+    return _active_role(name)
+
+
+def _active_role(name):
+    """Hex color of a known role under the active mode, with its fallbacks."""
     from eyepiece._video import VIDEO_MODE, video_roles
 
     if mode() == VIDEO_MODE:
@@ -309,7 +334,9 @@ def neutral(level):
     so the tone inverts with the mode instead of staying a fixed gray that
     vanishes on a dark background. In light mode, where the background is
     white and the text black, `level` reproduces the gray of value
-    `1 - level` exactly.
+    `1 - level` exactly. The named neutral ranks (``"hardware"``,
+    ``"text"``, ...) are fixed levels on this ramp; `role` takes a rank by
+    name and returns its tone as a hex string.
 
     Args:
         level: Position on the ramp, from 0.0 (the background itself) to

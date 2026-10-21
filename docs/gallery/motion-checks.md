@@ -75,7 +75,7 @@ def at(t):
     anchor.set_x(0.05 + 0.005 * u)
 
 
-for fault in ept.motion_faults(fig, at, ept.Span(0.0, 2.0), rest=[anchor]):
+for fault in ept.motion_faults(fig, at, ept.Window(0.0, 2.0), rest=[anchor]):
     print(fault)
 ```
 

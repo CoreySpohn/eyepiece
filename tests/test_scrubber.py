@@ -41,7 +41,7 @@ def silent_plan():
 def narrated_plan():
     tl = ep.Timeline({"u": 0.0}, narration=nr.Narration.estimated(SCRIPT), strict=False)
     tl.line("only")
-    tl.pulse("dot")
+    tl.indicate("dot")
     tl.run("rise", 0.3, to={"u": 1.0}, at=0.5)
     return tl.at_fps(10)
 
@@ -72,10 +72,10 @@ def two_line_plan():
     )
     tl = ep.Timeline({"u": 0.0}, narration=nr.Narration.estimated(script), strict=False)
     tl.line("first")
-    tl.pulse("dot")
+    tl.indicate("dot")
     tl.run("rise", 0.3, to={"u": 1.0}, at=0.3)
     tl.line("second")
-    tl.pulse("top")
+    tl.indicate("top")
     return tl.at_fps(10)
 
 
@@ -130,7 +130,7 @@ def test_chapters_jump_to_their_cue_and_transcript_follows_the_line():
         plt.close(fig)
     buttons = re.findall(r'<button[^>]*data-sample="(\d+)"[^>]*>([^<]*)</button>', page)
     # The dot cue is at frame 7 (sample 1), the top cue at frame 18 (sample 4).
-    assert buttons == [("1", "pulse.dot"), ("4", "pulse.top")]
+    assert buttons == [("1", "indicate.dot"), ("4", "indicate.top")]
     assert page_data(page)["lines"] == [0, 0, 0, 1, 1, 1]
     # Without cues, each span jumps to the sample nearest its first frame (0, 1, 4).
     silent = scrub(silent_plan(), samples=(0.0, 0.3, 1.0))
@@ -231,7 +231,7 @@ def test_transcript_and_chapters_follow_the_plan():
     assert 'class="transcript"' in narrated
     assert "Watch the dot climb to the top." in narrated
     chapters = re.findall(r"<button[^>]*>([^<]*)</button>", narrated)
-    assert chapters == ["pulse.dot"]
+    assert chapters == ["indicate.dot"]
     silent = scrub(silent_plan())
     assert 'class="transcript"' not in silent
     assert re.findall(r"<button[^>]*>([^<]*)</button>", silent) == [

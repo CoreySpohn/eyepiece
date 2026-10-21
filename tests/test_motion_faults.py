@@ -22,7 +22,7 @@ from matplotlib.transforms import Bbox, IdentityTransform, TransformedBbox
 import eyepiece.testing as ept
 
 DPI = 100
-SPAN = ept.Span(0.0, 2.0)  # 61 frames at 30 fps
+SPAN = ept.Window(0.0, 2.0)  # 61 frames at 30 fps
 DURATION = 2.0
 
 
@@ -839,17 +839,17 @@ def test_a_smooth_accelerating_move_has_no_jump_at_any_frame_rate(fps):
 
 def test_a_step_into_rest_is_found_with_rest_appended_after_the_move():
     fig, at = _ramp_clip(final_step=2.5)
-    found = ept.motion_faults(fig, at, ept.Span(0.0, 2.5))
+    found = ept.motion_faults(fig, at, ept.Window(0.0, 2.5))
     assert _kinds(found) == ["jump"]
     assert found[0].time == pytest.approx(2.0, abs=1.0 / 30.0)
     fig, at = _ramp_clip(final_step=1.5)
-    assert ept.motion_faults(fig, at, ept.Span(0.0, 2.5)) == []
+    assert ept.motion_faults(fig, at, ept.Window(0.0, 2.5)) == []
 
 
 def test_a_declared_move_boundary_decides_where_rest_begins():
     fig, at = _ramp_clip(final_step=2.5)
     moves = [{"name": "fade", "span": (0.0, 2.0)}]
-    found = ept.motion_faults(fig, at, ept.Span(0.0, 2.5), moves=moves)
+    found = ept.motion_faults(fig, at, ept.Window(0.0, 2.5), moves=moves)
     assert _kinds(found) == ["jump"]
     assert found[0].time == pytest.approx(2.0, abs=1.0 / 30.0)
 
@@ -1074,7 +1074,7 @@ def test_the_last_sample_is_exactly_stop(stop):
     seen = []
     fig = _figure()
     _box(fig, 10, 10)
-    ept.motion_faults(fig, seen.append, ept.Span(0.0, stop))
+    ept.motion_faults(fig, seen.append, ept.Window(0.0, stop))
     assert seen[-1] == stop
     assert seen == sorted(seen)
 
@@ -1087,7 +1087,7 @@ def test_a_callback_branching_on_stop_reaches_its_final_state():
     def at(t):
         block.set_alpha(1.0 if t >= stop else 0.5 * t / stop)
 
-    found = ept.motion_faults(fig, at, ept.Span(0.0, stop))
+    found = ept.motion_faults(fig, at, ept.Window(0.0, stop))
     assert block.get_alpha() == 1.0
     assert _kinds(found) == ["jump"]
     assert found[0].time == stop
@@ -1132,14 +1132,14 @@ def test_span_samples_every_frame_and_ends_on_stop():
     seen = []
     fig = _figure()
     _box(fig, 10, 10)
-    ept.motion_faults(fig, seen.append, ept.Span(0.0, 1.0))
+    ept.motion_faults(fig, seen.append, ept.Window(0.0, 1.0))
     assert len(seen) == 31
     assert seen[-1] == pytest.approx(1.0)
     seen.clear()
-    ept.motion_faults(fig, seen.append, ept.Span(0.0, 1.0), fps=10)
+    ept.motion_faults(fig, seen.append, ept.Window(0.0, 1.0), fps=10)
     assert len(seen) == 11
     seen.clear()
-    ept.motion_faults(fig, seen.append, ept.Span(0.0, 0.95))
+    ept.motion_faults(fig, seen.append, ept.Window(0.0, 0.95))
     assert seen[-1] == pytest.approx(0.95)
 
 
@@ -1208,7 +1208,7 @@ def test_public_names():
         "VENUE_FPS",
         "MotionError",
         "MotionFault",
-        "Span",
+        "Window",
         "assert_motion",
         "motion_faults",
     ):
@@ -1281,7 +1281,9 @@ def test_taking_the_clip_off_at_the_end_of_a_reveal_is_not_outside():
 def test_a_far_away_move_span_does_not_hide_the_step_into_rest():
     fig, at = _ramp_clip(final_step=2.5)
     moves = [{"name": "elsewhere", "span": (3.0, 4.0)}]
-    found = ept.motion_faults(fig, at, ept.Span(0.0, 2.5), moves=moves, kinds=["jump"])
+    found = ept.motion_faults(
+        fig, at, ept.Window(0.0, 2.5), moves=moves, kinds=["jump"]
+    )
     assert _kinds(found) == ["jump"]
 
 

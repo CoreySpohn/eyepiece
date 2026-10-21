@@ -200,6 +200,9 @@ def ease(u, kind=DEFAULT_EASE, strength=None):
 def stagger(u, rank, *, span=0.35):
     """Per-item progress for items that start one after another.
 
+    This staggers the items of one move within its progress; `Timeline.stagger`
+    staggers whole spans on the clock, one verb call per target.
+
     Item `i` starts at ``rank[i] * (1 - span)`` of the beat and finishes
     `span` later, so rank 0 starts at the beginning and rank 1 finishes at
     the end. Pass the beat's uneased progress and ease each item's progress
