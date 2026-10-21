@@ -219,31 +219,6 @@ def test_a_cue_is_the_start_of_its_word_with_no_lead():
     assert tl.cue("leak", "indicate", "speckle") == word.start_s
 
 
-def test_the_deprecated_min_s_is_a_duration_from_each_line_start():
-    base = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
-    with pytest.warns(DeprecationWarning, match="ends="):
-        held = nr.Narration.load(
-            SCRIPT, DATA, starts={"open": 1.0}, min_s={"open": 9.0, "leak": 12.0}
-        )
-    # The old rule: end = max(speech end + padding, line start + min_s).
-    open_end = max(base.end("open"), 1.0 + 9.0)
-    assert held.end("open") == pytest.approx(open_end)
-    assert held.start("leak") == pytest.approx(open_end)
-    assert held.start("leak") > 0.0
-    leak_end = max(
-        base.beat("leak").end_s - base.start("leak") + open_end, open_end + 12.0
-    )
-    assert held.end("leak") == pytest.approx(leak_end)
-    with pytest.warns(DeprecationWarning):
-        direct = nr.Narration(SCRIPT, base.spoken, min_s={"leak": 30.0})
-    assert direct.end("leak") == pytest.approx(direct.start("leak") + 30.0)
-
-
-def test_min_s_naming_an_unknown_line_raises():
-    with pytest.warns(DeprecationWarning), pytest.raises(KeyError, match="min_s"):
-        nr.Narration.estimated(SCRIPT, min_s={"nope": 1.0})
-
-
 def test_place_is_pure_and_puts_the_line_where_it_is_told():
     tl = nr.Narration.load(SCRIPT, DATA)
     one = tl.place("leak", 10.0)

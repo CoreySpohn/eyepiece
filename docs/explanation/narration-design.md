@@ -154,11 +154,6 @@ its cue word and the seconds. Line keys and section names have a namespace of
 their own, so a line and a span may share a name. A mid-clip still is the last
 frame of a span with `stills={"x.png": (span, "last")}`, not `span.end`.
 
-`Narration(min_s=)` and `Narration.load(..., min_s=)` still work for one
-minor release and warn with a `DeprecationWarning`: the value is a duration
-from the start of each line, and `ends=` (an absolute end time) or a
-`Timeline` replaces it.
-
 See {doc}`../tutorials/narrated` for a clip that places these spans and
 {doc}`../how-to/bind-a-move-to-a-knob` for the draw function.
 
