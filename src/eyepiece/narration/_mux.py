@@ -383,6 +383,7 @@ def mux(
     duck=None,
     duck_floor_db=-90.0,
     duck_fade_s=0.05,
+    work_dir=None,
 ):
     """Join a silent video and an audio track into one MP4.
 
@@ -423,6 +424,8 @@ def mux(
             ``duck_floor_db``, as in `audio_track`; None ducks nothing.
         duck_floor_db: RMS level of the bed inside a window, in dBFS.
         duck_fade_s: Fade at each window edge, in seconds.
+        work_dir: Parent folder for temporary audio files; None uses the
+            system temporary folder. Created when supplied and missing.
 
     Returns:
         The path written.
@@ -435,7 +438,10 @@ def mux(
     path.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = resolve_ffmpeg()
     duration_s = _video_duration(ffmpeg, video)
-    with tempfile.TemporaryDirectory() as tmp:
+    if work_dir is not None:
+        work_dir = Path(work_dir)
+        work_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=work_dir) as tmp:
         source = _finish_audio(ffmpeg, audio, Path(tmp), loudness, true_peak, lra, rate)
         if room_tone_db is not None:
             _, data = _decode(Path(source), rate, rate)

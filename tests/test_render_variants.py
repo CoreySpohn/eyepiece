@@ -1,7 +1,9 @@
 """Variant keys avoid speculative builds and preserve deterministic outputs."""
 
+import errno
 import os
 import subprocess
+import tempfile
 import wave
 from dataclasses import FrozenInstanceError, replace
 from functools import partial
@@ -292,15 +294,21 @@ def test_prior_entries_saved_on_later_failure(clip, tmp_path, monkeypatch):
     assert loaded.entry(spec.slug, "doc-dark") is None
 
 
-def test_mux_failure_preserves_target_and_cleans_scratch(clip, tmp_path, monkeypatch):
+@pytest.mark.parametrize("separate_work", [False, True])
+def test_mux_failure_preserves_target_and_cleans_scratch(
+    clip, tmp_path, monkeypatch, separate_work
+):
     from eyepiece import narration
 
     audio = write_audio(tmp_path / "track.wav")
     spec = replace(clip, audio=lambda variant: audio)
     target = tmp_path / "marker-doc-light-narrated.mp4"
     target.write_bytes(b"existing video")
+    work = tmp_path / "work" if separate_work else tmp_path
+    options = {"work_dir": work} if separate_work else {}
 
-    def fail_mux(video, audio, path):
+    def fail_mux(video, audio, path, **kwargs):
+        assert Path(path).parent.parent == work
         Path(path).write_bytes(b"partial mux")
         raise OSError("deliberate mux failure")
 
@@ -313,10 +321,12 @@ def test_mux_failure_preserves_target_and_cleans_scratch(clip, tmp_path, monkeyp
             tmp_path,
             manifest=manifest,
             workers=1,
+            **options,
         )
     assert target.read_bytes() == b"existing video"
     assert list(tmp_path.rglob("*.mp4")) == [target]
     assert manifest.entry(spec.slug, "doc-light-narrated") is None
+    assert list(work.glob("*.narration-*")) == []
 
 
 def test_all_keys_precede_builds_and_ignore_destination(clip, tmp_path, monkeypatch):
@@ -608,7 +618,14 @@ def test_narrated_render_preserves_files_with_former_scratch_names(clip, tmp_pat
         ).read_bytes() == b"stale partial video"
 
 
-def test_variants_resume_their_own_chunks(clip, tmp_path, monkeypatch):
+@pytest.mark.parametrize("separate_work", [False, True])
+def test_variants_resume_their_own_chunks(clip, tmp_path, monkeypatch, separate_work):
+    try:
+        resolve_ffmpeg()
+    except RuntimeError:
+        pytest.skip("needs ffmpeg")
+    work = tmp_path / "work" if separate_work else tmp_path
+    options = {"work_dir": work} if separate_work else {}
     original = variant_driver.render_frames
     resumed = []
 
@@ -631,22 +648,26 @@ def test_variants_resume_their_own_chunks(clip, tmp_path, monkeypatch):
     chunks = []
     for variant in requested:
         with pytest.raises(RuntimeError, match="deliberate chunk failure"):
-            render_variants(spec, [variant], tmp_path, manifest=manifest, workers=1)
-        chunk = tmp_path / f".chunks-marker-{variant.name}" / "chunk-0.bin"
+            render_variants(
+                spec, [variant], tmp_path, manifest=manifest, workers=1, **options
+            )
+        chunk = work / f".chunks-marker-{variant.name}" / "chunk-0.bin"
         chunks.append(chunk)
         assert chunk.is_file()
     assert chunks[0].read_bytes() != chunks[1].read_bytes()
     second_before = chunks[1].read_bytes()
     first = render_variants(
-        spec, [requested[0]], tmp_path, manifest=manifest, workers=1
+        spec, [requested[0]], tmp_path, manifest=manifest, workers=1, **options
     )[0]
     assert chunks[1].read_bytes() == second_before
     second = render_variants(
-        spec, [requested[1]], tmp_path, manifest=manifest, workers=1
+        spec, [requested[1]], tmp_path, manifest=manifest, workers=1, **options
     )[0]
     assert resumed == [1, 1]
     before = [(tmp_path / item.outputs[0]).read_bytes() for item in (first, second)]
-    render_variants(spec, requested, tmp_path, manifest=manifest, workers=1, force=True)
+    render_variants(
+        spec, requested, tmp_path, manifest=manifest, workers=1, force=True, **options
+    )
     assert resumed == [1, 1, 0, 0]
     assert [
         (tmp_path / item.outputs[0]).read_bytes() for item in (first, second)
@@ -671,7 +692,37 @@ def test_stamp_changes_require_explicit_key_input(clip, tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("custom", [False, True])
-def test_target_paths_and_adjacent_outputs(clip, tmp_path, custom):
+@pytest.mark.parametrize("separate_work", [False, True])
+def test_target_paths_and_adjacent_outputs(
+    clip, tmp_path, custom, separate_work, monkeypatch
+):
+    try:
+        resolve_ffmpeg()
+    except RuntimeError as err:
+        pytest.skip(str(err))
+    out = tmp_path / "finals"
+    work = tmp_path / "work"
+    options = {"work_dir": str(work)} if separate_work else {}
+    mux = ep.narration.mux
+
+    def inspect_mux(video, audio, path, **kwargs):
+        if separate_work:
+            assert video.parent.parent == (work / "doc" if custom else work)
+            assert path.parent == video.parent
+            assert list(out.rglob("*.narration-*")) == []
+        return mux(video, audio, path, **kwargs)
+
+    monkeypatch.setattr(ep.narration, "mux", inspect_mux)
+    temporary_directory = tempfile.TemporaryDirectory
+
+    def inspect_scratch(*args, **kwargs):
+        scratch = temporary_directory(*args, **kwargs)
+        if separate_work:
+            assert Path(scratch.name).is_relative_to(work)
+        return scratch
+
+    monkeypatch.setattr(tempfile, "TemporaryDirectory", inspect_scratch)
+
     def target_for(variant):
         return Path(variant.venue) / f"movie-{variant.name}.mp4"
 
@@ -691,13 +742,16 @@ def test_target_paths_and_adjacent_outputs(clip, tmp_path, custom):
         poster=0,
         audio=lambda variant: audio,
     )
-    manifest = Manifest(tmp_path / "manifest.json")
+    manifest = Manifest(out / "manifest.json")
     requested = [
         Variant("doc", "light"),
         Variant("talk", "dark"),
         Variant("doc", "light", True),
     ]
-    first = render_variants(spec, requested, tmp_path, manifest=manifest, workers=1)
+    first = render_variants(
+        spec, requested, out, manifest=manifest, workers=1, **options
+    )
+    expected_files = {manifest.path}
     for result in first:
         video = target(result.variant)
         expected = [video.as_posix()]
@@ -705,9 +759,160 @@ def test_target_paths_and_adjacent_outputs(clip, tmp_path, custom):
             expected.append(video.with_name(f"{video.stem}-poster.png").as_posix())
         expected.append(video.with_suffix(".vtt").as_posix())
         assert result.outputs == expected
-        assert all((tmp_path / path).is_file() for path in result.outputs)
-    second = render_variants(spec, requested, tmp_path, manifest=manifest, workers=1)
+        assert all((out / path).is_file() for path in result.outputs)
+        expected_files.update(out / path for path in result.outputs)
+        if separate_work:
+            assert (
+                work / video.parent / f".chunks-{video.stem}" / ".eyepiece-render"
+            ).is_file()
+    if separate_work:
+        assert {path for path in out.rglob("*") if path.is_file()} == expected_files
+        assert {path for path in out.rglob("*") if path.is_dir()} == (
+            {out / "doc", out / "talk"} if custom else set()
+        )
+        assert list(work.rglob("*.narration-*")) == []
+    second = render_variants(
+        spec, requested, out, manifest=manifest, workers=1, **options
+    )
     assert not any(result.rendered for result in second)
+
+
+@pytest.mark.parametrize("narrated", [False, True])
+def test_adoption_keeps_all_intermediates_in_work_dir(
+    clip, tmp_path, monkeypatch, narrated
+):
+    try:
+        resolve_ffmpeg()
+    except RuntimeError as err:
+        pytest.skip(str(err))
+    out, work = tmp_path / "finals", tmp_path / "work"
+    audio = write_audio(tmp_path / "track.wav")
+    spec = replace(clip, audio=lambda variant: audio)
+    variant = Variant("doc", "light", narrated)
+    manifest = Manifest(out / "manifest.json")
+    first = render_variants(
+        spec, [variant], out, manifest=manifest, workers=1, work_dir=work
+    )[0]
+    target = out / first.outputs[0]
+    before = target.read_bytes(), target.stat().st_mtime_ns
+    original = variant_driver.render_frames
+
+    def inspect_render(build, frames, path, **kwargs):
+        assert path.is_relative_to(work)
+        assert kwargs["work_dir"].parent == work
+        return original(build, frames, path, **kwargs)
+
+    monkeypatch.setattr(variant_driver, "render_frames", inspect_render)
+    current = replace(spec, extra=("new",), adopt_build=spec.build)
+    adopted = render_variants(
+        current,
+        [variant],
+        out,
+        manifest=manifest,
+        workers=1,
+        work_dir=work,
+        adopt=True,
+    )[0]
+    assert adopted.adopted and not adopted.rendered
+    assert (target.read_bytes(), target.stat().st_mtime_ns) == before
+    assert set(out.iterdir()) == {target, manifest.path}
+    assert {path.name for path in work.iterdir()} == {f".chunks-{target.stem}"}
+
+
+@pytest.mark.parametrize("copy_fails", [False, True])
+def test_narrated_work_dir_can_be_on_another_filesystem(
+    clip, tmp_path, monkeypatch, copy_fails
+):
+    try:
+        resolve_ffmpeg()
+    except RuntimeError as err:
+        pytest.skip(str(err))
+    out, work = tmp_path / "finals", tmp_path / "work"
+    audio = write_audio(tmp_path / "track.wav")
+    spec = replace(clip, audio=lambda variant: audio)
+    requested = [Variant("doc", "light", True)]
+    manifest = Manifest(out / "manifest.json")
+    render_variants(spec, requested, out, manifest=manifest, workers=1, work_dir=work)
+    target = out / "marker-doc-light-narrated.mp4"
+    before = target.read_bytes()
+    original = os.replace
+
+    def cross_device_replace(source, destination):
+        if Path(source).is_relative_to(work) and Path(destination) == target:
+            raise OSError(errno.EXDEV, "cross-device rename")
+        return original(source, destination)
+
+    monkeypatch.setattr(os, "replace", cross_device_replace)
+    if copy_fails:
+
+        def fail_copy(source, destination):
+            Path(destination).write_bytes(b"partial copy")
+            raise OSError("deliberate copy failure")
+
+        monkeypatch.setattr(variant_driver.shutil, "copyfile", fail_copy)
+        with pytest.raises(OSError, match="deliberate copy failure"):
+            render_variants(
+                spec,
+                requested,
+                out,
+                manifest=manifest,
+                workers=1,
+                work_dir=work,
+                force=True,
+            )
+    else:
+        result = render_variants(
+            spec,
+            requested,
+            out,
+            manifest=manifest,
+            workers=1,
+            work_dir=work,
+            force=True,
+        )
+        assert result[0].rendered
+    assert target.read_bytes() == before
+    assert set(out.iterdir()) == {target, manifest.path}
+    assert list(work.rglob("*.narration-*")) == []
+
+
+def test_same_stem_targets_resume_separately_in_work_dir(clip, tmp_path, monkeypatch):
+    try:
+        resolve_ffmpeg()
+    except RuntimeError as err:
+        pytest.skip(str(err))
+    out, work = tmp_path / "finals", tmp_path / "work"
+    spec = replace(
+        clip,
+        build=partial(
+            build_variant_clip,
+            markers=tmp_path / "builds",
+            failure_root=tmp_path / "failures",
+        ),
+        target_for=lambda variant: Path(variant.mode) / "movie.mp4",
+    )
+    original = variant_driver.render_frames
+    resumed = []
+
+    def recording(*args, **kwargs):
+        result = original(*args, **kwargs, chunk_frames=3)
+        resumed.append(result.resumed)
+        return result
+
+    monkeypatch.setattr(variant_driver, "render_frames", recording)
+    manifest = Manifest(out / "manifest.json")
+    requested = variants(("doc",))
+    for variant in requested:
+        with pytest.raises(RuntimeError, match="deliberate chunk failure"):
+            render_variants(
+                spec, [variant], out, manifest=manifest, workers=1, work_dir=work
+            )
+    assert all(
+        (work / variant.mode / ".chunks-movie" / "chunk-0.bin").is_file()
+        for variant in requested
+    )
+    render_variants(spec, requested, out, manifest=manifest, workers=1, work_dir=work)
+    assert resumed == [1, 1]
 
 
 @pytest.mark.parametrize("target", ["../escape.mp4", "/outside.mp4", "wrong.png"])

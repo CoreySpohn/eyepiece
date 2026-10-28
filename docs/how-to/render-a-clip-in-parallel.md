@@ -279,6 +279,17 @@ file, even when their clips or output directories differ.
 
 ### Choose output paths
 
+Pass `work_dir=` to `ep.render.render_variants` to keep intermediates out
+of `out_dir`. Every variant's `.chunks-<video-stem>` folder and temporary
+narration or adoption files go under that work folder, which is created
+when needed. Nested output paths keep their relative parent folders under
+`work_dir`, so `light/movie.mp4` uses `light/.chunks-movie` there and stays
+separate from `dark/movie.mp4`. Reuse the same work folder after an
+interrupted render to resume complete chunks. With `work_dir=None`, intermediates stay beside
+each video as before. Videos, posters, and `after` outputs stay in
+`out_dir`; the manifest stays at its configured path. Moving the work
+folder does not change content keys.
+
 By default, each video is `<slug>-<variant>.mp4` under `out_dir`.
 `ClipSpec.target_for(variant)` can return a different relative `.mp4` path,
 including nested folders. Each requested variant must have a unique target.

@@ -1,5 +1,6 @@
 """Key-driven clip variants and narrated outputs."""
 
+import errno
 import filecmp
 import hashlib
 import math
@@ -179,8 +180,41 @@ class VariantResult(NamedTuple):
     adopted: bool = False
 
 
+def _publish_video(source, target):
+    """Replace atomically, even when scratch and output use different devices."""
+    try:
+        os.replace(source, target)
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+        # Only the completed video crosses devices. Stage a file beside the
+        # target so a failed copy cannot damage an existing finished video.
+        with tempfile.NamedTemporaryFile(
+            prefix=f".{target.stem}.publish-",
+            suffix=".mp4",
+            dir=target.parent,
+            delete=False,
+        ) as stream:
+            staged = Path(stream.name)
+        try:
+            shutil.copyfile(source, staged)
+            os.replace(staged, target)
+        finally:
+            staged.unlink(missing_ok=True)
+
+
 def _variant_video(
-    spec, variant, venue, out_dir, key, hold, audio, workers, *, target=None
+    spec,
+    variant,
+    venue,
+    out_dir,
+    key,
+    hold,
+    audio,
+    workers,
+    *,
+    target=None,
+    work_dir=None,
 ):
     """Render once, atomically replacing a narrated target after mux succeeds."""
     import hwostyle
@@ -188,10 +222,10 @@ def _variant_video(
     if target is None:
         target = out_dir / f"{spec.slug}-{variant.name}.mp4"
     target.parent.mkdir(parents=True, exist_ok=True)
+    work = target.parent if work_dir is None else work_dir
+    work.mkdir(parents=True, exist_ok=True)
     with (
-        tempfile.TemporaryDirectory(
-            prefix=f".{target.stem}.narration-", dir=target.parent
-        )
+        tempfile.TemporaryDirectory(prefix=f".{target.stem}.narration-", dir=work)
         if variant.narrated
         else nullcontext()
     ) as scratch:
@@ -209,7 +243,7 @@ def _variant_video(
             extra_ffmpeg_args=spec.extra_ffmpeg_args,
             setup=partial(hwostyle.use, variant.mode),
             rc=dict(venue.rc or {}),
-            work_dir=target.parent / f".chunks-{target.stem}",
+            work_dir=work / f".chunks-{target.stem}",
             key=key,
             on_rescale=spec.on_rescale,
         )
@@ -217,14 +251,23 @@ def _variant_video(
             from eyepiece import narration
 
             muxed = Path(scratch) / "mux.mp4"
-            narration.mux(silent, audio, muxed)
-            os.replace(muxed, target)
+            narration.mux(
+                silent,
+                audio,
+                muxed,
+                **({"work_dir": scratch} if work_dir is not None else {}),
+            )
+            _publish_video(muxed, target)
         return target, result.frames
 
 
-def _adopt_video(spec, variant, venue, out_dir, target, hold, audio, workers):
+def _adopt_video(
+    spec, variant, venue, out_dir, target, hold, audio, workers, *, work_dir=None
+):
     """Compare an isolated old render, preserving the target and resume chunks."""
-    scratch = target.with_name(f".{target.stem}.adopt-{uuid.uuid4().hex}.mp4")
+    work = target.parent if work_dir is None else work_dir
+    work.mkdir(parents=True, exist_ok=True)
+    scratch = work / f".{target.stem}.adopt-{uuid.uuid4().hex}.mp4"
     try:
         _variant_video(
             replace(spec, build=spec.adopt_build),
@@ -236,6 +279,7 @@ def _adopt_video(spec, variant, venue, out_dir, target, hold, audio, workers):
             audio,
             workers,
             target=scratch,
+            work_dir=work_dir,
         )
         return filecmp.cmp(scratch, target, shallow=False)
     finally:
@@ -244,7 +288,15 @@ def _adopt_video(spec, variant, venue, out_dir, target, hold, audio, workers):
 
 
 def render_variants(
-    spec, variants, out_dir, *, manifest, workers=None, force=False, adopt=False
+    spec,
+    variants,
+    out_dir,
+    *,
+    manifest,
+    workers=None,
+    force=False,
+    adopt=False,
+    work_dir=None,
 ) -> list[VariantResult]:
     """Render each requested variant once, skipping current manifest entries.
 
@@ -265,11 +317,16 @@ def render_variants(
     Args:
         spec: Frozen ClipSpec describing explicit inputs and figure builders.
         variants: Iterable of Variant selections.
-        out_dir: Folder for videos, posters, extra outputs, and per-variant chunks.
+        out_dir: Folder for videos, posters, and extra outputs.
         manifest: Manifest whose root contains all outputs.
         workers: Worker count forwarded to render_frames.
         force: Render even when the manifest entry is current.
         adopt: Try spec.adopt_build for existing non-current videos unless forced.
+        work_dir: Folder for per-variant chunks and narration or adoption scratch
+            files. None keeps intermediates beside each video. Chunk folders
+            retain their .chunks-<video-stem> names and relative output parent
+            folders for resume. This path does not enter content keys; the
+            manifest stays at manifest.path.
 
     Returns:
         Results in first-request order with paths relative to out_dir.
@@ -311,6 +368,7 @@ def render_variants(
         except (KeyError, ValueError, TypeError) as exc:
             raise ValueError(f"Venue {venue.name}: invalid rc settings: {exc}") from exc
     out_dir = Path(out_dir).resolve()
+    work_dir = None if work_dir is None else Path(work_dir).resolve()
     resolved = []
     targets = set()
     for variant in requested:
@@ -407,6 +465,11 @@ def render_variants(
     results = []
     try:
         for variant, variant_spec, count, venue, hold, audio, key, target in jobs:
+            variant_work = (
+                None
+                if work_dir is None
+                else work_dir / target.relative_to(out_dir).parent
+            )
             entry = manifest.entry(spec.slug, variant.name)
             expected = [target]
             poster = target.with_name(f"{target.stem}-poster.png")
@@ -437,6 +500,7 @@ def render_variants(
                         hold,
                         audio,
                         workers,
+                        work_dir=variant_work,
                     )
                 if adopted:
                     rendered = False
@@ -452,6 +516,7 @@ def render_variants(
                         audio,
                         workers,
                         target=target,
+                        work_dir=variant_work,
                     )
                 outputs = [target]
                 if spec.poster is not None and not variant.narrated:
