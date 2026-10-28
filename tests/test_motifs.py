@@ -268,6 +268,82 @@ def test_confusable_hues_are_a_fault_unless_a_second_channel_separates_them():
     assert "cvd" not in [f.kind for f in ept.motif_faults(far, mode="dark")]
 
 
+@pytest.mark.parametrize(
+    ("mode", "severity", "distance"),
+    [("dark", "warning", 13.72), ("light", "fault", 6.68), ("paper", "fault", 3.45)],
+)
+def test_faint_fills_can_collide_when_the_solid_colors_pass(mode, severity, distance):
+    pair = ep.MotifSet(
+        [_m("s", "star", fill_alpha=0.1), _m("p", "planet", fill_alpha=0.1)]
+    )
+    found = ept.motif_faults(pair, mode=mode, fills=True)
+    assert "cvd" not in [f.kind for f in found]
+    (fill,) = [f for f in found if f.kind == "cvd-fill"]
+    assert fill.keys == ("s", "p")
+    assert fill.severity == severity
+    assert fill.de == pytest.approx(distance, abs=0.1)
+    assert "alpha" in fill.detail and "0.1" in fill.detail
+    with pytest.raises(ept.MotifError, match="cvd-fill"):
+        ept.assert_motifs(pair, mode=mode, strict=True, fills=True)
+
+
+def test_fill_check_is_opt_in():
+    pair = ep.MotifSet(
+        [_m("s", "star", fill_alpha=0.1), _m("p", "planet", fill_alpha=0.1)]
+    )
+    assert "cvd-fill" not in [f.kind for f in ept.motif_faults(pair, mode="light")]
+
+
+def test_fill_check_uses_each_motifs_mode_opacity_and_skips_absent_fills():
+    pair = ep.MotifSet(
+        [
+            _m("s", "star", fill_alpha=0.1, fill_alpha_dark=1.0),
+            _m("p", "planet", fill_alpha=0.2, fill_alpha_dark=1.0),
+        ]
+    )
+    assert "cvd-fill" not in [
+        f.kind for f in ept.motif_faults(pair, mode="dark", fills=True)
+    ]
+    hwostyle.use("light")
+    (fill,) = [f for f in ept.motif_faults(pair, fills=True) if f.kind == "cvd-fill"]
+    assert "0.1" in fill.detail and "0.2" in fill.detail
+    for alpha in (0.0, 1.0):
+        changed = pair.derive("s", fill_alpha=alpha).derive("p", fill_alpha=alpha)
+        assert "cvd-fill" not in [f.kind for f in ept.motif_faults(changed, fills=True)]
+
+
+def test_fill_check_uses_the_solid_thresholds_and_second_channel_severity():
+    pair = ep.MotifSet(
+        [_m("a", "alert", fill_alpha=1.0), _m("r", "reference", fill_alpha=1.0)]
+    )
+    for motifs, severity in (
+        (pair, "fault"),
+        (pair.derive("r", marker="o"), "warning"),
+    ):
+        found = ept.motif_faults(motifs, mode="dark", fills=True)
+        (solid,) = [f for f in found if f.kind == "cvd"]
+        (fill,) = [f for f in found if f.kind == "cvd-fill"]
+        assert fill.de == pytest.approx(solid.de)
+        assert fill.severity == severity
+    assert "cvd-fill" not in [
+        f.kind
+        for f in ept.motif_faults(pair, mode="dark", fault_de=1, warn_de=2, fills=True)
+    ]
+
+
+def test_neutral_fills_are_checked_and_a_second_channel_cannot_hide_a_collision():
+    pair = ep.MotifSet(
+        [_m("a", "truth", fill_alpha=0.1), _m("b", "truth", fill_alpha=0.1, hatch="/")]
+    )
+    (fill,) = [
+        f
+        for f in ept.motif_faults(pair, mode="light", fills=True)
+        if f.kind == "cvd-fill"
+    ]
+    assert fill.de == pytest.approx(0.0)
+    assert fill.severity == "fault"
+
+
 def test_dark_star_and_zodi_stay_apart_under_every_vision_type(table_set):
     margins = ept.motif_margins(table_set.only("star", "local_zodi"), mode="dark")
     assert margins["min_de"] > 20.0

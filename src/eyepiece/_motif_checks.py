@@ -11,6 +11,8 @@ mode and reports, as `MotifFault` records:
   channel (marker, hatch, arrow or font style), and a seventh is never allowed.
 - ``"cvd"``: two hue motifs whose colors fall close in CAM02-UCS under normal
   vision or a color-vision deficiency. A second channel softens the finding.
+- ``"cvd-fill"``: two visible motif fills fall close after compositing at
+  their mode-specific opacities over the theme background.
 - ``"dimmed"``: advisory, hues that fall close once the set is dimmed together.
 - ``"cue"``: the cue is not a form in the text color, or a hue in the set
   matches the cue's color.
@@ -34,7 +36,7 @@ from matplotlib.colors import to_hex, to_rgb
 from eyepiece import _style
 from eyepiece._video import base_mode
 
-MOTIF_KINDS = ("signature", "sharing", "budget", "cvd", "dimmed", "cue")
+MOTIF_KINDS = ("signature", "sharing", "budget", "cvd", "cvd-fill", "dimmed", "cue")
 _VISIONS = ("deuteranomaly", "protanomaly", "tritanomaly")
 _CUE_SAME = 2.0
 _HARD_FLOOR = 5.0
@@ -53,8 +55,8 @@ class MotifFault:
         severity: ``"fault"``, ``"warning"`` or ``"advisory"``.
         keys: The motif keys involved.
         detail: A sentence saying what is wrong.
-        de: The CAM02-UCS distance behind a ``cvd`` or ``dimmed`` finding,
-            else None.
+        de: The CAM02-UCS distance behind a ``cvd``, ``cvd-fill`` or ``dimmed``
+            finding, else None. Fill findings name each alpha in detail.
     """
 
     kind: str
@@ -242,12 +244,25 @@ def _budget_faults(motifs, mode):
     return out
 
 
-def _cvd_faults(motifs, mode, fault_de, warn_de):
-    hues = _distinct_hues(_hue_motifs(motifs, mode))
+def _cvd_faults(motifs, mode, fault_de, warn_de, *, fill=False):
+    hues = (
+        [(key, motif.resolve(mode)) for key, motif in motifs.items()]
+        if fill
+        else _distinct_hues(_hue_motifs(motifs, mode))
+    )
     out = []
     for (ka, ca), (kb, cb) in itertools.combinations(hues, 2):
         if motifs.never_together(ka, kb):
             continue
+        alpha_detail = ""
+        if fill:
+            aa, ab = motifs[ka].fill(mode), motifs[kb].fill(mode)
+            # A zero-alpha face is absent, not a confusable visible fill.
+            if aa <= 0.0 or ab <= 0.0:
+                continue
+            ca = _dim_toward_background(ca, aa, mode)
+            cb = _dim_toward_background(cb, ab, mode)
+            alpha_detail = f" (fill alpha {ka}={aa:g}, {kb}={ab:g})"
         de = _worst(ca, cb)
         if de < fault_de and motifs.accepts(ka, kb, _mode_name(mode)):
             continue
@@ -262,11 +277,12 @@ def _cvd_faults(motifs, mode, fault_de, warn_de):
             continue
         out.append(
             MotifFault(
-                "cvd",
+                "cvd-fill" if fill else "cvd",
                 severity,
                 (ka, kb),
                 f"{ka} and {kb} are {de:.1f} apart in CAM02-UCS under the "
                 "worst vision type"
+                + alpha_detail
                 + ("" if not second else ", softened by a second channel"),
                 de,
             )
@@ -331,8 +347,16 @@ def _cue_faults(motifs, mode):
     return out
 
 
-def motif_faults(motifs, *, mode=None, fault_de=10.0, warn_de=20.0, dim=None):
+def motif_faults(
+    motifs, *, mode=None, fault_de=10.0, warn_de=20.0, dim=None, fills=False
+):
     """Find the ways a motif set cannot be read.
+
+    With fills=True, pairs with positive Motif.fill(mode) opacities are
+    also composited over the theme axes background and checked with the same
+    thresholds, second channels, and accepted-pair rules. These cvd-fill
+    findings report the measured distance in de and each alpha in detail.
+    Motifs without visible fills do not participate in the fill check.
 
     Args:
         motifs: A `MotifSet`, normally the subset one figure or clip uses.
@@ -342,6 +366,8 @@ def motif_faults(motifs, *, mode=None, fault_de=10.0, warn_de=20.0, dim=None):
         warn_de: Distance under which two hues without a second channel are
             a warning.
         dim: Contrast a dimmed motif keeps; None uses the mode's level.
+        fills: Also check visible fills at their opacities (cvd-fill).
+            Off by default: a full set declares fills that never share a frame.
 
     Returns:
         A list of `MotifFault`, faults first.
@@ -351,6 +377,7 @@ def motif_faults(motifs, *, mode=None, fault_de=10.0, warn_de=20.0, dim=None):
         *_sharing_faults(motifs),
         *_budget_faults(motifs, mode),
         *_cvd_faults(motifs, mode, fault_de, warn_de),
+        *(_cvd_faults(motifs, mode, fault_de, warn_de, fill=True) if fills else ()),
         *_dimmed_faults(motifs, mode, fault_de, dim),
         *_cue_faults(motifs, mode),
     ]

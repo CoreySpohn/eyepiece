@@ -46,6 +46,28 @@ only once both are dimmed toward the background).
 naming it in `waive` with a reason, and stays in `meaning_report`, whose all-pass wording is "no tier 1 or 2 findings". `assert_meaning` raises
 `MeaningError`. It needs `colorspacious`, in the `test` extra.
 
+## motif_faults
+
+`ep.testing.motif_faults(motifs, mode=..., fault_de=10, warn_de=20, fills=False)` checks
+the `ep.motifs.MotifSet` subset used by a figure or clip. It reports shared
+signatures, never-together pairs, hue budget, cue, and color separation
+findings as `MotifFault` records. Solid color separation uses CAM02-UCS
+under normal vision and three color-vision deficiencies at severity 100.
+
+With `fills=True`, pairs whose motifs both have a visible fill also
+receive a `cvd-fill` check; pass it for the subset a clip draws as fills. Each color is composited over the theme axes background at its
+own `fill_alpha`, using `fill_alpha_dark` in dark mode when supplied.
+Zero opacity means no visible fill and skips that pair. A `cvd-fill`
+finding carries the measured distance in `de` and both alphas in `detail`.
+It uses the solid check's thresholds, second-channel severity rules, and
+accepted-pair rules. A pair can pass as solid colors yet fail as faint
+fills. Widely separated fills receive no finding.
+
+`ep.testing.assert_motifs` raises `MotifError` for faults, or for warnings
+too with `strict=True`. `ep.testing.motif_margins` reports solid and dimmed
+distances; it does not include fill distances. These checks need
+`colorspacious`, supplied by the `test` extra.
+
 ## motion_faults
 
 `ep.testing.motion_faults(fig, at, times, moves=..., rest=..., groups=...)` is the same
