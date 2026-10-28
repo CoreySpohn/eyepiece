@@ -2539,6 +2539,13 @@ def indicate(artists, *, scale=1.15, strength=0.6, shape="sine"):
     or two every other frame and `motion_faults` reports the steps as jumps.
     Lines, patches and collections swell smoothly.
 
+    A plateau reaches its peak within a few frames. Over a large area, such
+    as a whole panel column of bars, high strength reads as a flash and
+    `check_clip` reports a jump. Use strength around 0.4 for large areas.
+    Text grows about its alignment anchor: a right-aligned label grows
+    leftward and can run into a neighboring axis label. Check the grown
+    extent or keep scale near 1.1 for labels beside axes.
+
     Args:
         artists: An artist, or an iterable of them (`Line2D`, `Text`,
             `Patch`, `Collection`).

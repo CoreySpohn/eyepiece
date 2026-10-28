@@ -327,6 +327,12 @@ in a small runnable example.
   the artist is exactly as it was. Lines, patches and collections swell
   smoothly; a text swells in whole-pixel steps, because Agg hints and places
   text on the pixel grid.
+  The plateau reaches its peak within a few frames. Over a large area,
+  such as a whole panel column of bars, high `strength` reads as a flash
+  and `ep.testing.check_clip` reports a jump; use strength around 0.4.
+  Text grows about its alignment anchor: a right-aligned label grows
+  leftward and can run into a neighboring axis label. Check the grown
+  extent or keep `scale` near 1.1 for labels beside axes.
 - `click` and `Timeline.click`: a composite lands in one beat of 0.6 s on
   screen at any tempo, followed by at least 1.5 s of stillness the tempo
   never shortens. Over the beat the geometry's width swells by 1.55 on a
