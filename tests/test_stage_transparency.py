@@ -1,6 +1,7 @@
 """Pixel and visibility contracts for absent Stage artists."""
 
 import io
+from contextlib import contextmanager
 from pathlib import Path
 
 import matplotlib.patheffects as pe
@@ -23,6 +24,30 @@ def close_figures():
 def pixels(fig):
     fig.canvas.draw()
     return np.asarray(fig.canvas.buffer_rgba()).copy()
+
+
+@contextmanager
+def counted_agg(renderer):
+    """Count painting on the actual renderer without changing its type."""
+    from test_render_helpers import CountingRenderer
+
+    counts = CountingRenderer(renderer)
+    originals = {name: getattr(renderer, name) for name in ("draw_text", "draw_path")}
+
+    def text(*args, **kwargs):
+        counts.texts += 1
+        return originals["draw_text"](*args, **kwargs)
+
+    def path(*args, **kwargs):
+        counts.paths += 1
+        return originals["draw_path"](*args, **kwargs)
+
+    renderer.draw_text, renderer.draw_path = text, path
+    try:
+        yield counts
+    finally:
+        for name, original in originals.items():
+            setattr(renderer, name, original)
 
 
 def test_stage_preserves_caller_visibility():
@@ -386,8 +411,6 @@ def test_hooks_installed_after_stage_are_preserved(hook):
 
 @pytest.mark.parametrize("construct_after_update", [False, True])
 def test_two_stages_use_the_last_presence_writer(construct_after_update):
-    from test_render_helpers import CountingRenderer
-
     fig, ax = plt.subplots()
     text = ax.text(0.2, 0.5, "shared", in_layout=False)
     first = ep.motion.Stage({"text": text})
@@ -399,10 +422,11 @@ def test_two_stages_use_the_last_presence_writer(construct_after_update):
         # Give the transparent color nonzero ink independently of Stage.
         # Presence zero may skip only if the current artist is also inkless.
         text.set_color((0, 0, 0, 0))
-        renderer = CountingRenderer(fig.canvas.get_renderer())
-        text.draw(renderer)
+        renderer = fig.canvas.get_renderer()
+        with counted_agg(renderer) as counts:
+            text.draw(renderer)
         assert text.get_visible()
-        assert renderer.texts == (0 if level == 0 else 1)
+        assert counts.texts == (0 if level == 0 else 1)
 
 
 @pytest.mark.parametrize(
@@ -411,7 +435,6 @@ def test_two_stages_use_the_last_presence_writer(construct_after_update):
 def test_absent_standard_leaf_skips_actual_painting(kind):
     from matplotlib.patches import Circle, FancyBboxPatch, PathPatch, Polygon
     from matplotlib.path import Path as MplPath
-    from test_render_helpers import CountingRenderer
 
     fig, ax = plt.subplots()
     if kind == "text":
@@ -430,9 +453,11 @@ def test_absent_standard_leaf_skips_actual_painting(kind):
     stage = ep.motion.Stage({"leaf": artist})
     for level in (1, 0, 0.25, 0, 1):
         stage.weigh({"leaf": level})
-        renderer = CountingRenderer(fig.canvas.get_renderer())
-        artist.draw(renderer)
-        assert renderer.texts + renderer.paths == (0 if level == 0 else 1)
+        renderer = fig.canvas.get_renderer()
+        with counted_agg(renderer) as counts:
+            artist.draw(renderer)
+        skips = level == 0 and kind not in ("line", "fancy")
+        assert counts.texts + counts.paths == (0 if skips else 1)
         assert artist.get_visible()
 
 
@@ -475,3 +500,166 @@ def test_finding_labels_number_staged_and_plain_leaves_together():
     # Numbering counts every Rectangle, staged or not, as the base code did.
     assert trace.label(staged).startswith("Rectangle #1 at")
     plt.close(fig)
+
+
+def _vector_images(payload, format):
+    """Decode embedded pixels without an optional PDF or SVG renderer."""
+    import base64
+    import re
+    import xml.etree.ElementTree as ET
+
+    from PIL import Image
+
+    if format == "svg":
+        root = ET.fromstring(payload)
+        return [
+            np.asarray(
+                Image.open(
+                    io.BytesIO(
+                        base64.b64decode(
+                            node.attrib["{http://www.w3.org/1999/xlink}href"].split(
+                                ",", 1
+                            )[1]
+                        )
+                    )
+                )
+            )
+            for node in root.iter("{http://www.w3.org/2000/svg}image")
+        ]
+    images = []
+    for match in re.finditer(
+        rb"\d+ 0 obj\s*<<(.*?)>>\s*stream\n(.*?)\nendstream", payload, re.S
+    ):
+        header, raw = match.groups()
+        if b"/Subtype /Image" not in header:
+            continue
+        width = int(re.search(rb"/Width (\d+)", header)[1])
+        height = int(re.search(rb"/Height (\d+)", header)[1])
+        channels = 3 if b"/DeviceRGB" in header else 1
+        images.append(np.frombuffer(raw, np.uint8).reshape(height, width, channels))
+    return images
+
+
+@pytest.mark.parametrize("format", ["pdf", "svg"])
+def test_stage_rasterized_overlap_matches_plain_vector_output(format):
+    import matplotlib
+
+    for level in (1, 0, 0.5, 1):
+        outputs = []
+        for staged in (False, True):
+            with matplotlib.rc_context({"pdf.compression": 0, "svg.hashsalt": "stage"}):
+                fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+                ax.set_axis_off()
+                patches = [
+                    Rectangle((0.1, 0.1), 0.6, 0.6, color="red", alpha=0.4),
+                    Rectangle((0.3, 0.3), 0.6, 0.6, color="blue", alpha=0.5),
+                ]
+                for patch in patches:
+                    ax.add_patch(patch)
+                    patch.set_rasterized(True)
+                if staged:
+                    ep.motion.Stage({"patches": patches}).weigh({"patches": level})
+                else:
+                    for patch, alpha in zip(patches, (0.4, 0.5), strict=True):
+                        patch.set_alpha(alpha * level)
+                stream = io.BytesIO()
+                metadata = {"Date": None} if format == "svg" else {"CreationDate": None}
+                fig.savefig(stream, format=format, metadata=metadata)
+                outputs.append(stream.getvalue())
+                plt.close(fig)
+        expected, actual = [_vector_images(output, format) for output in outputs]
+        assert len(actual) == len(expected)
+        for before, after in zip(expected, actual, strict=True):
+            np.testing.assert_array_equal(after, before)
+        assert outputs[0] == outputs[1]
+
+
+def test_every_guarded_class_accepts_rasterization_without_warning():
+    import warnings
+
+    from matplotlib.patches import Circle, FancyBboxPatch, PathPatch, Polygon
+    from matplotlib.path import Path as MplPath
+
+    from eyepiece.attention import _STAGE_LEAVES
+
+    arguments = {
+        Text: (),
+        Line2D: ([], []),
+        Rectangle: ((0, 0), 1, 1),
+        Polygon: ([[0, 0], [1, 1], [1, 0]],),
+        PathPatch: (MplPath.unit_rectangle(),),
+        FancyBboxPatch: ((0, 0), 1, 1),
+        Circle: ((0, 0),),
+    }
+    warnings_by_class = {}
+    for plain, guarded in _STAGE_LEAVES.items():
+        artist = guarded(*arguments[plain])
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            artist.set_rasterized(True)
+        if caught:
+            warnings_by_class[plain.__name__] = [str(w.message) for w in caught]
+    assert not warnings_by_class
+
+
+def test_absent_line_picking_refreshes_subslice_after_pan():
+    from matplotlib.backend_bases import MouseEvent
+
+    results = []
+    for staged in (False, True):
+        fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+        x = np.arange(3000.0)
+        (line,) = ax.plot(x, np.zeros_like(x), picker=5)
+        ax.set(xlim=(100, 200), ylim=(-1, 1))
+        stage = ep.motion.Stage({"line": line}) if staged else None
+        pixels(fig)
+        if staged:
+            stage.weigh({"line": 0})
+        else:
+            line.set_color((0, 0, 0, 0))
+        ax.set_xlim(1500, 1600)
+        pixels(fig)
+        event = MouseEvent(
+            "button_press_event", fig.canvas, *ax.transData.transform((1550, 0))
+        )
+        hit, details = line.contains(event)
+        results.append((hit, details["ind"]))
+    assert results[0][0]
+    assert results[1][0] == results[0][0]
+    np.testing.assert_array_equal(results[1][1], results[0][1])
+
+
+def test_absent_fancy_box_keeps_boxstyle_draw_side_effects():
+    from matplotlib.patches import FancyBboxPatch
+    from matplotlib.path import Path as MplPath
+
+    calls = []
+
+    def boxstyle(x, y, width, height, mutation_size):
+        calls.append((x, y, width, height, mutation_size))
+        return MplPath.unit_rectangle()
+
+    fig, ax = plt.subplots()
+    patch = FancyBboxPatch((0.2, 0.2), 0.4, 0.4, boxstyle=boxstyle)
+    ax.add_patch(patch)
+    ep.motion.Stage({"box": patch}).weigh({"box": 0})
+    calls.clear()
+    patch.draw(fig.canvas.get_renderer())
+    assert calls
+
+
+@pytest.mark.parametrize("position", [(np.nan, 0.5), (0.5, np.inf)])
+def test_absent_nonfinite_text_preserves_draw_staleness(position):
+    states = []
+    for staged in (False, True):
+        fig, ax = plt.subplots()
+        text = ax.text(*position, "absent", in_layout=False)
+        if staged:
+            ep.motion.Stage({"text": text}).weigh({"text": 0})
+        else:
+            text.set_color((0, 0, 0, 0))
+        renderer = fig.canvas.get_renderer()
+        text.draw(renderer)
+        states.append((text.stale, text._renderer is renderer))
+    assert states[0] == (True, True)
+    assert states[1] == states[0]

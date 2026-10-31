@@ -39,14 +39,14 @@ from dataclasses import dataclass
 
 import matplotlib
 import numpy as np
-from matplotlib.artist import Artist
+from matplotlib.artist import Artist, allow_rasterization
 from matplotlib.axes import Axes
+from matplotlib.backends.backend_agg import RendererAgg
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_rgb, to_rgba, to_rgba_array
 from matplotlib.lines import Line2D
 from matplotlib.patches import (
     Circle,
-    FancyBboxPatch,
     Patch,
     PathPatch,
     Polygon,
@@ -1462,31 +1462,29 @@ def _stage_no_ink(artist):
 
     Custom draws, effects, filters, text boxes and hatches can paint independently
     of the colors Stage sets. Leave those paths to Matplotlib. A scalar alpha
-    overrides (rather than multiplies) a text or line's color alpha.
+    overrides (rather than multiplies) a text color's alpha.
     """
     kind = _STAGE_BASES.get(type(artist), type(artist))
-    if kind not in (
-        Text,
-        Line2D,
-        Rectangle,
-        Circle,
-        Polygon,
-        PathPatch,
-        FancyBboxPatch,
-    ):
+    if kind not in (Text, Rectangle, Circle, Polygon, PathPatch):
+        return False
+    if artist.get_sketch_params() is not None:
         return False
     if artist.get_path_effects() or artist.get_agg_filter() is not None:
         return False
     if kind is Text:
-        if artist.get_bbox_patch() is not None or artist.get_usetex():
+        if (
+            artist.get_bbox_patch() is not None
+            or artist.get_usetex()
+            or not artist.get_visible()
+            or not artist.get_text()
+        ):
+            return False
+        # Text.draw returns before clearing stale at nonfinite positions.
+        # Preserve that path, including unit conversion and transform results.
+        position = artist.get_transform().transform(artist.get_unitless_position())
+        if not np.isfinite(position).all():
             return False
         colors = (artist.get_color(),)
-    elif kind is Line2D:
-        if artist.get_gapcolor() is not None:
-            return False
-        colors = (artist.get_color(),)
-        if artist.get_marker() not in (None, "None", "none", "", " "):
-            return False
     else:
         if artist.get_hatch():
             return False
@@ -1501,28 +1499,39 @@ def _stage_no_ink(artist):
 
 
 class _StageLeaf:
-    """A class-level paint guard; all mutable state belongs to the artist."""
+    """Skip only Agg painting; preserve one Matplotlib rasterization wrapper."""
 
     def draw(self, renderer):
         if (
-            getattr(self, "_eyepiece_stage_presence", 1.0) == 0.0
+            type(renderer) is RendererAgg
+            and getattr(self, "_eyepiece_stage_presence", 1.0) == 0.0
             and "draw" not in self.__dict__
             and _STAGE_BASES[type(self)].draw is _STAGE_DRAWS[type(self)]
             and _stage_no_ink(self)
         ):
-            # Text remembers its renderer even when no glyph needs painting.
-            if isinstance(self, Text):
-                self._renderer = renderer
-            self.stale = False
-            return
+            return self._draw_no_ink(renderer)
         return super().draw(renderer)
+
+    # Artist.__init_subclass__ must not add _prevent_rasterization here.
+    # The normal draw already has allow_rasterization; wrapping it twice would
+    # run filters and suppressComposite boundaries twice. The skip path needs
+    # exactly one wrapper too, even when there is nothing to paint.
+    draw._supports_rasterization = True
+
+    @allow_rasterization
+    def _draw_no_ink(self, renderer):
+        # Text's only persistent draw state without a bbox is its renderer.
+        # Layout, picking and extents compute geometry on demand. Patch paths,
+        # transforms (including Circle's cache) and clip paths do so as well.
+        # Line2D caches a picking subslice during draw, and FancyBboxPatch can
+        # invoke arbitrary boxstyle callbacks, so neither class is guarded.
+        if isinstance(self, Text):
+            self._renderer = renderer
+        if self.get_visible() and (not isinstance(self, Text) or self.get_text()):
+            self.stale = False
 
 
 class _StageText(_StageLeaf, Text):
-    pass
-
-
-class _StageLine2D(_StageLeaf, Line2D):
     pass
 
 
@@ -1538,21 +1547,15 @@ class _StagePathPatch(_StageLeaf, PathPatch):
     pass
 
 
-class _StageFancyBboxPatch(_StageLeaf, FancyBboxPatch):
-    pass
-
-
 class _StageCircle(_StageLeaf, Circle):
     pass
 
 
 _STAGE_LEAVES = {
     Text: _StageText,
-    Line2D: _StageLine2D,
     Rectangle: _StageRectangle,
     Polygon: _StagePolygon,
     PathPatch: _StagePathPatch,
-    FancyBboxPatch: _StageFancyBboxPatch,
     Circle: _StageCircle,
 }
 _STAGE_BASES = {guarded: plain for plain, guarded in _STAGE_LEAVES.items()}
@@ -1765,11 +1768,10 @@ class Stage:
     Keep artists recolored by a draw function on every frame, such as bars,
     out of Stage groups, because the stage overwrites their colors.
 
-    At zero presence, standard leaves proven to draw no ink are hidden when
-    that preserves layout. Only visibility taken away by Stage is restored;
-    an explicit caller hide remains hidden. Transparent plain text that must
-    retain its layout extent skips painting while remaining visible. Effects,
-    hatches and custom artist draws retain their normal drawing paths.
+    Stage preserves caller visibility at every presence level. At zero
+    presence, standard leaves proven to draw no ink may skip Agg painting;
+    their layout, picking and extent queries remain available. Vector backends,
+    effects, hatches and custom artist draws retain their normal drawing paths.
 
     Args:
         groups: Mapping of group name to an artist, an Axes, or an iterable

@@ -538,17 +538,13 @@ def test_equal_keys_still_pose_and_raise_on_changed_limits(tmp_path):
         )
 
 
-def test_visual_canonical_preserves_mapping_sequence_and_path_identity(tmp_path):
+def test_visual_canonical_preserves_mapping_and_sequence_order():
     encode = variant_driver._canonical
     assert encode({"first": "red", "last": "blue"}) != encode(
         {"last": "blue", "first": "red"}
     )
     assert encode([1, 2]) != encode([2, 1])
     assert encode([1, 2]) != encode((1, 2))
-    a, b = tmp_path / "a", tmp_path / "b"
-    a.write_bytes(b"same")
-    b.write_bytes(b"same")
-    assert encode(a) != encode(b)
 
 
 @pytest.mark.parametrize("custom", ["default", "rgb", "matrix", "faststart"])
@@ -747,3 +743,85 @@ def test_shared_variants_paint_only_one_video(tmp_path, monkeypatch):
         counts.append(len(paints))
     assert counts[0] > 0
     assert counts[0] == counts[1]
+
+
+def test_masked_variant_frames_match_independent_rendering(tmp_path):
+    def build(venue, mode):
+        fig = plt.figure(figsize=(0.96, 0.54))
+        ax = fig.add_axes((0, 0, 1, 1))
+        ax.set_axis_off()
+        image = ax.imshow(np.zeros((2, 2)), vmin=0, vmax=1, cmap="gray")
+
+        def draw(fig, item):
+            image.set_data(item)
+
+        return fig, draw
+
+    zeros = np.zeros((2, 2))
+    masked = np.ma.array(zeros, mask=True, fill_value=0)
+    audio = write_render_audio(tmp_path / "audio.wav")
+    spec = ClipSpec(
+        "masked",
+        build,
+        None,
+        (Venue("doc", fps=12),),
+        frames_for=lambda variant: [masked if variant.narrated else zeros] * 3,
+        audio=lambda variant: audio,
+    )
+    silent, narrated = Variant("doc", "light"), Variant("doc", "light", True)
+    together = tmp_path / "together"
+    separate = tmp_path / "separate"
+    outputs = render_variants(
+        spec,
+        [silent, narrated],
+        together,
+        manifest=Manifest(together / "manifest.json"),
+        workers=1,
+    )
+    independent = render_variants(
+        spec,
+        [narrated],
+        separate,
+        manifest=Manifest(separate / "manifest.json"),
+        workers=1,
+    )[0]
+    actual = together / outputs[1].outputs[0]
+    expected = separate / independent.outputs[0]
+    assert decoded(actual) == decoded(expected)
+    assert actual.read_bytes() == expected.read_bytes()
+    assert decoded(together / outputs[0].outputs[0]) != decoded(actual)
+
+
+def test_visual_canonical_declines_nonplain_values(tmp_path):
+    from dataclasses import dataclass
+
+    class Array(np.ndarray):
+        pass
+
+    class Number(int):
+        pass
+
+    @dataclass
+    class Record:
+        value: int = 0
+
+    class KeyParts:
+        def content_key_parts(self):
+            return 0
+
+    path = tmp_path / "input"
+    path.write_bytes(b"input")
+    values = [
+        np.zeros(1, dtype=np.dtype("f8", metadata={})),
+        np.ma.array([0], mask=True, fill_value=0),
+        np.zeros(1).view(Array),
+        Number(0),
+        Record(),
+        KeyParts(),
+        path,
+        np.zeros(1, dtype=np.dtype("f8", metadata={"units": "m"})),
+    ]
+    for value in values:
+        for nested in (value, [value], {"value": value}):
+            with pytest.raises(TypeError):
+                variant_driver._canonical(nested)

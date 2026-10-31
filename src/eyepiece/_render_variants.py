@@ -10,13 +10,14 @@ import tempfile
 import uuid
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack, nullcontext
-from dataclasses import dataclass, fields, is_dataclass, replace
+from dataclasses import dataclass, replace
 from functools import partial
 from numbers import Integral, Real
 from pathlib import Path
 from typing import NamedTuple
 
 import matplotlib
+import numpy as np
 
 from eyepiece._motion import frame_count
 from eyepiece._render_keys import _canonical as _content_canonical
@@ -26,30 +27,35 @@ from eyepiece._render_poster import render_poster
 
 
 def _canonical(value):
-    """Compare visual inputs without discarding observable order or paths.
+    """Encode only plain visual values, retaining type, order and array layout.
 
-    Content keys intentionally hash files by contents and ignore mapping order.
-    Sharing a raster needs a stricter comparison: draw can iterate mappings or
-    display a filename. Preserve those inputs recursively, including records.
+    Content-key hooks, records and array subclasses can omit visible state.
+    They are useful for invalidation, but cannot prove pictures interchangeable.
+    Unsupported values decline sharing rather than falling back to content keys.
     """
-    if isinstance(value, Path):
-        return _key_field(b"path", _canonical((str(value), value.read_bytes())))
-    if isinstance(value, Mapping):
-        return _key_field(
-            b"mapping", b"".join(_canonical((k, v)) for k, v in value.items())
-        )
-    if isinstance(value, (list, tuple)):
-        tag = b"list" if isinstance(value, list) else b"tuple"
-        return _key_field(tag, b"".join(_canonical(item) for item in value))
     kind = type(value)
-    name = f"{kind.__module__}.{kind.__qualname__}"
-    parts = getattr(value, "content_key_parts", None)
-    if callable(parts):
-        return _key_field(b"parts", _canonical((name, parts())))
-    if is_dataclass(value) and not isinstance(value, type):
-        values = [(field.name, getattr(value, field.name)) for field in fields(value)]
-        return _key_field(b"dataclass", _canonical((name, values)))
-    return _content_canonical(value)
+    if kind is dict:
+        return _key_field(
+            b"dict", b"".join(_canonical((k, v)) for k, v in value.items())
+        )
+    if kind in (list, tuple):
+        tag = b"list" if kind is list else b"tuple"
+        return _key_field(tag, b"".join(_canonical(item) for item in value))
+    if kind is np.ndarray:
+        if (
+            value.dtype.hasobject
+            or value.dtype.metadata is not None
+            or value.dtype.fields is not None
+        ):
+            raise TypeError("array dtype cannot prove identical visual inputs")
+        return _key_field(
+            b"ndarray",
+            _content_canonical(value)
+            + _canonical((value.strides, int(value.flags.num))),
+        )
+    if kind in (bool, int, float, str, type(None)):
+        return _content_canonical(value)
+    raise TypeError("visual sharing requires plain values")
 
 
 class Venue(NamedTuple):
@@ -514,6 +520,7 @@ def render_variants(
         targets.add(target)
         resolved.append((variant, variant_spec, count, target))
     jobs = []
+    visual_keys = {}
     prior_sources = {}
     for variant, variant_spec, count, target in resolved:
         venue = venues[variant.venue]
@@ -521,12 +528,18 @@ def render_variants(
         # All other picture inputs are shared by this ClipSpec. Compare actual
         # frame items and data, and require the very same mapping callable:
         # matching counts or callable-presence flags cannot prove equivalence.
-        visual = (
-            hashlib.sha256(
-                _canonical((variant.venue, variant.mode, variant_spec.frames, data))
-            ).digest(),
-            id(variant_spec.frame_at),
-        )
+        try:
+            visual = (
+                _canonical((variant.venue, variant.mode, variant_spec.frames, data)),
+                id(variant_spec.frame_at),
+            )
+            # Compare exact bytes, not digests; retain just one copy for jobs
+            # whose potentially large arrays have the same canonical form.
+            visual = visual_keys.setdefault(visual, visual)
+        except (TypeError, RecursionError):
+            # A unique key cannot reuse another variant's pixels. Keep content
+            # invalidation independent: its supported inputs are broader.
+            visual = object()
         hold = tuple(frame_count(seconds, venue.fps) for seconds in spec.hold_s)
         audio = Path(spec.audio(variant)) if variant.narrated else None
         extra = spec.extra
@@ -557,7 +570,8 @@ def render_variants(
         key = content_key(**key_inputs)
         silent_variant = variant._replace(narrated=False)
         if (
-            variant.narrated
+            isinstance(visual, tuple)
+            and variant.narrated
             and silent_variant not in requested
             and not force
             and spec.frames_for is None
