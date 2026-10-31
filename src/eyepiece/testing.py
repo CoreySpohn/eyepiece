@@ -115,7 +115,7 @@ from eyepiece._motif_checks import (
     motif_margins,
 )
 from eyepiece._motion import frame_count
-from eyepiece.attention import _data_colors, _default_avoid, _renderer
+from eyepiece.attention import _STAGE_BASES, _data_colors, _default_avoid, _renderer
 
 if TYPE_CHECKING:
     from eyepiece._clock import Fault
@@ -1505,7 +1505,10 @@ class _Trace:
         tag = "" if not tag or str(tag).startswith("_") else f" {tag!r}"
         if artist not in self.boxes:
             return f"{type(artist).__name__}{tag}"
-        index = [a for a in self.order if type(a) is type(artist)].index(artist)
+        kind = _STAGE_BASES.get(type(artist), type(artist))
+        index = [
+            a for a in self.order if _STAGE_BASES.get(type(a), type(a)) is kind
+        ].index(artist)
         x, y = self.first_box(artist)[:2]
         return f"{type(artist).__name__}{tag} #{index} at ({x:.0f}, {y:.0f})"
 

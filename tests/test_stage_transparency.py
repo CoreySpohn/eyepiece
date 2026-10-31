@@ -455,3 +455,23 @@ def test_custom_class_draw_is_not_skipped(monkeypatch, when):
     stage.weigh({"text": 0})
     text.draw(fig.canvas.get_renderer())
     assert calls == [text]
+
+
+def test_finding_labels_number_staged_and_plain_leaves_together():
+    from eyepiece.attention import _STAGE_BASES
+    from eyepiece.testing import _Trace
+
+    fig = plt.figure(figsize=(2, 2), dpi=50)
+    plain = Rectangle((0.1, 0.1), 0.2, 0.2, transform=fig.transFigure)
+    staged = Rectangle((0.5, 0.5), 0.2, 0.2, transform=fig.transFigure)
+    fig.add_artist(plain)
+    fig.add_artist(staged)
+    ep.Stage({"a": staged})
+    assert _STAGE_BASES[type(staged)] is Rectangle
+    assert type(staged).__name__ == "Rectangle"
+    trace = _Trace([0.0])
+    trace.order = [plain, staged]
+    trace.boxes = {plain: {0: ((0, 0, 1, 1),)}, staged: {0: ((5, 5, 6, 6),)}}
+    # Numbering counts every Rectangle, staged or not, as the base code did.
+    assert trace.label(staged).startswith("Rectangle #1 at")
+    plt.close(fig)
