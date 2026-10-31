@@ -152,6 +152,14 @@ assert serial.path.read_bytes() == path.read_bytes()
 `RenderResult` reports `path`, `frames` (including holds), `chunks`,
 `resumed` (reused chunks), `workers`, and elapsed `seconds`. `workers=1`
 renders in the same process with the same code and gives the same bytes.
+With `workers=None`, the budget is usable CPUs minus two, at least one,
+bounded by available physical memory divided by `worker_peak_bytes` and by
+the chunk count. The declared peak defaults to 1 GiB per worker. Measure
+representative frames and increase this allowance for larger figures or data.
+Pass `worker_peak_bytes=` to `render_frames`, or set
+`ClipSpec.worker_peak_bytes` for `render_variants`. If memory is unavailable,
+the default uses one worker. Explicit `workers=` overrides the budget.
+Scheduling and memory allowances do not enter content keys or change bytes.
 Pass style changes explicitly through `setup=` and `rc=` so every worker
 receives them. Builders run before recording rc overrides, just as a figure
 built before entering `record`. The driver resizes the figure to even
@@ -403,6 +411,57 @@ ordinary = ep.render.render_variants(
 assert (variant_dir / reused.outputs[0]).read_bytes() == (
     variant_dir / ordinary.outputs[0]
 ).read_bytes()
+```
+
+### Use exact plan state and verify the key
+
+`plan.frame_key(k)` includes every knob, the section, index and time fields
+accepted by `plan.value`. Its immutable scalar encoding preserves float bits,
+signed zero and scalar types without rounding. Unsupported state raises rather
+than guessing. The default includes index and time, so adjacent keys differ.
+If draw reads neither `plan.value(k, "index")` nor `plan.value(k, "t")`, use
+`partial(plan.frame_key, include_time=False)` to reuse stationary frames.
+Pass either callable as `ClipSpec(frame_key=...)`. This uses the existing
+callable interface and works with spawned workers, without a special sentinel.
+
+The contract requires absolute poses derived solely from `plan.value` and
+fixed data. Direct frame or time calculations, `plan.progress`, randomness,
+or mutable state require a composite key covering those inputs. In particular,
+a branch such as `k > build_end` needs that Boolean in the key even when all
+knobs agree. Reading the omitted index or time fields also breaks the contract.
+Key generation does not count as a knob read in clip diagnostics.
+
+`check_frame_key` renders every supplied frame independently of the key. It
+reports each consecutive equal-key run with differing pixels, including all
+frames in the run, its key and the count of distinct pixels that changed.
+Gaps split runs and `None` keys disable comparison for those frames. The check
+uses exact Agg pixels at the figure size and dpi, with no tolerance. Configure
+the output style and layout before checking. A sample verifies only those
+runs; use every frame for complete clip coverage and check frame order
+independence separately with `frame_faults`.
+
+```{code-cell} python
+tl = ep.clock.Timeline({"position": 0.2})
+tl.hold(0.25)
+tl.hold(0.25, to={"position": 0.8})
+plan = tl.at_fps(fps)
+plan_key = partial(plan.frame_key, include_time=False)
+fig, ax = plt.subplots(figsize=(2.4, 1.35), dpi=dpi)
+marker, = ax.plot([], [], "o")
+ax.set(xlim=(0, 1), ylim=(0, 1), xticks=[], yticks=[])
+
+
+def pose(k):
+    marker.set_data([plan.value(k, "position")], [0.5])
+
+
+assert plan.frame_key(0) != plan.frame_key(1)
+assert plan_key(0) == plan_key(1)
+assert not ep.testing.check_frame_key(fig, pose, plan_key, frames=range(plan.n_frames))
+wrong = ep.testing.check_frame_key(fig, pose, lambda k: 0, frames=range(plan.n_frames))
+assert len(wrong) == 1 and wrong[0]["pixel_count"] > 0
+print("Wrong key caught on frames:", wrong[0]["frames"])
+plt.close(fig)
 ```
 
 ## Builders for a larger project

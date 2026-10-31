@@ -166,6 +166,7 @@ __all__ = [
     "audit",
     "caption_line",
     "check_clip",
+    "check_frame_key",
     "frame_faults",
     "grounding_faults",
     "halo_faults",
@@ -184,6 +185,105 @@ __all__ = [
 ]
 
 KINDS = ("overlap", "outside", "small", "on-marks")
+
+
+def check_frame_key(fig, draw, key, *, frames):
+    """Find equal-key consecutive runs whose fully rendered RGBA pixels differ.
+
+    Deterministically renders every supplied frame, without raster reuse.
+    Draw has signature draw(k), as in check_clip. Frames must be strictly
+    increasing nonnegative integer indices; gaps split runs. A None key
+    disables comparison for that frame, as in ClipSpec. Non-None keys must
+    be hashable with scalar equality. Every member of a run is compared to
+    its first frame, including its endpoints and all supplied interior frames.
+
+    Uses savefig at the figure's current dpi with its facecolor, as the movie
+    rasterizer does. Configure figure size, dpi, style and layout exactly as
+    for the intended output before checking. The original canvas is restored;
+    the figure ends in the last supplied pose. No layout or stale-state
+    optimization is applied. This checks Agg pixels only; it does not certify
+    vector bytes or frames outside the sample. Check the whole clip to cover
+    every run, and use frame_faults separately to check draw order independence.
+
+    Args:
+        fig: Figure to render at its current size and dpi.
+        draw: Callable draw(k) that poses absolute frame state.
+        key: Callable key(k) promising identical adjacent pictures.
+        frames: Iterable of indices, for example range(plan.n_frames).
+
+    Returns:
+        A list of dictionaries in frame order, one per failing run: frames
+        (all indices in the run), key, and pixel_count (the number of distinct
+        pixels differing from the first frame in any run member). Differences
+        in any RGBA channel count, with no tolerance. An empty list proves
+        only that the sampled equal-key runs agree.
+
+    Raises:
+        ValueError: If frames are not increasing nonnegative integers, or
+            dimensions change within an equal-key run.
+        TypeError: If key is not callable or returns an unhashable key.
+    """
+    import io
+
+    from eyepiece.anim import _agg_canvas
+
+    frames = tuple(frames)
+    if any(
+        not isinstance(k, numbers.Integral) or isinstance(k, bool) or k < 0
+        for k in frames
+    ) or any(b <= a for a, b in itertools.pairwise(frames)):
+        raise ValueError("frames must be strictly increasing nonnegative integers")
+    if not callable(key):
+        raise TypeError("key must be callable")
+    faults = []
+    run = []
+    run_key = None
+    first = changed = None
+
+    def finish():
+        if len(run) > 1 and np.any(changed):
+            faults.append(
+                dict(frames=tuple(run), key=run_key, pixel_count=int(changed.sum()))
+            )
+
+    with _agg_canvas(fig):
+        for k in frames:
+            current_key = key(k)
+            if current_key is not None:
+                try:
+                    hash(current_key)
+                except TypeError as exc:
+                    raise TypeError("key must return a hashable value or None") from exc
+            draw(k)
+            with io.BytesIO() as buffer:
+                fig.savefig(
+                    buffer, format="rgba", dpi=fig.dpi, facecolor=fig.get_facecolor()
+                )
+                width, height = (int(dim * fig.dpi) for dim in fig.get_size_inches())
+                pixels = np.frombuffer(buffer.getvalue(), dtype=np.uint8).reshape(
+                    height, width, 4
+                )
+            same = (
+                run
+                and current_key is not None
+                and run_key is not None
+                and k == run[-1] + 1
+                and current_key == run_key
+            )
+            if same:
+                if pixels.shape != first.shape:
+                    raise ValueError("frame dimensions changed during key verification")
+                changed |= np.any(pixels != first, axis=2)
+                run.append(k)
+            else:
+                finish()
+                run = [k]
+                run_key = current_key
+                first = pixels
+                changed = np.zeros(pixels.shape[:2], dtype=bool)
+        finish()
+    return faults
+
 
 # Smallest readable font size, in pixels at the output size. A 1080p video is
 # watched from a distance, a phone screen is small, and a printed page at

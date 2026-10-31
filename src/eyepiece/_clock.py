@@ -29,10 +29,13 @@ import difflib
 import functools
 import itertools
 import math
+import struct
 import warnings
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from types import MappingProxyType
+
+import numpy as np
 
 from eyepiece._motion import (
     _EASINGS,
@@ -1762,6 +1765,32 @@ class _Frames:
         return (self[k] for k in range(len(self)))
 
 
+def _frame_key_value(value):
+    """Encode immutable scalar state without numeric equality or rounding."""
+    kind = type(value)
+    if kind is float:
+        return ("float", struct.pack("!d", value))
+    if kind is complex:
+        return ("complex", struct.pack("!dd", value.real, value.imag))
+    if kind in (type(None), bool, int, str, bytes):
+        return (kind.__name__, value)
+    if kind is tuple:
+        return ("tuple", tuple(_frame_key_value(v) for v in value))
+    if (
+        isinstance(value, np.generic)
+        and kind is value.dtype.type
+        and value.dtype.kind in "biufcSUmM"
+        and value.dtype.metadata is None
+    ):
+        return ("numpy", value.dtype.str, value.tobytes())
+    # Unsupported objects can carry state that equality or a pickle omits.
+    # Refuse reuse rather than guessing how a draw might inspect that state.
+    raise TypeError(
+        "frame_key requires supported immutable scalars or tuples; "
+        f"unsupported value type: {kind.__name__}"
+    )
+
+
 class Plan:
     """A timeline resolved for one frame rate.
 
@@ -1867,6 +1896,51 @@ class Plan:
         if not 0 <= k < self.n_frames:
             raise IndexError(f"frame {k} is outside the plan's {self.n_frames} frames")
         return vals[k]
+
+    def frame_key(self, k, *, include_time=True):
+        """An exact, hashable state key for frame k, without rounding.
+
+        Includes every knob and the section label. By default also includes
+        ``value(k, 'index')`` and ``value(k, 't')``, so every frame is unique.
+        Set include_time=False only when draw never reads those two fields:
+        ``partial(plan.frame_key, include_time=False)`` then shares hold frames.
+        This callable can be passed directly as ClipSpec.frame_key; there is
+        no inferred clock, read tracking, or cache of possibly mutable state.
+
+        Exact only when draw sets absolute state solely from plan.value(k,
+        name) and fixed data. Direct use of k, time, progress(), randomness,
+        mutable state, or omitted time fields breaks that contract. Add every
+        extra dependency to a composite key or decline raster reuse. Verify
+        representative runs with eyepiece.testing.check_frame_key first.
+
+        Scalar types are distinguished; float keys preserve all bits,
+        including signed zero and NaN payloads. NumPy scalar keys include
+        their dtype and bytes. Key generation does not mark
+        knobs as read. Plans and fixed data must remain unchanged during use.
+
+        Args:
+            k: Frame index in [0, n_frames).
+            include_time: Include the index and time fields, default True.
+
+        Returns:
+            A tuple covering all supported state, suitable for hashing.
+
+        Raises:
+            IndexError: If k is outside the plan.
+            TypeError: If a value is not an immutable Python scalar (None,
+                bool, int, float, complex, str, bytes), a plain NumPy numeric, string,
+                datetime or timedelta scalar, or a tuple of supported values.
+                Such values need a caller-supplied exact key instead.
+        """
+        if not 0 <= k < self.n_frames:
+            raise IndexError(f"frame {k} is outside the plan's {self.n_frames} frames")
+        values = tuple(
+            (name, _frame_key_value(vals[k])) for name, vals in self._knobs.items()
+        )
+        fields = (_frame_key_value(self._labels[k]),)
+        if include_time:
+            fields += (_frame_key_value(k), _frame_key_value(k / self.fps))
+        return values, fields
 
     def _span(self, name):
         try:

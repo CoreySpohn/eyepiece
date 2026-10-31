@@ -22,7 +22,12 @@ import numpy as np
 from eyepiece._motion import frame_count
 from eyepiece._render_keys import _canonical as _content_canonical
 from eyepiece._render_keys import _key_field, content_key
-from eyepiece._render_pool import _frame_source, _validate_on_rescale, render_frames
+from eyepiece._render_pool import (
+    _frame_source,
+    _validate_on_rescale,
+    _validate_worker_peak,
+    render_frames,
+)
 from eyepiece._render_poster import render_poster
 
 
@@ -182,6 +187,12 @@ class ClipSpec:
             content_key inputs; content_key identifies the whole output, while
             frame_key promises identical adjacent pictures. See the complete
             example in docs/how-to/render-a-clip-in-parallel.md.
+            For a plan-driven clip use plan.frame_key, or
+            partial(plan.frame_key, include_time=False) when draw reads neither
+            the index nor time fields. Include any non-plan inputs too.
+        worker_peak_bytes: Declared peak resident bytes per worker for the
+            default CPU and memory budget in render_frames. Defaults to 1 GiB.
+            Explicit workers overrides the budget. Does not enter content keys.
     """
 
     slug: str
@@ -206,6 +217,7 @@ class ClipSpec:
     adopt_build: object = None
     target_for: Callable[[Variant], str | Path] | None = None
     frame_key: object = None
+    worker_peak_bytes: int = 1024**3
 
 
 class VariantResult(NamedTuple):
@@ -313,6 +325,7 @@ def _variant_video(
                 key=key,
                 on_rescale=spec.on_rescale,
                 frame_key=spec.frame_key,
+                worker_peak_bytes=spec.worker_peak_bytes,
             )
             frames = result.frames
         if variant.narrated:
@@ -428,6 +441,7 @@ def render_variants(
     import hwostyle
 
     _validate_on_rescale(spec.on_rescale)
+    _validate_worker_peak(spec.worker_peak_bytes)
     if spec.frame_key is not None and not callable(spec.frame_key):
         raise TypeError("frame_key must be callable or None")
     if adopt and spec.adopt_build is None:

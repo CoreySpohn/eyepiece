@@ -254,7 +254,7 @@ def test_sharing_requires_the_same_visual_inputs(tmp_path, different):
 
 
 @pytest.mark.parametrize(
-    "cpus,memory,expected", [(32, 32, 8), (4, 32, 3), (32, 3, 2), (1, 1, 1)]
+    "cpus,memory,expected", [(32, 32, 30), (4, 32, 2), (32, 3, 3), (1, 1, 1)]
 )
 def test_default_worker_budget(monkeypatch, cpus, memory, expected):
     monkeypatch.setattr(pool, "_available_cpus", lambda: cpus)

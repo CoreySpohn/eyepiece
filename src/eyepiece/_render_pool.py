@@ -641,11 +641,21 @@ def _available_memory():
     return pages * page_size if pages > 0 and page_size > 0 else None
 
 
-def _default_workers():
-    """Reserve a CPU and 1 GiB for encoding, then budget 1 GiB per worker."""
+def _validate_worker_peak(worker_peak_bytes):
+    """Validate a declared worker memory peak before building figures."""
+    if (
+        not isinstance(worker_peak_bytes, int)
+        or isinstance(worker_peak_bytes, bool)
+        or worker_peak_bytes < 1
+    ):
+        raise ValueError("worker_peak_bytes must be a positive int")
+
+
+def _default_workers(worker_peak_bytes=1024**3):
+    """Reserve two CPUs and budget available memory by declared peak bytes."""
     memory = _available_memory()
-    memory_workers = max(1, memory // 1024**3 - 1) if memory is not None else 1
-    return min(8, max(1, _available_cpus() - 1), memory_workers)
+    memory_workers = max(1, memory // worker_peak_bytes) if memory is not None else 1
+    return min(max(1, _available_cpus() - 2), memory_workers)
 
 
 def render_frames(
@@ -669,6 +679,7 @@ def render_frames(
     keep_chunks=False,
     on_rescale="warn",
     frame_key=None,
+    worker_peak_bytes=1024**3,
 ) -> RenderResult:
     """Render independent frames in chunks and encode them in index order.
 
@@ -691,11 +702,17 @@ def render_frames(
         path: Destination mp4, replaced only after successful encoding.
         fps: Encoded frames per second.
         dpi: Rasterization dots per inch.
-        workers: Process count; None uses available CPUs and free memory,
-            reserving one CPU and 1 GiB for encoding and allowing 1 GiB per
-            worker, up to eight workers and the chunk count. If memory cannot
-            be probed, uses one worker. Explicit counts override this heuristic.
+        workers: Process count; None uses usable CPUs minus two (at least one),
+            bounded by available memory divided by worker_peak_bytes and by
+            the chunk count. If memory cannot be probed, uses one worker.
+            Explicit counts override this budget.
             One runs the same worker functions in the parent process.
+        worker_peak_bytes: Declared peak resident bytes per worker, including
+            figure, fixed data, renderer and chunk buffers. Defaults to a
+            conservative 1 GiB allowance; declare a larger peak for large
+            scenes, based on measurements of representative frames. Positive
+            integer bytes. This scheduling input does not affect output keys
+            or encoded bytes. No automatic RSS measurement is performed.
         chunk_frames: Frames per chunk; None targets four chunks per worker,
             with at least eight frames per chunk.
         frame_at: Optional index-to-item callable, evaluated in the worker.
@@ -747,7 +764,8 @@ def render_frames(
         raise ValueError("workers must be a positive int")
     if frame_key is not None and not callable(frame_key):
         raise TypeError("frame_key must be callable or None")
-    requested = workers if workers is not None else _default_workers()
+    _validate_worker_peak(worker_peak_bytes)
+    requested = workers if workers is not None else _default_workers(worker_peak_bytes)
     if chunk_frames is None:
         chunk_frames = max(8, math.ceil(count / (4 * requested)))
     if not isinstance(chunk_frames, int) or chunk_frames < 1:

@@ -368,6 +368,7 @@ ORIGINAL_OWNERS = {
         "assert_timing": "eyepiece.testing",
         "caption_line": "eyepiece.testing",
         "check_clip": "eyepiece.testing",
+        "check_frame_key": "eyepiece.testing",
         "frame_faults": "eyepiece.testing",
         "grounding_faults": "eyepiece.testing",
         "halo_faults": "eyepiece.testing",
