@@ -102,6 +102,26 @@ module_path.write_text(
         return index * (N - 1) / (count - 1)
 
 
+    def complete_key(item):
+        # Every input read by draw_complete, in order.
+        return tuple(item)
+
+
+    def draw_complete(fig, item):
+        position, caption, clock_text, annotation = item
+        fig.axes[0].lines[0].set_data([position], [0.5])
+        for label, value in zip(fig.texts, (caption, clock_text, annotation)):
+            label.set_text(value)
+
+
+    def build_complete(venue, mode):
+        fig, _ = build()
+        fig.text(0.1, 0.9, "", fontsize=7)
+        fig.text(0.7, 0.9, "", fontsize=7)
+        fig.text(0.1, 0.02, "", fontsize=7)
+        return fig, draw_complete
+
+
     def build_legacy(venue, mode):
         return build()
 
@@ -331,6 +351,58 @@ strict = ep.render.render_variants(
     strict_spec, selection[:1], variant_dir, manifest=manifest, workers=1
 )
 assert strict[0].rendered and strict[0].frames == 2
+```
+
+## Reuse a raster only when the complete picture repeats
+
+`ClipSpec.frame_key(item)` is an optional promise about adjacent pictures.
+Equal non-`None` keys reuse the rasterized buffer. The draw callback still
+runs for every frame, and scale diagnostics still inspect every pose.
+`content_key` identifies the entire output for manifest and chunk reuse;
+`frame_key` identifies the complete visible state within that output.
+
+The key must cover every input of draw: data, captions, clock text, and
+annotations. A key based only on the marker position is incorrect when a
+caption changes during a stationary hold. Include changing external state
+in the frame item and the key, or leave `frame_key=None`.
+
+The importable module above defines `build_complete`, `draw_complete`, and
+`complete_key`. Each item supplies all four inputs; fixed figure properties
+come from the builder. This example holds the position while the caption
+changes, then repeats the entire picture. It compares the encoded bytes
+with an ordinary render. List the key's source and inputs in the spec's
+`modules`, `clock`, or other named content inputs too.
+
+```{code-cell} python
+complete_frames = [
+    (0.2, "First", "0.0 s", "Marker A"),
+    (0.2, "First", "0.0 s", "Marker A"),
+    (0.2, "New caption", "0.0 s", "Marker A"),
+    (0.2, "New caption", "0.0 s", "Marker A"),
+    (0.8, "Settled", "0.5 s", "Marker B"),
+    (0.8, "Settled", "0.5 s", "Marker B"),
+]
+assert complete_frames[0][0] == complete_frames[2][0]  # Position alone is unsafe.
+assert clip.complete_key(complete_frames[0]) != clip.complete_key(complete_frames[2])
+complete_spec = ep.render.ClipSpec(
+    slug="complete-state",
+    build=clip.build_complete,
+    frames=complete_frames,
+    venues=(venue,),
+    frame_key=clip.complete_key,
+    modules=(clip,),
+    clock=complete_frames,
+)
+reused = ep.render.render_variants(
+    complete_spec, selection[:1], variant_dir, manifest=manifest, workers=1
+)[0]
+ordinary = ep.render.render_variants(
+    replace(complete_spec, slug="ordinary-state", frame_key=None),
+    selection[:1], variant_dir, manifest=manifest, workers=1,
+)[0]
+assert (variant_dir / reused.outputs[0]).read_bytes() == (
+    variant_dir / ordinary.outputs[0]
+).read_bytes()
 ```
 
 ## Builders for a larger project

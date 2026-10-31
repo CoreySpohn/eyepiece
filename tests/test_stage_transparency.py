@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
+from matplotlib.text import Text
 
 import eyepiece as ep
 
@@ -24,7 +25,7 @@ def pixels(fig):
     return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
-def test_stage_hides_and_restores_only_its_own_visibility():
+def test_stage_preserves_caller_visibility():
     fig, ax = plt.subplots()
     text = ax.text(0.2, 0.5, "absent", in_layout=False)
     caller = ax.text(0.6, 0.5, "caller", visible=False, in_layout=False)
@@ -32,7 +33,7 @@ def test_stage_hides_and_restores_only_its_own_visibility():
     plain = pixels(fig)
     for level in (0, 0.3, 0, 1, 0, 1):
         stage.weigh({"both": level})
-        assert text.get_visible() == (level > 0)
+        assert text.get_visible()
         assert not caller.get_visible()
     np.testing.assert_array_equal(pixels(fig), plain)
     stage.weigh({"both": 0})
@@ -123,7 +124,9 @@ def test_stage_keeps_unsafe_draw_paths(kind):
     stage.weigh({"ink": 0})
     assert artist.get_visible()
     drawn = pixels(fig)
-    artist.draw = type(artist).draw.__get__(artist)
+    from eyepiece.attention import _STAGE_BASES
+
+    artist.draw = _STAGE_BASES.get(type(artist), type(artist)).draw.__get__(artist)
     np.testing.assert_array_equal(pixels(fig), drawn)
 
 
@@ -136,7 +139,7 @@ def test_hidden_line_keeps_legacy_on_marks_and_outside_findings():
     )
     stage = ep.motion.Stage({"line": line})
     stage.weigh({"line": 0})
-    assert not line.get_visible()
+    assert line.get_visible()
     hidden = [str(f) for f in ep.testing.readability_faults(fig)]
     assert any("on-marks" in f for f in hidden)
     assert any("outside" in f for f in hidden)
@@ -157,12 +160,12 @@ def test_zero_only_and_current_marker_colors():
         stage.weigh({"all": level})
         assert line.get_visible() and text.get_visible()
     stage.weigh({"all": 0})
-    assert not line.get_visible() and not text.get_visible()
+    assert line.get_visible() and text.get_visible()
     # The render guard must examine current properties after caller re-showing.
     text.set_visible(True)
     text.set_color("red")
     current = pixels(fig)
-    text.draw = type(text).draw.__get__(text)
+    text.draw = Text.draw.__get__(text)
     np.testing.assert_array_equal(pixels(fig), current)
 
 
@@ -251,11 +254,11 @@ def test_guard_rechecks_secondary_ink_after_caller_show(secondary):
     else:
         text.set_alpha(1.0)
     guarded = pixels(fig)
-    text.draw = type(text).draw.__get__(text)
+    text.draw = Text.draw.__get__(text)
     np.testing.assert_array_equal(pixels(fig), guarded)
 
 
-def test_staged_figure_pickle_retains_visibility_ownership():
+def test_staged_figure_pickle_preserves_visibility():
     import pickle
 
     fig, ax = plt.subplots()
@@ -264,7 +267,7 @@ def test_staged_figure_pickle_retains_visibility_ownership():
     stage.weigh({"text": 0})
     restored_fig, restored_stage = pickle.loads(pickle.dumps((fig, stage)))
     restored_text = restored_fig.axes[0].texts[0]
-    assert not restored_text.get_visible()
+    assert restored_text.get_visible()
     restored_stage.rest()
     assert restored_text.get_visible()
     stage.rest()
@@ -290,3 +293,165 @@ def test_axis_decorations_keep_layout_even_with_in_layout_false(decoration, layo
         frames.append(pixels(fig))
         assert text.get_visible()
     np.testing.assert_array_equal(*frames)
+
+
+def test_absent_label_still_anchors_leader():
+    frames, faults = [], []
+    for staged in (False, True):
+        fig, ax = plt.subplots(figsize=(3, 2), dpi=80)
+        ax.set(xlim=(0, 1), ylim=(0, 1))
+        (dot,) = ax.plot([0.5], [0.5], "o")
+        label = ax.text(0.62, 0.62, "the dot", in_layout=False)
+        line = ep.motion.leader(label, dot).artists["line"]
+        if staged:
+            ep.motion.Stage({"label": label}).weigh({"label": 0})
+        else:
+            label.set_color((0, 0, 0, 0))
+        frames.append(pixels(fig))
+        faults.append([str(f) for f in line.faults()])
+    np.testing.assert_array_equal(*frames)
+    assert faults[0] == faults[1]
+
+
+def test_absent_label_remains_an_explicit_bbox_extra_artist():
+    outputs = []
+    for staged in (False, True):
+        fig, ax = plt.subplots(figsize=(2, 1), dpi=80)
+        label = ax.text(1.4, 1.4, "outlying label", in_layout=False)
+        if staged:
+            ep.motion.Stage({"label": label}).weigh({"label": 0})
+        else:
+            label.set_color((0, 0, 0, 0))
+        stream = io.BytesIO()
+        fig.savefig(
+            stream, format="png", bbox_inches="tight", bbox_extra_artists=[label]
+        )
+        outputs.append(stream.getvalue())
+    assert outputs[0] == outputs[1]
+
+
+@pytest.mark.parametrize("method", ["copy", "deepcopy", "pickle"])
+def test_copied_staged_text_has_independent_draw_and_visibility(method):
+    import copy
+    import pickle
+
+    from matplotlib.text import Text
+    from test_render_helpers import CountingRenderer
+
+    fig, ax = plt.subplots()
+    original = ax.text(0.2, 0.5, "original", in_layout=False)
+    ep.motion.Stage({"text": original}).weigh({"text": 0})
+    clone = (
+        pickle.loads(pickle.dumps(original))
+        if method == "pickle"
+        else getattr(copy, method)(original)
+    )
+    clone.set_visible(False)
+    assert original.get_visible()
+    clone.set_visible(True)
+    clone.set_text("copy")
+    clone.set_color("red")
+    renderer = CountingRenderer(fig.canvas.get_renderer())
+    clone.draw(renderer)
+    assert renderer.texts == 1
+    before = pixels(fig)
+    # Compare the copy's draw with the plain Text implementation.
+    clone.draw(fig.canvas.get_renderer())
+    actual = np.asarray(fig.canvas.buffer_rgba()).copy()
+    np.copyto(np.asarray(fig.canvas.buffer_rgba()), before)
+    Text.draw(clone, fig.canvas.get_renderer())
+    np.testing.assert_array_equal(fig.canvas.buffer_rgba(), actual)
+    assert original.get_text() == "original"
+
+
+@pytest.mark.parametrize("hook", ["draw", "set_visible"])
+def test_hooks_installed_after_stage_are_preserved(hook):
+    fig, ax = plt.subplots()
+    text = ax.text(0.2, 0.5, "hook", in_layout=False)
+    stage = ep.motion.Stage({"text": text})
+    calls = []
+    original = getattr(text, hook)
+
+    def custom(*args, **kwargs):
+        calls.append(True)
+        return original(*args, **kwargs)
+
+    setattr(text, hook, custom)
+    stage.weigh({"text": 0})
+    text.set_visible(True)
+    pixels(fig)
+    assert getattr(text, hook) is custom
+    assert calls
+
+
+@pytest.mark.parametrize("construct_after_update", [False, True])
+def test_two_stages_use_the_last_presence_writer(construct_after_update):
+    from test_render_helpers import CountingRenderer
+
+    fig, ax = plt.subplots()
+    text = ax.text(0.2, 0.5, "shared", in_layout=False)
+    first = ep.motion.Stage({"text": text})
+    if construct_after_update:
+        first.weigh({"text": 0})
+    second = ep.motion.Stage({"text": text})
+    for stage, level in ((first, 0), (second, 1), (second, 0), (first, 1)):
+        stage.weigh({"text": level})
+        # Give the transparent color nonzero ink independently of Stage.
+        # Presence zero may skip only if the current artist is also inkless.
+        text.set_color((0, 0, 0, 0))
+        renderer = CountingRenderer(fig.canvas.get_renderer())
+        text.draw(renderer)
+        assert text.get_visible()
+        assert renderer.texts == (0 if level == 0 else 1)
+
+
+@pytest.mark.parametrize(
+    "kind", ["text", "line", "rectangle", "polygon", "path", "fancy", "circle"]
+)
+def test_absent_standard_leaf_skips_actual_painting(kind):
+    from matplotlib.patches import Circle, FancyBboxPatch, PathPatch, Polygon
+    from matplotlib.path import Path as MplPath
+    from test_render_helpers import CountingRenderer
+
+    fig, ax = plt.subplots()
+    if kind == "text":
+        artist = ax.text(0.2, 0.5, "paint", in_layout=False)
+    elif kind == "line":
+        (artist,) = ax.plot([0.2, 0.8], [0.4, 0.6])
+    else:
+        artist = {
+            "rectangle": lambda: Rectangle((0.2, 0.2), 0.4, 0.4),
+            "polygon": lambda: Polygon([[0.2, 0.2], [0.5, 0.8], [0.8, 0.2]]),
+            "path": lambda: PathPatch(MplPath([[0.2, 0.2], [0.8, 0.8]])),
+            "fancy": lambda: FancyBboxPatch((0.2, 0.2), 0.4, 0.4),
+            "circle": lambda: Circle((0.5, 0.5), 0.2),
+        }[kind]()
+        ax.add_patch(artist)
+    stage = ep.motion.Stage({"leaf": artist})
+    for level in (1, 0, 0.25, 0, 1):
+        stage.weigh({"leaf": level})
+        renderer = CountingRenderer(fig.canvas.get_renderer())
+        artist.draw(renderer)
+        assert renderer.texts + renderer.paths == (0 if level == 0 else 1)
+        assert artist.get_visible()
+
+
+@pytest.mark.parametrize("when", ["before", "after"])
+def test_custom_class_draw_is_not_skipped(monkeypatch, when):
+    fig, ax = plt.subplots()
+    text = ax.text(0.2, 0.5, "class hook", in_layout=False)
+    calls = []
+    original = Text.draw
+
+    def custom(self, renderer):
+        calls.append(self)
+        return original(self, renderer)
+
+    if when == "before":
+        monkeypatch.setattr(Text, "draw", custom)
+    stage = ep.motion.Stage({"text": text})
+    if when == "after":
+        monkeypatch.setattr(Text, "draw", custom)
+    stage.weigh({"text": 0})
+    text.draw(fig.canvas.get_renderer())
+    assert calls == [text]

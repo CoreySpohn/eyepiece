@@ -196,6 +196,9 @@ def _raster(state, index):
     initial_draw = state.pop("initial_draw", False)
     item = state["initial_item"] if index == 0 and initial_draw else _item(state, index)
     key = state["frame_key"](item) if state["frame_key"] is not None else None
+    fig = state["fig"]
+    if index != 0 or not initial_draw:
+        state["draw"](fig, item)
     if key is not None:
         try:
             hash(key)
@@ -206,9 +209,6 @@ def _raster(state, index):
             _check_scales(state, index)
             state["previous_frame"] = (index, key, previous[2])
             return previous[2]
-    fig = state["fig"]
-    if index != 0 or not initial_draw:
-        state["draw"](fig, item)
     # Frame zero was already drawn before layout froze. A second draw could
     # measure the settled axes and move labels compared with record.
     # record invokes draw at the figure dpi, then savefig at the sink dpi.
@@ -702,8 +702,9 @@ def render_frames(
             Requires an integer frames count.
         frame_key: Optional picklable callable taking a frame item before draw.
             Equal consecutive non-None hashable keys promise identical pixels
-            and allow skipping both draw and rasterization. None disables
-            reuse for that item. Draw must set absolute state even after skipped
+            and allow reusing rasterization. The draw callback still runs on
+            every frame, including scale diagnostics. None disables reuse for
+            that item. Draw must set absolute state even after repeated
             items. Include the callback's source and inputs in the caller key.
             Defaults to None, drawing every frame; clocks are never inferred.
         hold: Extra repetitions of the first and last raster, respectively.

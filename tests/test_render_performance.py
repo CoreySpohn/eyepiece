@@ -9,7 +9,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-from test_render_helpers import build_variant_clip, write_render_audio
+from test_render_helpers import CountingRenderer, build_variant_clip, write_render_audio
 
 from eyepiece import _render_pool as pool
 from eyepiece import _render_variants as variant_driver
@@ -39,7 +39,18 @@ def draw_steps(fig, item, *, calls):
 
 
 def build_steps(*, calls):
-    return plt.figure(figsize=(0.96, 0.54)), partial(draw_steps, calls=calls)
+    fig = plt.figure(figsize=(0.96, 0.54))
+    fig.patch.draw = partial(paint_background, artist=fig.patch, calls=calls)
+    return fig, partial(draw_steps, calls=calls)
+
+
+def paint_background(renderer, *, artist, calls):
+    from matplotlib.patches import Rectangle
+
+    counted = CountingRenderer(renderer)
+    Rectangle.draw(artist, counted)
+    with Path(str(calls) + ".paint").open("a") as stream:
+        stream.write(f"{counted.paths}\n")
 
 
 def decoded(path):
@@ -71,7 +82,9 @@ def test_raw_frames_identical_and_only_consecutive_keys_skip_draw(tmp_path):
             assert draw_count(calls) == len(frames)
         else:
             assert rasters == baseline
-            assert draw_count(calls) == 4
+            assert draw_count(calls) == len(frames)
+            # Four rasters plus the initial layout freeze.
+            assert draw_count(Path(str(calls) + ".paint")) == 5
 
 
 @pytest.mark.parametrize("workers", [1, 2])
@@ -104,7 +117,7 @@ def test_dedup_raw_chunks_encoded_bytes_decoded_frames_holds_and_resume(
         chunks.append(
             [p.read_bytes() for p in sorted((folder / "chunks").glob("*.bin"))]
         )
-        counts.append(draw_count(calls))
+        counts.append(draw_count(Path(str(calls) + ".paint")))
         resumed = render_frames(build, 12, path, **kwargs)
         assert resumed.resumed == resumed.chunks == 3
     assert counts[1] < counts[0]
@@ -126,7 +139,8 @@ def test_none_key_disables_reuse_for_that_frame(tmp_path):
     ) as state:
         for index in range(6):
             pool._raster(state, index)
-    assert calls.read_text().splitlines() == ["0", "1", "2", "3"]
+    assert calls.read_text().splitlines() == ["0", "1", "2", "3", "4", "5"]
+    assert draw_count(Path(str(calls) + ".paint")) == 5  # includes layout freeze
 
 
 @pytest.mark.parametrize("key", [42, lambda item: []])
@@ -294,7 +308,8 @@ def test_nonsequential_raster_requests_do_not_reuse_stale_state(tmp_path):
         ) as state:
             outputs.append([pool._raster(state, index).tobytes() for index in order])
     assert outputs[0] == outputs[1]
-    assert draw_count(tmp_path / "dedup") == 6
+    assert draw_count(tmp_path / "dedup") == len(order)
+    assert draw_count(tmp_path / "dedup.paint") == 7  # includes layout freeze
 
 
 def test_key_receives_mapped_items_and_spec_defaults_to_full_draws(tmp_path):
@@ -318,13 +333,13 @@ def test_key_receives_mapped_items_and_spec_defaults_to_full_draws(tmp_path):
         manifest=manifest,
         workers=1,
     )[0]
-    assert draw_count(tmp_path / "draws") == 2
+    assert draw_count(tmp_path / "draws") == 12
     assert dedup.key != result.key
     assert (tmp_path / dedup.outputs[0]).read_bytes() == full
 
 
 @pytest.mark.parametrize("custom", ["rgb", "matrix", "chroma"])
-def test_mux_preserves_custom_encoded_picture(tmp_path, custom):
+def test_mux_preserves_base_custom_encoded_picture(tmp_path, custom):
     audio = write_render_audio(tmp_path / "track.wav")
     options = {
         "rgb": {
@@ -356,7 +371,12 @@ def test_mux_preserves_custom_encoded_picture(tmp_path, custom):
         workers=1,
     )
     paths = [tmp_path / result.outputs[0] for result in results]
-    assert decoded(paths[0]) == decoded(paths[1])
+    from eyepiece.narration import mux
+
+    reference = tmp_path / "base-mux.mp4"
+    mux(paths[0], audio, reference)
+    assert paths[1].read_bytes() == reference.read_bytes()
+    assert decoded(reference) == decoded(paths[1])
     assert draw_count(tmp_path / "builds" / "doc-dark") == 1
 
 
@@ -488,3 +508,242 @@ def test_adopted_silent_video_supplies_narration_and_current_poster(tmp_path, re
         manifest.current(spec.slug, result.variant.name, result.key)
         for result in results
     )
+
+
+def test_equal_keys_still_pose_and_raise_on_changed_limits(tmp_path):
+    from eyepiece.anim import ScaleDriftError
+
+    def build():
+        fig, ax = plt.subplots(figsize=(0.96, 0.54))
+        ax.set_axis_off()
+
+        def draw(fig, item):
+            ax.set_xlim(0, 1 + item)
+
+        return fig, draw
+
+    # No ink or decorations: these genuinely have identical pixels.
+    with pool._figure(build, 3, 100, None, None, None) as state:
+        assert pool._raster(state, 0).tobytes() == pool._raster(state, 1).tobytes()
+    with pytest.raises(ScaleDriftError, match="frame 1"):
+        render_frames(
+            build,
+            3,
+            tmp_path / "limits.mp4",
+            fps=12,
+            dpi=100,
+            workers=1,
+            frame_key=lambda item: 0,
+            on_rescale="raise",
+        )
+
+
+def test_visual_canonical_preserves_mapping_sequence_and_path_identity(tmp_path):
+    encode = variant_driver._canonical
+    assert encode({"first": "red", "last": "blue"}) != encode(
+        {"last": "blue", "first": "red"}
+    )
+    assert encode([1, 2]) != encode([2, 1])
+    assert encode([1, 2]) != encode((1, 2))
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.write_bytes(b"same")
+    b.write_bytes(b"same")
+    assert encode(a) != encode(b)
+
+
+@pytest.mark.parametrize("custom", ["default", "rgb", "matrix", "faststart"])
+def test_narrated_output_equals_base_mux(tmp_path, custom):
+    # The mux implementation is unchanged from 98aeecd. Import it directly so
+    # a mutation of the variant driver's narration.mux call cannot alter this oracle.
+    from eyepiece.narration._mux import mux as base_mux
+
+    audio = write_render_audio(tmp_path / "audio.wav")
+    options = {
+        "default": {},
+        "rgb": {
+            "extra_ffmpeg_args": [
+                "-c:v",
+                "libx264rgb",
+                "-pix_fmt",
+                "rgb24",
+                "-crf",
+                "0",
+            ]
+        },
+        "matrix": {"encoder": {"colorspace": None}},
+        "faststart": {"encoder": {"faststart": False}},
+    }
+    spec = ClipSpec(
+        "base-mux",
+        partial(build_variant_clip, markers=tmp_path / "builds"),
+        6,
+        (Venue("doc", fps=12),),
+        audio=lambda variant: audio,
+        **options[custom],
+    )
+    results = render_variants(
+        spec,
+        [Variant("doc", "dark"), Variant("doc", "dark", True)],
+        tmp_path,
+        manifest=Manifest(tmp_path / "manifest.json"),
+        workers=1,
+    )
+    silent, narrated = [tmp_path / result.outputs[0] for result in results]
+    # Frozen call from 98aeecd: no encoder forwarded to the copied stream.
+    reference = tmp_path / "base.mp4"
+    base_mux(silent, audio, reference)
+    assert narrated.read_bytes() == reference.read_bytes()
+    assert decoded(narrated) == decoded(reference)
+
+
+def test_ordered_frame_mappings_do_not_share_pixels(tmp_path):
+    def build(venue, mode):
+        fig = plt.figure(figsize=(0.96, 0.54))
+
+        def draw(fig, item):
+            for color in item.values():
+                fig.set_facecolor(color)
+
+        return fig, draw
+
+    audio = write_render_audio(tmp_path / "audio.wav")
+    spec = ClipSpec(
+        "ordered",
+        build,
+        None,
+        (Venue("doc", fps=12),),
+        frames_for=lambda variant: (
+            [
+                {"first": "red", "last": "blue"}
+                if variant.narrated
+                else {"last": "blue", "first": "red"}
+            ]
+            * 3
+        ),
+        audio=lambda variant: audio,
+    )
+    results = render_variants(
+        spec,
+        [Variant("doc", "light"), Variant("doc", "light", True)],
+        tmp_path,
+        manifest=Manifest(tmp_path / "manifest.json"),
+        workers=1,
+    )
+    silent, narrated = [decoded(tmp_path / result.outputs[0]) for result in results]
+    silent_pixels = np.frombuffer(silent, np.uint8).reshape(-1, 54, 96, 4)
+    narrated_pixels = np.frombuffer(narrated, np.uint8).reshape(-1, 54, 96, 4)
+    assert silent_pixels[0, 0, 0, 0] > 200
+    assert narrated_pixels[0, 0, 0, 2] > 200
+    assert silent != narrated
+
+
+@pytest.mark.parametrize("audio_seconds", [0.9, 2.0])
+def test_narrated_impulse_aligns_with_visual_event_and_holds(tmp_path, audio_seconds):
+    import wave
+
+    fps, rate = 12, 48000
+    hold, event = 3, 4
+    event_time = (hold + event) / fps
+    samples = np.zeros(round(audio_seconds * rate), dtype="<i2")
+    samples[round(event_time * rate)] = 28000
+    if audio_seconds > 1.5:
+        # A second impulse beyond the presentation duration must be trimmed.
+        samples[round(1.8 * rate)] = 28000
+    audio = tmp_path / "impulse.wav"
+    with wave.open(str(audio), "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(rate)
+        stream.writeframes(samples.tobytes())
+
+    def build(venue, mode):
+        fig = plt.figure(figsize=(0.96, 0.54))
+
+        def draw(fig, item):
+            fig.set_facecolor("white" if item < event else "black")
+
+        return fig, draw
+
+    spec = ClipSpec(
+        "aligned",
+        build,
+        12,
+        (Venue("doc", fps=fps),),
+        hold_s=(hold / fps, hold / fps),
+        audio=lambda variant: audio,
+        frame_key=lambda item: item >= event,
+    )
+    result = render_variants(
+        spec,
+        [Variant("doc", "light", True)],
+        tmp_path,
+        manifest=Manifest(tmp_path / "manifest.json"),
+        workers=1,
+    )[0]
+    video = tmp_path / result.outputs[0]
+    frames = np.frombuffer(decoded(video), np.uint8).reshape(-1, 54, 96, 4)
+    assert len(frames) == 18
+    visual_event = np.flatnonzero(frames[:, 0, 0, 0] < 128)[0]
+    assert visual_event == hold + event
+    raw = subprocess.run(
+        [
+            resolve_ffmpeg(),
+            "-v",
+            "error",
+            "-i",
+            str(video),
+            "-map",
+            "0:a:0",
+            "-f",
+            "f32le",
+            "-ac",
+            "1",
+            "-ar",
+            str(rate),
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+        timeout=30,
+    ).stdout
+    sound = np.frombuffer(raw, dtype="<f4")
+    peak = np.argmax(np.abs(sound)) / rate
+    assert abs(peak - visual_event / fps) < 0.01
+    assert abs(len(sound) / rate - len(frames) / fps) < 1024 / rate
+    assert np.max(np.abs(sound[rate:])) < 0.01
+
+
+def test_shared_variants_paint_only_one_video(tmp_path, monkeypatch):
+    from matplotlib.backends.backend_agg import RendererAgg
+
+    paints = []
+    original = RendererAgg.draw_path
+
+    def draw_path(self, *args, **kwargs):
+        paints.append(1)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(RendererAgg, "draw_path", draw_path)
+    audio = write_render_audio(tmp_path / "audio.wav")
+    spec = ClipSpec(
+        "paint-once",
+        partial(build_variant_clip, markers=tmp_path / "builds"),
+        3,
+        (Venue("doc", fps=12),),
+        audio=lambda variant: audio,
+    )
+    silent, narrated = Variant("doc", "light"), Variant("doc", "light", True)
+    counts = []
+    for name, selection in (("one", [silent]), ("pair", [silent, narrated])):
+        paints.clear()
+        folder = tmp_path / name
+        render_variants(
+            spec,
+            selection,
+            folder,
+            manifest=Manifest(folder / "manifest.json"),
+            workers=1,
+        )
+        counts.append(len(paints))
+    assert counts[0] > 0
+    assert counts[0] == counts[1]

@@ -353,24 +353,10 @@ def _marks(fig):
         if not ax.get_visible():
             continue
         for child in ax.get_children():
-            if (
-                child is ax.patch
-                or isinstance(child, Spine)
-                or not _check_visible(child)
-            ):
+            if child is ax.patch or isinstance(child, Spine) or not child.get_visible():
                 continue
             if isinstance(child, (Line2D, Patch, Collection, AxesImage)):
                 yield child
-
-
-def _check_visible(artist):
-    """Preserve geometry checks for Stage's rendering-only visibility change.
-
-    Caller-hidden marks stay excluded. Historically the outside and on-marks
-    checks include transparent marks (on-marks reads Line2D color alpha, not
-    scalar alpha); skipping their rasterization must not change those findings.
-    """
-    return artist.get_visible() or getattr(artist, "_eyepiece_stage_hidden", False)
 
 
 def _outside(fig, texts, boxes, renderer, tol):
@@ -537,7 +523,7 @@ def _on_marks(fig, texts, boxes, dpi):
         [
             mark
             for mark in _default_avoid(ax, set())
-            if _check_visible(mark) and any(c[3] >= _SHOWN for c in _data_colors(mark))
+            if mark.get_visible() and any(c[3] >= _SHOWN for c in _data_colors(mark))
         ]
         for ax in fig.axes
         if ax.get_visible()

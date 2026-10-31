@@ -57,10 +57,25 @@ def test_shared_samples_match_independent_passes_and_render_once(monkeypatch, in
         return original()
 
     monkeypatch.setattr(fig.canvas, "draw", counted)
+    renderer = fig.canvas.get_renderer()
+    painted = []
+    original_text = renderer.draw_text
+
+    def paint_text(*args, **kwargs):
+        painted.append(1)
+        return original_text(*args, **kwargs)
+
+    monkeypatch.setattr(renderer, "draw_text", paint_text)
+    fig.canvas.draw()
+    texts_per_frame = len(painted)
+    assert texts_per_frame > 0
+    painted.clear()
+    calls.clear()
     shared = ept.check_clip(fig, draw, plan, **kwargs)
     assert shared.faults
     assert _records(shared) == _records(separate)
     assert len(calls) == plan.n_frames
+    assert len(painted) == texts_per_frame * plan.n_frames
     np.testing.assert_array_equal(fig.canvas.buffer_rgba(), pixels)
     assert dot.get_xdata() == [pytest.approx(1.1)]
     plt.close(fig)
@@ -350,3 +365,20 @@ def test_filtered_artists_keep_independent_raster_passes(monkeypatch):
     ept.check_clip(fig, lambda k: None, plan)
     assert len(count) == plan.n_frames + len(plan.review_frames())
     plt.close(fig)
+
+
+@pytest.mark.parametrize("identical", [False, True])
+def test_still_threshold_avoids_full_buffer_conversion(identical):
+    converted = []
+
+    class CountConversions(np.ndarray):
+        def astype(self, *args, **kwargs):
+            converted.append(self.shape[0])
+            return super().astype(*args, **kwargs)
+
+    reference = np.zeros((128, 8, 3), dtype=np.uint8).view(CountConversions)
+    frame = reference.copy()
+    if not identical:
+        frame[0] = 255
+    assert ept._pixel_change_reaches(frame, reference, 1) == (not identical)
+    assert sum(converted) < 2 * len(frame)

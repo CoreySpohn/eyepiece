@@ -91,8 +91,8 @@ def _draw_sample(fig):
         # Preserve draw-time artist geometry (text backings, connectors,
         # etc.) as well as the canvas contents, without rasterizing again.
         frame = active.entries[key]["trace"].frames[0]
+        # The public method can clear the Agg buffer while obtaining its
+        # renderer. Restore the sampled pixels after refreshing geometry.
+        fig.draw_without_rendering()
         np.copyto(np.asarray(fig.canvas.buffer_rgba()), frame)
-        renderer = fig.canvas.get_renderer()
-        with renderer._draw_disabled():
-            fig.draw(renderer)
     return active.entries[key]

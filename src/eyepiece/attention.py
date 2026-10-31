@@ -1464,7 +1464,7 @@ def _stage_no_ink(artist):
     of the colors Stage sets. Leave those paths to Matplotlib. A scalar alpha
     overrides (rather than multiplies) a text or line's color alpha.
     """
-    kind = type(artist)
+    kind = _STAGE_BASES.get(type(artist), type(artist))
     if kind not in (
         Text,
         Line2D,
@@ -1486,11 +1486,7 @@ def _stage_no_ink(artist):
             return False
         colors = (artist.get_color(),)
         if artist.get_marker() not in (None, "None", "none", "", " "):
-            colors += (
-                artist.get_markerfacecolor(),
-                artist.get_markeredgecolor(),
-                artist.get_markerfacecoloralt(),
-            )
+            return False
     else:
         if artist.get_hatch():
             return False
@@ -1504,21 +1500,67 @@ def _stage_no_ink(artist):
     return all(to_rgba(color)[3] == 0.0 for color in colors)
 
 
-def _stage_can_hide(artist):
-    """Whether hiding leaves layout and tight bounding boxes unchanged."""
-    ax = artist.axes
-    if ax is not None and artist not in ax._children:
-        # Axes title layout does not honor the title's in_layout flag.
-        return False
-    if type(artist) is Text and ax is None:
-        fig = artist.get_figure()
-        if fig is None or (artist not in fig.texts and artist not in fig.artists):
-            # Axis labels and tick texts have no .axes and their parent Axis
-            # also measures them regardless of their in_layout flag.
-            return False
-    if not artist.get_in_layout():
-        return True
-    return ax is not None and artist._fully_clipped_to_axes()
+class _StageLeaf:
+    """A class-level paint guard; all mutable state belongs to the artist."""
+
+    def draw(self, renderer):
+        if (
+            getattr(self, "_eyepiece_stage_presence", 1.0) == 0.0
+            and "draw" not in self.__dict__
+            and _STAGE_BASES[type(self)].draw is _STAGE_DRAWS[type(self)]
+            and _stage_no_ink(self)
+        ):
+            # Text remembers its renderer even when no glyph needs painting.
+            if isinstance(self, Text):
+                self._renderer = renderer
+            self.stale = False
+            return
+        return super().draw(renderer)
+
+
+class _StageText(_StageLeaf, Text):
+    pass
+
+
+class _StageLine2D(_StageLeaf, Line2D):
+    pass
+
+
+class _StageRectangle(_StageLeaf, Rectangle):
+    pass
+
+
+class _StagePolygon(_StageLeaf, Polygon):
+    pass
+
+
+class _StagePathPatch(_StageLeaf, PathPatch):
+    pass
+
+
+class _StageFancyBboxPatch(_StageLeaf, FancyBboxPatch):
+    pass
+
+
+class _StageCircle(_StageLeaf, Circle):
+    pass
+
+
+_STAGE_LEAVES = {
+    Text: _StageText,
+    Line2D: _StageLine2D,
+    Rectangle: _StageRectangle,
+    Polygon: _StagePolygon,
+    PathPatch: _StagePathPatch,
+    FancyBboxPatch: _StageFancyBboxPatch,
+    Circle: _StageCircle,
+}
+_STAGE_BASES = {guarded: plain for plain, guarded in _STAGE_LEAVES.items()}
+_STAGE_DRAWS = {guarded: plain.draw for plain, guarded in _STAGE_LEAVES.items()}
+for _plain, _guarded in _STAGE_LEAVES.items():
+    # Findings and artist labels retain the standard name. The distinct module
+    # global and __qualname__ keep ordinary copy/deepcopy/pickle independent.
+    _guarded.__name__ = _plain.__name__
 
 
 class _Look:
@@ -1532,15 +1574,13 @@ class _Look:
 
     def __init__(self, artist, background):
         self.artist = artist
-        self.presence = 1.0
-        self._visibility_hook = False
-        self._custom_draw = "draw" in artist.__dict__
-        self._custom_visibility = "set_visible" in artist.__dict__
-        # Plain text dominates the cost of absent groups. A local draw guard
-        # also covers layout participants and callers that re-show a leaf after
-        # Stage.weigh. Keep their visibility and extents intact during layout.
-        if type(artist) is Text and not self._custom_draw:
-            artist.draw = self._draw_present
+        guarded = _STAGE_LEAVES.get(type(artist))
+        if (
+            guarded is not None
+            and "draw" not in artist.__dict__
+            and type(artist).draw is _STAGE_DRAWS[guarded]
+        ):
+            artist.__class__ = guarded
         self.background = background
         self.alpha = artist.get_alpha()
         self.cmap = (
@@ -1573,44 +1613,8 @@ class _Look:
 
     def set(self, presence, contrast):
         """Draw the artist at `presence` of its opacity and `contrast` of its color."""
-        self.presence = presence
+        self.artist._eyepiece_stage_presence = presence
         self._set_colors(presence, contrast)
-        self._visibility()
-
-    def _draw_present(self, renderer):
-        """Keep layout extents while skipping a proven empty text draw."""
-        if self.presence == 0.0 and _stage_no_ink(self.artist):
-            self.artist.stale = False
-            return
-        return Text.draw(self.artist, renderer)
-
-    def _caller_visible(self, visible):
-        """Give an explicit caller visibility request precedence over Stage."""
-        self.artist._eyepiece_stage_hidden = False
-        return Artist.set_visible(self.artist, visible)
-
-    def _visibility(self):
-        artist = self.artist
-        absent = (
-            self.presence == 0.0
-            and not self._custom_draw
-            and not self._custom_visibility
-            and _stage_no_ink(artist)
-            and _stage_can_hide(artist)
-        )
-        owned = getattr(artist, "_eyepiece_stage_hidden", False)
-        if absent and artist.get_visible():
-            if not self._visibility_hook:
-                # A callback cannot observe set_visible(False) when already
-                # hidden: Matplotlib suppresses that notification. Record every
-                # explicit caller request, including that no-op, instead.
-                artist.set_visible = self._caller_visible
-                self._visibility_hook = True
-            Artist.set_visible(artist, False)
-            artist._eyepiece_stage_hidden = True
-        elif owned and not absent:
-            artist._eyepiece_stage_hidden = False
-            Artist.set_visible(artist, True)
 
     def _set_colors(self, presence, contrast):
         """Set absolute colors before deciding whether drawing can be omitted."""

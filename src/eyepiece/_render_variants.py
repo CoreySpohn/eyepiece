@@ -10,7 +10,7 @@ import tempfile
 import uuid
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack, nullcontext
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, is_dataclass, replace
 from functools import partial
 from numbers import Integral, Real
 from pathlib import Path
@@ -19,9 +19,37 @@ from typing import NamedTuple
 import matplotlib
 
 from eyepiece._motion import frame_count
-from eyepiece._render_keys import _canonical, content_key
+from eyepiece._render_keys import _canonical as _content_canonical
+from eyepiece._render_keys import _key_field, content_key
 from eyepiece._render_pool import _frame_source, _validate_on_rescale, render_frames
 from eyepiece._render_poster import render_poster
+
+
+def _canonical(value):
+    """Compare visual inputs without discarding observable order or paths.
+
+    Content keys intentionally hash files by contents and ignore mapping order.
+    Sharing a raster needs a stricter comparison: draw can iterate mappings or
+    display a filename. Preserve those inputs recursively, including records.
+    """
+    if isinstance(value, Path):
+        return _key_field(b"path", _canonical((str(value), value.read_bytes())))
+    if isinstance(value, Mapping):
+        return _key_field(
+            b"mapping", b"".join(_canonical((k, v)) for k, v in value.items())
+        )
+    if isinstance(value, (list, tuple)):
+        tag = b"list" if isinstance(value, list) else b"tuple"
+        return _key_field(tag, b"".join(_canonical(item) for item in value))
+    kind = type(value)
+    name = f"{kind.__module__}.{kind.__qualname__}"
+    parts = getattr(value, "content_key_parts", None)
+    if callable(parts):
+        return _key_field(b"parts", _canonical((name, parts())))
+    if is_dataclass(value) and not isinstance(value, type):
+        values = [(field.name, getattr(value, field.name)) for field in fields(value)]
+        return _key_field(b"dataclass", _canonical((name, values)))
+    return _content_canonical(value)
 
 
 class Venue(NamedTuple):
@@ -137,9 +165,17 @@ class ClipSpec:
             build, reproducing videos made with an older figure or stamp.
         frame_key: Optional picklable callable taking a frame item before draw.
             Equal consecutive non-None hashable keys promise identical pixels
-            and skip drawing and rasterization, as in render_frames. Defaults
-            to None. Represent its source and inputs in modules and clock or
-            other named key inputs. Draw must remain absolute after skips.
+            and reuse rasterization, as in render_frames. The draw callback and
+            scale diagnostics still run on every frame. Defaults to None. The
+            key must cover every input of draw, including captions, clock text,
+            and annotations, not just the main data. For draw reading an item
+            (position, caption, clock_text, annotation), use a module-level
+            frame_key(item) returning that entire tuple. A key returning only
+            position would freeze a changing caption during a stationary hold.
+            Represent its source and inputs in modules and clock or other named
+            content_key inputs; content_key identifies the whole output, while
+            frame_key promises identical adjacent pictures. See the complete
+            example in docs/how-to/render-a-clip-in-parallel.md.
     """
 
     slug: str
@@ -277,16 +313,13 @@ def _variant_video(
             from eyepiece import narration
 
             muxed = Path(scratch) / "mux.mp4"
-            mux_options = {"work_dir": scratch} if work_dir is not None else {}
-            if spec.encoder is not None or spec.extra_ffmpeg_args:
-                # A copied stream already has the encoder's color metadata.
-                # In particular, do not retag a caller's RGB or BT.601 picture.
-                mux_options["encoder"] = {**(spec.encoder or {}), "colorspace": None}
+            # Keep the base mux defaults, including BT.709 retagging and
+            # faststart, even when the silent stream uses a custom encoder.
             narration.mux(
                 silent,
                 audio,
                 muxed,
-                **mux_options,
+                **({"work_dir": scratch} if work_dir is not None else {}),
             )
             _publish_video(muxed, target)
         return target, frames

@@ -286,3 +286,23 @@ def draw_record_clip(fig, frame):
     label = fig.texts[0]
     width = label.get_window_extent(fig.canvas.get_renderer()).width
     label.set_x((fig.axes[0].bbox.x0 + width * 0.1) / fig.bbox.width + frame * 0.1)
+
+
+class CountingRenderer:
+    """Delegate rendering while counting actual text and path painting calls."""
+
+    def __init__(self, renderer):
+        self.renderer = renderer
+        self.texts = 0
+        self.paths = 0
+
+    def __getattr__(self, name):
+        return getattr(self.renderer, name)
+
+    def draw_text(self, *args, **kwargs):
+        self.texts += 1
+        return self.renderer.draw_text(*args, **kwargs)
+
+    def draw_path(self, *args, **kwargs):
+        self.paths += 1
+        return self.renderer.draw_path(*args, **kwargs)
