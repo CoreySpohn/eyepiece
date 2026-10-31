@@ -529,12 +529,17 @@ def render_variants(
         # frame items and data, and require the very same mapping callable:
         # matching counts or callable-presence flags cannot prove equivalence.
         try:
+            canonical = _canonical(
+                (variant.venue, variant.mode, variant_spec.frames, data)
+            )
+            # Keep a SHA-256 digest and length, not the encoding itself: the
+            # encoding holds every input array, once per variant.
             visual = (
-                _canonical((variant.venue, variant.mode, variant_spec.frames, data)),
+                hashlib.sha256(canonical).digest(),
+                len(canonical),
                 id(variant_spec.frame_at),
             )
-            # Compare exact bytes, not digests; retain just one copy for jobs
-            # whose potentially large arrays have the same canonical form.
+            del canonical
             visual = visual_keys.setdefault(visual, visual)
         except (TypeError, RecursionError):
             # A unique key cannot reuse another variant's pixels. Keep content
