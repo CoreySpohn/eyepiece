@@ -170,6 +170,7 @@ def test_audio_keys_streams_and_mux_determinism(clip, tmp_path):
     manifest = Manifest(out / "manifest.json")
     requested = variants(("doc",), ("light",), narrated=("doc",))
     first = render_variants(spec, requested, out, manifest=manifest, workers=1)
+    assert builds(tmp_path / "builds") == {"doc-light": 1}
     silent, narrated = [out / result.outputs[0] for result in first]
     streams = subprocess.run(
         [resolve_ffmpeg(), "-i", str(narrated)],
@@ -192,7 +193,7 @@ def test_audio_keys_streams_and_mux_determinism(clip, tmp_path):
     assert [result.rendered for result in changed] == [False, True]
     assert changed[0].key == first[0].key
     assert changed[1].key != first[1].key
-    assert builds(tmp_path / "builds")["doc-light"] == count + 1
+    assert builds(tmp_path / "builds")["doc-light"] == count
 
 
 @pytest.mark.parametrize("problem", ["budget", "unknown", "audio"])
@@ -707,8 +708,8 @@ def test_target_paths_and_adjacent_outputs(
 
     def inspect_mux(video, audio, path, **kwargs):
         if separate_work:
-            assert video.parent.parent == (work / "doc" if custom else work)
-            assert path.parent == video.parent
+            assert video == out / target(Variant("doc", "light"))
+            assert path.parent.parent == (work / "doc" if custom else work)
             assert list(out.rglob("*.narration-*")) == []
         return mux(video, audio, path, **kwargs)
 
@@ -762,9 +763,10 @@ def test_target_paths_and_adjacent_outputs(
         assert all((out / path).is_file() for path in result.outputs)
         expected_files.update(out / path for path in result.outputs)
         if separate_work:
-            assert (
+            chunk_marker = (
                 work / video.parent / f".chunks-{video.stem}" / ".eyepiece-render"
-            ).is_file()
+            )
+            assert chunk_marker.is_file() is (not result.variant.narrated)
     if separate_work:
         assert {path for path in out.rglob("*") if path.is_file()} == expected_files
         assert {path for path in out.rglob("*") if path.is_dir()} == (

@@ -44,7 +44,14 @@ from matplotlib.axes import Axes
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_rgb, to_rgba, to_rgba_array
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch, PathPatch, Rectangle
+from matplotlib.patches import (
+    Circle,
+    FancyBboxPatch,
+    Patch,
+    PathPatch,
+    Polygon,
+    Rectangle,
+)
 from matplotlib.path import Path
 from matplotlib.spines import Spine
 from matplotlib.text import Annotation, Text
@@ -1450,6 +1457,70 @@ def callout(
 # Stage
 
 
+def _stage_no_ink(artist):
+    """Prove a standard leaf draws no ink, including its secondary colors.
+
+    Custom draws, effects, filters, text boxes and hatches can paint independently
+    of the colors Stage sets. Leave those paths to Matplotlib. A scalar alpha
+    overrides (rather than multiplies) a text or line's color alpha.
+    """
+    kind = type(artist)
+    if kind not in (
+        Text,
+        Line2D,
+        Rectangle,
+        Circle,
+        Polygon,
+        PathPatch,
+        FancyBboxPatch,
+    ):
+        return False
+    if artist.get_path_effects() or artist.get_agg_filter() is not None:
+        return False
+    if kind is Text:
+        if artist.get_bbox_patch() is not None or artist.get_usetex():
+            return False
+        colors = (artist.get_color(),)
+    elif kind is Line2D:
+        if artist.get_gapcolor() is not None:
+            return False
+        colors = (artist.get_color(),)
+        if artist.get_marker() not in (None, "None", "none", "", " "):
+            colors += (
+                artist.get_markerfacecolor(),
+                artist.get_markeredgecolor(),
+                artist.get_markerfacecoloralt(),
+            )
+    else:
+        if artist.get_hatch():
+            return False
+        return all(
+            to_rgba(color)[3] == 0.0
+            for color in (artist.get_facecolor(), artist.get_edgecolor())
+        )
+    alpha = artist.get_alpha()
+    if alpha is not None:
+        return alpha == 0.0
+    return all(to_rgba(color)[3] == 0.0 for color in colors)
+
+
+def _stage_can_hide(artist):
+    """Whether hiding leaves layout and tight bounding boxes unchanged."""
+    ax = artist.axes
+    if ax is not None and artist not in ax._children:
+        # Axes title layout does not honor the title's in_layout flag.
+        return False
+    if type(artist) is Text and ax is None:
+        fig = artist.get_figure()
+        if fig is None or (artist not in fig.texts and artist not in fig.artists):
+            # Axis labels and tick texts have no .axes and their parent Axis
+            # also measures them regardless of their in_layout flag.
+            return False
+    if not artist.get_in_layout():
+        return True
+    return ax is not None and artist._fully_clipped_to_axes()
+
+
 class _Look:
     """One drawn artist's colors and opacity as made, set to absolute levels.
 
@@ -1461,6 +1532,15 @@ class _Look:
 
     def __init__(self, artist, background):
         self.artist = artist
+        self.presence = 1.0
+        self._visibility_hook = False
+        self._custom_draw = "draw" in artist.__dict__
+        self._custom_visibility = "set_visible" in artist.__dict__
+        # Plain text dominates the cost of absent groups. A local draw guard
+        # also covers layout participants and callers that re-show a leaf after
+        # Stage.weigh. Keep their visibility and extents intact during layout.
+        if type(artist) is Text and not self._custom_draw:
+            artist.draw = self._draw_present
         self.background = background
         self.alpha = artist.get_alpha()
         self.cmap = (
@@ -1493,6 +1573,47 @@ class _Look:
 
     def set(self, presence, contrast):
         """Draw the artist at `presence` of its opacity and `contrast` of its color."""
+        self.presence = presence
+        self._set_colors(presence, contrast)
+        self._visibility()
+
+    def _draw_present(self, renderer):
+        """Keep layout extents while skipping a proven empty text draw."""
+        if self.presence == 0.0 and _stage_no_ink(self.artist):
+            self.artist.stale = False
+            return
+        return Text.draw(self.artist, renderer)
+
+    def _caller_visible(self, visible):
+        """Give an explicit caller visibility request precedence over Stage."""
+        self.artist._eyepiece_stage_hidden = False
+        return Artist.set_visible(self.artist, visible)
+
+    def _visibility(self):
+        artist = self.artist
+        absent = (
+            self.presence == 0.0
+            and not self._custom_draw
+            and not self._custom_visibility
+            and _stage_no_ink(artist)
+            and _stage_can_hide(artist)
+        )
+        owned = getattr(artist, "_eyepiece_stage_hidden", False)
+        if absent and artist.get_visible():
+            if not self._visibility_hook:
+                # A callback cannot observe set_visible(False) when already
+                # hidden: Matplotlib suppresses that notification. Record every
+                # explicit caller request, including that no-op, instead.
+                artist.set_visible = self._caller_visible
+                self._visibility_hook = True
+            Artist.set_visible(artist, False)
+            artist._eyepiece_stage_hidden = True
+        elif owned and not absent:
+            artist._eyepiece_stage_hidden = False
+            Artist.set_visible(artist, True)
+
+    def _set_colors(self, presence, contrast):
+        """Set absolute colors before deciding whether drawing can be omitted."""
         artist = self.artist
         if self.cmap is not None:
             level = presence * contrast
@@ -1639,6 +1760,12 @@ class Stage:
     keeps its transparency differences at every level.
     Keep artists recolored by a draw function on every frame, such as bars,
     out of Stage groups, because the stage overwrites their colors.
+
+    At zero presence, standard leaves proven to draw no ink are hidden when
+    that preserves layout. Only visibility taken away by Stage is restored;
+    an explicit caller hide remains hidden. Transparent plain text that must
+    retain its layout extent skips painting while remaining visible. Effects,
+    hatches and custom artist draws retain their normal drawing paths.
 
     Args:
         groups: Mapping of group name to an artist, an Axes, or an iterable

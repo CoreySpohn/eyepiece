@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import uuid
 from collections.abc import Callable, Mapping
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from dataclasses import dataclass, replace
 from functools import partial
 from numbers import Integral, Real
@@ -19,7 +19,7 @@ from typing import NamedTuple
 import matplotlib
 
 from eyepiece._motion import frame_count
-from eyepiece._render_keys import content_key
+from eyepiece._render_keys import _canonical, content_key
 from eyepiece._render_pool import _frame_source, _validate_on_rescale, render_frames
 from eyepiece._render_poster import render_poster
 
@@ -135,6 +135,11 @@ class ClipSpec:
             this callable to place companion outputs beside the video.
         adopt_build: Optional picklable builder with the same signature as
             build, reproducing videos made with an older figure or stamp.
+        frame_key: Optional picklable callable taking a frame item before draw.
+            Equal consecutive non-None hashable keys promise identical pixels
+            and skip drawing and rasterization, as in render_frames. Defaults
+            to None. Represent its source and inputs in modules and clock or
+            other named key inputs. Draw must remain absolute after skips.
     """
 
     slug: str
@@ -158,6 +163,7 @@ class ClipSpec:
     frame_at_for: object = None
     adopt_build: object = None
     target_for: Callable[[Variant], str | Path] | None = None
+    frame_key: object = None
 
 
 class VariantResult(NamedTuple):
@@ -215,6 +221,8 @@ def _variant_video(
     *,
     target=None,
     work_dir=None,
+    silent_source=None,
+    retain_silent=None,
 ):
     """Render once, atomically replacing a narrated target after mux succeeds."""
     import hwostyle
@@ -224,45 +232,78 @@ def _variant_video(
     target.parent.mkdir(parents=True, exist_ok=True)
     work = target.parent if work_dir is None else work_dir
     work.mkdir(parents=True, exist_ok=True)
+    frames = _frame_source(spec.frames, spec.frame_at) + sum(hold)
+    if silent_source is not None and not variant.narrated:
+        # A narrated-first request may already have produced this picture.
+        # Never move a source that another variant still needs.
+        with tempfile.TemporaryDirectory(
+            prefix=f".{target.stem}.copy-", dir=work
+        ) as tmp:
+            copied = Path(tmp) / "silent.mp4"
+            shutil.copyfile(silent_source, copied)
+            _publish_video(copied, target)
+        return target, frames
     with (
         tempfile.TemporaryDirectory(prefix=f".{target.stem}.narration-", dir=work)
         if variant.narrated
         else nullcontext()
     ) as scratch:
-        silent = Path(scratch) / "silent.mp4" if variant.narrated else target
-        result = render_frames(
-            partial(spec.build, venue, variant.mode),
-            spec.frames,
-            silent,
-            fps=venue.fps,
-            dpi=venue.dpi,
-            workers=workers,
-            frame_at=spec.frame_at,
-            hold=hold,
-            encoder=spec.encoder,
-            extra_ffmpeg_args=spec.extra_ffmpeg_args,
-            setup=partial(hwostyle.use, variant.mode),
-            rc=dict(venue.rc or {}),
-            work_dir=work / f".chunks-{target.stem}",
-            key=key,
-            on_rescale=spec.on_rescale,
+        silent = (
+            silent_source
+            or retain_silent
+            or (Path(scratch) / "silent.mp4" if variant.narrated else target)
         )
+        if silent_source is None:
+            result = render_frames(
+                partial(spec.build, venue, variant.mode),
+                spec.frames,
+                silent,
+                fps=venue.fps,
+                dpi=venue.dpi,
+                workers=workers,
+                frame_at=spec.frame_at,
+                hold=hold,
+                encoder=spec.encoder,
+                extra_ffmpeg_args=spec.extra_ffmpeg_args,
+                setup=partial(hwostyle.use, variant.mode),
+                rc=dict(venue.rc or {}),
+                work_dir=work / f".chunks-{target.stem}",
+                key=key,
+                on_rescale=spec.on_rescale,
+                frame_key=spec.frame_key,
+            )
+            frames = result.frames
         if variant.narrated:
             from eyepiece import narration
 
             muxed = Path(scratch) / "mux.mp4"
+            mux_options = {"work_dir": scratch} if work_dir is not None else {}
+            if spec.encoder is not None or spec.extra_ffmpeg_args:
+                # A copied stream already has the encoder's color metadata.
+                # In particular, do not retag a caller's RGB or BT.601 picture.
+                mux_options["encoder"] = {**(spec.encoder or {}), "colorspace": None}
             narration.mux(
                 silent,
                 audio,
                 muxed,
-                **({"work_dir": scratch} if work_dir is not None else {}),
+                **mux_options,
             )
             _publish_video(muxed, target)
-        return target, result.frames
+        return target, frames
 
 
 def _adopt_video(
-    spec, variant, venue, out_dir, target, hold, audio, workers, *, work_dir=None
+    spec,
+    variant,
+    venue,
+    out_dir,
+    target,
+    hold,
+    audio,
+    workers,
+    *,
+    work_dir=None,
+    silent_source=None,
 ):
     """Compare an isolated old render, preserving the target and resume chunks."""
     work = target.parent if work_dir is None else work_dir
@@ -280,6 +321,7 @@ def _adopt_video(
             workers,
             target=scratch,
             work_dir=work_dir,
+            silent_source=silent_source,
         )
         return filecmp.cmp(scratch, target, shallow=False)
     finally:
@@ -309,6 +351,10 @@ def render_variants(
     cannot leave it marked current. Narrated variants are exempt from venue
     frame budgets because speech determines their length.
     Per-variant frame callbacks run only in the parent before keying or building.
+    Silent and narrated requests with identical visual inputs share one encode;
+    narration copies that video's stream without redrawing. Different frame
+    sources, frame mappings, or per-variant data retain separate renders.
+    A current requested silent output can also supply a changed audio variant.
     With adopt=True, an old builder may reproduce an existing non-current video
     exactly; matching videos keep their bytes and modification times and are
     recorded under the new key. Posters use the current builder. Extra outputs
@@ -343,6 +389,8 @@ def render_variants(
     import hwostyle
 
     _validate_on_rescale(spec.on_rescale)
+    if spec.frame_key is not None and not callable(spec.frame_key):
+        raise TypeError("frame_key must be callable or None")
     if adopt and spec.adopt_build is None:
         raise ValueError("adopt=True requires adopt_build")
     requested = list(dict.fromkeys(variants))
@@ -433,38 +481,110 @@ def render_variants(
         targets.add(target)
         resolved.append((variant, variant_spec, count, target))
     jobs = []
+    prior_sources = {}
     for variant, variant_spec, count, target in resolved:
         venue = venues[variant.venue]
+        data = spec.data(variant) if callable(spec.data) else spec.data
+        # All other picture inputs are shared by this ClipSpec. Compare actual
+        # frame items and data, and require the very same mapping callable:
+        # matching counts or callable-presence flags cannot prove equivalence.
+        visual = (
+            hashlib.sha256(
+                _canonical((variant.venue, variant.mode, variant_spec.frames, data))
+            ).digest(),
+            id(variant_spec.frame_at),
+        )
         hold = tuple(frame_count(seconds, venue.fps) for seconds in spec.hold_s)
         audio = Path(spec.audio(variant)) if variant.narrated else None
         extra = spec.extra
         if audio is not None:
             with audio.open("rb") as stream:
                 extra = (*extra, hashlib.file_digest(stream, "sha256").hexdigest())
-        key = content_key(
+        settings = {
+            "variant": variant._asdict(),
+            "fps": venue.fps,
+            "dpi": venue.dpi,
+            "rc": dict(venue.rc or {}),
+            "hold": hold,
+            "frames": variant_spec.frames,
+            "frame_at": variant_spec.frame_at is not None,
+            "encoder": spec.encoder,
+            "extra_ffmpeg_args": spec.extra_ffmpeg_args,
+            **({"poster": spec.poster} if spec.poster is not None else {}),
+            **({"frame_key": True} if spec.frame_key is not None else {}),
+        }
+        key_inputs = dict(
             script=spec.script,
             clock=spec.clock,
             modules=spec.modules,
-            data=spec.data(variant) if callable(spec.data) else spec.data,
-            settings={
-                "variant": variant._asdict(),
-                "fps": venue.fps,
-                "dpi": venue.dpi,
-                "rc": dict(venue.rc or {}),
-                "hold": hold,
-                "frames": variant_spec.frames,
-                "frame_at": variant_spec.frame_at is not None,
-                "encoder": spec.encoder,
-                "extra_ffmpeg_args": spec.extra_ffmpeg_args,
-                **({"poster": spec.poster} if spec.poster is not None else {}),
-            },
+            data=data,
+            settings=settings,
             extra=extra,
         )
-        jobs.append((variant, variant_spec, count, venue, hold, audio, key, target))
+        key = content_key(**key_inputs)
+        silent_variant = variant._replace(narrated=False)
+        if (
+            variant.narrated
+            and silent_variant not in requested
+            and not force
+            and spec.frames_for is None
+            and spec.frame_at_for is None
+            and not callable(spec.data)
+        ):
+            # With no per-variant inputs, an unrequested current silent entry
+            # is also an exact source. Do not evaluate extra frame callbacks or
+            # target_for just to discover it; its manifest stores the path.
+            entry = manifest.entry(spec.slug, silent_variant.name)
+            if entry is not None and entry["outputs"]:
+                silent_key = content_key(
+                    **{
+                        **key_inputs,
+                        "settings": {**settings, "variant": silent_variant._asdict()},
+                        "extra": spec.extra,
+                    }
+                )
+                source = manifest.root / entry["outputs"][0]["path"]
+                if source.is_relative_to(out_dir) and manifest.current(
+                    spec.slug, silent_variant.name, silent_key
+                ):
+                    prior_sources[visual] = source
+        jobs.append(
+            (variant, variant_spec, count, venue, hold, audio, key, target, visual)
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    sources = prior_sources
+    silent_visuals = set()
+    silent_jobs = {}
+    adoption_checks = {}
+    adopted_sources = {}
+    for job in jobs:
+        variant, _, _, _, _, _, key, target, visual = job
+        if not variant.narrated:
+            silent_visuals.add(visual)
+            silent_jobs[visual] = job
+            entry = manifest.entry(spec.slug, variant.name)
+            if (
+                not force
+                and entry is not None
+                and entry["outputs"]
+                and manifest.current(spec.slug, variant.name, key)
+                and manifest.root / entry["outputs"][0]["path"] == target
+            ):
+                sources[visual] = target
+    scratch_stack = ExitStack()
     try:
-        for variant, variant_spec, count, venue, hold, audio, key, target in jobs:
+        for (
+            variant,
+            variant_spec,
+            count,
+            venue,
+            hold,
+            audio,
+            key,
+            target,
+            visual,
+        ) in jobs:
             variant_work = (
                 None
                 if work_dir is None
@@ -490,22 +610,62 @@ def render_variants(
             adopted = False
             if rendered:
                 manifest.discard(spec.slug, variant.name)
+                if (
+                    adopt
+                    and not force
+                    and variant.narrated
+                    and visual not in sources
+                    and visual in silent_jobs
+                ):
+                    # Resolve legacy adoption of a later silent request first.
+                    # Otherwise narration could use the new builder while its
+                    # silent companion subsequently keeps the older picture.
+                    sv, ss, _, vv, sh, _, sk, st, _ = silent_jobs[visual]
+                    if st.is_file() and not manifest.current(spec.slug, sv.name, sk):
+                        sw = (
+                            None
+                            if work_dir is None
+                            else work_dir / st.relative_to(out_dir).parent
+                        )
+                        adoption_checks[sv] = _adopt_video(
+                            ss, sv, vv, out_dir, st, sh, None, workers, work_dir=sw
+                        )
+                        if adoption_checks[sv]:
+                            sources[visual] = adopted_sources[visual] = st
                 if adopt and not force and not current and target.is_file():
-                    adopted = _adopt_video(
-                        variant_spec,
-                        variant,
-                        venue,
-                        out_dir,
-                        target,
-                        hold,
-                        audio,
-                        workers,
-                        work_dir=variant_work,
-                    )
+                    if variant in adoption_checks:
+                        adopted = adoption_checks.pop(variant)
+                    else:
+                        adopted = _adopt_video(
+                            variant_spec,
+                            variant,
+                            venue,
+                            out_dir,
+                            target,
+                            hold,
+                            audio,
+                            workers,
+                            work_dir=variant_work,
+                            silent_source=adopted_sources.get(visual),
+                        )
                 if adopted:
                     rendered = False
                     frames = count + sum(hold)
                 else:
+                    retain_silent = None
+                    if (
+                        variant.narrated
+                        and visual not in sources
+                        and visual in silent_visuals
+                    ):
+                        work = target.parent if variant_work is None else variant_work
+                        work.mkdir(parents=True, exist_ok=True)
+                        retained = scratch_stack.enter_context(
+                            tempfile.TemporaryDirectory(
+                                prefix=f".{target.stem}.shared-", dir=work
+                            )
+                        )
+                        retain_silent = Path(retained) / "silent.mp4"
                     target, frames = _variant_video(
                         variant_spec,
                         variant,
@@ -517,7 +677,11 @@ def render_variants(
                         workers,
                         target=target,
                         work_dir=variant_work,
+                        silent_source=sources.get(visual),
+                        retain_silent=retain_silent,
                     )
+                    if retain_silent is not None:
+                        sources[visual] = retain_silent
                 outputs = [target]
                 if spec.poster is not None and not variant.narrated:
                     render_poster(
@@ -555,8 +719,15 @@ def render_variants(
             results.append(
                 VariantResult(variant, relative, key, rendered, frames, adopted)
             )
+            if not variant.narrated:
+                sources[visual] = target
+                if adopted:
+                    adopted_sources[visual] = target
     finally:
-        manifest.save()
+        try:
+            scratch_stack.close()
+        finally:
+            manifest.save()
     return results
 
 

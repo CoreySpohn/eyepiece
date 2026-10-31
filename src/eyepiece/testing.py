@@ -89,11 +89,18 @@ from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
 from eyepiece import _lazy_lookup
+from eyepiece._check_samples import (
+    _draw_sample,
+    _RasterPool,
+    _select_sample,
+    _share_samples,
+)
 from eyepiece._equation import _binding_rgb
 from eyepiece._meaning import (
     MEANING_KINDS,
     MeaningError,
     MeaningFault,
+    _collect_once,
     assert_meaning,
     meaning_faults,
     meaning_faults_chain,
@@ -346,10 +353,24 @@ def _marks(fig):
         if not ax.get_visible():
             continue
         for child in ax.get_children():
-            if child is ax.patch or isinstance(child, Spine) or not child.get_visible():
+            if (
+                child is ax.patch
+                or isinstance(child, Spine)
+                or not _check_visible(child)
+            ):
                 continue
             if isinstance(child, (Line2D, Patch, Collection, AxesImage)):
                 yield child
+
+
+def _check_visible(artist):
+    """Preserve geometry checks for Stage's rendering-only visibility change.
+
+    Caller-hidden marks stay excluded. Historically the outside and on-marks
+    checks include transparent marks (on-marks reads Line2D color alpha, not
+    scalar alpha); skipping their rasterization must not change those findings.
+    """
+    return artist.get_visible() or getattr(artist, "_eyepiece_stage_hidden", False)
 
 
 def _outside(fig, texts, boxes, renderer, tol):
@@ -509,17 +530,25 @@ def _protected(text):
 def _on_marks(fig, texts, boxes, dpi):
     cache = {}
     found = []
+    if not texts:
+        return found
+    # Resolve the ordered mark list once per axes, not once per label.
+    marks = [
+        [
+            mark
+            for mark in _default_avoid(ax, set())
+            if _check_visible(mark) and any(c[3] >= _SHOWN for c in _data_colors(mark))
+        ]
+        for ax in fig.axes
+        if ax.get_visible()
+    ]
     for text, box in zip(texts, boxes, strict=True):
         if _protected(text):
             continue
         base = to_rgba(text.get_color())
         text_box = text.get_window_extent(_renderer(fig))
-        for ax in fig.axes:
-            if not ax.get_visible():
-                continue
-            for mark in _default_avoid(ax, set()):
-                if not mark.get_visible() or not _data_colors(mark):
-                    continue
+        for group in marks:
+            for mark in group:
                 if mark not in cache:
                     cache[mark] = _parts(mark, dpi)
                 for part in cache[mark]:
@@ -536,8 +565,11 @@ def _on_marks(fig, texts, boxes, dpi):
     return found
 
 
-def _check_once(fig, dpi, minimum, overlap_tol, frame_tol, kinds):
-    fig.canvas.draw()
+def _check_once(fig, dpi, minimum, overlap_tol, frame_tol, kinds, *, drawn=False):
+    if not drawn:
+        sample = _draw_sample(fig)
+        if sample is not None:
+            return sample["readability"]
     renderer = _renderer(fig)
     texts = [t for t in _visible_texts(fig) if _finite(t.get_window_extent(renderer))]
     boxes = [_bbox(t, renderer) for t in texts]
@@ -1385,6 +1417,7 @@ class _Trace:
         self.times = list(times)
         self.keep_frames = keep_frames
         self.frames = []
+        self.rasters = _RasterPool()
         self.boxes = {}  # artist -> {sample index: (box, clip, ink, centroid)}
         self.order = []  # artists in order of first appearance
         self.size = (0.0, 0.0)
@@ -1400,10 +1433,32 @@ class _Trace:
                 if outline:
                     self.shapes.setdefault(artist, {})[k] = outline
 
-    def add(self, k, fig, renderer, extra=()):
-        fig.canvas.draw()
+    def add(self, k, fig, renderer, extra=(), *, drawn=False):
+        sample = None if drawn else _draw_sample(fig)
+        if sample is not None:
+            snapshot = sample["trace"]
+            if self.keep_frames:
+                self.frames.append(self.rasters.intern(snapshot.frames[0], copy=False))
+            self.size = snapshot.size
+            self.ticks.update(snapshot.ticks)
+            for artist in snapshot.order:
+                if isinstance(artist, AxesImage) and artist not in extra:
+                    continue
+                if artist not in self.boxes:
+                    self.boxes[artist] = {}
+                    self.order.append(artist)
+                self.boxes[artist][k] = snapshot.boxes[artist][0]
+                if artist in snapshot.tick_text:
+                    self.tick_text.setdefault(artist, {})[k] = snapshot.tick_text[
+                        artist
+                    ][0]
+            for artist, shapes in snapshot.shapes.items():
+                self.shapes.setdefault(artist, {})[k] = shapes[0]
+            return True
         if self.keep_frames:
-            self.frames.append(np.asarray(fig.canvas.buffer_rgba()).copy())
+            self.frames.append(
+                self.rasters.intern(np.asarray(fig.canvas.buffer_rgba()))
+            )
         self.size = (float(fig.bbox.width), float(fig.bbox.height))
         for ax in fig.axes:
             for axis in (ax.xaxis, ax.yaxis):
@@ -1476,11 +1531,14 @@ class _Trace:
 def _steps(frames):
     """Mean absolute pixel change between consecutive frames."""
     out = []
-    before = frames[0].astype(np.int16)
-    for frame in frames[1:]:
-        after = frame.astype(np.int16)
-        out.append(float(np.abs(after - before).mean()))
-        before = after
+    pixels = frames[0].astype(np.int16)
+    for before, after in itertools.pairwise(frames):
+        if before is after:
+            out.append(0.0)
+        else:
+            next_pixels = after.astype(np.int16)
+            out.append(float(np.abs(next_pixels - pixels).mean()))
+            pixels = next_pixels
     return out
 
 
@@ -1489,6 +1547,8 @@ def _changed(before, after, mask=None):
 
     Pixels where `mask` is True are left out.
     """
+    if before is after:
+        return None
     diff = np.abs(after.astype(np.int16) - before.astype(np.int16)).max(axis=2)
     if mask is not None:
         diff[mask] = 0
@@ -1573,6 +1633,8 @@ def _draw_cuts(trace, drawn, step_ks, captions=()):
         if k < 1:
             continue
         crops = regions.get(k - 1, []) + regions.get(k, [])
+        if trace.frames[k - 1] is trace.frames[k]:
+            continue
         if not any(
             not np.array_equal(trace.frames[k - 1][crop], trace.frames[k][crop])
             for crop in crops
@@ -1591,6 +1653,8 @@ def _check_jump(trace, jump_ratio, rest_times, tol, cuts=None, group=()):
     size = _steps(trace.frames)
     for k, mask in (cuts or {}).items():
         # Outside the draw group only: its own cut is by design.
+        if trace.frames[k - 1] is trace.frames[k]:
+            continue
         diff = np.abs(
             trace.frames[k].astype(np.int16) - trace.frames[k - 1].astype(np.int16)
         )
@@ -2156,8 +2220,8 @@ def _sample_trace(fig, at, samples, *, dpi, keep_frames, extra=(), shaped=()):
         trace = _Trace(samples, keep_frames=keep_frames)
         for k, t in enumerate(samples):
             at(t)
-            trace.add(k, fig, _renderer(fig), extra)
-            if shaped:
+            reused = trace.add(k, fig, _renderer(fig), extra)
+            if shaped and not reused:
                 trace.add_shapes(k, shaped)
     finally:
         fig.set_canvas(old_canvas)
@@ -2213,6 +2277,8 @@ def motion_ink(fig, at, times, driven, *, venue=None, fps=None, dpi=None):
             raise ValueError(f"driven artist {artist!r} is not visible at any sample")
     changed = driving = 0
     for k in range(1, len(samples)):
+        if trace.frames[k - 1] is trace.frames[k]:
+            continue
         before = trace.frames[k - 1].astype(np.int16)
         after = trace.frames[k].astype(np.int16)
         moved = np.abs(after - before).max(axis=2) > _INK_LEVEL
@@ -3292,6 +3358,30 @@ def _timing_still_run(words, start, end, still_s, arrivals=()):
     ]
 
 
+def _pixel_change_reaches(frame, reference, threshold):
+    """Test the exact pixel count, stopping once the threshold is reached."""
+    changed = 0
+    if frame.shape != reference.shape:
+        changed = np.count_nonzero(
+            np.any(
+                np.abs(frame.astype(np.int16) - reference.astype(np.int16)) > 12, axis=2
+            )
+        )
+        return changed >= threshold
+    if changed >= threshold:
+        return True
+    # Equality avoids the signed conversions on repeated still screens.
+    if np.array_equal(frame, reference):
+        return False
+    for row in range(0, len(frame), 32):
+        before = reference[row : row + 32].astype(np.int16)
+        after = frame[row : row + 32].astype(np.int16)
+        changed += np.count_nonzero(np.any(np.abs(after - before) > 12, axis=2))
+        if changed >= threshold:
+            return True
+    return False
+
+
 def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom, fps):
     """Compare each sample with the first frame of its still run."""
     words = sorted(
@@ -3318,14 +3408,13 @@ def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom,
     found = []
     for t, frame in _source_frames(source, seconds=seconds, fps=fps):
         height, width = frame.shape[:2]
-        kept = frame[: int(height * (1 - ignore_bottom))].astype(np.int16)
+        kept = frame[: int(height * (1 - ignore_bottom))]
         if reference is None:
-            reference, start = kept, t
+            reference, start = kept.copy(), t
         else:
-            changed = np.count_nonzero(np.any(np.abs(kept - reference) > 12, axis=2))
-            if changed >= still_change * height * width:
+            if _pixel_change_reaches(kept, reference, still_change * height * width):
                 found += _timing_still_run(words, start, t, still_s, arrivals)
-                reference, start = kept, t
+                reference, start = kept.copy(), t
         last = t
     if reference is not None:
         found += _timing_still_run(words, start, last + 1 / fps, still_s, arrivals)
@@ -3776,43 +3865,78 @@ def check_clip(
 
     def at(t):
         draw(frame_count(t, plan.fps))
+        _select_sample(fig, t)
+
+    extra = [
+        a
+        for move in declared
+        for a in (*(_declared(move, "artists") or ()), *(_declared(move, "rest") or ()))
+        if isinstance(a, AxesImage)
+    ]
+    shaped = [a for move in declared for a in _declared(move, "rectilinear") or ()]
+
+    review_set = set(review_times)
+    rasters = _RasterPool()
+
+    def capture(t):
+        # Capture geometry while the matching raster and layout are current.
+        trace = _Trace([t])
+        trace.rasters = rasters
+        trace.add(0, fig, _renderer(fig), extra, drawn=True)
+        trace.add_shapes(0, shaped)
+        return {
+            "trace": trace,
+            "readability": _check_once(
+                fig, fig.dpi, VENUES[venue], 2.0, 1.0, KINDS, drawn=True
+            )
+            if t in review_set
+            else [],
+            "meaning": _collect_once(fig, keys)
+            if keys is not None and t in review_set
+            else [],
+        }
 
     saved_reads = set(plan._read)
     plan._read.clear()
     try:
-        readability = readability_faults(fig, at=at, times=review_times, venue=venue)
-        # A persistent collision is one finding, rather than one per still.
-        seen = set()
-        unique = []
-        for fault in readability:
-            ident = (fault.kind, fault.artist, fault.other)
-            if ident not in seen:
-                seen.add(ident)
-                unique.append(fault)
-        meaning = (
-            meaning_faults(fig, at=at, times=review_times, keys=keys)
-            if keys is not None
-            else []
-        )
-        motion = motion_faults(
-            fig,
-            at=at,
-            times=times,
-            moves=declared,
-            steps=step_times,
-            hops=hops or (),
-            fps=plan.fps,
-        )
-        unread, _ = plan.unused_knobs()
-        speech = (
-            [] if plan.narration is None else list(speech_rate(plan.narration).fast)
-        )
-        ink = (
-            None if driven is None else motion_ink(fig, at, times, driven, fps=plan.fps)
-        )
-        return ClipReport(
-            unique, meaning, motion, list(plan.faults), list(unread), speech, ink
-        )
+        with _share_samples(fig, review_times if driven is None else times, capture):
+            readability = readability_faults(
+                fig, at=at, times=review_times, venue=venue
+            )
+            # A persistent collision is one finding, rather than one per still.
+            seen = set()
+            unique = []
+            for fault in readability:
+                ident = (fault.kind, fault.artist, fault.other)
+                if ident not in seen:
+                    seen.add(ident)
+                    unique.append(fault)
+            meaning = (
+                meaning_faults(fig, at=at, times=review_times, keys=keys)
+                if keys is not None
+                else []
+            )
+            motion = motion_faults(
+                fig,
+                at=at,
+                times=times,
+                moves=declared,
+                steps=step_times,
+                hops=hops or (),
+                fps=plan.fps,
+            )
+            unread, _ = plan.unused_knobs()
+            speech = (
+                [] if plan.narration is None else list(speech_rate(plan.narration).fast)
+            )
+            ink = (
+                None
+                if driven is None
+                else motion_ink(fig, at, times, driven, fps=plan.fps)
+            )
+            return ClipReport(
+                unique, meaning, motion, list(plan.faults), list(unread), speech, ink
+            )
     finally:
         plan._read.clear()
         plan._read.update(saved_reads)

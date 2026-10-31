@@ -131,7 +131,9 @@ def _close_new_figures(existing):
 
 
 @contextmanager
-def _figure(build, frames, dpi, frame_at, setup, rc, on_rescale="ignore"):
+def _figure(
+    build, frames, dpi, frame_at, setup, rc, on_rescale="ignore", frame_key=None
+):
     """Build and freeze a figure under the same state in every process."""
     with ExitStack() as stack:
         stack.enter_context(matplotlib.rc_context())
@@ -150,8 +152,16 @@ def _figure(build, frames, dpi, frame_at, setup, rc, on_rescale="ignore"):
         # MovieWriter adjusts the figure before the caller draws frame zero.
         # Use the same roundoff correction as record's H.264 writer.
         fig.set_size_inches(adjusted_figsize(*fig.get_size_inches(), dpi, 2))
-        state = dict(fig=fig, draw=draw, frames=frames, frame_at=frame_at, dpi=dpi)
-        draw(fig, _item(state, 0))
+        state = dict(
+            fig=fig,
+            draw=draw,
+            frames=frames,
+            frame_at=frame_at,
+            dpi=dpi,
+            frame_key=frame_key,
+        )
+        state["initial_item"] = _item(state, 0)
+        draw(fig, state["initial_item"])
         state["initial_draw"] = True
         _Recorder(fig, [], {"frames": 0}, dpi)._freeze_layout()
         state["on_rescale"] = on_rescale
@@ -183,10 +193,22 @@ def _check_parent(state):
 
 def _raster(state, index):
     _check_parent(state)
-    fig = state["fig"]
     initial_draw = state.pop("initial_draw", False)
+    item = state["initial_item"] if index == 0 and initial_draw else _item(state, index)
+    key = state["frame_key"](item) if state["frame_key"] is not None else None
+    if key is not None:
+        try:
+            hash(key)
+        except TypeError as exc:
+            raise TypeError("frame_key must return a hashable value or None") from exc
+        previous = state.get("previous_frame")
+        if previous is not None and index == previous[0] + 1 and key == previous[1]:
+            _check_scales(state, index)
+            state["previous_frame"] = (index, key, previous[2])
+            return previous[2]
+    fig = state["fig"]
     if index != 0 or not initial_draw:
-        state["draw"](fig, _item(state, index))
+        state["draw"](fig, item)
     # Frame zero was already drawn before layout froze. A second draw could
     # measure the settled axes and move labels compared with record.
     # record invokes draw at the figure dpi, then savefig at the sink dpi.
@@ -200,6 +222,10 @@ def _raster(state, index):
             height, width, 4
         )
     _check_scales(state, index)
+    if key is not None:
+        state["previous_frame"] = (index, key, pixels)
+    else:
+        state.pop("previous_frame", None)
     return pixels
 
 
@@ -245,8 +271,12 @@ def _write_chunk(job, state):
     try:
         with partial.open("wb") as stream:
             stream.write(bytes(_HEADER.size + _LENGTH.size * (stop - start)))
+            previous_pixels = None
             for index in range(start, stop):
-                payload = zlib.compress(_raster(state, index).tobytes(), level=1)
+                pixels = _raster(state, index)
+                if pixels is not previous_pixels:
+                    payload = zlib.compress(memoryview(pixels), level=1)
+                    previous_pixels = pixels
                 lengths.append(len(payload))
                 crc = zlib.crc32(payload, crc)
                 stream.write(payload)
@@ -483,6 +513,9 @@ def _encoding_sink(path, size, fps, encoder, extra_ffmpeg_args):
     sink = RawSink(
         path, size, fps, encoder=encoder, extra_ffmpeg_args=extra_ffmpeg_args
     )
+    # Buffer small rasters together. Large frames pass straight through without
+    # a staging copy, and close() flushes the final partial buffer before wait().
+    sink._proc.stdin = io.BufferedWriter(sink._proc.stdin, buffer_size=1024 * 1024)
     try:
         yield sink
     except BaseException:
@@ -503,6 +536,17 @@ def _encoding_sink(path, size, fps, encoder, extra_ffmpeg_args):
                     f"ffmpeg failed writing {path}: {message or exc}"
                 ) from exc
             raise
+
+
+def _write_frame(sink, pixels):
+    """Write a validated, contiguous worker raster without RawSink's conversion."""
+    try:
+        sink._proc.stdin.write(memoryview(pixels).cast("B"))
+    except BrokenPipeError:
+        raise RuntimeError(
+            f"ffmpeg stopped accepting frames: {sink._stderr()}"
+        ) from None
+    sink.frames += 1
 
 
 def _encode(
@@ -563,17 +607,45 @@ def _encode(
                         warnings.warn(message, RuntimeWarning, stacklevel=3)
                         warned = True
             for index, pixels in enumerate(_read_chunk(job, size), start=job[2]):
-                sink.write(pixels)
+                _write_frame(sink, pixels)
                 repeats = hold[0] if index == 0 else 0
                 repeats += hold[1] if index == count - 1 else 0
                 for _ in range(repeats):
-                    sink.write(pixels)
+                    _write_frame(sink, pixels)
             if not resume:
                 _delete_chunk(job[0])
     if not keep_chunks or not resume:
         for job in jobs:
             _delete_chunk(job[0])
     return len(jobs), len(reused)
+
+
+def _available_cpus():
+    """Respect process CPU restrictions when the platform exposes them."""
+    process_count = getattr(os, "process_cpu_count", None)
+    if process_count is not None:
+        return process_count() or 1
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):
+        return os.cpu_count() or 1
+
+
+def _available_memory():
+    """Return free physical bytes without an optional process dependency."""
+    try:
+        pages = os.sysconf("SC_AVPHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+    except (AttributeError, OSError, ValueError):
+        return None
+    return pages * page_size if pages > 0 and page_size > 0 else None
+
+
+def _default_workers():
+    """Reserve a CPU and 1 GiB for encoding, then budget 1 GiB per worker."""
+    memory = _available_memory()
+    memory_workers = max(1, memory // 1024**3 - 1) if memory is not None else 1
+    return min(8, max(1, _available_cpus() - 1), memory_workers)
 
 
 def render_frames(
@@ -596,6 +668,7 @@ def render_frames(
     resume=True,
     keep_chunks=False,
     on_rescale="warn",
+    frame_key=None,
 ) -> RenderResult:
     """Render independent frames in chunks and encode them in index order.
 
@@ -618,12 +691,21 @@ def render_frames(
         path: Destination mp4, replaced only after successful encoding.
         fps: Encoded frames per second.
         dpi: Rasterization dots per inch.
-        workers: Process count; None uses available CPUs up to chunk count.
+        workers: Process count; None uses available CPUs and free memory,
+            reserving one CPU and 1 GiB for encoding and allowing 1 GiB per
+            worker, up to eight workers and the chunk count. If memory cannot
+            be probed, uses one worker. Explicit counts override this heuristic.
             One runs the same worker functions in the parent process.
         chunk_frames: Frames per chunk; None targets four chunks per worker,
             with at least eight frames per chunk.
         frame_at: Optional index-to-item callable, evaluated in the worker.
             Requires an integer frames count.
+        frame_key: Optional picklable callable taking a frame item before draw.
+            Equal consecutive non-None hashable keys promise identical pixels
+            and allow skipping both draw and rasterization. None disables
+            reuse for that item. Draw must set absolute state even after skipped
+            items. Include the callback's source and inputs in the caller key.
+            Defaults to None, drawing every frame; clocks are never inferred.
         hold: Extra repetitions of the first and last raster, respectively.
         encoder: Overrides for the RawSink encoder profile.
         extra_ffmpeg_args: Additional output arguments for RawSink.
@@ -662,7 +744,9 @@ def render_frames(
         raise ValueError("render_frames requires an .mp4 path")
     if workers is not None and (not isinstance(workers, int) or workers < 1):
         raise ValueError("workers must be a positive int")
-    requested = workers if workers is not None else (os.cpu_count() or 1)
+    if frame_key is not None and not callable(frame_key):
+        raise TypeError("frame_key must be callable or None")
+    requested = workers if workers is not None else _default_workers()
     if chunk_frames is None:
         chunk_frames = max(8, math.ceil(count / (4 * requested)))
     if not isinstance(chunk_frames, int) or chunk_frames < 1:
@@ -685,7 +769,9 @@ def render_frames(
         try:
             if workers == 1:
                 state = stack.enter_context(
-                    _figure(build, frames, dpi, frame_at, setup, rc, on_rescale)
+                    _figure(
+                        build, frames, dpi, frame_at, setup, rc, on_rescale, frame_key
+                    )
                 )
                 size = state["size"]
             else:
@@ -701,6 +787,7 @@ def render_frames(
                             setup=setup,
                             rc=rc,
                             on_rescale=on_rescale,
+                            frame_key=frame_key,
                         ),
                         min(count, chunk_frames),
                     )

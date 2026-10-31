@@ -60,6 +60,7 @@ from matplotlib.spines import Spine
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 
+from eyepiece._check_samples import _draw_sample
 from eyepiece.attention import _renderer
 
 __all__ = [
@@ -392,22 +393,28 @@ def _resolver(keys):
 
 def _collect(fig, at, times, keys):
     """(time, [_Part]) per sample time."""
-    resolve = _resolver(keys)
     samples = [None] if at is None else list(times)
     frames = []
     for t in samples:
         if at is not None:
             at(t)
-        fig.canvas.draw()
-        renderer = _renderer(fig)
-        backgrounds = {}
-        parts = []
-        for artist, gid in _walk(fig, None, fig):
-            if isinstance(artist, _IMAGES) or artist is fig:
-                continue
-            parts += _parts_of(artist, gid, resolve(gid), fig, renderer, backgrounds)
+        sample = _draw_sample(fig)
+        parts = _collect_once(fig, keys) if sample is None else sample["meaning"]
         frames.append((t, parts))
     return frames
+
+
+def _collect_once(fig, keys):
+    """Read meaning parts from an already drawn sample."""
+    resolve = _resolver(keys)
+    renderer = _renderer(fig)
+    backgrounds = {}
+    parts = []
+    for artist, gid in _walk(fig, None, fig):
+        if isinstance(artist, _IMAGES) or artist is fig:
+            continue
+        parts += _parts_of(artist, gid, resolve(gid), fig, renderer, backgrounds)
+    return parts
 
 
 def _shared(sharing):
