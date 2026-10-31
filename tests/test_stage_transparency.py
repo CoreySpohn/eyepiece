@@ -1,6 +1,7 @@
 """Pixel and visibility contracts for absent Stage artists."""
 
 import io
+from pathlib import Path
 
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
@@ -166,7 +167,13 @@ def test_zero_only_and_current_marker_colors():
 
 
 def test_large_stage_matches_unoptimized_frames_and_findings(monkeypatch):
-    from stage_bench import findings, scene
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "benchmarks" / "stage_bench.py"
+    spec = importlib.util.spec_from_file_location("stage_bench", path)
+    bench = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bench)
+    findings, scene = bench.findings, bench.scene
 
     from eyepiece import attention
 
