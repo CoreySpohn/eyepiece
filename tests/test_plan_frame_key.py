@@ -108,7 +108,7 @@ def test_plan_key_covers_all_values_bits_types_sections_and_time():
     nan = struct.unpack("!d", bytes.fromhex("7ff8000000000001"))[0]
     other_nan = struct.unpack("!d", bytes.fromhex("7ff8000000000002"))[0]
     plan._knobs["x"][0:3] = [nan, nan, other_nan]
-    assert key(0) == key(1) and key(0) != key(2)
+    assert key(0) != key(1) and key(0) != key(2)
     plan._knobs["x"][0:2] = [(None, (True, b"x", -0.0)), (None, (True, b"x", 0.0))]
     assert key(0) != key(1)
     hash(key(0))
@@ -123,6 +123,84 @@ def test_plan_key_rejects_unknown_state_and_outside_frames():
         plan._knobs["x"][0] = value
         with pytest.raises(TypeError, match="frame_key"):
             plan.frame_key(0)
+
+
+@pytest.mark.parametrize(
+    "first,second",
+    [(np.int64(7), np.longlong(7)), (7, np.int64(7)), (7.0, np.float64(7))],
+)
+def test_plan_key_scalar_types_preserve_raster_bytes(first, second):
+    tl = ep.Timeline({"x": first})
+    tl.hold(0.2)
+    tl.hold(0.2, to={"x": second})
+    plan = tl.at_fps(10)
+    key = partial(plan.frame_key, include_time=False)
+    assert type(plan.value(0, "x")) is not type(plan.value(2, "x"))
+
+    def build():
+        fig = plt.figure(figsize=(0.96, 0.54))
+
+        def draw(fig, k):
+            fig.set_facecolor(
+                "white" if type(plan.value(k, "x")) is type(first) else "black"
+            )
+
+        return fig, draw
+
+    outputs = []
+    for candidate in (None, key):
+        with pool._figure(
+            build, 4, 100, None, None, None, frame_key=candidate
+        ) as state:
+            outputs.append([pool._raster(state, k).tobytes() for k in range(4)])
+    assert outputs[0][0] != outputs[0][2]
+    assert outputs[0] == outputs[1]
+    assert key(0) != key(2)
+
+
+@pytest.mark.parametrize("scalar", [float, np.float32, np.float64, np.longdouble])
+def test_plan_key_nan_lookup_preserves_raster_bytes(scalar):
+    first, second = scalar("nan"), scalar("nan")
+    palette = {first: "white"}
+    tl = ep.Timeline({"x": first})
+    tl.hold(0.2)
+    tl.hold(0.2, to={"x": second})
+    plan = tl.at_fps(10)
+    key = partial(plan.frame_key, include_time=False)
+
+    def build():
+        fig = plt.figure(figsize=(0.96, 0.54))
+
+        def draw(fig, k):
+            fig.set_facecolor(palette.get(plan.value(k, "x"), "black"))
+
+        return fig, draw
+
+    outputs = []
+    for candidate in (None, key):
+        with pool._figure(
+            build, 4, 100, None, None, None, frame_key=candidate
+        ) as state:
+            outputs.append([pool._raster(state, k).tobytes() for k in range(4)])
+    assert outputs[0][0] != outputs[0][2]
+    assert outputs[0] == outputs[1]
+    assert key(0) != key(0)
+    assert key(0) != key(2)
+
+
+def test_verifier_ignores_tight_savefig_bbox():
+    fig, _ = plt.subplots(figsize=(2, 2), dpi=100)
+    try:
+        with matplotlib.rc_context({"savefig.bbox": "tight"}):
+            assert (
+                ep.testing.check_frame_key(
+                    fig, lambda k: None, lambda k: 0, frames=[0, 1]
+                )
+                == []
+            )
+            assert matplotlib.rcParams["savefig.bbox"] == "tight"
+    finally:
+        plt.close(fig)
 
 
 def test_verifier_reports_every_bad_run_and_gap_without_skipping_paint(tmp_path):

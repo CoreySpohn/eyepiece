@@ -1768,21 +1768,28 @@ class _Frames:
 def _frame_key_value(value):
     """Encode immutable scalar state without numeric equality or rounding."""
     kind = type(value)
+    scalar_type = (kind.__module__, kind.__qualname__)
     if kind is float:
-        return ("float", struct.pack("!d", value))
+        return (
+            scalar_type,
+            object() if math.isnan(value) else struct.pack("!d", value),
+        )
     if kind is complex:
-        return ("complex", struct.pack("!dd", value.real, value.imag))
+        return (scalar_type, struct.pack("!dd", value.real, value.imag))
     if kind in (type(None), bool, int, str, bytes):
-        return (kind.__name__, value)
+        return (scalar_type, value)
     if kind is tuple:
-        return ("tuple", tuple(_frame_key_value(v) for v in value))
+        return (scalar_type, tuple(_frame_key_value(v) for v in value))
     if (
         isinstance(value, np.generic)
         and kind is value.dtype.type
         and value.dtype.kind in "biufcSUmM"
         and value.dtype.metadata is None
     ):
-        return ("numpy", value.dtype.str, value.tobytes())
+        token = (
+            object() if value.dtype.kind == "f" and np.isnan(value) else value.tobytes()
+        )
+        return (scalar_type, value.dtype.str, token)
     # Unsupported objects can carry state that equality or a pickle omits.
     # Refuse reuse rather than guessing how a draw might inspect that state.
     raise TypeError(
@@ -1913,10 +1920,12 @@ class Plan:
         extra dependency to a composite key or decline raster reuse. Verify
         representative runs with eyepiece.testing.check_frame_key first.
 
-        Scalar types are distinguished; float keys preserve all bits,
-        including signed zero and NaN payloads. NumPy scalar keys include
-        their dtype and bytes. Key generation does not mark
-        knobs as read. Plans and fixed data must remain unchanged during use.
+        Scalar types include their exact module and qualified name; float
+        keys preserve all bits, including signed zero. NumPy scalar keys
+        include their dtype and bytes. Python and NumPy floating NaNs receive
+        a fresh token on every call, so frames containing NaN never share keys.
+        Key generation does not mark knobs as read. Plans and fixed data must
+        remain unchanged during use.
 
         Args:
             k: Frame index in [0, n_frames).

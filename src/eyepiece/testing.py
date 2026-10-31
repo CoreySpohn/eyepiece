@@ -74,7 +74,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
-from matplotlib import rcParams
+from matplotlib import rc_context, rcParams
 from matplotlib.axis import Axis
 from matplotlib.backend_bases import GraphicsContextBase
 from matplotlib.backends.backend_agg import FigureCanvasAgg
@@ -197,10 +197,10 @@ def check_frame_key(fig, draw, key, *, frames):
     be hashable with scalar equality. Every member of a run is compared to
     its first frame, including its endpoints and all supplied interior frames.
 
-    Uses savefig at the figure's current dpi with its facecolor, as the movie
-    rasterizer does. Configure figure size, dpi, style and layout exactly as
-    for the intended output before checking. The original canvas is restored;
-    the figure ends in the last supplied pose. No layout or stale-state
+    Uses savefig at the figure's current dpi with its facecolor and tight bbox
+    disabled, as the movie rasterizer does. Configure size, dpi, style and layout
+    exactly as for the intended output before checking. The original canvas is
+    restored; the figure ends in the last supplied pose. No layout or stale-state
     optimization is applied. This checks Agg pixels only; it does not certify
     vector bytes or frames outside the sample. Check the whole clip to cover
     every run, and use frame_faults separately to check draw order independence.
@@ -246,7 +246,7 @@ def check_frame_key(fig, draw, key, *, frames):
                 dict(frames=tuple(run), key=run_key, pixel_count=int(changed.sum()))
             )
 
-    with _agg_canvas(fig):
+    with _agg_canvas(fig), rc_context({"savefig.bbox": None}):
         for k in frames:
             current_key = key(k)
             if current_key is not None:

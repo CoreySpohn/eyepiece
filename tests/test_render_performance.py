@@ -262,6 +262,65 @@ def test_default_worker_budget(monkeypatch, cpus, memory, expected):
     assert pool._default_workers() == expected
 
 
+@pytest.mark.parametrize("version", [1, 2])
+@pytest.mark.parametrize(
+    "host_gib,limit_gib,used_gib,expected",
+    [(128, 12, 2, 10), (4, 12, 2, 4), (128, 12, 13, 1)],
+)
+def test_default_worker_budget_respects_cgroup_memory(
+    monkeypatch, version, host_gib, limit_gib, used_gib, expected
+):
+    monkeypatch.setattr(pool.sys, "platform", "linux")
+    monkeypatch.setattr(pool, "_available_cpus", lambda: 64)
+    monkeypatch.setattr(
+        pool.os,
+        "sysconf",
+        lambda name: host_gib * 1024**3 // 4096 if name == "SC_AVPHYS_PAGES" else 4096,
+    )
+    root = Path("/sys/fs/cgroup")
+    limit, usage = (
+        ("memory.max", "memory.current")
+        if version == 2
+        else ("memory/memory.limit_in_bytes", "memory/memory.usage_in_bytes")
+    )
+    files = {
+        root / limit: str(limit_gib * 1024**3),
+        root / usage: str(used_gib * 1024**3),
+    }
+
+    def read_text(path):
+        if path not in files:
+            raise FileNotFoundError(path)
+        return files[path]
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    assert pool._default_workers() == expected
+
+
+@pytest.mark.parametrize(
+    "limit,usage",
+    [("max", "0"), (str(2**60), "0"), (None, None), ("invalid", "0"), ("1024", None)],
+)
+def test_memory_probe_cgroup_fallbacks(monkeypatch, limit, usage):
+    monkeypatch.setattr(pool.sys, "platform", "linux")
+    monkeypatch.setattr(
+        pool.os,
+        "sysconf",
+        lambda name: 128 * 1024**3 // 4096 if name == "SC_AVPHYS_PAGES" else 4096,
+    )
+
+    def read_text(path):
+        value = (
+            usage if "usage" in path.name or path.name == "memory.current" else limit
+        )
+        if value is None:
+            raise PermissionError(path)
+        return value
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    assert pool._available_memory() == 128 * 1024**3
+
+
 def test_cpu_and_memory_probe_fallbacks(monkeypatch):
     monkeypatch.delattr(pool.os, "process_cpu_count", raising=False)
     monkeypatch.delattr(pool.os, "sched_getaffinity", raising=False)

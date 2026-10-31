@@ -632,13 +632,31 @@ def _available_cpus():
 
 
 def _available_memory():
-    """Return free physical bytes without an optional process dependency."""
+    """Return free physical bytes, bounded by Linux cgroup headroom."""
     try:
         pages = os.sysconf("SC_AVPHYS_PAGES")
         page_size = os.sysconf("SC_PAGE_SIZE")
     except (AttributeError, OSError, ValueError):
         return None
-    return pages * page_size if pages > 0 and page_size > 0 else None
+    if pages <= 0 or page_size <= 0:
+        return None
+    memory = pages * page_size
+    if sys.platform == "linux":
+        root = Path("/sys/fs/cgroup")
+        for limit_name, usage_name, ceiling in (
+            ("memory.max", "memory.current", math.inf),
+            ("memory/memory.limit_in_bytes", "memory/memory.usage_in_bytes", 2**60),
+        ):
+            try:
+                limit = int((root / limit_name).read_text())
+                if limit < 0 or limit >= ceiling:
+                    continue
+                usage = int((root / usage_name).read_text())
+            except (OSError, ValueError):
+                continue
+            if usage >= 0:
+                memory = min(memory, max(0, limit - usage))
+    return memory
 
 
 def _validate_worker_peak(worker_peak_bytes):
