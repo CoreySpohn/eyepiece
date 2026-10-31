@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.17.0](https://github.com/CoreySpohn/eyepiece/compare/v0.16.0...v0.17.0) (2026-10-31)
+
+
+### Features
+
+* **render:** render_variants work_dir keeps chunks and scratch out of out_dir ([1883cbf](https://github.com/CoreySpohn/eyepiece/commit/1883cbf8853594e512c56b5842711c14b92d48f2))
+* **testing:** opt-in cvd-fill check of motif fills at their opacities ([e24e675](https://github.com/CoreySpohn/eyepiece/commit/e24e6751e86d1dc0b7fc4d603d40c6f02cc66d10))
+
+
+### Bug Fixes
+
+* bound memory of variant visual keys with a digest ([a4dc36c](https://github.com/CoreySpohn/eyepiece/commit/a4dc36cab805d482477de5d19c56f118f53d0aa9))
+* number finding labels by base artist type under the stage guard ([12f9651](https://github.com/CoreySpohn/eyepiece/commit/12f96511e9cc54b6b73cc90f7a3f52c25e100fac))
+* paint-skip absent stage leaves, keep visibility, exact mux and frame reuse ([178bd14](https://github.com/CoreySpohn/eyepiece/commit/178bd1406b91ad5465c88d933f85a29f19c0da5b))
+* share variant frames only for exact inputs, keep rasterization, guard fewer leaves ([c0fc575](https://github.com/CoreySpohn/eyepiece/commit/c0fc5758a22358b6b278a9f7716ce9fb6182e224))
+
+
+### Performance Improvements
+
+* hide inkless stage leaves, render frames once, share check samples ([e136756](https://github.com/CoreySpohn/eyepiece/commit/e13675620f89803a130a06833a6e427fd22bce7f))
+
 ## [0.16.0](https://github.com/CoreySpohn/eyepiece/compare/v0.15.0...v0.16.0) (2026-10-21)
 
 
