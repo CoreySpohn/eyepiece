@@ -34,7 +34,7 @@ def _video_frames(source, start=0.0):
     args = [
         resolve_ffmpeg(), "-v", "info", "-nostdin", "-ss", f"{start:.6f}",
         "-i", os.fspath(source), "-map", "0:v:0", "-an", "-sn",
-        "-vf", "showinfo", "-fps_mode", "passthrough",
+        "-vf", "showinfo", "-vsync", "0",
         "-c:v", "ppm", "-pix_fmt", "rgb24", "-f", "image2pipe", "pipe:1",
     ]  # fmt: skip
     timestamps = Queue(maxsize=4)

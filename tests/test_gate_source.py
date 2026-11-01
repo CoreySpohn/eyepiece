@@ -108,7 +108,7 @@ def test_variable_rate_samples_match_input_seeks(video, tmp_path):
         [
             resolve_ffmpeg(), "-v", "error", "-y", "-i", str(video),
             "-vf", "select='eq(n,0)+eq(n,2)+eq(n,10)+eq(n,29)'",
-            "-fps_mode", "passthrough", "-c:v", "ffv1", str(sparse),
+            "-vsync", "0", "-c:v", "ffv1", str(sparse),
         ],
         check=True,
         capture_output=True,

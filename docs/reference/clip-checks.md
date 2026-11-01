@@ -103,9 +103,10 @@ the same complete-state promise as readability, including source pixels.
 
 Motion checks spool losslessly compressed pixels to temporary storage with
 a bounded decoded cache. Geometry and scalar observations remain in memory.
-This also bounds pixel memory in `ep.testing.check_clip`, including its
-shared review frames and optional motion-ink pass. Disk use grows with the
-number of distinct sampled pictures. Set `TMPDIR` to choose a storage disk.
+This also bounds sampled-frame memory in `ep.testing.check_clip`, including
+its shared review frames and optional motion-ink pass. Each declared cut or
+changed hop still keeps one full-canvas mask in memory. Disk use grows with
+the number of distinct sampled pictures. Set `TMPDIR` to choose a storage disk.
 The sampling windows and fault algorithms are unchanged: combining several
 per-window motion checks into one global check can change the jump baseline.
 
