@@ -79,7 +79,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 from matplotlib import rc_context, rcParams
 from matplotlib.axis import Axis
-from matplotlib.backend_bases import RendererBase
+from matplotlib.backend_bases import GraphicsContextBase, RendererBase
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_hex, to_rgb, to_rgba
@@ -468,7 +468,8 @@ def _name(artist):
 
 
 def _alpha(artist, color):
-    return to_rgba(color, artist.get_alpha())[3]
+    alpha = artist.get_alpha()
+    return (1.0 if alpha is None else float(alpha)) * to_rgba(color)[3]
 
 
 def _walk(artist):
@@ -489,14 +490,29 @@ def _walk(artist):
             yield from _walk(child)
 
 
+def _text_alpha(artist):
+    """The greatest opacity of a text's fill or stroked outline."""
+    alpha = _alpha(artist, artist.get_color())
+    for effect in artist.get_path_effects():
+        if isinstance(effect, withStroke):
+            # Reproduce the graphics context that Text.draw passes to Stroke,
+            # including explicit opacity overrides on either one.
+            gc = GraphicsContextBase()
+            gc.set_foreground(to_rgba(artist.get_color()), isRGBA=True)
+            gc.set_alpha(artist.get_alpha())
+            effect._update_gc(gc, effect._gc)
+            if gc.get_linewidth() > 0:
+                alpha = max(alpha, gc.get_rgb()[3])
+    return alpha
+
+
 def _visible_texts(fig, *, collision=False):
     out = []
     for artist in _walk(fig):
         if (
             isinstance(artist, Text)
             and artist.get_text().strip()
-            and (_collision_ink(artist) if collision else _presence_ink(artist))
-            >= _SHOWN
+            and (_collision_ink(artist) if collision else _text_alpha(artist)) >= _SHOWN
         ):
             out.append(artist)
     return out
@@ -856,13 +872,20 @@ def _check_once(fig, dpi, minimum, overlap_tol, frame_tol, kinds, *, drawn=False
         if _finite(t.get_window_extent(renderer))
     ]
     boxes = [_bbox(t, renderer) for t in texts]
+    present = [
+        (text, box)
+        for text, box in zip(texts, boxes, strict=True)
+        if _text_alpha(text) >= _SHOWN
+    ]
+    present_texts = [text for text, _ in present]
+    present_boxes = [box for _, box in present]
     found = []
     if "overlap" in kinds:
         found += _overlaps(texts, boxes, overlap_tol)
     if "outside" in kinds:
-        found += _outside(fig, texts, boxes, renderer, frame_tol)
+        found += _outside(fig, present_texts, present_boxes, renderer, frame_tol)
     if "small" in kinds:
-        found += _small(texts, boxes, dpi, minimum)
+        found += _small(present_texts, present_boxes, dpi, minimum)
     if "on-marks" in kinds:
         found += _on_marks(fig, texts, boxes, dpi)
     return found
@@ -1142,7 +1165,7 @@ def caption_line(
             at(t)
         fig.canvas.draw()
         renderer = _renderer(fig)
-        for text in _visible_texts(fig, collision=True):
+        for text in _visible_texts(fig):
             if _finite(text.get_window_extent(renderer)):
                 box = _bbox(text, renderer)
                 left, right = box.x0 / fig.bbox.width, box.x1 / fig.bbox.width
@@ -1276,49 +1299,15 @@ def _alpha_value(artist):
 
 
 def _collision_ink(artist):
-    """Possible ink opacity, conservatively including arbitrary path effects."""
-    return 1.0 if artist.get_path_effects() else _presence_ink(artist)
-
-
-def _effect_presence_ink(artist):
-    """Opacity actually requested by effect paths, never inferred from existence."""
-
-    class InkRecorder(RendererBase):
-        ink = 0.0
-
-        def points_to_pixels(self, points):
-            fig = artist.get_figure()
-            return points * (fig.dpi if fig is not None else 72.0) / 72.0
-
-        def draw_path(self, gc, path, transform, rgbFace=None):
-            if not len(path.vertices):
-                return
-            if gc.get_linewidth() > 0 and len(path.vertices) > 1:
-                self.ink = max(self.ink, gc.get_rgb()[3])
-            if rgbFace is not None:
-                alpha = gc.get_alpha() if gc.get_forced_alpha() else None
-                self.ink = max(self.ink, to_rgba(rgbFace, alpha)[3])
-
-    renderer = InkRecorder()
-    artist.draw(renderer)
-    return renderer.ink
-
-
-def _presence_ink(artist):
-    """Opacity of the strongest ink the artist paints, 0 when it paints none.
-
-    A patch or collection folds its alpha into its colors. Text and lines
-    use artist alpha in place of color alpha. Effects count only with the
-    effective alpha and color of the paths they actually draw.
-    """
+    """Possible collision ink, conservatively including arbitrary path effects."""
     if artist.get_path_effects():
-        return _effect_presence_ink(artist)
+        return 1.0
     base = _alpha_value(artist)
     base = 1.0 if base is None else base
     if isinstance(artist, Text):
         if not artist.get_text().strip():
             return 0.0
-        return _alpha(artist, artist.get_color())
+        return to_rgba(artist.get_color(), artist.get_alpha())[3]
     if isinstance(artist, Patch):
         face = to_rgba(artist.get_facecolor())[3] if artist.get_fill() else 0.0
         edge = (
@@ -1332,7 +1321,7 @@ def _presence_ink(artist):
             "",
             " ",
         )
-        alpha = _alpha(artist, artist.get_color()) if drawn else 0.0
+        alpha = to_rgba(artist.get_color(), artist.get_alpha())[3] if drawn else 0.0
         if artist.get_markersize() > 0 and artist.get_marker() not in (
             None,
             "None",
@@ -1343,7 +1332,7 @@ def _presence_ink(artist):
             alpha = max(
                 alpha,
                 *(
-                    _alpha(artist, color)
+                    to_rgba(color, artist.get_alpha())[3]
                     for color in (
                         artist.get_markerfacecolor(),
                         artist.get_markerfacecoloralt(),
@@ -1352,6 +1341,40 @@ def _presence_ink(artist):
                 ),
             )
         return alpha
+    if isinstance(artist, AxesImage):
+        return base
+    if isinstance(artist, Collection):
+        top = 0.0
+        for colors in (artist.get_facecolor(), artist.get_edgecolor()):
+            if len(colors):
+                top = max(top, float(np.max(np.asarray(colors)[:, 3])))
+        return top
+    return 0.0
+
+
+def _presence_ink(artist):
+    """Opacity of the strongest ink the artist paints, 0 when it paints none.
+
+    Presence keeps the base rules and does not inspect path effects.
+    A patch or collection folds its alpha into its colors, so only text and
+    lines multiply the artist alpha by the color alpha.
+    """
+    base = _alpha_value(artist)
+    base = 1.0 if base is None else base
+    if isinstance(artist, Text):
+        if not artist.get_text().strip():
+            return 0.0
+        return base * to_rgba(artist.get_color())[3]
+    if isinstance(artist, Patch):
+        face = to_rgba(artist.get_facecolor())[3] if artist.get_fill() else 0.0
+        edge = (
+            to_rgba(artist.get_edgecolor())[3] if artist.get_linewidth() > 0.0 else 0.0
+        )
+        return max(face, edge)
+    if isinstance(artist, Line2D):
+        drawn = artist.get_linestyle() not in ("None", "none", "", " ")
+        drawn = drawn or artist.get_marker() not in (None, "None", "none", "", " ")
+        return base * to_rgba(artist.get_color())[3] if drawn else 0.0
     if isinstance(artist, AxesImage):
         return base
     if isinstance(artist, Collection):
@@ -1499,7 +1522,10 @@ def grounding_faults(
             if mark_shown:
                 first_mark.setdefault(key, k)
             glyphs = term._pieces
-            shown = any(g.get_visible() and _presence_ink(g) >= _SHOWN for g in glyphs)
+            shown = any(
+                g.get_visible() and _alpha(g, g.get_facecolor()) >= _SHOWN
+                for g in glyphs
+            )
             if not shown:
                 continue
             first_term.setdefault(key, k)
@@ -1611,7 +1637,7 @@ def _traced(fig, extra=()):
         if id(artist) in skip or isinstance(artist, Spine):
             continue
         if isinstance(artist, (Text, Patch, Collection, Line2D)) and (
-            _collision_ink(artist) >= _SHOWN
+            _presence_ink(artist) >= _SHOWN or _collision_ink(artist) >= _SHOWN
         ):
             done.add(id(artist))
             yield artist
@@ -1619,7 +1645,7 @@ def _traced(fig, extra=()):
         if (
             id(artist) not in done
             and artist.get_visible()
-            and _collision_ink(artist) >= _SHOWN
+            and (_presence_ink(artist) >= _SHOWN or _collision_ink(artist) >= _SHOWN)
         ):
             yield artist
 
@@ -1801,7 +1827,7 @@ class _Trace:
     def add_shapes(self, k, artists):
         """Record the drawn outline of each visible artist in `artists`."""
         for artist in artists:
-            if artist.get_visible() and _presence_ink(artist) >= _SHOWN:
+            if artist.get_visible() and artist.get_alpha() != 0:
                 outline = _display_outline(artist)
                 if outline:
                     self.shapes.setdefault(artist, {})[k] = outline

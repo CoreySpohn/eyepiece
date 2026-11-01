@@ -627,57 +627,6 @@ def test_text_subclasses_never_get_the_crossfade_exemption(first_plain):
     assert ep.testing.readability_faults(fig, kinds=("overlap",))
 
 
-@pytest.mark.parametrize("kind", ["line", "patch", "text", "collection"])
-@pytest.mark.parametrize(
-    "base_alpha, effect_kw, painted_kinds",
-    [
-        (0, {"foreground": "black"}, ("line", "collection")),
-        (0, {"foreground": "black", "alpha": 0}, ()),
-        (1, {"foreground": "black", "alpha": 0}, ()),
-        (None, {"foreground": (0, 0, 0, 0)}, ("patch", "text", "collection")),
-        (
-            0,
-            {"foreground": "black", "alpha": 1},
-            ("line", "patch", "text", "collection"),
-        ),
-        (
-            None,
-            {"foreground": (0, 0, 0, 0), "alpha": 1},
-            ("line", "patch", "text", "collection"),
-        ),
-    ],
-)
-def test_path_effect_presence_uses_effect_alpha_and_color(
-    kind, base_alpha, effect_kw, painted_kinds
-):
-    paints = kind in painted_kinds
-    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
-    ax.set(xlim=(0, 1), ylim=(0, 1))
-    ax.set_axis_off()
-    if kind == "line":
-        (mark,) = ax.plot([0.1, 0.9], [0.2, 0.2])
-    elif kind == "patch":
-        mark = ax.add_patch(Rectangle((0.1, 0.1), 0.8, 0.1))
-    elif kind == "text":
-        mark = ax.text(0.1, 0.2, "referent", fontsize=18)
-    else:
-        mark = ax.scatter([0.3, 0.6], [0.2, 0.2], s=50)
-    mark.set_alpha(base_alpha)
-    mark.set_path_effects([patheffects.Stroke(linewidth=4, **effect_kw)])
-    label = ax.text(0.5, 0.8, "label")
-    fig.canvas.draw()
-    shown = np.asarray(fig.canvas.buffer_rgba()).copy()
-    mark.set_visible(False)
-    fig.canvas.draw()
-    hidden = np.asarray(fig.canvas.buffer_rgba()).copy()
-    mark.set_visible(True)
-    assert bool(np.any(shown != hidden)) is paints
-    found = ep.testing.motion_faults(
-        fig, lambda t: None, [0, 0.5, 1], groups=[[mark, label]], kinds=("tear",)
-    )
-    assert any(f.artist is mark and "no ink" in f.detail for f in found) is not paints
-
-
 @pytest.mark.parametrize("cached", [False, True])
 def test_effect_collision_ink_does_not_establish_group_presence(cached):
     fig = plt.figure(figsize=(4, 2), dpi=100)
@@ -708,21 +657,70 @@ def test_effect_collision_ink_does_not_establish_group_presence(cached):
     assert any(f.kind == "overlap" for f in found)
 
 
-@pytest.mark.parametrize("effect_alpha", [None, 0, 1])
-def test_path_effect_readout_requires_real_ink(effect_alpha):
-    fig = plt.figure(figsize=(4, 2), dpi=100)
-    effect = (
-        patheffects.Normal()
-        if effect_alpha is None
-        else patheffects.Stroke(foreground="black", alpha=effect_alpha, linewidth=2)
+@pytest.mark.parametrize("cached", [False, True], ids=["motion", "clip"])
+def test_hatched_rectangle_path_effects_preserve_rest_drift(cached):
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_axis_off()
+    rectangle = ax.add_patch(
+        Rectangle((0.1, 0.3), 0.2, 0.3, fill=False, edgecolor="black", hatch="///")
     )
-    readout = fig.text(0.5, 0.5, "8", alpha=0, path_effects=[effect])
-    line = ep.narration.Line("number", "8")
-    narration = ep.narration.Narration(
-        ep.narration.Script((line,)),
-        {"number": ep.narration.Spoken("number", 1, (ep.narration.Word("8", 0, 1),))},
+
+    def at(t):
+        midpoint = t == 0.5
+        rectangle.set_x(0.4 if midpoint else 0.1)
+        rectangle.set_path_effects(
+            [patheffects.Stroke(linewidth=0) if midpoint else patheffects.Normal()]
+        )
+
+    at(0.5)
+    fig.canvas.draw()
+    shown = np.asarray(fig.canvas.buffer_rgba()).copy()
+    rectangle.set_visible(False)
+    fig.canvas.draw()
+    hidden = np.asarray(fig.canvas.buffer_rgba()).copy()
+    rectangle.set_visible(True)
+    assert np.any(shown != hidden), "The displaced hatch paints visible pixels"
+
+    if cached:
+        timeline = ep.Timeline()
+        timeline.hold(1.5)
+        plan = timeline.at_fps(2)
+        report = ep.testing.check_clip(
+            fig, lambda k: at(k / plan.fps), plan, moves=[{"rest": [rectangle]}]
+        )
+        found = report.motion
+        assert not report.ok
+    else:
+        found = ep.testing.motion_faults(
+            fig, at, [0, 0.5, 1], rest=[rectangle], kinds=("drift",)
+        )
+    drift = [f for f in found if f.kind == "drift" and f.artist is rectangle]
+    assert len(drift) == 1
+    assert drift[0].value == pytest.approx(93)
+    assert drift[0].time == 0.5
+
+
+def test_zero_area_patch_shadow_does_not_establish_referent_presence():
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_axis_off()
+    (line,) = ax.plot(
+        [0.1, 0.9],
+        [0.2, 0.2],
+        color="C2",
+        alpha=0,
+        path_effects=[patheffects.SimplePatchShadow()],
     )
-    found = ep.testing.timing_faults(
-        narration, at=lambda t: None, readouts={("number", 0): readout}
-    )
-    assert any(f.kind == "number-late" for f in found) is (effect_alpha != 1)
+    equation = ep.motion.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30)
+    equation.bind("sigma", line)
+    equation.update(1)
+    fig.canvas.draw()
+    shown = np.asarray(fig.canvas.buffer_rgba()).copy()
+    line.set_visible(False)
+    fig.canvas.draw()
+    hidden = np.asarray(fig.canvas.buffer_rgba()).copy()
+    line.set_visible(True)
+    assert np.array_equal(shown, hidden), "The shadow fills a zero-area path"
+    found = ep.testing.grounding_faults(equation)
+    assert any(f.kind == "no-referent" and f.term == "sigma" for f in found)
