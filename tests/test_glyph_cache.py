@@ -83,3 +83,35 @@ def test_a_failed_self_test_keeps_stock_drawing(monkeypatch):
     stock = backend_agg.RendererAgg.draw_text
     with glyph_cache():
         assert backend_agg.RendererAgg.draw_text is stock
+
+
+def test_self_test_ignores_a_tex_setting(monkeypatch):
+    import matplotlib
+
+    monkeypatch.setitem(matplotlib.rcParams, "text.usetex", True)
+    assert _glyph_cache._self_test()
+
+
+def test_a_foreign_draw_text_hook_is_left_in_place(monkeypatch):
+    def hook(self, *args, **kwargs):
+        return _glyph_cache._STOCK(self, *args, **kwargs)
+
+    monkeypatch.setattr(backend_agg.RendererAgg, "draw_text", hook)
+    with glyph_cache():
+        assert backend_agg.RendererAgg.draw_text is hook
+    assert backend_agg.RendererAgg.draw_text is hook
+
+
+def test_layouts_and_glyph_bytes_stay_bounded(monkeypatch):
+    monkeypatch.setattr(_glyph_cache, "_MAX_LAYOUTS", 50)
+    monkeypatch.setattr(_glyph_cache, "_MAX_GLYPH_BYTES", 20_000)
+    fig = Figure(figsize=(2, 1), dpi=100)
+    backend_agg.FigureCanvasAgg(fig)
+    label = fig.text(0.1, 0.5, "", size=11)
+    with glyph_cache():
+        for n in range(400):
+            label.set_text(f"{n:06d} at size {9 + n % 7}")
+            label.set_size(9 + n % 7)
+            fig.canvas.draw()
+            assert len(_glyph_cache._layouts) <= 50
+            assert _glyph_cache._glyph_bytes <= 20_000

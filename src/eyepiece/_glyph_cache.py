@@ -27,11 +27,15 @@ import numpy as np
 from matplotlib.backends import backend_agg
 
 _STOCK = backend_agg.RendererAgg.draw_text
-_MAX_GLYPHS = 200_000
+_MAX_LAYOUTS = 10_000
+_MAX_GLYPH_BYTES = 64 * 1024**2
 _layouts = {}
 _glyphs = {}
+_glyph_bytes = 0
 _lock = threading.Lock()
 _depth = 0
+_installed = False
+_previous = None
 _usable = None
 
 
@@ -57,14 +61,13 @@ def _cached_draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
     except TypeError:  # an unhashable feature or language spec
         return _STOCK(self, gc, x, y, s, prop, angle, ismath, mtext)
     if items is None:
+        if len(_layouts) >= _MAX_LAYOUTS:
+            _layouts.clear()
         items = _layouts[layout_key] = tuple(
             (item.ft_object, item.glyph_index, item.x, item.y)
             for item in font._layout(s, flags=flags, features=features,
                                      language=language)
         )  # fmt: skip
-    if len(_glyphs) > _MAX_GLYPHS:
-        _glyphs.clear()
-        _layouts.clear()
     # The arithmetic below is RendererAgg._draw_text_glyphs_and_boxes with
     # each glyph origin split into whole pixels and a 1/64 px remainder.
     cos = math.cos(math.radians(angle))
@@ -74,6 +77,7 @@ def _cached_draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
     antialiased = gc.get_antialiased()
     mode = backend_agg.RenderMode.NORMAL if antialiased else backend_agg.RenderMode.MONO
     height = self.height
+    global _glyph_bytes
     for ft_object, glyph_index, dx, dy in items:
         origin_x = round(0x40 * (x + dx * cos - dy * sin))
         origin_y = round(0x40 * (height - y + dx * sin + dy * cos))
@@ -87,7 +91,11 @@ def _cached_draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
             buffer = np.array(bitmap.buffer)
             if not antialiased:
                 buffer *= 0xFF
+            if _glyph_bytes + buffer.nbytes > _MAX_GLYPH_BYTES:
+                _glyphs.clear()
+                _glyph_bytes = 0
             glyph = _glyphs[glyph_key] = (buffer, bitmap.left, bitmap.top)
+            _glyph_bytes += buffer.nbytes
         buffer, left, top = glyph
         self._renderer.draw_text_image(
             buffer,
@@ -98,22 +106,28 @@ def _cached_draw_text(self, gc, x, y, s, prop, angle, ismath=False, mtext=None):
         )
 
 
-def _reference_pixels(figure_draw_text):
-    """Pixels of a figure exercising rotation, sizes and both antialias modes."""
+def _reference_pixels(draw_text):
+    """Pixels of a figure exercising rotation, sizes and both antialias modes.
+
+    `draw_text` is bound to this figure's renderer only, so the probe never
+    touches the class other figures draw through.
+    """
+    import types
+
+    from matplotlib import rc_context
     from matplotlib.figure import Figure
 
-    backend_agg.RendererAgg.draw_text = figure_draw_text
-    try:
+    with rc_context({"text.usetex": False}):
         fig = Figure(figsize=(2.4, 1.2), dpi=97)
-        backend_agg.FigureCanvasAgg(fig)
+        canvas = backend_agg.FigureCanvasAgg(fig)
         fig.text(0.031, 0.71, "Wavefront 10^-11", size=9.3)
         fig.text(0.403, 0.33, "rotated AVW", size=13, rotation=33)
         fig.text(0.6, 0.85, "mono ink", size=7, antialiased=False)
         fig.text(0.517, 0.12, "fi fl -> x", size=11.7, rotation=-90, weight="bold")
-        fig.canvas.draw()
-        return np.asarray(fig.canvas.buffer_rgba()).copy()
-    finally:
-        backend_agg.RendererAgg.draw_text = _STOCK
+        renderer = canvas.get_renderer()
+        renderer.draw_text = types.MethodType(draw_text, renderer)
+        canvas.draw()
+        return np.asarray(canvas.buffer_rgba()).copy()
 
 
 def _self_test():
@@ -121,11 +135,8 @@ def _self_test():
     try:
         stock = _reference_pixels(_STOCK)
         cached = _reference_pixels(_cached_draw_text)
-    except (AttributeError, TypeError, ValueError):
+    except Exception:  # any failure of the private text path means stock drawing
         return False
-    finally:
-        _glyphs.clear()
-        _layouts.clear()
     return bool(np.array_equal(stock, cached))
 
 
@@ -133,21 +144,32 @@ def _self_test():
 def glyph_cache():
     """Reuse text layouts and glyph bitmaps in every Agg draw inside the block.
 
-    Re-entrant. Pixels are identical to stock drawing; on a matplotlib whose
-    text path this module does not reproduce exactly, nothing changes.
+    Re-entrant. Pixels are identical to stock drawing. Nothing changes on a
+    matplotlib whose text path this module does not reproduce exactly, or when
+    something else has already replaced `RendererAgg.draw_text`; leaving the
+    outermost block restores the method found on entry. The caches outlive
+    the block (a render worker or a run of checks keeps them warm) and are
+    bounded: at most `_MAX_LAYOUTS` layouts and `_MAX_GLYPH_BYTES` of bitmaps.
     """
-    global _depth, _usable
+    global _depth, _installed, _previous, _usable
+    if _usable is None:
+        usable = _self_test()  # outside the lock: it draws a figure
+        with _lock:
+            if _usable is None:
+                _usable = usable
     with _lock:
-        if _usable is None:
-            _usable = _self_test()
-        enter = _usable and _depth == 0
+        if _depth == 0:
+            _previous = backend_agg.RendererAgg.draw_text
+            _installed = _usable and _previous is _STOCK
+            if _installed:
+                backend_agg.RendererAgg.draw_text = _cached_draw_text
         _depth += 1
-        if enter:
-            backend_agg.RendererAgg.draw_text = _cached_draw_text
     try:
         yield
     finally:
         with _lock:
             _depth -= 1
-            if _depth == 0 and _usable:
-                backend_agg.RendererAgg.draw_text = _STOCK
+            if _depth == 0 and _installed:
+                if backend_agg.RendererAgg.draw_text is _cached_draw_text:
+                    backend_agg.RendererAgg.draw_text = _previous
+                _installed = False

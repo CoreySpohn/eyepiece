@@ -948,3 +948,10 @@ def test_visual_canonical_declines_nonplain_values(tmp_path):
         for nested in (value, [value], {"value": value}):
             with pytest.raises(TypeError):
                 variant_driver._canonical(nested)
+
+
+def test_skip_held_draws_is_the_last_clip_spec_field():
+    from dataclasses import fields
+
+    names = [f.name for f in fields(ClipSpec)]
+    assert names[-3:] == ["frame_key", "worker_peak_bytes", "skip_held_draws"]
