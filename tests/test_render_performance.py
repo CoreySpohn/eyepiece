@@ -87,6 +87,70 @@ def test_raw_frames_identical_and_only_consecutive_keys_skip_draw(tmp_path):
             assert draw_count(Path(str(calls) + ".paint")) == 5
 
 
+def test_skip_held_draws_keeps_rasters_and_draws_only_key_changes(tmp_path):
+    frames = [0, 1, 2, 3, 4, 5, 0, 1, 9]  # keys 0 0 0 1 1 1 0 0 3
+    rasters = {}
+    for skip in (False, True):
+        calls = tmp_path / f"skip-{skip}"
+        build = partial(build_steps, calls=calls)
+        with pool._figure(
+            build, frames, 100, None, None, None, frame_key=state_key,
+            skip_held_draws=skip,
+        ) as state:  # fmt: skip
+            rasters[skip] = [pool._raster(state, k).tobytes() for k in range(9)]
+        if skip:
+            # The layout draw of item 0, then only the frames whose key changed.
+            assert calls.read_text().splitlines() == ["0", "3", "0", "9"]
+    assert rasters[True] == rasters[False]
+
+
+@pytest.mark.parametrize("workers", [1, 2])
+def test_skip_held_draws_encodes_the_same_video(tmp_path, workers):
+    videos = []
+    for skip in (False, True):
+        folder = tmp_path / f"skip-{skip}"
+        folder.mkdir()
+        path = folder / "steps.mp4"
+        render_frames(
+            partial(build_steps, calls=folder / "draws"), 12, path, fps=12, dpi=100,
+            workers=workers, chunk_frames=4, frame_key=state_key, skip_held_draws=skip,
+        )  # fmt: skip
+        videos.append(path.read_bytes())
+    assert videos[0] == videos[1]
+
+
+def test_skip_held_draws_must_be_a_bool(tmp_path):
+    with pytest.raises(TypeError, match="skip_held_draws"):
+        render_frames(
+            partial(build_steps, calls=tmp_path / "draws"), 6, tmp_path / "x.mp4",
+            fps=12, dpi=100, workers=1, frame_key=state_key, skip_held_draws=1,
+        )  # fmt: skip
+
+
+def test_clip_spec_passes_skip_held_draws_to_render_frames(tmp_path, monkeypatch):
+    seen = []
+    real = variant_driver.render_frames
+
+    def spy(*args, **kwargs):
+        seen.append(kwargs["skip_held_draws"])
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(variant_driver, "render_frames", spy)
+    spec = ClipSpec(
+        "held",
+        partial(build_variant_clip, markers=tmp_path / "markers"),
+        6,
+        (Venue("doc", fps=12),),
+        frame_key=state_key,
+        skip_held_draws=True,
+    )
+    render_variants(
+        spec, [Variant("doc", "light", False)], tmp_path / "out",
+        manifest=Manifest(tmp_path / "manifest.json"), workers=1,
+    )  # fmt: skip
+    assert seen == [True]
+
+
 @pytest.mark.parametrize("workers", [1, 2])
 def test_dedup_raw_chunks_encoded_bytes_decoded_frames_holds_and_resume(
     tmp_path, workers

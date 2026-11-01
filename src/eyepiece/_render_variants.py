@@ -190,6 +190,10 @@ class ClipSpec:
             For a plan-driven clip use plan.frame_key, or
             partial(plan.frame_key, include_time=False) when draw reads neither
             the index nor time fields. Include any non-plan inputs too.
+        skip_held_draws: With frame_key, skip the draw callback as well as the
+            raster on held frames, as in render_frames. The output is
+            unchanged when the key is complete. Defaults to False. Does not
+            enter content keys.
         worker_peak_bytes: Declared peak resident bytes per worker for the
             default CPU and memory budget in render_frames. Defaults to 1 GiB.
             Explicit workers overrides the budget. Does not enter content keys.
@@ -217,6 +221,7 @@ class ClipSpec:
     adopt_build: object = None
     target_for: Callable[[Variant], str | Path] | None = None
     frame_key: object = None
+    skip_held_draws: bool = False
     worker_peak_bytes: int = 1024**3
 
 
@@ -325,6 +330,7 @@ def _variant_video(
                 key=key,
                 on_rescale=spec.on_rescale,
                 frame_key=spec.frame_key,
+                skip_held_draws=spec.skip_held_draws,
                 worker_peak_bytes=spec.worker_peak_bytes,
             )
             frames = result.frames

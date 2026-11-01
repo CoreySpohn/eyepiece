@@ -132,7 +132,15 @@ def _close_new_figures(existing):
 
 @contextmanager
 def _figure(
-    build, frames, dpi, frame_at, setup, rc, on_rescale="ignore", frame_key=None
+    build,
+    frames,
+    dpi,
+    frame_at,
+    setup,
+    rc,
+    on_rescale="ignore",
+    frame_key=None,
+    skip_held_draws=False,
 ):
     """Build and freeze a figure under the same state in every process."""
     with ExitStack() as stack:
@@ -159,6 +167,7 @@ def _figure(
             frame_at=frame_at,
             dpi=dpi,
             frame_key=frame_key,
+            skip_held_draws=skip_held_draws,
         )
         state["initial_item"] = _item(state, 0)
         draw(fig, state["initial_item"])
@@ -197,18 +206,20 @@ def _raster(state, index):
     item = state["initial_item"] if index == 0 and initial_draw else _item(state, index)
     key = state["frame_key"](item) if state["frame_key"] is not None else None
     fig = state["fig"]
-    if index != 0 or not initial_draw:
-        state["draw"](fig, item)
+    held = False
     if key is not None:
         try:
             hash(key)
         except TypeError as exc:
             raise TypeError("frame_key must return a hashable value or None") from exc
         previous = state.get("previous_frame")
-        if previous is not None and index == previous[0] + 1 and key == previous[1]:
-            _check_scales(state, index)
-            state["previous_frame"] = (index, key, previous[2])
-            return previous[2]
+        held = previous is not None and index == previous[0] + 1 and key == previous[1]
+    if (index != 0 or not initial_draw) and not (held and state["skip_held_draws"]):
+        state["draw"](fig, item)
+    if held:
+        _check_scales(state, index)
+        state["previous_frame"] = (index, key, previous[2])
+        return previous[2]
     # Frame zero was already drawn before layout froze. A second draw could
     # measure the settled axes and move labels compared with record.
     # record invokes draw at the figure dpi, then savefig at the sink dpi.
@@ -712,6 +723,7 @@ def render_frames(
     keep_chunks=False,
     on_rescale="warn",
     frame_key=None,
+    skip_held_draws=False,
     worker_peak_bytes=1024**3,
 ) -> RenderResult:
     """Render independent frames in chunks and encode them in index order.
@@ -757,6 +769,13 @@ def render_frames(
             that item. Draw must set absolute state even after repeated
             items. Include the callback's source and inputs in the caller key.
             Defaults to None, drawing every frame; clocks are never inferred.
+        skip_held_draws: With frame_key, also skip the draw callback on a
+            frame whose key equals the previous frame's, so a hold costs
+            neither a draw nor a raster. Scale diagnostics then see the held
+            pose, so a key that hides a change also hides its rescale: verify
+            the key with eyepiece.testing.check_frame_key first. Draw must
+            not depend on earlier draws (eyepiece.render.frame_faults).
+            Defaults to False, drawing every frame.
         hold: Extra repetitions of the first and last raster, respectively.
         encoder: Overrides for the RawSink encoder profile.
         extra_ffmpeg_args: Additional output arguments for RawSink.
@@ -797,6 +816,8 @@ def render_frames(
         raise ValueError("workers must be a positive int")
     if frame_key is not None and not callable(frame_key):
         raise TypeError("frame_key must be callable or None")
+    if not isinstance(skip_held_draws, bool):
+        raise TypeError("skip_held_draws must be a bool")
     _validate_worker_peak(worker_peak_bytes)
     requested = workers if workers is not None else _default_workers(worker_peak_bytes)
     if chunk_frames is None:
@@ -822,7 +843,15 @@ def render_frames(
             if workers == 1:
                 state = stack.enter_context(
                     _figure(
-                        build, frames, dpi, frame_at, setup, rc, on_rescale, frame_key
+                        build,
+                        frames,
+                        dpi,
+                        frame_at,
+                        setup,
+                        rc,
+                        on_rescale,
+                        frame_key,
+                        skip_held_draws,
                     )
                 )
                 size = state["size"]
@@ -840,6 +869,7 @@ def render_frames(
                             rc=rc,
                             on_rescale=on_rescale,
                             frame_key=frame_key,
+                            skip_held_draws=skip_held_draws,
                         ),
                         min(count, chunk_frames),
                     )

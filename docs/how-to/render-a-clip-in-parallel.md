@@ -365,7 +365,8 @@ assert strict[0].rendered and strict[0].frames == 2
 
 `ClipSpec.frame_key(item)` is an optional promise about adjacent pictures.
 Equal non-`None` keys reuse the rasterized buffer. The draw callback still
-runs for every frame, and scale diagnostics still inspect every pose.
+runs for every frame, and scale diagnostics still inspect every pose, unless
+`skip_held_draws=True` (below).
 `content_key` identifies the entire output for manifest and chunk reuse;
 `frame_key` identifies the complete visible state within that output.
 
@@ -458,6 +459,19 @@ uses exact Agg pixels at the figure size and dpi, with no tolerance. Configure
 the output style and layout before checking. A sample verifies only those
 runs; use every frame for complete clip coverage and check frame order
 independence separately with `frame_faults`.
+
+Once `check_frame_key` passes on every frame and `frame_faults` finds no order
+dependence, `ClipSpec(skip_held_draws=True)` also skips the draw callback on
+held frames, so a hold costs neither a draw nor a raster. The output is the
+same; what changes is that scale diagnostics see the held pose, so a key that
+hides a change also hides its rescale. It defaults to False and does not enter
+content keys.
+
+Independently of keys, movie rasters and clip checks reuse text layouts and
+glyph bitmaps between draws, which removes most of a text-heavy frame's raster
+time. A glyph is reused only at the same font, size, dpi, rotation and
+sub-pixel origin, so the pixels are those of stock Agg; on a matplotlib whose
+text path the cache does not reproduce, a self-test keeps stock drawing.
 
 ```{code-cell} python
 tl = ep.clock.Timeline({"position": 0.2})
