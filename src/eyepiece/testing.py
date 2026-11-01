@@ -69,6 +69,7 @@ import numbers
 import os
 import re
 import warnings
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
@@ -90,11 +91,15 @@ from matplotlib.transforms import Bbox
 
 from eyepiece import _lazy_lookup
 from eyepiece._check_samples import (
+    _draw_geometry,
     _draw_sample,
+    _FrameStore,
     _RasterPool,
+    _reuse_key,
     _select_sample,
     _share_samples,
 )
+from eyepiece._check_video import _source_samples
 from eyepiece._equation import _binding_rgb
 from eyepiece._meaning import (
     MEANING_KINDS,
@@ -180,6 +185,7 @@ __all__ = [
     "readability_faults",
     "review_sheet",
     "same_picture",
+    "sample_source",
     "speech_rate",
     "timing_faults",
 ]
@@ -682,6 +688,7 @@ def readability_faults(
     overlap_tol=2.0,
     frame_tol=1.0,
     kinds=KINDS,
+    frame_key=None,
 ):
     """Check a figure, or a clip sampled at chosen times, for readability faults.
 
@@ -708,6 +715,14 @@ def readability_faults(
         frame_tol: Largest overshoot past the figure edge, in pixels, that is
             not reported.
         kinds: The kinds of fault to look for, a subset of `KINDS`.
+        frame_key: Optional callable ``frame_key(t)`` promising identical
+            complete figure state for equal consecutive keys, including
+            geometry and draw-time state. Skips posing and checking repeats,
+            while retaining every finding's original time. None disables
+            reuse, as does a key returning None. Keys must be hashable.
+            Live layout and filtered artists disable reuse. A plan key must
+            include every dependency of `at`, including direct frame-index
+            or time use; pixel equality alone does not prove equal geometry.
 
     Returns:
         A list of `ReadabilityFault`; empty when the figure is readable.
@@ -731,17 +746,29 @@ def readability_faults(
     if (at is None) != (times is None):
         raise ValueError("give `at` and `times` together, or neither")
     samples = [None] if at is None else list(times)
+    if frame_key is not None and not callable(frame_key):
+        raise TypeError("frame_key must be callable or None")
+    if frame_key is not None and at is None:
+        raise ValueError("frame_key requires at and times")
     old_dpi = fig.dpi
     if dpi is not None:
         fig.set_dpi(dpi)
     found = []
+    previous = None
+    observations = None
     try:
         for t in samples:
-            if at is not None:
-                at(t)
-            for kind, artist, other, box, detail in _check_once(
-                fig, fig.dpi, min_text_px, overlap_tol, frame_tol, kinds
-            ):
+            key = _reuse_key(fig, frame_key, t)
+            if key is None or key != previous:
+                if at is not None:
+                    at(t)
+                observations = _check_once(
+                    fig, fig.dpi, min_text_px, overlap_tol, frame_tol, kinds
+                )
+                # The callback may have enabled layout or a filter.
+                key = _reuse_key(fig, frame_key, t, inspect_artists=True)
+            previous = key
+            for kind, artist, other, box, detail in observations:
                 found.append(ReadabilityFault(kind, artist, other, t, box, detail))
     finally:
         if dpi is not None:
@@ -1519,7 +1546,7 @@ class _Trace:
                 if outline:
                     self.shapes.setdefault(artist, {})[k] = outline
 
-    def add(self, k, fig, renderer, extra=(), *, drawn=False):
+    def add(self, k, fig, renderer, extra=(), *, drawn=False, frame=None):
         sample = None if drawn else _draw_sample(fig)
         if sample is not None:
             snapshot = sample["trace"]
@@ -1543,7 +1570,9 @@ class _Trace:
             return True
         if self.keep_frames:
             self.frames.append(
-                self.rasters.intern(np.asarray(fig.canvas.buffer_rgba()))
+                self.rasters.intern(
+                    np.asarray(fig.canvas.buffer_rgba()) if frame is None else frame
+                )
             )
         self.size = (float(fig.bbox.width), float(fig.bbox.height))
         for ax in fig.axes:
@@ -1561,6 +1590,15 @@ class _Trace:
             self.boxes[artist][k] = got
             if artist in self.ticks:
                 self.tick_text.setdefault(artist, {})[k] = artist.get_text()
+
+    def repeat(self, k):
+        """Reuse observations only under a caller's complete-state promise."""
+        if self.keep_frames:
+            self.frames.repeat()
+        for observations in (self.boxes, self.tick_text, self.shapes):
+            for values in observations.values():
+                if k - 1 in values:
+                    values[k] = values[k - 1]
 
     def box(self, artist, k):
         got = self.boxes.get(artist, {}).get(k)
@@ -2298,21 +2336,64 @@ def _sample_times(times, fps):
     return list(times)
 
 
-def _sample_trace(fig, at, samples, *, dpi, keep_frames, extra=(), shaped=()):
+def _sample_trace(
+    fig,
+    at,
+    samples,
+    *,
+    dpi,
+    keep_frames,
+    extra=(),
+    shaped=(),
+    source=None,
+    frame_key=None,
+):
     """Pose and draw the figure at each sample and return the `_Trace`."""
     old_dpi, old_canvas = fig.dpi, fig.canvas
     if dpi is not None:
         fig.set_dpi(dpi)
     if not hasattr(old_canvas, "buffer_rgba"):
         FigureCanvasAgg(fig)  # a canvas that cannot hand back pixels
+    pixels = (
+        _source_samples(source, samples) if source is not None and keep_frames else None
+    )
+    trace = None
     try:
         trace = _Trace(samples, keep_frames=keep_frames)
+        if keep_frames:
+            trace.frames = _FrameStore()
+        previous = None
         for k, t in enumerate(samples):
+            frame = next(pixels) if pixels is not None else None
+            key = _reuse_key(fig, frame_key, t)
+            if key is not None and key == previous:
+                trace.repeat(k)
+                continue
             at(t)
-            reused = trace.add(k, fig, _renderer(fig), extra)
+            if source is not None:
+                _draw_geometry(fig)
+                if frame is not None:
+                    height, width = np.asarray(fig.canvas.buffer_rgba()).shape[:2]
+                    if frame.shape[:2] != (height, width):
+                        raise ValueError(
+                            "source frame size must match the figure at output dpi"
+                        )
+                    rgba = np.empty((height, width, 4), dtype=np.uint8)
+                    rgba[..., :3], rgba[..., 3] = frame, 255
+                    frame = rgba
+            reused = trace.add(
+                k, fig, _renderer(fig), extra, drawn=source is not None, frame=frame
+            )
             if shaped and not reused:
                 trace.add_shapes(k, shaped)
+            previous = _reuse_key(fig, frame_key, t, inspect_artists=True)
+    except BaseException:
+        if trace is not None and isinstance(trace.frames, _FrameStore):
+            trace.frames.close()
+        raise
     finally:
+        if pixels is not None:
+            pixels.close()
         fig.set_canvas(old_canvas)
         if dpi is not None:
             fig.set_dpi(old_dpi)
@@ -2361,11 +2442,17 @@ def motion_ink(fig, at, times, driven, *, venue=None, fps=None, dpi=None):
     if len(samples) < 2:
         raise ValueError("the motion ink needs at least two samples")
     trace = _sample_trace(fig, at, samples, dpi=dpi, keep_frames=True)
+    with closing(trace.frames):
+        return _trace_ink(trace, driven)
+
+
+def _trace_ink(trace, driven):
+    """Measure the driven share from a finished trace."""
     for artist in driven:
         if not trace.boxes.get(artist):
             raise ValueError(f"driven artist {artist!r} is not visible at any sample")
     changed = driving = 0
-    for k in range(1, len(samples)):
+    for k in range(1, len(trace.times)):
         if trace.frames[k - 1] is trace.frames[k]:
             continue
         before = trace.frames[k - 1].astype(np.int16)
@@ -2418,6 +2505,8 @@ def motion_faults(
     venue=None,
     fps=None,
     dpi=None,
+    source=None,
+    frame_key=None,
 ):
     """Check a clip's path between states for motion faults.
 
@@ -2480,6 +2569,19 @@ def motion_faults(
         fig: The figure of the clip.
         at: Callable ``at(t)`` that poses the figure at time `t`.
         times: Sample times, or a `Window` to sample at every frame.
+        source: Optional video path or callable ``source(t)`` supplying RGB
+            pixels. The figure is still posed; unfiltered Agg figures with
+            fixed layout refresh geometry without rendering. Custom canvases,
+            live layout and filters retain normal draws to preserve state. Video
+            samples follow ffmpeg input-seek timestamp rounding, and use the
+            last frame past the end, as in `review_sheet`. Size must match the
+            figure at output dpi. RGB is treated as opaque RGBA. Compression
+            or different frame selection can change pixel findings; None
+            keeps the drawn path. One streamed decoder handles decodable
+            samples; requests wholly past the tail can require a retry.
+        frame_key: Optional complete-state key ``frame_key(t)``, as in
+            `readability_faults`. Equal consecutive keys reuse geometry and
+            pixels. With `source`, this also promises equal source pixels.
         moves: Declared moves, each a dict (or an object whose ``contract`` is
             a dict or has the same fields) with any of ``name``, ``span``
             (start, stop), ``artists`` (or ``moves``, those that may move),
@@ -2584,6 +2686,8 @@ def motion_faults(
         *rectilinear,
         *(a for move in moves or () for a in _declared(move, "rectilinear") or ()),
     ]
+    if frame_key is not None and not callable(frame_key):
+        raise TypeError("frame_key must be callable or None")
     trace = _sample_trace(
         fig,
         at,
@@ -2592,24 +2696,31 @@ def motion_faults(
         keep_frames=bool({"jump", "dead", "hop-rate"} & set(kinds)),
         extra=extra,
         shaped=shaped if "shape-class" in kinds else (),
+        source=source,
+        frame_key=frame_key,
     )
-    return _analyze(
-        trace,
-        kinds=kinds,
-        moves=moves,
-        steps=steps,
-        draws=draws,
-        hops=hops,
-        rest=rest,
-        groups=groups,
-        may_overlap=may_overlap,
-        rectilinear=rectilinear,
-        tol_px=tol_px,
-        jump_ratio=jump_ratio,
-        overlap_tol=overlap_tol,
-        frame_tol=frame_tol,
-        spike_px=spike_px,
-    )
+    with (
+        closing(trace.frames)
+        if isinstance(trace.frames, _FrameStore)
+        else nullcontext()
+    ):
+        return _analyze(
+            trace,
+            kinds=kinds,
+            moves=moves,
+            steps=steps,
+            draws=draws,
+            hops=hops,
+            rest=rest,
+            groups=groups,
+            may_overlap=may_overlap,
+            rectilinear=rectilinear,
+            tol_px=tol_px,
+            jump_ratio=jump_ratio,
+            overlap_tol=overlap_tol,
+            frame_tol=frame_tol,
+            spike_px=spike_px,
+        )
 
 
 def _cut_captions(move):
@@ -3036,6 +3147,85 @@ def _timing_silence(narration, plan):
     ]
 
 
+@contextmanager
+def sample_source(source, times, *, frame_key=None):
+    """Decode declared sample times once for several checks.
+
+    Yields a callable ``sample(t)`` returning read-only RGB uint8 pixels.
+    Only declared times are available; a missing time raises KeyError.
+    The callable is valid only inside the context. Selected pixels use
+    lossless temporary storage with a bounded decoded cache, released even
+    if a check raises. Set TMPDIR to choose the storage location.
+
+    Args:
+        source: Video path or absolute-state callable ``source(t)`` accepted
+            by `review_sheet`. Video selection is identical to separate
+            input seeks, including requests past the final frame. A callable
+            must give identical pixels whenever the same time is requested.
+            Requests wholly past a video's tail can require a decode retry.
+        times: Finite sample times in seconds. May repeat or be out of order.
+            Include the union of the times every consumer will request.
+        frame_key: Optional hashable key ``frame_key(t)`` for a callable
+            source. Equal consecutive keys promise identical complete source
+            state, including its pixels and any draw-time state, and skip
+            producing that sample again. None keys always produce a sample.
+            Include every dependency, and do not use a converging layout.
+            A video path cannot use this option: plan state alone does not
+            determine compressed pixels.
+
+    Yields:
+        A callable usable as `motion_faults` or `timing_faults` source.
+        Video paths in `timing_faults` normally use ffmpeg's fps filter;
+        this callable instead preserves input-seek selection at each time.
+        Compare findings before substituting it for that path or drawing.
+    """
+    times = list(times)
+    if any(not math.isfinite(t) for t in times):
+        raise ValueError("sample times must be finite")
+    if frame_key is not None:
+        if not callable(frame_key):
+            raise TypeError("frame_key must be callable or None")
+        if not callable(source) or isinstance(source, (str, os.PathLike)):
+            raise ValueError("frame_key requires a callable source")
+        original = source
+        previous = None
+        pixels = None
+
+        def cached(t):
+            nonlocal previous, pixels
+            key = frame_key(t)
+            try:
+                hash(key)
+            except TypeError as exc:
+                raise TypeError(
+                    "frame_key must return a hashable value or None"
+                ) from exc
+            if key is None or key != previous or pixels is None:
+                # Source callbacks may return a view of a reused draw buffer.
+                pixels = _source_frame(original, t).copy()
+                pixels.flags.writeable = False
+                previous = key
+            return pixels
+
+        source = cached
+    with _FrameStore() as frames:
+        indices = {}
+        samples = _source_samples(source, times)
+        try:
+            for t, frame in zip(times, samples, strict=True):
+                indices[t] = len(frames)
+                frames.append(frame)
+        finally:
+            samples.close()
+
+        def sample(t):
+            if frames.closed:
+                raise RuntimeError("sample source is closed")
+            return frames[indices[t]]
+
+        yield sample
+
+
 def _source_frame(source, t):
     """Read one RGB uint8 frame at t, using the last video frame past its end."""
     if not isinstance(source, (str, os.PathLike)) and not callable(source):
@@ -3144,7 +3334,8 @@ def _source_frames(source, *, seconds, fps):
                     )
             finally:
                 if process.poll() is None:
-                    process.terminate()
+                    # A graceful decoder can block flushing an unread pipe.
+                    process.kill()
                 process.wait()
 
 
@@ -3880,7 +4071,7 @@ def check_clip(
     hops=None,
     driven=None,
 ) -> ClipReport:
-    """Re-render a plan-driven clip and collect its checks without writing files.
+    """Re-render a plan-driven clip and collect checks without an animation file.
 
     The draw signature is ``draw(k)``, with just the integer frame index,
     as in a caller-owned loop around `eyepiece.record` with a plan. The

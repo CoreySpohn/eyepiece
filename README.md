@@ -156,7 +156,7 @@ lists every public name with its canonical path and a worked example.
 
 ### Check the clip (`eyepiece.testing`)
 
-`ep.testing.check_clip` re-renders a plan-driven clip without writing files and
+`ep.testing.check_clip` re-renders a plan-driven clip without an animation file and
 collects its readability, motion and meaning findings, the plan's own faults,
 unread knobs, and speaking pace in one `ep.testing.ClipReport`. Each check also stands
 alone: `ep.testing.motion_faults` (jumps, dead moves, drift, torn groups, overlaps,

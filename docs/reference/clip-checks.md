@@ -18,6 +18,15 @@ repeat `audit`, which owns the connectors, and a label with an opaque backing
 box is not reported over marks. The result is deterministic and the figure
 keeps its dpi. `assert_readable` raises `ReadabilityError` with the report.
 
+An explicit `frame_key(t)` can skip consecutive repeated states. Equal keys
+promise identical complete figure state, including geometry and draw-time
+state; the check keeps every original finding time. None keys disable reuse.
+Live layout and filtered artists also disable reuse. For a plan-driven pose,
+`plan.frame_key(round(t * plan.fps), include_time=False)` is suitable only
+when every pose dependency is a plan knob or fixed data. Include direct use
+of the frame index, time, progress and other dependencies in a composite key.
+Equal pixels alone do not establish equal geometry. Defaults do not reuse poses.
+
 ## meaning_faults
 
 `ep.testing.meaning_faults(fig, at=pose, times=..., keys={gid_prefix: meaning})` checks
@@ -78,6 +87,70 @@ ending exactly on `stop`, draws it, and traces every visible artist, equation
 glyph paths and collections included, with the rendered frame when a pixel
 check is asked for. It returns `MotionFault` records, sorted by time, of eight
 kinds.
+
+`source=` supplies the pixels from a video path or an absolute-state callable
+instead of capturing painted pixels. The figure still poses at every sample.
+Unfiltered Agg figures with fixed layout refresh geometry through Matplotlib's
+`draw_without_rendering`; custom canvases, live layout and filters retain
+normal draws to preserve their non-painting state updates.
+Video samples follow ffmpeg input-seek precision and stream timestamp
+rounding, use the last frame for requests past the end, and use one decoder
+per call over decodable times. A seek beyond the tail can require a retry.
+The source must match the figure dimensions at the output dpi; RGB pixels
+are treated as opaque RGBA. Compression and frame selection can change
+findings, so drawing remains the default. The optional `frame_key(t)` has
+the same complete-state promise as readability, including source pixels.
+
+Motion checks spool losslessly compressed pixels to temporary storage with
+a bounded decoded cache. Geometry and scalar observations remain in memory.
+This also bounds pixel memory in `ep.testing.check_clip`, including its
+shared review frames and optional motion-ink pass. Disk use grows with the
+number of distinct sampled pictures. Set `TMPDIR` to choose a storage disk.
+The sampling windows and fault algorithms are unchanged: combining several
+per-window motion checks into one global check can change the jump baseline.
+
+## sample_source
+
+`ep.testing.sample_source(source, times)` is a context manager yielding a
+read-only RGB callable for the declared times. Video is decoded once, with
+the same selection as separate input seeks; selected pixels use lossless
+temporary storage and a bounded decoded cache. Include the union of every
+consumer's requested times, including window endpoints. A missing time raises
+`KeyError`; the callable expires on context exit, including after failure.
+It can supply `source=` to both motion and timing checks. A callable source
+must set its pixels absolutely from time and fixed data.
+
+For an expensive callable, `frame_key(t)` can skip producing consecutive
+repeated states while keeping a sample at every declared time. Equal keys
+promise identical complete source state, including pixels and any draw-time
+state. Include all dependencies and do not use a converging layout. None
+keys always produce a sample. A video path rejects this option: equal plan
+states do not establish equality of compressed pixels.
+
+```{code-cell} python
+import numpy as np
+
+import eyepiece as ep
+
+times = [0.0, 0.1, 0.2]
+
+
+def pixels(t):
+    return np.full((8, 8, 3), round(t * 100), dtype=np.uint8)
+
+
+with ep.testing.sample_source(pixels, times) as source:
+    assert source(0.1)[0, 0, 0] == 10
+    assert np.array_equal(source(0.2), source(0.2))
+
+with ep.testing.sample_source(pixels, [0.1, 0.1], frame_key=lambda t: t) as source:
+    assert source(0.1)[0, 0, 0] == 10
+```
+
+Pass a video path in place of `pixels` for an encoded clip. The ordinary
+video-path timing check uses ffmpeg's fps filter; a sampled callable uses
+input-seek selection at each time instead. Compare findings before replacing
+that path or drawing, since those frame choices can differ.
 
 ## jump
 

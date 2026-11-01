@@ -382,6 +382,7 @@ ORIGINAL_OWNERS = {
         "readability_faults": "eyepiece.testing",
         "review_sheet": "eyepiece.testing",
         "same_picture": "eyepiece.testing",
+        "sample_source": "eyepiece.testing",
         "speech_rate": "eyepiece.testing",
         "timing_faults": "eyepiece.testing",
     },
@@ -413,6 +414,15 @@ TASK_MODULES = {
     "mpl",
     "manim",
 }
+
+
+def test_sample_source_is_namespace_only():
+    assert callable(ep.testing.sample_source)
+    assert "sample_source" in ep.testing.__all__
+    assert "sample_source" not in ep.__all__
+    assert "sample_source" not in dir(ep)
+    with pytest.raises(AttributeError, match="sample_source"):
+        _ = ep.sample_source
 
 
 def test_root_discovery_stays_small_after_legacy_access():
