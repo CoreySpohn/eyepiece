@@ -52,3 +52,38 @@ def test_cycle_colors_resolve_at_call_time():
     with plt.rc_context({"axes.prop_cycle": plt.cycler(color=["#00ff00"])}):
         assert look._shade("C0", 1.0, 0.5, False) != first
     assert look._shade("C0", 1.0, 0.5, False) == first
+
+
+def bits(values):
+    return [np.float64(v).tobytes() for v in values]
+
+
+def test_signed_zero_levels_and_colors_keep_their_bits():
+    look = a_look("black")
+    for warm, probe in (
+        (("red", 0.0, 0.5, False), ("red", -0.0, 0.5, False)),
+        (
+            ((0.1, 0.2, 0.3, 0.0), 0.5, 0.5, False),
+            ((0.1, 0.2, 0.3, -0.0), 0.5, 0.5, False),
+        ),
+    ):
+        look._shade(*warm)
+        color, presence, contrast, own = probe
+        grid = np.asarray(to_rgba_array(color))
+        expected = look._shade(grid, presence, contrast, own)
+        assert bits(look._shade(*probe)) == bits(expected[0])
+
+
+def test_unusual_levels_and_pairs_take_the_original_path():
+    from decimal import Decimal
+
+    import pytest
+
+    look = a_look("black")
+    look._shade("red", 0.5, 0.5, False)  # warm the memo for the equal float key
+    with pytest.raises(TypeError):
+        look._shade("red", Decimal("0.5"), 0.5, False)
+    with pytest.raises(IndexError):
+        look._shade(("none", 0.5), 0.5, 0.5, False)
+    inf = look._shade("red", 0.5, float("inf"), False)
+    assert np.isnan(inf[1]) or np.isinf(inf[0])

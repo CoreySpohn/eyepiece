@@ -1652,16 +1652,26 @@ class _Look:
     def _shade(self, value, presence, contrast, own):
         if isinstance(value, str) and value.lower() == "none":
             return value
-        if not isinstance(value, np.ndarray):
-            # A single color: resolved live (so "C0" follows the cycle), then
-            # shaded through a memo of the same arithmetic below. A stage pose
-            # repeats the same few (color, level) pairs over hundreds of frames.
+        if _memo_eligible(value, presence, contrast):
+            # A single color at plain finite levels: resolved live (so "C0"
+            # follows the cycle), then shaded through a memo of the same
+            # arithmetic below. A pose repeats the same few (color, level)
+            # pairs over hundreds of frames. The memo assumes NumPy's default
+            # error policy; under np.errstate(under="raise") a cache hit does
+            # not repeat the arithmetic that would raise.
+            rgba = None
             try:
+                rgba, bg = to_rgba(value), to_rgba(self.background)
+            except ValueError:
+                pass  # a sequence of colors: the array path below
+            else:
+                if _negative_zero(rgba) or _negative_zero(bg):
+                    rgba = None  # -0.0 compares equal to 0.0: no memo key
+            if rgba is not None:
                 return _shade_rgba(
-                    to_rgba(value), to_rgba(self.background), presence, contrast, own
-                )
-            except (TypeError, ValueError):
-                pass  # a sequence of colors or an unhashable level: the array path
+                    rgba, bg, presence, math.copysign(1.0, presence),
+                    contrast, math.copysign(1.0, contrast), own,
+                )  # fmt: skip
         scale = 1.0 if own else presence
         rgba = np.asarray(to_rgba_array(value), dtype=float)
         bg = np.asarray(to_rgba(self.background), dtype=float)[:3]
@@ -1673,9 +1683,33 @@ class _Look:
         return tuple(out[0])
 
 
+_PLAIN_LEVELS = (float, int, np.float64)
+
+
+def _memo_eligible(value, presence, contrast):
+    """True for one color (no array, no ("none", alpha) pair) at finite levels."""
+    if isinstance(value, np.ndarray):
+        return False
+    if isinstance(value, tuple) and value and isinstance(value[0], str):
+        return False
+    return (
+        type(presence) in _PLAIN_LEVELS
+        and type(contrast) in _PLAIN_LEVELS
+        and math.isfinite(presence)
+        and math.isfinite(contrast)
+    )
+
+
+def _negative_zero(rgba):
+    return any(c == 0.0 and math.copysign(1.0, c) < 0 for c in rgba)
+
+
 @lru_cache(maxsize=8192)
-def _shade_rgba(rgba, bg, presence, contrast, own):
-    """`_Look._shade` for one resolved color, with its operation order."""
+def _shade_rgba(rgba, bg, presence, _presence_sign, contrast, _contrast_sign, own):
+    """`_Look._shade` for one resolved color, with its operation order.
+
+    The sign arguments keep +0.0 and -0.0 levels, which compare equal, apart.
+    """
     rgba = np.asarray([rgba], dtype=float)
     bg = np.asarray(bg, dtype=float)[:3]
     out = rgba.copy()
