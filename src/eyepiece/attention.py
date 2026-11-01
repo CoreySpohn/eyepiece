@@ -36,6 +36,7 @@ import math
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 
 import matplotlib
 import numpy as np
@@ -1651,6 +1652,16 @@ class _Look:
     def _shade(self, value, presence, contrast, own):
         if isinstance(value, str) and value.lower() == "none":
             return value
+        if not isinstance(value, np.ndarray):
+            # A single color: resolved live (so "C0" follows the cycle), then
+            # shaded through a memo of the same arithmetic below. A stage pose
+            # repeats the same few (color, level) pairs over hundreds of frames.
+            try:
+                return _shade_rgba(
+                    to_rgba(value), to_rgba(self.background), presence, contrast, own
+                )
+            except (TypeError, ValueError):
+                pass  # a sequence of colors or an unhashable level: the array path
         scale = 1.0 if own else presence
         rgba = np.asarray(to_rgba_array(value), dtype=float)
         bg = np.asarray(to_rgba(self.background), dtype=float)[:3]
@@ -1660,6 +1671,17 @@ class _Look:
         if isinstance(value, np.ndarray) and value.ndim == 2:
             return out
         return tuple(out[0])
+
+
+@lru_cache(maxsize=8192)
+def _shade_rgba(rgba, bg, presence, contrast, own):
+    """`_Look._shade` for one resolved color, with its operation order."""
+    rgba = np.asarray([rgba], dtype=float)
+    bg = np.asarray(bg, dtype=float)[:3]
+    out = rgba.copy()
+    out[:, :3] = bg + contrast * (rgba[:, :3] - bg)
+    out[:, 3] = rgba[:, 3] * (1.0 if own else presence)
+    return tuple(out[0])
 
 
 def _looks(target, background, seen, out):
