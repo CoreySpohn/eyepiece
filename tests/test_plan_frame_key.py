@@ -345,3 +345,113 @@ def test_worker_budget_and_override_keep_encoded_bytes_and_reduce_paint(
                 tmp_path,
                 manifest=manifest,
             )
+
+
+def history_plan(values):
+    return ep.Plan(10, len(values), {}, {"build": values}, [], [], None)
+
+
+def test_reached_is_inclusive_cached_and_order_independent():
+    plan = history_plan([0.0, 0.5, 1.0, 0.0, 0.5])
+    assert [plan.reached(k, "build") for k in (4, 0, 2, 1, 3)] == [
+        True,
+        False,
+        True,
+        False,
+        True,
+    ]
+    assert plan.reached(1, "build", level=0.5)
+    assert not plan.reached(4, "build", level=1.01)
+    assert plan.reached(0, "build", level=0.0)
+    assert plan.unused_knobs()[0] == ()
+    assert history_plan([1.0]).reached(0, "build")
+
+
+def test_reached_validates_frames_knobs_levels_and_values():
+    plan = history_plan([0.0, float("nan"), 0.75])
+    assert not plan.reached(1, "build", level=0.5)
+    assert plan.reached(2, "build", level=0.5)
+    for k in (-1, 3):
+        with pytest.raises(IndexError):
+            plan.reached(k, "build")
+    with pytest.raises(KeyError, match="no knob"):
+        plan.reached(0, "buid")
+    for level in ("1", 1j, []):
+        with pytest.raises(TypeError, match="real"):
+            plan.reached(0, "build", level=level)
+    for level in (float("nan"), float("inf"), -float("inf")):
+        with pytest.raises(ValueError, match="finite"):
+            plan.reached(0, "build", level=level)
+    for values in (["first", "second"], [0.0, "second"], [0j, 1j]):
+        with pytest.raises(TypeError, match="real"):
+            history_plan(values).reached(0, "build")
+
+
+def test_key_covers_levels_first_queried_after_key_and_on_another_plan():
+    values = [0.0, 0.0, 0.75, 0.0, 0.0, 1.0, 0.0, 0.0]
+    key_plan = history_plan(values)
+    draw_plan = history_plan(values)
+    keys = [key_plan.frame_key(k, include_time=False) for k in range(len(values))]
+    assert keys[0] == keys[1]
+    assert keys[3] == keys[4]
+    assert keys[6] == keys[7]
+    assert keys[1] != keys[3] != keys[6]
+    assert key_plan.unused_knobs()[0] == ("build",)
+    # Query only after every key has been emitted, from a separate worker plan.
+    for level in (0.0, 0.5, 0.75, 1.0, 1.01):
+        states = [draw_plan.reached(k, "build", level=level) for k in range(8)]
+        for a in range(8):
+            for b in range(8):
+                if keys[a] == keys[b]:
+                    assert states[a] == states[b]
+    fig = plt.figure(figsize=(0.96, 0.54), dpi=100)
+    try:
+
+        def draw(k):
+            fig.set_facecolor(
+                "black" if draw_plan.reached(k, "build", 0.5) else "white"
+            )
+
+        assert (
+            ep.testing.check_frame_key(fig, draw, keys.__getitem__, frames=range(8))
+            == []
+        )
+    finally:
+        plt.close(fig)
+
+
+def test_reached_preserves_exact_large_integer_and_numpy_thresholds():
+    large = 2**53
+    plan = history_plan([np.int64(large), large + 1, 0])
+    assert not plan.reached(0, "build", large + 1)
+    assert plan.reached(1, "build", large + 1)
+    assert plan.frame_key(0, include_time=False) != plan.frame_key(
+        2, include_time=False
+    )
+    peak = np.nextafter(np.longdouble(1), np.longdouble(2))
+    plan = history_plan([1.0, peak, 1.0])
+    assert not plan.reached(0, "build", peak)
+    assert plan.reached(2, "build", peak)
+    assert plan.frame_key(0, include_time=False) != plan.frame_key(
+        2, include_time=False
+    )
+
+
+def test_reached_nonfinite_samples_and_extended_levels_are_exact():
+    plan = history_plan([float("nan"), -float("inf"), 0.0, float("inf")])
+    assert not plan.reached(1, "build", -1.0)
+    assert plan.reached(2, "build", -1.0)
+    assert plan.reached(3, "build", 10**400)
+    assert not history_plan([float("nan")]).reached(0, "build", 0.0)
+    large = 2**64 - 1
+    plan = history_plan([float(large), np.uint64(large), 0])
+    assert plan.reached(0, "build", large + 1)
+    assert plan.reached(1, "build", large + 1)
+    # A string knob remains valid key state; unsupported reached queries refuse
+    # even if a key was already emitted, instead of silently omitting history.
+    plan = history_plan(["first", "first"])
+    assert plan.frame_key(0, include_time=False) == plan.frame_key(
+        1, include_time=False
+    )
+    with pytest.raises(TypeError, match="real"):
+        plan.reached(0, "build", 0.5)

@@ -48,7 +48,8 @@ their canonical homes below are `testing` and `narration`, respectively.
 | mark sections of a clip | `tl.section(name)` | Opens a named section; the plan's frames carry it | [animation](../gallery/animation.md), [build-up](../tutorials/build-up.md) |
 | a span the verbs do not cover | `tl.span(name, seconds, kind=, paced=, ease=, extends=)` | Every default stated explicitly | [timeline-verbs](../how-to/timeline-verbs.md) |
 | read a knob on a frame | `plan.value(k, knob)` | The value of a knob at frame `k` | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md), [motion-clock](../gallery/motion-clock.md) |
-| identify exact plan state on a frame | `plan.frame_key(k, include_time=)` | All knob values and section, with index and time included by default | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md) |
+| test whether a knob has ever reached a threshold | `plan.reached(k, name, level=)` | Inclusive first crossing, retained through later fades and independent of draw order | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md) |
+| identify exact plan state on a frame | `plan.frame_key(k, include_time=)` | All knob values, numeric prefix maxima and section, with index and time included by default | [render-a-clip-in-parallel](../how-to/render-a-clip-in-parallel.md) |
 | read a span's progress on a frame | `plan.progress(k, span, eased=)` | 0 before the span, 1 from its end | [motion-clock](../gallery/motion-clock.md), [motion-camera](../gallery/motion-camera.md) |
 | find the frame of a span's start, middle or end | `plan.frame_of(span, where=)` | Frame index of a span's state | [bind-a-move-to-a-knob](../how-to/bind-a-move-to-a-knob.md) |
 | list the clip's moments | `plan.events()`, `plan.review_frames()` | Timed events; frames a contact sheet draws | [motion-clock](../gallery/motion-clock.md) |

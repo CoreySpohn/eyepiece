@@ -416,7 +416,8 @@ assert (variant_dir / reused.outputs[0]).read_bytes() == (
 ### Use exact plan state and verify the key
 
 `plan.frame_key(k)` includes every knob, the section, index and time fields
-accepted by `plan.value`. Its immutable scalar encoding preserves float bits,
+accepted by `plan.value`, plus each real numeric knob's prefix maximum.
+Its immutable scalar encoding preserves float bits,
 signed zero and scalar types without rounding. Unsupported state raises rather
 than guessing. The default includes index and time, so adjacent keys differ.
 If draw reads neither `plan.value(k, "index")` nor `plan.value(k, "t")`, use
@@ -424,11 +425,29 @@ If draw reads neither `plan.value(k, "index")` nor `plan.value(k, "t")`, use
 Pass either callable as `ClipSpec(frame_key=...)`. This uses the existing
 callable interface and works with spawned workers, without a special sentinel.
 
-The contract requires absolute poses derived solely from `plan.value` and
-fixed data. Direct frame or time calculations, `plan.progress`, randomness,
-or mutable state require a composite key covering those inputs. In particular,
+`plan.reached(k, name, level=1.0)` returns whether a numeric knob was at or
+above a finite real threshold at or before frame `k`. It includes the crossing
+frame, stays true through later fades, caches the first crossing, and works
+in any draw order. NaN samples do not cross a threshold. Non-real knobs and
+non-finite levels raise. Use it to draw a build once, then fade the whole
+completed object. For a build knob bounded by 0 and 1, both paths pass 1.0
+on the first completed frame.
+
+The key covers every supported threshold through the numeric prefix maximum,
+not a registry of queried levels. For a finite level L, `reached(k, name, L)`
+is exactly `prefix_maximum[k] >= L`. Equal keys imply equal maxima and therefore
+equal answers for every L, even when the draw first queries L after key
+computation or uses a separately constructed worker plan. Python and NumPy
+real scalars are compared without losing integer or extended-float precision.
+Key history is cached lazily; keep the plan unchanged throughout rendering.
+
+The contract requires absolute poses derived solely from `plan.value`,
+`plan.reached` and fixed data. Direct frame or time calculations,
+`plan.progress`, randomness, or mutable state require a composite key covering
+those inputs. In particular,
 a branch such as `k > build_end` needs that Boolean in the key even when all
-knobs agree. Reading the omitted index or time fields also breaks the contract.
+knobs agree; a build based on `plan.reached(k, name)` is covered automatically.
+Reading the omitted index or time fields also breaks the contract.
 Key generation does not count as a knob read in clip diagnostics.
 
 `check_frame_key` renders every supplied frame independently of the key. It
@@ -444,6 +463,7 @@ independence separately with `frame_faults`.
 tl = ep.clock.Timeline({"position": 0.2})
 tl.hold(0.25)
 tl.hold(0.25, to={"position": 0.8})
+tl.hold(0.25, to={"position": 0.2})
 plan = tl.at_fps(fps)
 plan_key = partial(plan.frame_key, include_time=False)
 fig, ax = plt.subplots(figsize=(2.4, 1.35), dpi=dpi)
@@ -453,10 +473,13 @@ ax.set(xlim=(0, 1), ylim=(0, 1), xticks=[], yticks=[])
 
 def pose(k):
     marker.set_data([plan.value(k, "position")], [0.5])
+    marker.set_color("red" if plan.reached(k, "position", level=0.8) else "black")
 
 
 assert plan.frame_key(0) != plan.frame_key(1)
 assert plan_key(0) == plan_key(1)
+assert plan_key(0) != plan_key(plan.n_frames - 1)
+assert plan.reached(plan.n_frames - 1, "position", level=0.8)
 assert not ep.testing.check_frame_key(fig, pose, plan_key, frames=range(plan.n_frames))
 wrong = ep.testing.check_frame_key(fig, pose, lambda k: 0, frames=range(plan.n_frames))
 assert len(wrong) == 1 and wrong[0]["pixel_count"] > 0

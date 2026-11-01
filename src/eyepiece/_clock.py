@@ -25,6 +25,7 @@ names it, and the same function serves the silent clip with ``narration=None``.
 This module imports only the standard library, NumPy and `eyepiece._motion`.
 """
 
+import bisect
 import difflib
 import functools
 import itertools
@@ -1798,6 +1799,25 @@ def _frame_key_value(value):
     )
 
 
+def _reached_number(value):
+    """Normalize real scalars so mixed NumPy comparisons do not lose bits."""
+    kind = type(value)
+    if kind in (bool, int, float):
+        return value
+    if (
+        isinstance(value, np.generic)
+        and kind is value.dtype.type
+        and value.dtype.kind in "biuf"
+        and value.dtype.metadata is None
+    ):
+        if value.dtype.kind in "biu":
+            return int(value)
+        if value.dtype.itemsize <= 8 or not np.isfinite(value):
+            return float(value)
+        return Fraction(*value.as_integer_ratio())
+    raise TypeError("reached requires real Python or NumPy scalar values and levels")
+
+
 class Plan:
     """A timeline resolved for one frame rate.
 
@@ -1828,6 +1848,8 @@ class Plan:
         self._events = None
         self._steps = steps
         self._read = set()
+        self._reach_histories = {}
+        self._reach_crossings = {}
         self.frames = _Frames(self)
         labels = [""] * n_frames
         for name, _key, _a, _b, k0, k1 in sections:
@@ -1857,7 +1879,7 @@ class Plan:
     def unused_knobs(self):
         """Knobs a draw function has not read, and knobs that never change.
 
-        Reads are those made through `value`, `frames` and `progress` since
+        Reads are those made through `value`, `reached`, `frames` and `progress` since
         the plan was built (or since `record` began). The ``indicate.*`` and
         ``circumscribe.*`` knobs (and ``pulse.*`` and ``ring.*``, their names
         before 0.16) are left out of both lists: every indication or outline
@@ -1904,19 +1926,91 @@ class Plan:
             raise IndexError(f"frame {k} is outside the plan's {self.n_frames} frames")
         return vals[k]
 
+    def _reach_history(self, knob):
+        if knob not in self._reach_histories:
+            maxima, keys = [], []
+            peak = -math.inf
+            token = _frame_key_value(peak)
+            try:
+                for value in self._knobs[knob]:
+                    value = _reached_number(value)
+                    if value > peak:
+                        peak = value
+                        token = (
+                            ("ratio", peak.numerator, peak.denominator)
+                            if isinstance(peak, Fraction)
+                            else _frame_key_value(peak)
+                        )
+                    maxima.append(peak)
+                    keys.append(token)
+            except TypeError:
+                # Categorical knobs still support value() and frame_key(), but
+                # cannot be used with reached(), even before the bad sample.
+                maxima, keys = None, None
+            self._reach_histories[knob] = maxima, keys
+        return self._reach_histories[knob]
+
+    def reached(self, k, name, level=1.0):
+        """Whether knob `name` was at least `level` at or before frame `k`.
+
+        The first crossing is inclusive and cached. Once true, the result stays
+        true even when the knob falls below the level. This reads the resolved
+        plan, not the history of draw calls, so frames may be drawn in any order.
+        This counts as reading the knob; frame_key covers every supported level,
+        including levels first queried after the key was computed.
+
+        Args:
+            k: Frame index in [0, n_frames).
+            name: A real numeric knob, as listed by knobs.
+            level: Finite bool, int, float or real NumPy scalar threshold,
+                default 1.0.
+
+        Returns:
+            A bool indicating whether the threshold has ever been reached.
+
+        Raises:
+            IndexError: If k is outside the plan.
+            KeyError: If name is not a knob (frame metadata is not a knob).
+            TypeError: If level or any knob sample is not a real scalar.
+            ValueError: If level is NaN or infinite. NaN knob samples never
+                cross a threshold. Plans must remain unchanged during use.
+        """
+        if name not in self._knobs:
+            near = difflib.get_close_matches(name, list(self._knobs), n=3)
+            hint = f"; did you mean {near}" if near else ""
+            raise KeyError(f"no knob named {name!r}{hint}")
+        if not 0 <= k < self.n_frames:
+            raise IndexError(f"frame {k} is outside the plan's {self.n_frames} frames")
+        level = _reached_number(level)
+        if isinstance(level, float) and not math.isfinite(level):
+            raise ValueError("reached level must be finite")
+        maxima, _ = self._reach_history(name)
+        if maxima is None:
+            raise TypeError("reached requires real scalar knob samples")
+        self._read.add(name)
+        crossings = self._reach_crossings.setdefault(name, {})
+        if level not in crossings:
+            crossings[level] = bisect.bisect_left(maxima, level)
+        return bool(k >= crossings[level])
+
     def frame_key(self, k, *, include_time=True):
         """An exact, hashable state key for frame k, without rounding.
 
-        Includes every knob and the section label. By default also includes
-        ``value(k, 'index')`` and ``value(k, 't')``, so every frame is unique.
+        Includes every knob, its real numeric prefix maximum, and the section
+        label. By default also includes ``value(k, 'index')`` and
+        ``value(k, 't')``, so every frame is unique.
         Set include_time=False only when draw never reads those two fields:
         ``partial(plan.frame_key, include_time=False)`` then shares hold frames.
         This callable can be passed directly as ClipSpec.frame_key; there is
-        no inferred clock, read tracking, or cache of possibly mutable state.
+        no inferred clock or read tracking. Numeric histories are cached lazily.
 
         Exact only when draw sets absolute state solely from plan.value(k,
-        name) and fixed data. Direct use of k, time, progress(), randomness,
-        mutable state, or omitted time fields breaks that contract. Add every
+        name), plan.reached(k, name, level) and fixed data. A numeric prefix
+        maximum determines reached for every finite real level, even one first
+        queried after key generation or on a separately constructed worker plan.
+        Non-real knobs cannot be queried with reached and need no history key.
+        Direct use of k, time, progress(), randomness, mutable state, or omitted
+        time fields breaks that contract. Add every
         extra dependency to a composite key or decline raster reuse. Verify
         representative runs with eyepiece.testing.check_frame_key first.
 
@@ -1949,7 +2043,12 @@ class Plan:
         fields = (_frame_key_value(self._labels[k]),)
         if include_time:
             fields += (_frame_key_value(k), _frame_key_value(k / self.fps))
-        return values, fields
+        history = tuple(
+            (name, keys[k])
+            for name in self._knobs
+            if (keys := self._reach_history(name)[1]) is not None
+        )
+        return values, fields, history
 
     def _span(self, name):
         try:
