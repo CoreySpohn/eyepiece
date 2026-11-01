@@ -100,6 +100,7 @@ from eyepiece._ffmpeg import (
     with_caller_pixels,
 )
 from eyepiece._motion import frame_count
+from eyepiece._render_range import _range_bounds
 
 
 class _Presets(dict):
@@ -489,6 +490,7 @@ class _Recorder:
         free=frozenset(),
         stills=None,
         stills_dpi=None,
+        frame_range=(0, None),
     ):
         self.fig = fig
         self.writers = writers
@@ -502,6 +504,8 @@ class _Recorder:
         self._stills = stills or {}
         self._stills_dpi = stills_dpi or layout_dpi
         self.stills_written = []
+        self._frame_range = frame_range
+        self._source_frames = 0
 
     def frame(self):
         """Grab the figure exactly as it stands now, into every open sink.
@@ -516,6 +520,11 @@ class _Recorder:
         """
         if not self._layout_frozen:
             self._freeze_layout()
+        source_index = self._source_frames
+        self._source_frames += 1
+        first, stop = self._frame_range
+        if source_index < first or (stop is not None and source_index >= stop):
+            return
         facecolor = self.fig.get_facecolor()
         for writer in self.writers:
             writer.grab_frame(facecolor=facecolor)
@@ -626,6 +635,7 @@ def record(
     plan=None,
     stills_dpi=None,
     snap=False,
+    time_range=None,
 ):
     """Open every output file at once and record `fig` frame by frame.
 
@@ -707,6 +717,12 @@ def record(
             exempt, as `Plan.unused_knobs` describes.
         stills_dpi: Dpi of the stills; None uses the first sink's dpi, which
             makes a still pixel-identical to that sink's frame.
+        time_range: Optional ``(start_s, stop_s)`` selecting source frames at
+            ``start_s <= k / fps < stop_s``. None endpoints mean source start
+            or end. Keep calling frame for the full source loop; skipped calls
+            still advance its clock. Stills retain absolute source times and
+            must lie in the range. A finite stop must be reached by the loop.
+            None preserves full recording behavior.
         snap: Whether Agg snaps markers, axis-aligned lines and rectilinear
             patch edges to whole pixels. The default False draws every frame
             at sub-pixel positions, so a slow move glides instead of stalling
@@ -729,7 +745,16 @@ def record(
     """
     if on_rescale not in _ON_RESCALE:
         raise ValueError(f"on_rescale must be one of {_ON_RESCALE}, got {on_rescale!r}")
+    if time_range is not None and plan is not None and abs(plan.fps - fps) > 1e-9:
+        raise ValueError(f"plan was resolved at {plan.fps} fps but record has {fps}")
+    frame_range = _range_bounds(
+        time_range, fps, None if plan is None else plan.n_frames, open_stop=True
+    )
     still_frames = _resolve_stills(stills, plan, fps)
+    first, stop = frame_range
+    if any(k < first or (stop is not None and k >= stop) for k in still_frames):
+        raise ValueError("a still is outside time_range")
+    still_frames = {k - first: paths for k, paths in still_frames.items()}
     if plan is not None:
         plan._read.clear()
     free = set()
@@ -785,8 +810,15 @@ def record(
                 free=free,
                 stills=still_frames,
                 stills_dpi=stills_dpi,
+                frame_range=frame_range,
             )
             yield recorder
+            if (
+                time_range is not None
+                and stop is not None
+                and recorder._source_frames < stop
+            ):
+                raise RuntimeError("record ended before time_range stop")
             _check_frames(counter, paths)
             _check_stills_reached(still_frames, counter["frames"])
             _warn_unused_knobs(plan)

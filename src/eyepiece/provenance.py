@@ -268,6 +268,7 @@ def stamp(
         zorder=0.1,
     )
     artist.set_gid(STAMP_GID)
+    artist._eyepiece_furniture = True
     if not reserve:
         return artist
 

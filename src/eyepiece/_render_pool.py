@@ -361,6 +361,22 @@ def _worker_main(folder, worker_index):
     return 0
 
 
+class _WorkerPickler(pickle.Pickler):
+    """Reject references that a fresh ``python -m`` worker cannot import."""
+
+    def reducer_override(self, obj):
+        if (
+            isinstance(obj, (type, type(_frame_source)))
+            and getattr(obj, "__module__", None) == "__main__"
+        ):
+            raise ValueError(
+                "render workers cannot import __main__ callables; define build "
+                "and other worker callables in an importable module, then import "
+                "them from the rendering script"
+            )
+        return NotImplemented
+
+
 class _Workers:
     """Own subprocesses, their lifetime pipes, and their on-disk protocol."""
 
@@ -378,9 +394,8 @@ class _Workers:
         try:
             with (self.folder / "job.pkl").open("wb") as stream:
                 pickle.dump([os.path.abspath(p) for p in sys.path], stream)
-                pickle.dump(
+                _WorkerPickler(stream).dump(
                     dict(figure=self.figure, parent_pid=os.getpid(), run=self.run),
-                    stream,
                 )
             for index in range(self.workers):
                 with (self.folder / f"worker-{index}.log").open("wb") as log:

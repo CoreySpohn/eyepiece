@@ -355,6 +355,7 @@ ORIGINAL_OWNERS = {
         "TimingFault": "eyepiece.testing",
         "VENUES": "eyepiece.testing",
         "VENUE_FPS": "eyepiece.testing",
+        "Waive": "eyepiece.testing",
         "Window": "eyepiece.testing",
         "assert_clip": "eyepiece.testing",
         "assert_frames_pure": "eyepiece.testing",

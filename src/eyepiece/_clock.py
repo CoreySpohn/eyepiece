@@ -1497,7 +1497,9 @@ class Timeline:
                     src.place(sec.key, starts[sec.key], end_s=float(need)).end_s
                 )
             ends[sec.key] = float(end)
-        return type(src)(src.script, src.spoken, starts=starts, ends=ends)
+        rebuilt = type(src)(src.script, src.spoken, starts=starts, ends=ends)
+        rebuilt._asked.update(self._used)
+        return rebuilt
 
     # -- resolving -------------------------------------------------------
 

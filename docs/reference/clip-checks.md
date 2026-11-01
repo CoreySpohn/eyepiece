@@ -27,6 +27,45 @@ when every pose dependency is a plan knob or fixed data. Include direct use
 of the frame index, time, progress and other dependencies in a composite key.
 Equal pixels alone do not establish equal geometry. Defaults do not reuse poses.
 
+Identical text with the same rendered position and typography is one readable
+shape during a crossfade. Marks with no ink, including alpha-zero and zero-width
+lines without markers, do not obscure text. Arrow hit tests first respect the
+drawn window extent; ignored path vertices cannot extend the arrow. Provenance
+stamps are furniture for the minimum-size rule; overlap and frame-edge checks
+still apply. Duplicate records at the same time, for the same artists and kind,
+are emitted once. Findings at distinct times remain distinct, including when
+`frame_key` reuses geometry.
+
+## Explicit exceptions
+
+Use `ep.testing.Waive(kind, artist=artist, reason="...")` for a deliberate
+exception. The declaration requires a known readability or motion kind, a
+specific artist, and a nonempty reason. `other=` optionally restricts it to an
+artist pair. Pass a sequence as `waive=` to `readability_faults`, `motion_faults`,
+or `check_clip`. Matching findings stay in the returned list, with the reason
+in `fault.waived`. Unwaived findings have `waived=None`.
+
+The readability and motion lists expose `.waived` and print `waived: N, reason`.
+Their assertion helpers raise only for unwaived findings and include the waiver
+audit if another finding fails. `ClipReport.waived` retains the exceptions;
+`ClipReport.ok` and `.faults` exclude them, and its text includes each reason.
+A waiver for size never excuses a collision or clipping on the same artist.
+
+```{code-cell} python
+import matplotlib.pyplot as plt
+
+import eyepiece as ep
+
+fig = plt.figure(figsize=(4, 2), dpi=80)
+footer = fig.text(0.1, 0.1, "simulation settings", fontsize=6)
+waiver = ep.testing.Waive("small", artist=footer, reason="reserved footer band")
+found = ep.testing.readability_faults(fig, kinds=("small",), waive=[waiver])
+ep.testing.assert_readable(fig, kinds=("small",), waive=[waiver])
+assert len(found.waived) == 1
+print(str(found.waived[0]))
+plt.close(fig)
+```
+
 ## meaning_faults
 
 `ep.testing.meaning_faults(fig, at=pose, times=..., keys={gid_prefix: meaning})` checks
@@ -175,7 +214,9 @@ than `tol_px`.
 
 `tear` is a `groups` set whose members, by their ink centroids, change their
 spacing, so a stagger or a drift of one member shows and a rigid rotation does
-not; a group declared with `scales=True` may scale as a whole.
+not; a group declared with `scales=True` may scale as a whole. A declared member
+with no ink in the sampled declaration window is a `tear` finding, so the
+remaining checks still run. Declarations outside the sampled window are ignored.
 
 ## overlap
 
@@ -189,7 +230,9 @@ second, so the answer does not depend on the frame rate) and are not listed in
 `outside` is any traced artist, a glyph path included, past the frame, and any
 text or declared artist cut by its clip box or clipped away entirely; a clip
 box that only widens, and ends by uncovering the artist, is a reveal and not a
-cut.
+cut. `motion.build_axes` registers its active wipe with the check, including
+a partial build sampled before it settles. Replacing that clip or restoring the
+axis removes the exemption; frame-edge departures still count.
 
 ## spike
 

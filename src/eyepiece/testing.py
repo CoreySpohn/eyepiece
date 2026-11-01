@@ -70,7 +70,7 @@ import os
 import re
 import warnings
 from contextlib import closing, contextmanager, nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -83,7 +83,7 @@ from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_hex, to_rgb, to_rgba
 from matplotlib.image import AxesImage
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
+from matplotlib.patches import FancyArrowPatch, Patch
 from matplotlib.patheffects import withStroke
 from matplotlib.spines import Spine
 from matplotlib.text import Text
@@ -157,6 +157,7 @@ __all__ = [
     "SpeechRateError",
     "TimingError",
     "TimingFault",
+    "Waive",
     "Window",
     "assert_clip",
     "assert_frames_pure",
@@ -191,6 +192,86 @@ __all__ = [
 ]
 
 KINDS = ("overlap", "outside", "small", "on-marks")
+
+
+@dataclass(frozen=True)
+class Waive:
+    """An explicit exception for one artist and finding kind.
+
+    A matching finding stays in the result with its reason in ``waived``.
+    Assertions and ClipReport.ok count only unwaived findings.
+
+    Attributes:
+        kind: One readability or motion kind.
+        artist: Artist that must participate in the finding; never a wildcard.
+        reason: Nonempty explanation of the exception.
+        other: Optional second artist restricting the exception to this pair.
+    """
+
+    kind: str
+    artist: object
+    reason: str
+    other: object = None
+
+    def __post_init__(self):
+        """Require a narrow exception with a usable audit reason."""
+        if self.kind not in (*KINDS, *MOTION_KINDS):
+            raise ValueError(f"unknown waiver kind {self.kind!r}")
+        if self.artist is None:
+            raise ValueError("a waiver needs an artist")
+        if not isinstance(self.reason, str) or not self.reason.strip():
+            raise ValueError("a waiver needs a nonempty reason")
+
+
+def _waiver_summary(faults):
+    reasons = {}
+    for fault in faults:
+        reason = getattr(fault, "waived", None)
+        if reason:
+            reasons[reason] = reasons.get(reason, 0) + 1
+    return [f"waived: {count}, {reason}" for reason, count in reasons.items()]
+
+
+class _FaultList(list):
+    """A compatible list that also prints the audit of explicit exceptions."""
+
+    @property
+    def waived(self):
+        return [fault for fault in self if fault.waived is not None]
+
+    def __str__(self):
+        return "\n".join([super().__str__(), *_waiver_summary(self)])
+
+
+def _waive(faults, declarations):
+    declarations = tuple(declarations)
+    if any(not isinstance(w, Waive) for w in declarations):
+        raise TypeError("waive must contain Waive declarations")
+    found = _FaultList()
+    seen = set()
+    for fault in faults:
+        pair = frozenset((fault.artist, fault.other))
+        key = (
+            fault.kind,
+            pair,
+            fault.time,
+            fault.box,
+            fault.detail,
+            getattr(fault, "value", None),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        for waiver in declarations:
+            if (
+                waiver.kind == fault.kind
+                and waiver.artist in pair
+                and (waiver.other is None or waiver.other in pair)
+            ):
+                fault = replace(fault, waived=waiver.reason)
+                break
+        found.append(fault)
+    return found
 
 
 def check_frame_key(fig, draw, key, *, frames):
@@ -316,6 +397,7 @@ class ReadabilityFault:
             the lower left of the figure: the overlap region, the clipped
             artist's extent, or the text extent.
         detail: A one-line description.
+        waived: Reason for an explicit exception, or None.
     """
 
     kind: str
@@ -324,12 +406,14 @@ class ReadabilityFault:
     time: object
     box: tuple
     detail: str
+    waived: str | None = None
 
     def __str__(self):
         """One line: the time, the kind, the detail and the box."""
         when = "as drawn" if self.time is None else f"t={self.time:g}"
         x0, y0, x1, y1 = self.box
         return (
+            f"{'waived (' + self.waived + ') ' if self.waived else ''}"
             f"[{when}] {self.kind}: {self.detail} "
             f"(box {x0:.0f},{y0:.0f} to {x1:.0f},{y1:.0f} px)"
         )
@@ -345,8 +429,9 @@ class ReadabilityError(AssertionError):
     def __init__(self, faults):
         """Build the report from the faults."""
         self.faults = list(faults)
-        lines = [f"{len(self.faults)} readability fault(s):"]
+        lines = [f"{sum(f.waived is None for f in self.faults)} readability fault(s):"]
         lines += [f"  {fault}" for fault in self.faults]
+        lines += _waiver_summary(self.faults)
         super().__init__("\n".join(lines))
 
 
@@ -424,10 +509,31 @@ def _finite(box):
     return np.all(np.isfinite([box.x0, box.y0, box.x1, box.y1]))
 
 
+def _same_text(a, b):
+    return (
+        a.get_text() == b.get_text()
+        and a.get_fontproperties() == b.get_fontproperties()
+        and a.get_rotation() == b.get_rotation()
+        and a.get_ha() == b.get_ha()
+        and a.get_va() == b.get_va()
+        and a.get_path_effects() == b.get_path_effects()
+        and a.get_bbox_patch() is None
+        and b.get_bbox_patch() is None
+        and np.allclose(
+            a.get_window_extent().extents,
+            b.get_window_extent().extents,
+            rtol=0,
+            atol=1e-7,
+        )
+    )
+
+
 def _overlaps(texts, boxes, tol):
     found = []
     for i, first in enumerate(texts):
         for j in range(i + 1, len(texts)):
+            if _same_text(first, texts[j]):
+                continue
             a, b = boxes[i], boxes[j]
             width = min(a.x1, b.x1) - max(a.x0, b.x0)
             height = min(a.y1, b.y1) - max(a.y0, b.y0)
@@ -539,6 +645,8 @@ def _stroke(points, step=1.0):
 def _parts(mark, dpi):
     """(rgba, outline points or None, filled Path or None, radius px) per part."""
     out = []
+    if _ink(mark) < _SHOWN:
+        return out
     if isinstance(mark, Line2D):
         xy = mark.get_transform().transform(mark.get_xydata())
         solid = mark.get_linestyle() not in ("None", "none", "", " ")
@@ -547,7 +655,8 @@ def _parts(mark, dpi):
         if marker:
             radius = max(radius, 0.5 * mark.get_markersize() * dpi / 72.0)
         pts = _stroke(xy) if solid else np.asarray(xy, dtype=float)
-        out.append((to_rgba(mark.get_color()), pts, None, radius))
+        rgba = (*to_rgba(mark.get_color())[:3], _alpha(mark, mark.get_color()))
+        out.append((rgba, pts, None, radius))
     elif isinstance(mark, Patch):
         path = mark.get_transform().transform_path(mark.get_path())
         filled = to_rgba(mark.get_facecolor())
@@ -629,7 +738,9 @@ def _on_marks(fig, texts, boxes, dpi):
         [
             mark
             for mark in _default_avoid(ax, set())
-            if mark.get_visible() and any(c[3] >= _SHOWN for c in _data_colors(mark))
+            if mark.get_visible()
+            and _ink(mark) >= _SHOWN
+            and any(c[3] >= _SHOWN for c in _data_colors(mark))
         ]
         for ax in fig.axes
         if ax.get_visible()
@@ -641,6 +752,19 @@ def _on_marks(fig, texts, boxes, dpi):
         text_box = text.get_window_extent(_renderer(fig))
         for group in marks:
             for mark in group:
+                if isinstance(mark, FancyArrowPatch):
+                    # CLOSEPOLY can carry an ignored dummy vertex. Path hit
+                    # tests must not connect that vertex to the drawn arrow.
+                    extent = mark.get_window_extent(_renderer(fig))
+                    pad = 0.5 * mark.get_linewidth() * dpi / 72.0
+                    extent = Bbox.from_extents(
+                        extent.x0 - pad,
+                        extent.y0 - pad,
+                        extent.x1 + pad,
+                        extent.y1 + pad,
+                    )
+                    if not extent.overlaps(text_box):
+                        continue
                 if mark not in cache:
                     cache[mark] = _parts(mark, dpi)
                 for part in cache[mark]:
@@ -689,6 +813,7 @@ def readability_faults(
     frame_tol=1.0,
     kinds=KINDS,
     frame_key=None,
+    waive=(),
 ):
     """Check a figure, or a clip sampled at chosen times, for readability faults.
 
@@ -715,6 +840,8 @@ def readability_faults(
         frame_tol: Largest overshoot past the figure edge, in pixels, that is
             not reported.
         kinds: The kinds of fault to look for, a subset of `KINDS`.
+        waive: Sequence of `Waive` declarations. Matching findings retain their
+            reasons in ``waived`` and are excluded by assertion helpers.
         frame_key: Optional callable ``frame_key(t)`` promising identical
             complete figure state for equal consecutive keys, including
             geometry and draw-time state. Skips posing and checking repeats,
@@ -776,7 +903,7 @@ def readability_faults(
     order = {kind: i for i, kind in enumerate(KINDS)}
     index = {t: i for i, t in enumerate(samples)}
     found.sort(key=lambda f: (index[f.time], order[f.kind]))
-    return found
+    return _waive(found, waive)
 
 
 def assert_readable(fig, **kwargs):
@@ -797,7 +924,7 @@ def assert_readable(fig, **kwargs):
         ept.assert_readable(fig, at=pose, times=[1.0, 2.5], venue="video")
     """
     found = readability_faults(fig, **kwargs)
-    if found:
+    if any(f.waived is None for f in found):
         raise ReadabilityError(found)
 
 
@@ -1031,6 +1158,7 @@ class MotionFault:
         detail: A one-line description.
         value: The number the rule measured (a ratio for a jump, pixels for
             drift, tear, outside, overlap and spike), None for ``"dead"``.
+        waived: Reason for an explicit exception, or None.
     """
 
     kind: str
@@ -1040,11 +1168,13 @@ class MotionFault:
     box: tuple
     detail: str
     value: object = None
+    waived: str | None = None
 
     def __str__(self):
         """One line: the time, the kind, the detail and the box."""
         x0, y0, x1, y1 = self.box
         return (
+            f"{'waived (' + self.waived + ') ' if self.waived else ''}"
             f"[t={self.time:g}] {self.kind}: {self.detail} "
             f"(box {x0:.0f},{y0:.0f} to {x1:.0f},{y1:.0f} px)"
         )
@@ -1060,8 +1190,9 @@ class MotionError(AssertionError):
     def __init__(self, faults):
         """Build the report from the faults."""
         self.faults = list(faults)
-        lines = [f"{len(self.faults)} motion fault(s):"]
+        lines = [f"{sum(f.waived is None for f in self.faults)} motion fault(s):"]
         lines += [f"  {fault}" for fault in self.faults]
+        lines += _waiver_summary(self.faults)
         super().__init__("\n".join(lines))
 
 
@@ -1092,8 +1223,16 @@ def _ink(artist):
         )
         return max(face, edge)
     if isinstance(artist, Line2D):
-        drawn = artist.get_linestyle() not in ("None", "none", "", " ")
-        drawn = drawn or artist.get_marker() not in (None, "None", "none", "", " ")
+        drawn = artist.get_linewidth() > 0 and artist.get_linestyle() not in (
+            "None",
+            "none",
+            "",
+            " ",
+        )
+        drawn = drawn or (
+            artist.get_markersize() > 0
+            and artist.get_marker() not in (None, "None", "none", "", " ")
+        )
         return base * to_rgba(artist.get_color())[3] if drawn else 0.0
     if isinstance(artist, AxesImage):
         return base
@@ -1536,6 +1675,7 @@ class _Trace:
         self.size = (0.0, 0.0)
         self.ticks = set()  # tick labels, which trade places as limits move
         self.tick_text = {}  # tick label -> {sample index: its string}
+        self.wipes = {}  # artist -> {sample index: registered clip active}
         self.shapes = {}  # artist -> {sample index: its outlines, display pixels}
 
     def add_shapes(self, k, artists):
@@ -1561,6 +1701,9 @@ class _Trace:
                     self.boxes[artist] = {}
                     self.order.append(artist)
                 self.boxes[artist][k] = snapshot.boxes[artist][0]
+                self.wipes.setdefault(artist, {})[k] = snapshot.wipes.get(
+                    artist, {}
+                ).get(0, False)
                 if artist in snapshot.tick_text:
                     self.tick_text.setdefault(artist, {})[k] = snapshot.tick_text[
                         artist
@@ -1588,6 +1731,13 @@ class _Trace:
                 self.boxes[artist] = {}
                 self.order.append(artist)
             self.boxes[artist][k] = got
+            registered = getattr(artist, "_eyepiece_wipe", None)
+            active = (artist.get_clip_path(), artist.get_clip_box())
+            self.wipes.setdefault(artist, {})[k] = (
+                registered is not None
+                and artist.get_clip_on()
+                and all(a is b for a, b in zip(registered, active, strict=True))
+            )
             if artist in self.ticks:
                 self.tick_text.setdefault(artist, {})[k] = artist.get_text()
 
@@ -1595,7 +1745,7 @@ class _Trace:
         """Reuse observations only under a caller's complete-state promise."""
         if self.keep_frames:
             self.frames.repeat()
-        for observations in (self.boxes, self.tick_text, self.shapes):
+        for observations in (self.boxes, self.tick_text, self.shapes, self.wipes):
             for values in observations.values():
                 if k - 1 in values:
                     values[k] = values[k - 1]
@@ -1965,7 +2115,17 @@ def _check_tear(trace, groups, tol):
             continue
         common = None
         for artist in group:
-            ks = set(_live(trace, artist, "group", lo, hi))
+            ks = {k for k in trace.boxes.get(artist, {}) if lo <= trace.times[k] <= hi}
+            if not ks:
+                window = [k for k, t in enumerate(trace.times) if lo <= t <= hi]
+                if window:
+                    k = window[0]
+                    detail = (
+                        f"group artist {trace.label(artist)} has no ink in the window"
+                    )
+                    found.append(
+                        (k, "tear", artist, None, (0.0, 0.0, *trace.size), detail, None)
+                    )
             common = ks if common is None else common & ks
         common = sorted(common)
         if len(common) < 2:
@@ -2195,11 +2355,12 @@ def _check_outside(trace, texts, tol):
         first, worst, sides, count = None, 0.0, {}, 0
         reveal = _is_reveal(trace, artist, tol)
         for k, (box, clip, _, _) in sorted(trace.boxes[artist].items()):
+            intentional = reveal or trace.wipes.get(artist, {}).get(k, False)
             seen = box
             if clip is not None:
                 seen = _intersect(box, clip)
                 if seen is None:
-                    if artist in texts and not reveal:
+                    if artist in texts and not intentional:
                         over = {"clipped away": max(box[2] - box[0], box[3] - box[1])}
                         count += 1
                         first = k if first is None else first
@@ -2211,7 +2372,7 @@ def _check_outside(trace, texts, tol):
                 for s, v in _canvas_overshoot(seen, width, height).items()
                 if v > tol
             }
-            if clip is not None and artist in texts and not reveal:
+            if clip is not None and artist in texts and not intentional:
                 cut = _clip_overshoot(box, clip)
                 over.update({s: v for s, v in cut.items() if v > tol})
             if not over:
@@ -2507,6 +2668,7 @@ def motion_faults(
     dpi=None,
     source=None,
     frame_key=None,
+    waive=(),
 ):
     """Check a clip's path between states for motion faults.
 
@@ -2579,6 +2741,7 @@ def motion_faults(
             or different frame selection can change pixel findings; None
             keeps the drawn path. One streamed decoder handles decodable
             samples; requests wholly past the tail can require a retry.
+        waive: Sequence of `Waive` declarations; retains exceptions and reasons.
         frame_key: Optional complete-state key ``frame_key(t)``, as in
             `readability_faults`. Equal consecutive keys reuse geometry and
             pixels. With `source`, this also promises equal source pixels.
@@ -2648,8 +2811,8 @@ def motion_faults(
         original dpi.
 
     Raises:
-        ValueError: If a kind or venue is unknown, a declared rest or group
-            artist is never visible, or a hop group has no positive rate.
+        ValueError: If a kind or venue is unknown, a declared rest artist is
+            never visible, or a hop group has no positive rate.
 
     Example::
 
@@ -2704,22 +2867,25 @@ def motion_faults(
         if isinstance(trace.frames, _FrameStore)
         else nullcontext()
     ):
-        return _analyze(
-            trace,
-            kinds=kinds,
-            moves=moves,
-            steps=steps,
-            draws=draws,
-            hops=hops,
-            rest=rest,
-            groups=groups,
-            may_overlap=may_overlap,
-            rectilinear=rectilinear,
-            tol_px=tol_px,
-            jump_ratio=jump_ratio,
-            overlap_tol=overlap_tol,
-            frame_tol=frame_tol,
-            spike_px=spike_px,
+        return _waive(
+            _analyze(
+                trace,
+                kinds=kinds,
+                moves=moves,
+                steps=steps,
+                draws=draws,
+                hops=hops,
+                rest=rest,
+                groups=groups,
+                may_overlap=may_overlap,
+                rectilinear=rectilinear,
+                tol_px=tol_px,
+                jump_ratio=jump_ratio,
+                overlap_tol=overlap_tol,
+                frame_tol=frame_tol,
+                spike_px=spike_px,
+            ),
+            waive,
         )
 
 
@@ -2943,7 +3109,7 @@ def assert_motion(fig, at, times, **kwargs):
         ept.assert_motion(fig, clip.pose, ept.Window(0.0, 2.0), rest=[title])
     """
     found = motion_faults(fig, at, times, **kwargs)
-    if found:
+    if any(f.waived is None for f in found):
         raise MotionError(found)
 
 
@@ -3990,7 +4156,9 @@ class ClipReport:
         clip, a span that starts slightly late) are not faults.
         """
         entries = [
-            (f.kind, f.detail) for f in (*self.readability, *self.meaning, *self.motion)
+            (f.kind, f.detail)
+            for f in (*self.readability, *self.meaning, *self.motion)
+            if not getattr(f, "waived", None)
         ]
         entries += [
             (f.code, f.message) for f in self.plan_faults if f.severity != "info"
@@ -4000,6 +4168,15 @@ class ClipReport:
             ("speech-rate", f"{key}: {wpm:g} words/min") for key, wpm in self.speech
         ]
         return list(dict.fromkeys(entries))
+
+    @property
+    def waived(self):
+        """All explicitly waived findings, retaining their reasons."""
+        return [
+            f
+            for f in (*self.readability, *self.meaning, *self.motion)
+            if getattr(f, "waived", None)
+        ]
 
     @property
     def ok(self):
@@ -4014,6 +4191,7 @@ class ClipReport:
             if self.motion_ink is None
             else [f"motion ink: {self.motion_ink:.2f} of changed pixels are driven"]
         )
+        ink += _waiver_summary(self.waived)
         if not found:
             return "\n".join(["clip is clean", *ink])
         lines = [f"{len(found)} clip fault(s):"]
@@ -4070,6 +4248,7 @@ def check_clip(
     steps=None,
     hops=None,
     driven=None,
+    waive=(),
 ) -> ClipReport:
     """Re-render a plan-driven clip and collect checks without an animation file.
 
@@ -4106,6 +4285,7 @@ def check_clip(
             its group, as in `motion_faults`.
         hops: Hop groups, each ``{"artists": [...], "rate": draws_per_second}``,
             as in `motion_faults`; a declared move's ``hops`` adds to them.
+        waive: Sequence of `Waive` declarations for readability and motion.
         driven: The artists the clip's knob drives, for the report's
             ``motion_ink`` (see `motion_ink`). None leaves it None.
 
@@ -4181,7 +4361,7 @@ def check_clip(
     try:
         with _share_samples(fig, review_times if driven is None else times, capture):
             readability = readability_faults(
-                fig, at=at, times=review_times, venue=venue
+                fig, at=at, times=review_times, venue=venue, waive=waive
             )
             # A persistent collision is one finding, rather than one per still.
             seen = set()
@@ -4204,6 +4384,7 @@ def check_clip(
                 steps=step_times,
                 hops=hops or (),
                 fps=plan.fps,
+                waive=waive,
             )
             unread, _ = plan.unused_knobs()
             speech = (

@@ -155,23 +155,31 @@ def test_stage_keeps_unsafe_draw_paths(kind):
     np.testing.assert_array_equal(pixels(fig), drawn)
 
 
-def test_hidden_line_keeps_legacy_on_marks_and_outside_findings():
+def test_hidden_line_skips_on_marks_and_preserves_visibility_and_outside():
     fig, ax = plt.subplots(figsize=(3, 2), dpi=80)
     ax.set(xlim=(0, 1), ylim=(0, 1))
-    ax.text(0.4, 0.5, "label", color="black")
+    label = ax.text(0.4, 0.5, "label", color="black")
     (line,) = ax.plot(
         [-2, 2], [0.5, 0.5], color="black", alpha=1, clip_on=False, in_layout=False
     )
     stage = ep.motion.Stage({"line": line})
     stage.weigh({"line": 0})
     assert line.get_visible()
+    hidden_pixels = pixels(fig)
     hidden = [str(f) for f in ep.testing.readability_faults(fig)]
-    assert any("on-marks" in f for f in hidden)
+    assert not any("on-marks" in f for f in hidden)
     assert any("outside" in f for f in hidden)
     line.set_visible(True)
     assert [str(f) for f in ep.testing.readability_faults(fig)] == hidden
+    stage.rest()
+    shown = ep.testing.readability_faults(fig)
+    assert any(
+        f.kind == "on-marks" and f.artist is label and f.other is line for f in shown
+    )
+    assert any(f.kind == "outside" and f.artist is line for f in shown)
     line.set_visible(False)
     assert not any("on-marks" in str(f) for f in ep.testing.readability_faults(fig))
+    np.testing.assert_array_equal(pixels(fig), hidden_pixels)
 
 
 def test_zero_only_and_current_marker_colors():

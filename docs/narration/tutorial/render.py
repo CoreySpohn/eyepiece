@@ -4,6 +4,33 @@ Run from the repository root::
 
     python docs/narration/tutorial/render.py /tmp/narrated-tutorial
 
+For parallel rendering, keep the builder in an importable module, for example
+``worker_clip.py`` beside this script::
+
+    # worker_clip.py
+    from pathlib import Path
+    from clip import Scene, make_timeline
+    from script import SCRIPT
+    import eyepiece as ep
+
+    def build():
+        scene = Scene()
+        cache = Path(__file__).resolve().parent / "cache"
+        narration = ep.narration.Narration.load(SCRIPT, cache)
+        timeline = make_timeline(narration)
+        plan = timeline.at_fps(10)
+        cues = ep.narration.captions(timeline.narration)
+        return scene.fig, lambda fig, k: scene.draw(k, plan, cues)
+
+Then the rendering script uses ``from worker_clip import build`` and calls
+``ep.render.render_frames(build, plan.n_frames, silent, fps=10, dpi=80)`` inside its
+``if __name__ == "__main__":`` guard. Workers import ``build`` by module name;
+defining it in this script's ``__main__`` cannot work with spawned workers.
+Only the builder crosses the process boundary; the draw closure it returns is
+created inside each worker. See docs/how-to/render-a-clip-in-parallel.md for a
+complete runnable example. For drafts, ``render_variants`` and ``record`` accept
+``time_range=(start_s, stop_s)`` while retaining absolute source frame indices.
+
 Regenerate the speech cache audio with the narration tool before rendering.
 The output directory receives the silent MP4, WAV track, narrated MP4,
 WebVTT, and SRT. Rendering requires ffmpeg and soundfile.

@@ -710,3 +710,22 @@ def test_property_a_cache_with_a_missing_wrong_key_or_wrong_text_file_is_refused
             nr.Narration.load(SMALL, work)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def test_rebuilt_narration_keeps_used_cues_without_mutating_source():
+    source = nr.Narration.load(SMALL, DATA)
+    tl = ep.Timeline(narration=source)
+    tl.line("open")
+    tl.indicate("star")
+    tl.line("leak")
+    tl.indicate("speckle")
+    with pytest.raises(ValueError, match="planet") as error:
+        tl.narration.check(used=True)
+    assert "star" not in str(error.value)
+    assert "speckle" not in str(error.value)
+    tl.circumscribe("planet")
+    tl.at_fps(30)
+    tl.narration.check(used=True)
+    tl.narration.check(used=True)
+    with pytest.raises(ValueError, match="star"):
+        source.check(used=True)

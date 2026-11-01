@@ -2040,6 +2040,10 @@ class _BuildPart:
     def clip(self, patch):
         self.artist.set_clip_on(True)
         self.artist.set_clip_path(patch)
+        self.artist._eyepiece_wipe = (
+            self.artist.get_clip_path(),
+            self.artist.get_clip_box(),
+        )
 
     def restore(self):
         artist = self.artist
@@ -2047,6 +2051,7 @@ class _BuildPart:
         artist.set_clip_path(self.clip_path)
         artist.set_clip_box(self.clip_box)
         artist.set_clip_on(self.clip_on)
+        artist._eyepiece_wipe = None
 
 
 def _renderer(figure):
