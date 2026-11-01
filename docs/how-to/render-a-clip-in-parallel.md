@@ -250,42 +250,6 @@ assert changed_key != key
 print(key)
 ```
 
-## Render an excerpt
-
-`render_variants(..., time_range=(start_s, stop_s))` selects source frames whose
-times satisfy `start_s <= k / fps < stop_s`. None endpoints mean the source start
-or end. The source clock and frame items remain absolute; an excerpt never
-renumbers the input to `draw`. Bounds must be finite, nonnegative, increasing,
-inside the source, and include at least one frame. Silent frame budgets apply
-to the selected frames. Explicit full ranges use the same key and bytes as an
-omitted range under the same library source; source edits still invalidate keys.
-An excerpt adds its effective frame interval to the content key, so it cannot
-reuse a full movie's manifest entry or chunks. Requested posters keep their
-original frame index. Layout initializes and freezes from source frame zero,
-as it does in a full render. Narrated variants cut the audio at the same
-source-frame time. They reject `time_range` combined with any nonzero `hold_s`
-with `ValueError`: use `hold_s=(0, 0)` so excerpt audio stays aligned exactly
-as in the full output.
-
-`record(..., time_range=...)` uses the same interval. Continue calling `frame()`
-for the full source loop; each call advances the source clock, including skipped
-frames and `hold()` calls. Stills name absolute source times and must lie inside
-the excerpt. Layout freezes on the first source call, as for a full recording.
-With `plan=`, finite bounds are checked against its duration. An open stop means
-the loop's end, including any appended holds; a finite stop must be reached by
-the loop.
-
-```{code-cell} python
-fig, draw_excerpt = clip.build()
-with ep.render.record(fig, output / "excerpt.mp4", fps=fps, dpi=dpi,
-                      time_range=(0.25, 0.5)) as recorder:
-    for k in range(n):
-        draw_excerpt(fig, k)
-        recorder.frame()
-plt.close(fig)
-assert (output / "excerpt.mp4").exists()
-```
-
 ## Render variants and keep a manifest
 
 `Venue` describes a destination's rc, dpi, fps, and optional silent frame
@@ -333,19 +297,6 @@ data_path.write_text("0.2", encoding="utf-8")
 changed = ep.render.render_variants(spec, selection, variant_dir, manifest=manifest, workers=1)
 assert [item.variant.name for item in changed if item.rendered] == ["doc-dark"]
 print("Changed data:", [(item.variant.name, item.rendered) for item in changed])
-```
-
-'An excerpt uses a separate output folder here so both versions stay available.
-
-```{code-cell} python
-excerpt_dir = output / "variant-excerpts"
-excerpt_manifest = ep.render.Manifest(excerpt_dir / "manifest.json")
-excerpt = ep.render.render_variants(
-    spec, selection[:1], excerpt_dir, manifest=excerpt_manifest, workers=1,
-    time_range=(0.25, 0.5),
-)
-assert excerpt[0].frames == 4
-assert excerpt[0].key != first[0].key
 ```
 
 The manifest records keys, relative output paths, hashes, sizes, frame

@@ -393,7 +393,7 @@ def test_public_files_have_no_internal_references():
     ).split("\0")
     result = subprocess.run(
         [sys.executable, str(root / "tools/check_internal_refs.py")]
-        + [str(root / name) for name in files if name],
+        + [str(root / name) for name in files if name and (root / name).exists()],
         capture_output=True,
         text=True,
     )

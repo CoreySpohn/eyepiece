@@ -371,8 +371,16 @@ def test_grounding_requires_a_shown_bound_mark(board, hidden):
     assert [(f.kind, f.term) for f in faults] == [("no-referent", "sigma")]
 
 
-@pytest.mark.parametrize("hidden", ["visible", "alpha", "face", "combined"])
-def test_grounding_checks_only_shown_glyphs(board, hidden):
+@pytest.mark.parametrize(
+    ("hidden", "expected"),
+    [
+        ("visible", []),
+        ("alpha", []),
+        ("face", []),
+        ("override", ["no-referent"]),
+    ],
+)
+def test_grounding_checks_only_shown_glyphs(board, hidden, expected):
     _, ax = board
     eq = ep.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors={"sigma": "C1"})
     eq.update(1)
@@ -384,8 +392,9 @@ def test_grounding_checks_only_shown_glyphs(board, hidden):
         elif hidden == "face":
             glyph.set_facecolor((*to_rgb("C1"), 0.01))
         else:
+            # Patch alpha is already folded into its facecolor, not squared.
             glyph.set_alpha(0.2)
-    assert ept.grounding_faults(eq) == []
+    assert [f.kind for f in ept.grounding_faults(eq)] == expected
 
     glyph = eq.artists["glyphs"][-1]
     glyph.set_visible(True)

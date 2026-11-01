@@ -28,8 +28,7 @@ Then the rendering script uses ``from worker_clip import build`` and calls
 defining it in this script's ``__main__`` cannot work with spawned workers.
 Only the builder crosses the process boundary; the draw closure it returns is
 created inside each worker. See docs/how-to/render-a-clip-in-parallel.md for a
-complete runnable example. For drafts, ``render_variants`` and ``record`` accept
-``time_range=(start_s, stop_s)`` while retaining absolute source frame indices.
+complete runnable example.
 
 Regenerate the speech cache audio with the narration tool before rendering.
 The output directory receives the silent MP4, WAV track, narrated MP4,

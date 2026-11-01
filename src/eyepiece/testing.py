@@ -26,8 +26,8 @@ Four kinds of fault are reported:
   readable and is not reported. The leaders and links that `audit` already
   checks are not looked at here: `audit` covers a connector crossing data,
   and this check covers the words.
-  Marks with path effects are conservatively reported against unbacked text:
-  effects can paint independently of the base geometry, color and opacity.
+  Marks with path effects use their effect geometry, including stroke widths
+  and offsets, but skip the base color and opacity exclusions.
 
 `motion_faults` is the same idea for the path between two states. A clip is
 checked at u = 0 and u = 1 and at stills, and the defects that matter lie in
@@ -203,6 +203,13 @@ class Waive:
     A matching finding stays in the result with its reason in ``waived``.
     Assertions and ClipReport.ok count only unwaived findings.
 
+    Artist waivers support overlap, outside, small, on-marks, drift, tear,
+    spike, shape-class, and hop-rate. Jump supports artist waivers only for
+    attributed geometry findings, not pixel-based findings. Dead supports
+    them only when the move declares participating artists. At use, any
+    matching kind with no attributable artist raises ValueError rather than
+    silently ignoring the waiver. This rule applies to every finding kind.
+
     Attributes:
         kind: One readability or motion kind.
         artist: Artist that must participate in the finding; never a wildcard.
@@ -252,7 +259,16 @@ def _waive(faults, declarations):
     found = _FaultList()
     seen = set()
     for fault in faults:
-        pair = frozenset((fault.artist, fault.other, *getattr(fault, "artists", ())))
+        pair = frozenset(
+            a
+            for a in (fault.artist, fault.other, *getattr(fault, "artists", ()))
+            if a is not None
+        )
+        if not pair and any(w.kind == fault.kind for w in declarations):
+            raise ValueError(
+                f"cannot apply {fault.kind!r} artist waiver: finding has "
+                "no attributable artist"
+            )
         key = (
             fault.kind,
             pair,
@@ -659,6 +675,8 @@ def _stroke(points, step=1.0):
 
 def _parts(mark, dpi):
     """(rgba, outline points or None, filled Path or None, radius px) per part."""
+    if mark.get_path_effects():
+        return _effect_parts(mark, dpi)
     out = []
     if _ink(mark) <= 0:
         return out
@@ -720,6 +738,34 @@ def _parts(mark, dpi):
     return out
 
 
+def _effect_parts(mark, dpi):
+    """Capture effect paths with their actual transforms and stroke widths."""
+    from matplotlib.backend_bases import RendererBase
+
+    parts = []
+
+    class PathRecorder(RendererBase):
+        def points_to_pixels(self, points):
+            return points * dpi / 72.0
+
+        def draw_path(self, gc, path, transform, rgbFace=None):
+            path = transform.transform_path(path)
+            polys = path.to_polygons(closed_only=False)
+            pts = np.vstack([_stroke(p) for p in polys]) if polys else None
+            radius = 0.5 * self.points_to_pixels(gc.get_linewidth())
+            parts.append(
+                (
+                    gc.get_rgb(),
+                    pts if radius > 0 else None,
+                    path if rgbFace is not None else None,
+                    radius,
+                )
+            )
+
+    mark.draw(PathRecorder())
+    return parts
+
+
 def _same_color(a, b):
     return max(abs(a[i] - b[i]) for i in range(3)) <= _SAME_COLOR
 
@@ -773,14 +819,8 @@ def _on_marks(fig, texts, boxes, dpi):
         text_box = text.get_window_extent(_renderer(fig))
         for group in marks:
             for mark in group:
-                if mark.get_path_effects():
-                    # Effects can override alpha, color, stroke width and even
-                    # position. Without proving their painted extent, report
-                    # conservatively rather than using the base artist's ink.
-                    detail = f"{_name(text)} may be drawn over a mark's path effects"
-                    found.append(("on-marks", text, mark, _tuple(box), detail))
-                    continue
-                if isinstance(mark, FancyArrowPatch):
+                effects = bool(mark.get_path_effects())
+                if isinstance(mark, FancyArrowPatch) and not effects:
                     # CLOSEPOLY can carry an ignored dummy vertex. Path hit
                     # tests must not connect that vertex to the drawn arrow.
                     extent = mark.get_window_extent(_renderer(fig))
@@ -796,11 +836,17 @@ def _on_marks(fig, texts, boxes, dpi):
                 if mark not in cache:
                     cache[mark] = _parts(mark, dpi)
                 for part in cache[mark]:
-                    if part[0][3] <= 0 or not _same_color(part[0], base):
+                    if not effects and (
+                        part[0][3] <= 0 or not _same_color(part[0], base)
+                    ):
                         continue
                     if _hit(part, text_box):
                         kind = type(mark).__name__
-                        detail = f"{_name(text)} is drawn over a {kind} of its color"
+                        detail = (
+                            f"{_name(text)} may be drawn over a {kind}'s path effects"
+                            if effects
+                            else f"{_name(text)} is drawn over a {kind} of its color"
+                        )
                         found.append(("on-marks", text, mark, _tuple(box), detail))
                         break
     return found
@@ -2170,6 +2216,7 @@ def _check_tear(trace, groups, tol):
         if len(group) < 2:
             continue
         common = None
+        visible = []
         for artist in group:
             ks = {k for k in trace.boxes.get(artist, {}) if lo <= trace.times[k] <= hi}
             if not ks:
@@ -2182,7 +2229,12 @@ def _check_tear(trace, groups, tol):
                     found.append(
                         (k, "tear", artist, None, (0.0, 0.0, *trace.size), detail, None)
                     )
+                continue
+            visible.append(artist)
             common = ks if common is None else common & ks
+        group = visible
+        if len(group) < 2:
+            continue
         common = sorted(common)
         if len(common) < 2:
             continue

@@ -39,7 +39,6 @@ from eyepiece._render_chunks import (
     _scale_diagnostic,
     _workspace,
 )
-from eyepiece._render_range import _FrameSlice
 from eyepiece.anim import (
     RawSink,
     ScaleDriftError,
@@ -161,15 +160,9 @@ def _figure(
             dpi=dpi,
             frame_key=frame_key,
         )
-        # Excerpts must take the full render's frame-zero layout path before
-        # selecting frames, including frame mappings and the scale baseline.
-        state["initial_item"] = (
-            frames.source_item(0)
-            if isinstance(frames, _FrameSlice)
-            else _item(state, 0)
-        )
+        state["initial_item"] = _item(state, 0)
         draw(fig, state["initial_item"])
-        state["initial_draw"] = not isinstance(frames, _FrameSlice) or frames.first == 0
+        state["initial_draw"] = True
         _Recorder(fig, [], {"frames": 0}, dpi)._freeze_layout()
         state["on_rescale"] = on_rescale
         if on_rescale != "ignore":

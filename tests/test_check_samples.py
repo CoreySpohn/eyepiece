@@ -9,6 +9,7 @@ import pytest
 
 import eyepiece as ep
 import eyepiece.testing as ept
+from eyepiece.attention import _data_colors
 
 
 def _records(report):
@@ -204,7 +205,7 @@ def _legacy_on_marks(fig, texts, boxes, dpi):
             if not ax.get_visible():
                 continue
             for mark in ept._default_avoid(ax, set()):
-                if not mark.get_visible() or not ept._data_colors(mark):
+                if not mark.get_visible() or not _data_colors(mark):
                     continue
                 if mark not in cache:
                     cache[mark] = ept._parts(mark, dpi)
@@ -253,7 +254,7 @@ def test_on_marks_matches_legacy_traversal_with_transparent_parts(monkeypatch):
 
     monkeypatch.setattr(ept, "_parts", counted)
     assert ept._on_marks(fig, texts, boxes, fig.dpi) == expected
-    assert all(any(c[3] >= ept._SHOWN for c in ept._data_colors(a)) for a in selected)
+    assert all(any(c[3] >= ept._SHOWN for c in _data_colors(a)) for a in selected)
     plt.close(fig)
 
 

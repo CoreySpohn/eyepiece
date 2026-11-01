@@ -388,3 +388,125 @@ def test_conservative_mark_finding_does_not_hide_another_collision(effect):
         waive=[ep.testing.Waive("on-marks", artist=faint, reason="faint scenery")],
     )
     assert any(f.artist is text and f.other is solid and not f.waived for f in found)
+
+
+def test_hidden_group_member_must_not_hide_visible_tear():
+    fig = plt.figure(figsize=(4, 2), dpi=100)
+    a = fig.text(0.2, 0.5, "a")
+    b = fig.text(0.5, 0.5, "b")
+    c = fig.text(0.8, 0.5, "c", alpha=0)
+
+    def at(t):
+        b.set_position((0.5 + 0.2 * t, 0.5))
+
+    waiver = ep.testing.Waive("tear", artist=c, reason="c intentionally absent")
+    found = ep.testing.motion_faults(
+        fig, at, [0, 0.5, 1], groups=[[a, b, c]], kinds=("tear",), waive=[waiver]
+    )
+    assert any(f.waived is None and {f.artist, f.other} == {a, b} for f in found)
+    assert len(found.waived) == 1
+    assert found.waived[0].artist is c
+    assert "no ink" in found.waived[0].detail
+
+
+def test_check_clip_does_not_pass_a_visible_tear():
+    fig = plt.figure(figsize=(4, 2), dpi=100)
+    a = fig.text(0.1, 0.5, "A", fontsize=18)
+    b = fig.text(0.5, 0.5, "B", fontsize=18)
+    c = fig.text(0.9, 0.5, "C", fontsize=18, alpha=0)
+    tl = ep.Timeline({"x": 0})
+    tl.run("move", 1, to={"x": 1})
+    plan = tl.at_fps(5)
+
+    def draw(k):
+        b.set_position((0.5 + 0.2 * plan.value(k, "x"), 0.5))
+
+    report = ep.testing.check_clip(
+        fig,
+        draw,
+        plan,
+        moves=[{"artists": [b], "groups": [[a, b, c]]}],
+        waive=[ep.testing.Waive("tear", artist=c, reason="c intentionally absent")],
+    )
+    assert not report.ok
+
+
+def test_distant_normal_effect_is_not_a_collision():
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_axis_off()
+    ax.plot([0.1, 0.9], [0.1, 0.1], color="red", path_effects=[patheffects.Normal()])
+    ax.text(0.1, 0.8, "far away", color="black")
+    assert not ep.testing.readability_faults(fig, kinds=("on-marks",))
+
+
+def test_pixel_jump_artist_waiver_raises():
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_axis_off()
+    patch = Rectangle((0.1, 0.3), 0.2, 0.3, color="black")
+    ax.add_patch(patch)
+
+    def at(t):
+        patch.set_x(0.1 + 0.01 * t if t < 5 else 0.65)
+
+    found = ep.testing.motion_faults(fig, at, list(range(6)), kinds=("jump",))
+    assert found and all(f.artist is None and not f.artists for f in found)
+    with pytest.raises(ValueError, match=r"jump.*no attributable artist"):
+        waiver = ep.testing.Waive("jump", artist=patch, reason="intentional jump")
+        ep.testing.motion_faults(
+            fig, at, list(range(6)), kinds=("jump",), waive=[waiver]
+        )
+
+
+@pytest.mark.parametrize("kind", ["line", "patch", "arrow"])
+def test_path_effect_stroke_and_offset_geometry(kind):
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_axis_off()
+    if kind == "line":
+        (mark,) = ax.plot([0.2, 0.8], [0.3, 0.3], alpha=0)
+    elif kind == "patch":
+        mark = Rectangle((0.2, 0.3), 0.6, 0.02, alpha=0)
+        ax.add_patch(mark)
+    else:
+        from matplotlib.patches import FancyArrowPatch
+
+        mark = FancyArrowPatch((0.2, 0.3), (0.8, 0.3), alpha=0)
+        ax.add_patch(mark)
+    mark.set_path_effects(
+        [patheffects.Stroke(linewidth=20, foreground="black", alpha=1, offset=(0, 20))]
+    )
+    label = ax.text(0.5, 0.3, "label", va="center", fontsize=10)
+    fig.canvas.draw()
+    x, y = ax.transData.transform((0.5, 0.3))
+    label.set_transform(IdentityTransform())
+    # The offset and half-width put ink here, beyond the original geometry.
+    label.set_position((x, y + 38))
+    assert any(
+        f.other is mark for f in ep.testing.readability_faults(fig, kinds=("on-marks",))
+    )
+    label.set_position((x, y + 75))
+    assert not ep.testing.readability_faults(fig, kinds=("on-marks",))
+
+
+def test_dead_move_without_participants_rejects_artist_waiver():
+    fig = plt.figure()
+    text = fig.text(0.2, 0.5, "still")
+    with pytest.raises(ValueError, match=r"dead.*no attributable artist"):
+        ep.testing.motion_faults(
+            fig,
+            lambda t: None,
+            [0, 0.5, 1],
+            moves=[{"name": "whole frame"}],
+            kinds=("dead",),
+            waive=[ep.testing.Waive("dead", artist=text, reason="static design")],
+        )
+
+
+def test_normal_effect_does_not_create_zero_width_stroke():
+    fig, ax = plt.subplots()
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.plot([0, 1], [0.5, 0.5], lw=0, path_effects=[patheffects.Normal()])
+    ax.text(0.5, 0.5, "value", color="black", va="center")
+    assert not ep.testing.readability_faults(fig, kinds=("on-marks",))

@@ -6,7 +6,6 @@ import hashlib
 import math
 import os
 import shutil
-import subprocess
 import tempfile
 import uuid
 from collections.abc import Callable, Mapping
@@ -20,7 +19,6 @@ from typing import NamedTuple
 import matplotlib
 import numpy as np
 
-from eyepiece._ffmpeg import resolve_ffmpeg
 from eyepiece._motion import frame_count
 from eyepiece._render_keys import _canonical as _content_canonical
 from eyepiece._render_keys import _key_field, content_key
@@ -31,7 +29,6 @@ from eyepiece._render_pool import (
     render_frames,
 )
 from eyepiece._render_poster import render_poster
-from eyepiece._render_range import _FrameSlice, _range_bounds
 
 
 def _canonical(value):
@@ -266,30 +263,6 @@ def _publish_video(source, target):
             staged.unlink(missing_ok=True)
 
 
-def _excerpt_audio(audio, folder, first, stop, fps):
-    """Cut speech on the source clock; excerpt holds are rejected up front."""
-    target = Path(folder) / "excerpt.wav"
-    command = [
-        resolve_ffmpeg(),
-        "-y",
-        "-v",
-        "error",
-        "-ss",
-        str(first / fps),
-        "-i",
-        str(audio),
-        "-t",
-        str((stop - first) / fps),
-        "-c:a",
-        "pcm_s16le",
-        str(target),
-    ]
-    done = subprocess.run(command, capture_output=True, text=True, check=False)
-    if done.returncode:
-        raise RuntimeError(f"could not excerpt audio: {done.stderr}")
-    return target
-
-
 def _variant_video(
     spec,
     variant,
@@ -304,7 +277,6 @@ def _variant_video(
     work_dir=None,
     silent_source=None,
     retain_silent=None,
-    time_range=None,
 ):
     """Render once, atomically replacing a narrated target after mux succeeds."""
     import hwostyle
@@ -314,14 +286,7 @@ def _variant_video(
     target.parent.mkdir(parents=True, exist_ok=True)
     work = target.parent if work_dir is None else work_dir
     work.mkdir(parents=True, exist_ok=True)
-    count = _frame_source(spec.frames, spec.frame_at)
-    first, stop = _range_bounds(time_range, venue.fps, count)
-    source, frame_at = spec.frames, spec.frame_at
-    excerpt = (first, stop) != (0, count)
-    if excerpt:
-        source = _FrameSlice(source, frame_at, first, stop)
-        frame_at = None
-    frames = stop - first + sum(hold)
+    frames = _frame_source(spec.frames, spec.frame_at) + sum(hold)
     if silent_source is not None and not variant.narrated:
         # A narrated-first request may already have produced this picture.
         # Never move a source that another variant still needs.
@@ -345,12 +310,12 @@ def _variant_video(
         if silent_source is None:
             result = render_frames(
                 partial(spec.build, venue, variant.mode),
-                source,
+                spec.frames,
                 silent,
                 fps=venue.fps,
                 dpi=venue.dpi,
                 workers=workers,
-                frame_at=frame_at,
+                frame_at=spec.frame_at,
                 hold=hold,
                 encoder=spec.encoder,
                 extra_ffmpeg_args=spec.extra_ffmpeg_args,
@@ -369,8 +334,6 @@ def _variant_video(
             muxed = Path(scratch) / "mux.mp4"
             # Keep the base mux defaults, including BT.709 retagging and
             # faststart, even when the silent stream uses a custom encoder.
-            if excerpt:
-                audio = _excerpt_audio(audio, scratch, first, stop, venue.fps)
             narration.mux(
                 silent,
                 audio,
@@ -393,7 +356,6 @@ def _adopt_video(
     *,
     work_dir=None,
     silent_source=None,
-    time_range=None,
 ):
     """Compare an isolated old render, preserving the target and resume chunks."""
     work = target.parent if work_dir is None else work_dir
@@ -412,7 +374,6 @@ def _adopt_video(
             target=scratch,
             work_dir=work_dir,
             silent_source=silent_source,
-            time_range=time_range,
         )
         return filecmp.cmp(scratch, target, shallow=False)
     finally:
@@ -430,7 +391,6 @@ def render_variants(
     force=False,
     adopt=False,
     work_dir=None,
-    time_range=None,
 ) -> list[VariantResult]:
     """Render each requested variant once, skipping current manifest entries.
 
@@ -460,14 +420,6 @@ def render_variants(
         workers: Worker count forwarded to render_frames.
         force: Render even when the manifest entry is current.
         adopt: Try spec.adopt_build for existing non-current videos unless forced.
-        time_range: Optional ``(start_s, stop_s)`` selecting source frame times
-            in a half-open interval. None endpoints mean source start or end.
-            Draw receives original frame items. Audio uses the same source
-            interval; posters retain their original indices. The effective
-            frame range enters the content key unless it covers the full
-            source. Bounds must be finite, increasing, and inside the source.
-            Narrated variants reject time_range with any nonzero hold_s;
-            use hold_s=(0, 0) to preserve full-output audio alignment exactly.
         work_dir: Folder for per-variant chunks and narration or adoption scratch
             files. None keeps intermediates beside each video. Chunk folders
             retain their .chunks-<video-stem> names and relative output parent
@@ -552,21 +504,17 @@ def render_variants(
                 f"Variant {variant.name}: poster must be a frame index in [0, {count})"
             )
         venue = venues[variant.venue]
-        first, stop = _range_bounds(time_range, venue.fps, count)
-        selected = stop - first
         if (
             not variant.narrated
             and venue.frame_budget is not None
-            and selected > venue.frame_budget
+            and count > venue.frame_budget
         ):
             raise ValueError(
-                f"{spec.slug} venue {venue.name}: {selected} frames exceeds "
+                f"{spec.slug} venue {venue.name}: {count} frames exceeds "
                 f"budget {venue.frame_budget}"
             )
         if variant.narrated and spec.audio is None:
             raise ValueError(f"Narrated variant {variant.name} requires audio")
-        if variant.narrated and time_range is not None and any(spec.hold_s):
-            raise ValueError("narrated time_range requires hold_s=(0, 0)")
         relative_target = Path(
             spec.target_for(variant)
             if spec.target_for is not None
@@ -630,9 +578,6 @@ def render_variants(
             **({"poster": spec.poster} if spec.poster is not None else {}),
             **({"frame_key": True} if spec.frame_key is not None else {}),
         }
-        first, stop = _range_bounds(time_range, venue.fps, count)
-        if (first, stop) != (0, count):
-            settings["time_range"] = (first, stop)
         key_inputs = dict(
             script=spec.script,
             clock=spec.clock,
@@ -670,17 +615,7 @@ def render_variants(
                 ):
                     prior_sources[visual] = source
         jobs.append(
-            (
-                variant,
-                variant_spec,
-                stop - first,
-                venue,
-                hold,
-                audio,
-                key,
-                target,
-                visual,
-            )
+            (variant, variant_spec, count, venue, hold, audio, key, target, visual)
         )
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
@@ -759,16 +694,7 @@ def render_variants(
                             else work_dir / st.relative_to(out_dir).parent
                         )
                         adoption_checks[sv] = _adopt_video(
-                            ss,
-                            sv,
-                            vv,
-                            out_dir,
-                            st,
-                            sh,
-                            None,
-                            workers,
-                            work_dir=sw,
-                            time_range=time_range,
+                            ss, sv, vv, out_dir, st, sh, None, workers, work_dir=sw
                         )
                         if adoption_checks[sv]:
                             sources[visual] = adopted_sources[visual] = st
@@ -787,7 +713,6 @@ def render_variants(
                             workers,
                             work_dir=variant_work,
                             silent_source=adopted_sources.get(visual),
-                            time_range=time_range,
                         )
                 if adopted:
                     rendered = False
@@ -820,7 +745,6 @@ def render_variants(
                         work_dir=variant_work,
                         silent_source=sources.get(visual),
                         retain_silent=retain_silent,
-                        time_range=time_range,
                     )
                     if retain_silent is not None:
                         sources[visual] = retain_silent

@@ -652,3 +652,33 @@ def test_success_removes_worker_claims_and_preserves_unrelated_files(
     assert not list(folder.glob("claim-*"))
     assert unrelated.read_text() == "keep me"
     assert len(list(folder.glob("chunk-*.bin"))) == (3 if keep_chunks else 0)
+
+
+def test_main_builder_error_names_importable_module(tmp_path):
+    script = tmp_path / "render_script.py"
+    script.write_text("""
+import eyepiece as ep
+import matplotlib.pyplot as plt
+from pathlib import Path
+import sys
+
+def build():
+    fig = plt.figure(figsize=(1, 1))
+    return fig, lambda fig, item: None
+
+ep.render.render_frames(build, 2, Path(sys.argv[1]), fps=10, dpi=50,
+                        workers=2, chunk_frames=1)
+""")
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(b"previous")
+    done = subprocess.run(
+        [sys.executable, str(script), str(path)],
+        env=dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path)),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert done.returncode != 0
+    assert "define build" in done.stderr
+    assert "importable module" in done.stderr
+    assert path.read_bytes() == b"previous"
