@@ -56,7 +56,10 @@ class _FrameSlice:
     def __getitem__(self, index):
         if not 0 <= index < len(self):
             raise IndexError(index)
-        index += self.first
+        return self.source_item(index + self.first)
+
+    def source_item(self, index):
+        """Resolve an absolute index, including frame zero for layout setup."""
         if self.frame_at is not None:
             return self.frame_at(index)
         return index if isinstance(self.frames, int) else self.frames[index]

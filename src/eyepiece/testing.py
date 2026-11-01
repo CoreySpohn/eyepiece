@@ -26,6 +26,8 @@ Four kinds of fault are reported:
   readable and is not reported. The leaders and links that `audit` already
   checks are not looked at here: `audit` covers a connector crossing data,
   and this check covers the words.
+  Marks with path effects are conservatively reported against unbacked text:
+  effects can paint independently of the base geometry, color and opacity.
 
 `motion_faults` is the same idea for the path between two states. A clip is
 checked at u = 0 and u = 1 and at stills, and the defects that matter lie in
@@ -120,7 +122,7 @@ from eyepiece._motif_checks import (
     motif_margins,
 )
 from eyepiece._motion import frame_count
-from eyepiece.attention import _STAGE_BASES, _data_colors, _default_avoid, _renderer
+from eyepiece.attention import _STAGE_BASES, _default_avoid, _renderer
 
 if TYPE_CHECKING:
     from eyepiece._clock import Fault
@@ -250,7 +252,7 @@ def _waive(faults, declarations):
     found = _FaultList()
     seen = set()
     for fault in faults:
-        pair = frozenset((fault.artist, fault.other))
+        pair = frozenset((fault.artist, fault.other, *getattr(fault, "artists", ())))
         key = (
             fault.kind,
             pair,
@@ -258,6 +260,7 @@ def _waive(faults, declarations):
             fault.box,
             fault.detail,
             getattr(fault, "value", None),
+            getattr(fault, "declaration", ()),
         )
         if key in seen:
             continue
@@ -442,8 +445,7 @@ def _name(artist):
 
 
 def _alpha(artist, color):
-    alpha = artist.get_alpha()
-    return (1.0 if alpha is None else float(alpha)) * to_rgba(color)[3]
+    return to_rgba(color, artist.get_alpha())[3]
 
 
 def _walk(artist):
@@ -512,18 +514,31 @@ def _finite(box):
 def _same_text(a, b):
     return (
         a.get_text() == b.get_text()
+        and to_rgba(a.get_color())[:3] == to_rgba(b.get_color())[:3]
         and a.get_fontproperties() == b.get_fontproperties()
         and a.get_rotation() == b.get_rotation()
         and a.get_ha() == b.get_ha()
         and a.get_va() == b.get_va()
-        and a.get_path_effects() == b.get_path_effects()
+        and a.get_rotation_mode() == b.get_rotation_mode()
+        and a.get_usetex() == b.get_usetex()
+        and a.get_parse_math() == b.get_parse_math()
+        and a.get_antialiased() == b.get_antialiased()
+        and a._get_multialignment() == b._get_multialignment()
+        and a._linespacing == b._linespacing
+        and a.get_wrap() == b.get_wrap()
+        and a.get_transform_rotates_text() == b.get_transform_rotates_text()
+        and a.get_clip_on() == b.get_clip_on()
+        and a.get_clip_box() is b.get_clip_box()
+        and a.get_clip_path() is b.get_clip_path()
+        and a.get_agg_filter() is None
+        and b.get_agg_filter() is None
+        and not a.get_path_effects()
+        and not b.get_path_effects()
         and a.get_bbox_patch() is None
         and b.get_bbox_patch() is None
-        and np.allclose(
+        and np.array_equal(
             a.get_window_extent().extents,
             b.get_window_extent().extents,
-            rtol=0,
-            atol=1e-7,
         )
     )
 
@@ -645,18 +660,26 @@ def _stroke(points, step=1.0):
 def _parts(mark, dpi):
     """(rgba, outline points or None, filled Path or None, radius px) per part."""
     out = []
-    if _ink(mark) < _SHOWN:
+    if _ink(mark) <= 0:
         return out
     if isinstance(mark, Line2D):
         xy = mark.get_transform().transform(mark.get_xydata())
         solid = mark.get_linestyle() not in ("None", "none", "", " ")
-        radius = 0.5 * mark.get_linewidth() * dpi / 72.0
         marker = mark.get_marker() not in (None, "None", "none", "", " ")
-        if marker:
-            radius = max(radius, 0.5 * mark.get_markersize() * dpi / 72.0)
-        pts = _stroke(xy) if solid else np.asarray(xy, dtype=float)
-        rgba = (*to_rgba(mark.get_color())[:3], _alpha(mark, mark.get_color()))
-        out.append((rgba, pts, None, radius))
+        if solid and mark.get_linewidth() > 0:
+            radius = 0.5 * mark.get_linewidth() * dpi / 72.0
+            rgba = to_rgba(mark.get_color(), mark.get_alpha())
+            out.append((rgba, _stroke(xy), None, radius))
+        if marker and mark.get_markersize() > 0:
+            radius = (
+                0.5 * (mark.get_markersize() + mark.get_markeredgewidth()) * dpi / 72
+            )
+            for color in (
+                mark.get_markerfacecolor(),
+                mark.get_markerfacecoloralt(),
+                mark.get_markeredgecolor(),
+            ):
+                out.append((to_rgba(color, mark.get_alpha()), xy, None, radius))
     elif isinstance(mark, Patch):
         path = mark.get_transform().transform_path(mark.get_path())
         filled = to_rgba(mark.get_facecolor())
@@ -738,9 +761,7 @@ def _on_marks(fig, texts, boxes, dpi):
         [
             mark
             for mark in _default_avoid(ax, set())
-            if mark.get_visible()
-            and _ink(mark) >= _SHOWN
-            and any(c[3] >= _SHOWN for c in _data_colors(mark))
+            if mark.get_visible() and _ink(mark) > 0
         ]
         for ax in fig.axes
         if ax.get_visible()
@@ -752,6 +773,13 @@ def _on_marks(fig, texts, boxes, dpi):
         text_box = text.get_window_extent(_renderer(fig))
         for group in marks:
             for mark in group:
+                if mark.get_path_effects():
+                    # Effects can override alpha, color, stroke width and even
+                    # position. Without proving their painted extent, report
+                    # conservatively rather than using the base artist's ink.
+                    detail = f"{_name(text)} may be drawn over a mark's path effects"
+                    found.append(("on-marks", text, mark, _tuple(box), detail))
+                    continue
                 if isinstance(mark, FancyArrowPatch):
                     # CLOSEPOLY can carry an ignored dummy vertex. Path hit
                     # tests must not connect that vertex to the drawn arrow.
@@ -768,16 +796,13 @@ def _on_marks(fig, texts, boxes, dpi):
                 if mark not in cache:
                     cache[mark] = _parts(mark, dpi)
                 for part in cache[mark]:
-                    if part[0][3] < _SHOWN or not _same_color(part[0], base):
+                    if part[0][3] <= 0 or not _same_color(part[0], base):
                         continue
                     if _hit(part, text_box):
                         kind = type(mark).__name__
                         detail = f"{_name(text)} is drawn over a {kind} of its color"
                         found.append(("on-marks", text, mark, _tuple(box), detail))
                         break
-                else:
-                    continue
-                break
     return found
 
 
@@ -1159,6 +1184,8 @@ class MotionFault:
         value: The number the rule measured (a ratio for a jump, pixels for
             drift, tear, outside, overlap and spike), None for ``"dead"``.
         waived: Reason for an explicit exception, or None.
+        declaration: Kind and index of the declaration responsible, if any.
+        artists: Participating artists for a whole-move finding such as dead.
     """
 
     kind: str
@@ -1169,6 +1196,8 @@ class MotionFault:
     detail: str
     value: object = None
     waived: str | None = None
+    declaration: tuple = ()
+    artists: tuple = ()
 
     def __str__(self):
         """One line: the time, the kind, the detail and the box."""
@@ -1207,15 +1236,17 @@ def _alpha_value(artist):
 def _ink(artist):
     """Opacity of the strongest ink the artist paints, 0 when it paints none.
 
-    A patch or collection folds its alpha into its colors, so only text and
-    lines multiply the artist alpha by the color alpha.
+    A patch or collection folds its alpha into its colors. Text and lines
+    use artist alpha in place of color alpha. Effects may paint independently.
     """
+    if artist.get_path_effects():
+        return 1.0
     base = _alpha_value(artist)
     base = 1.0 if base is None else base
     if isinstance(artist, Text):
         if not artist.get_text().strip():
             return 0.0
-        return base * to_rgba(artist.get_color())[3]
+        return _alpha(artist, artist.get_color())
     if isinstance(artist, Patch):
         face = to_rgba(artist.get_facecolor())[3] if artist.get_fill() else 0.0
         edge = (
@@ -1229,11 +1260,26 @@ def _ink(artist):
             "",
             " ",
         )
-        drawn = drawn or (
-            artist.get_markersize() > 0
-            and artist.get_marker() not in (None, "None", "none", "", " ")
-        )
-        return base * to_rgba(artist.get_color())[3] if drawn else 0.0
+        alpha = _alpha(artist, artist.get_color()) if drawn else 0.0
+        if artist.get_markersize() > 0 and artist.get_marker() not in (
+            None,
+            "None",
+            "none",
+            "",
+            " ",
+        ):
+            alpha = max(
+                alpha,
+                *(
+                    _alpha(artist, color)
+                    for color in (
+                        artist.get_markerfacecolor(),
+                        artist.get_markerfacecoloralt(),
+                        artist.get_markeredgecolor(),
+                    )
+                ),
+            )
+        return alpha
     if isinstance(artist, AxesImage):
         return base
     if isinstance(artist, Collection):
@@ -2018,7 +2064,7 @@ def _check_dead(trace, moves):
     found = []
     cache = {}  # moves that watch one region over one span are checked once
     times = trace.times
-    for move in moves:
+    for index, move in enumerate(moves):
         span = _declared(move, "span")
         lo, hi = (times[0], times[-1]) if span is None else span
         before = [k for k, t in enumerate(times) if t <= lo]
@@ -2029,6 +2075,7 @@ def _check_dead(trace, moves):
             continue
         name = _declared(move, "name", "a move")
         artists = list(_declared(move, "artists") or ())
+        identity = {"declaration": ("move", index), "artists": tuple(artists)}
         crop = (slice(None), slice(None))
         region = None
         if artists:
@@ -2036,7 +2083,16 @@ def _check_dead(trace, moves):
             if not seen:
                 detail = f"{name!r} declares artists that are never visible"
                 found.append(
-                    (first, "dead", None, None, (0.0, 0.0, *trace.size), detail, None)
+                    (
+                        first,
+                        "dead",
+                        None,
+                        None,
+                        (0.0, 0.0, *trace.size),
+                        detail,
+                        None,
+                        identity,
+                    )
                 )
                 continue
             boxes = [b[0] for a in seen for b in trace.boxes[a].values()]
@@ -2068,7 +2124,7 @@ def _check_dead(trace, moves):
                 f"and t={times[stop]:g}"
             )
             box = region or (0.0, 0.0, *trace.size)
-            found.append((first, "dead", None, None, box, detail, None))
+            found.append((first, "dead", None, None, box, detail, None, identity))
     return found
 
 
@@ -2929,7 +2985,9 @@ def _check_hop_rate(trace, hop_groups, hop_cuts):
     `hop_cuts` holds, per group, the sample indices at which its pixels change.
     """
     found = []
-    for (artists, rate, _), ks in zip(hop_groups, hop_cuts, strict=True):
+    for index, ((artists, rate, _), ks) in enumerate(
+        zip(hop_groups, hop_cuts, strict=True)
+    ):
         times = [trace.times[k] for k in ks]
         end = 0
         windows = []
@@ -2969,6 +3027,7 @@ def _check_hop_rate(trace, hop_groups, hop_cuts):
                     box or (0.0, 0.0, *trace.size),
                     detail,
                     max(rate, measured),
+                    {"declaration": ("hop", index)},
                 )
             )
     return found
@@ -3045,14 +3104,20 @@ def _analyze(
             cuts[k] = cuts[k] | mask if k in cuts else mask
     hop_ks = {k for ks in hop_cuts for k in ks}
     found = []
+
+    def declared_findings(check, declarations, tol, kind):
+        for index, declaration in enumerate(declarations):
+            for fault in check(trace, [declaration], tol):
+                yield (*fault, {"declaration": (kind, index)})
+
     if "jump" in kinds:
         found += _check_jump(trace, jump_ratio, rest_times, tol_px, cuts, group)
     if "dead" in kinds:
         found += _check_dead(trace, moves)
     if "drift" in kinds:
-        found += _check_drift(trace, rests, tol_px)
+        found += declared_findings(_check_drift, rests, tol_px, "rest")
     if "tear" in kinds:
-        found += _check_tear(trace, group_list, tol_px)
+        found += declared_findings(_check_tear, group_list, tol_px, "group")
     texts = {a for a in trace.order if isinstance(a, Text)}
     if "overlap" in kinds:
         found += _check_overlap(trace, texts | declared, allowed, overlap_tol, tol_px)
@@ -3067,7 +3132,7 @@ def _analyze(
             hop_cuts or [[] for _ in hop_groups],
         )
     if "shape-class" in kinds:
-        found += _check_shape_class(trace, pieces, tol_px)
+        found += declared_findings(_check_shape_class, pieces, tol_px, "rectilinear")
 
     # A declared step excuses its jump; at a cut of the draw group it excuses
     # only the group, whose boxes the pixel baseline already left out there.
@@ -3084,8 +3149,17 @@ def _analyze(
     order = {kind: i for i, kind in enumerate(MOTION_KINDS)}
     found.sort(key=lambda f: (f[0], order[f[1]]))
     return [
-        MotionFault(kind, artist, other, trace.times[k], box, detail, value)
-        for k, kind, artist, other, box, detail, value in found
+        MotionFault(
+            kind,
+            artist,
+            other,
+            trace.times[k],
+            box,
+            detail,
+            value,
+            **(metadata[0] if metadata else {}),
+        )
+        for k, kind, artist, other, box, detail, value, *metadata in found
     ]
 
 

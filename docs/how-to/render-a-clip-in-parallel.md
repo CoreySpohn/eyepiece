@@ -261,8 +261,11 @@ to the selected frames. Explicit full ranges use the same key and bytes as an
 omitted range under the same library source; source edits still invalidate keys.
 An excerpt adds its effective frame interval to the content key, so it cannot
 reuse a full movie's manifest entry or chunks. Requested posters keep their
-original frame index. Narrated variants cut the audio at the same source-frame
-time and place silence over any added first-frame hold.
+original frame index. Layout initializes and freezes from source frame zero,
+as it does in a full render. Narrated variants cut the audio at the same
+source-frame time. They reject `time_range` combined with any nonzero `hold_s`
+with `ValueError`: use `hold_s=(0, 0)` so excerpt audio stays aligned exactly
+as in the full output.
 
 `record(..., time_range=...)` uses the same interval. Continue calling `frame()`
 for the full source loop; each call advances the source clock, including skipped

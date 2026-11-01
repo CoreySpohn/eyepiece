@@ -1,7 +1,9 @@
 """Regressions for check noise and explicit, auditable exceptions."""
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pytest
+from matplotlib import patheffects
 from matplotlib.patches import Rectangle
 from matplotlib.transforms import IdentityTransform
 
@@ -109,14 +111,15 @@ def test_duplicate_samples_are_reported_once():
     assert [(f.time, f.kind) for f in found] == [(0, "small"), (1, "small")]
 
 
-def test_repeated_move_declarations_produce_one_fault():
+def test_repeated_move_indices_remain_distinct():
     fig = plt.figure()
     text = fig.text(0.2, 0.5, "tiny", fontsize=3)
     move = {"name": "still", "artists": [text]}
     found = ep.testing.motion_faults(
         fig, lambda t: None, [0, 0.5, 1], moves=[move, move], kinds=("dead",)
     )
-    assert len(found) == 1
+    assert len(found) == 2
+    assert found[0].declaration != found[1].declaration
 
 
 def test_build_axes_registers_partial_wipe_without_hiding_other_cuts():
@@ -236,3 +239,152 @@ def test_distinct_unnamed_dead_moves_keep_both_regions():
     )
     assert len(found) == 2
     assert found[0].box != found[1].box
+
+
+def test_crossfade_different_colors():
+    fig = plt.figure(figsize=(4, 2), dpi=100)
+    fig.text(0.2, 0.5, "same", fontsize=20, color="red", alpha=0.5)
+    fig.text(0.2, 0.5, "same", fontsize=20, color="blue", alpha=0.5)
+    found = ep.testing.readability_faults(fig, kinds=("overlap",))
+    assert len(found) == 1
+
+
+def _assert_visible_mark_collision(fig, line):
+    fig.canvas.draw()
+    shown = np.asarray(fig.canvas.buffer_rgba()).copy()
+    line.set_visible(False)
+    fig.canvas.draw()
+    hidden = np.asarray(fig.canvas.buffer_rgba()).copy()
+    assert np.count_nonzero(np.any(shown != hidden, axis=2)) > 100
+    line.set_visible(True)
+    found = ep.testing.readability_faults(fig, kinds=("on-marks",))
+    assert any(f.other is line for f in found)
+
+
+@pytest.mark.parametrize("color_alpha", [0, 0.01, 0.06])
+def test_visible_line_with_overridden_alpha(color_alpha):
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    (line,) = ax.plot(
+        [0, 1], [0.5, 0.5], color=(0, 0, 0, color_alpha), alpha=0.75, lw=5
+    )
+    ax.text(0.5, 0.5, "value", color="black", fontsize=16, va="center")
+    _assert_visible_mark_collision(fig, line)
+
+
+@pytest.mark.parametrize("staged", [False, True])
+def test_alpha_zero_with_visible_path_effect(staged):
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    (line,) = ax.plot(
+        [0, 1],
+        [0.5, 0.5],
+        color="black",
+        alpha=1,
+        lw=5,
+        path_effects=[
+            patheffects.Stroke(linewidth=8, foreground="black", alpha=1),
+            patheffects.Normal(),
+        ],
+    )
+    ax.text(0.5, 0.5, "value", color="black", fontsize=16, va="center")
+    if staged:
+        ep.motion.Stage({"line": line}).weigh({"line": 0})
+    else:
+        line.set_alpha(0)
+    _assert_visible_mark_collision(fig, line)
+
+
+def test_distinct_dead_moves_same_region():
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    (a,) = ax.plot([0.2, 0.8], [0.4, 0.6], color="black", lw=6)
+    (b,) = ax.plot([0.2, 0.8], [0.4, 0.6], color="blue", lw=2, ls="--")
+    found = ep.testing.motion_faults(
+        fig,
+        lambda t: None,
+        [0, 0.5, 1],
+        moves=[{"artists": [a]}, {"artists": [b]}],
+        kinds=("dead",),
+    )
+    assert len(found) == 2
+
+
+def test_dead_move_waiver_matches_artist():
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    (line,) = ax.plot([0.2, 0.8], [0.4, 0.6], color="black", lw=6)
+    found = ep.testing.motion_faults(
+        fig,
+        lambda t: None,
+        [0, 0.5, 1],
+        moves=[{"artists": [line]}],
+        kinds=("dead",),
+        waive=[ep.testing.Waive("dead", artist=line, reason="static design")],
+    )
+    assert len(found) == 1
+    assert found[0].waived == "static design"
+
+
+@pytest.mark.parametrize("hidden", [False, True])
+def test_dead_move_waiver_matches_any_participant_and_pair(hidden):
+    fig = plt.figure()
+    a, b, c, other = [fig.text(0.2, 0.5, name) for name in "abcd"]
+    for text in (a, b, c):
+        text.set_visible(not hidden)
+    waiver = ep.testing.Waive("dead", artist=c, other=b, reason="static group")
+    found = ep.testing.motion_faults(
+        fig,
+        lambda t: None,
+        [0, 0.5, 1],
+        moves=[{"artists": [a, b, c]}, {"artists": [other]}],
+        kinds=("dead",),
+        waive=[waiver],
+    )
+    assert len(found) == 2
+    assert found[0].artists == (a, b, c)
+    assert found[0].waived == "static group"
+    assert found[1].waived is None
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_distinct_groups_keep_identical_findings(nested):
+    fig = plt.figure()
+    a = fig.text(0.2, 0.5, "a")
+    b = fig.text(0.7, 0.5, "b", alpha=0)
+    groups = [[a, b], [a, b]]
+    kwargs = {"moves": [{"groups": groups}]} if nested else {"groups": groups}
+    found = ep.testing.motion_faults(
+        fig, lambda t: None, [0, 0.5, 1], kinds=("tear",), **kwargs
+    )
+    assert len(found) == 2
+    assert found[0].declaration != found[1].declaration
+
+
+def test_distinct_hop_groups_keep_identical_findings():
+    fig = plt.figure()
+    a = fig.text(0.2, 0.5, "a")
+    found = ep.testing.motion_faults(
+        fig,
+        lambda t: None,
+        [0, 0.5, 1],
+        kinds=("hop-rate",),
+        hops=[{"artists": [a], "rate": 10}, {"artists": [a], "rate": 10}],
+    )
+    assert len(found) == 2
+    assert found[0].declaration != found[1].declaration
+
+
+@pytest.mark.parametrize("effect", [False, True])
+def test_conservative_mark_finding_does_not_hide_another_collision(effect):
+    fig, ax = plt.subplots()
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    (faint,) = ax.plot([0, 1], [0.5, 0.5], color="black", alpha=0.01)
+    if effect:
+        faint.set_path_effects([patheffects.Normal()])
+    (solid,) = ax.plot([0, 1], [0.5, 0.5], color="black", lw=5)
+    text = ax.text(0.5, 0.5, "value", color="black", va="center")
+    found = ep.testing.readability_faults(
+        fig,
+        kinds=("on-marks",),
+        waive=[ep.testing.Waive("on-marks", artist=faint, reason="faint scenery")],
+    )
+    assert any(f.artist is text and f.other is solid and not f.waived for f in found)

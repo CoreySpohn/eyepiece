@@ -266,8 +266,8 @@ def _publish_video(source, target):
             staged.unlink(missing_ok=True)
 
 
-def _excerpt_audio(audio, folder, first, stop, fps, hold):
-    """Cut speech on the source clock and align it with excerpt frame holds."""
+def _excerpt_audio(audio, folder, first, stop, fps):
+    """Cut speech on the source clock; excerpt holds are rejected up front."""
     target = Path(folder) / "excerpt.wav"
     command = [
         resolve_ffmpeg(),
@@ -287,31 +287,6 @@ def _excerpt_audio(audio, folder, first, stop, fps, hold):
     done = subprocess.run(command, capture_output=True, text=True, check=False)
     if done.returncode:
         raise RuntimeError(f"could not excerpt audio: {done.stderr}")
-    if hold[0]:
-        # Silence over the added first-frame hold keeps spoken events aligned.
-        delayed = Path(folder) / "held.wav"
-        delay_ms = hold[0] * 1000 / fps
-        done = subprocess.run(
-            [
-                resolve_ffmpeg(),
-                "-y",
-                "-v",
-                "error",
-                "-i",
-                str(target),
-                "-af",
-                f"adelay={delay_ms}:all=1",
-                "-c:a",
-                "pcm_s16le",
-                str(delayed),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if done.returncode:
-            raise RuntimeError(f"could not align excerpt audio: {done.stderr}")
-        return delayed
     return target
 
 
@@ -395,7 +370,7 @@ def _variant_video(
             # Keep the base mux defaults, including BT.709 retagging and
             # faststart, even when the silent stream uses a custom encoder.
             if excerpt:
-                audio = _excerpt_audio(audio, scratch, first, stop, venue.fps, hold)
+                audio = _excerpt_audio(audio, scratch, first, stop, venue.fps)
             narration.mux(
                 silent,
                 audio,
@@ -491,6 +466,8 @@ def render_variants(
             interval; posters retain their original indices. The effective
             frame range enters the content key unless it covers the full
             source. Bounds must be finite, increasing, and inside the source.
+            Narrated variants reject time_range with any nonzero hold_s;
+            use hold_s=(0, 0) to preserve full-output audio alignment exactly.
         work_dir: Folder for per-variant chunks and narration or adoption scratch
             files. None keeps intermediates beside each video. Chunk folders
             retain their .chunks-<video-stem> names and relative output parent
@@ -588,6 +565,8 @@ def render_variants(
             )
         if variant.narrated and spec.audio is None:
             raise ValueError(f"Narrated variant {variant.name} requires audio")
+        if variant.narrated and time_range is not None and any(spec.hold_s):
+            raise ValueError("narrated time_range requires hold_s=(0, 0)")
         relative_target = Path(
             spec.target_for(variant)
             if spec.target_for is not None

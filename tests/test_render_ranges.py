@@ -173,10 +173,7 @@ def test_sequence_excerpt_and_short_budget(spec, tmp_path):
     assert len(decode_variant_video(path)) == 2
 
 
-@pytest.mark.parametrize("first_hold", [0, 1 / 12])
-def test_excerpt_audio_starts_at_the_same_source_time(
-    spec, tmp_path, monkeypatch, first_hold
-):
+def test_excerpt_audio_starts_at_the_same_source_time(spec, tmp_path, monkeypatch):
     import shutil
     import wave
 
@@ -197,7 +194,7 @@ def test_excerpt_audio_starts_at_the_same_source_time(
         shutil.copyfile(video, path)
 
     monkeypatch.setattr(ep.narration, "mux", mux)
-    spec = replace(spec, audio=lambda variant: audio, hold_s=(first_hold, 0))
+    spec = replace(spec, audio=lambda variant: audio)
     folder = tmp_path / "out"
     (result,) = ep.render.render_variants(
         spec,
@@ -207,12 +204,10 @@ def test_excerpt_audio_starts_at_the_same_source_time(
         workers=1,
         time_range=(0.25, 0.5),
     )
-    assert result.frames == 3 + bool(first_hold)
+    assert result.frames == 3
     assert len(heard) == 1
-    held_samples = round(first_hold * rate)
-    assert len(heard[0]) == rate // 4 + held_samples
-    assert np.all(heard[0][:held_samples] == 0)
-    assert np.all(heard[0][held_samples:] == 3000)
+    assert len(heard[0]) == rate // 4
+    assert np.all(heard[0] == 3000)
 
 
 def test_record_range_requires_matching_plan_fps_and_complete_window(tmp_path):
@@ -271,3 +266,117 @@ def test_record_full_range_keeps_holds_after_plan(tmp_path, time_range):
         rec.hold(5)
     assert path.read_text().count("data:image/png") == 5
     plt.close(fig)
+
+
+def build_layout(venue, mode):
+    fig, ax = plt.subplots(figsize=(4, 3), dpi=100, layout="constrained")
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.plot([0, 1], [0, 1])
+
+    def draw(fig, k):
+        ax.set_ylabel("long\nthree\nlines" if k == 0 else "short")
+
+    return fig, draw
+
+
+def layout_frame_at(index):
+    return index * 2
+
+
+@pytest.mark.parametrize("source", ["count", "sequence", "mapping"])
+@pytest.mark.parametrize("dpi", [80, 100])
+@pytest.mark.parametrize("first", [0, 2])
+def test_excerpt_retains_full_layout(tmp_path, monkeypatch, source, dpi, first):
+    import eyepiece._render_pool as pool
+
+    raster = pool._raster
+    captured = []
+
+    def capture(state, index):
+        pixels = raster(state, index)
+        captured.append((pool._item(state, index), pixels.copy()))
+        return pixels
+
+    monkeypatch.setattr(pool, "_raster", capture)
+    spec = ep.render.ClipSpec(
+        "layout",
+        build_layout,
+        tuple(range(0, 12, 2)) if source == "sequence" else 6,
+        (ep.render.Venue("doc", dpi=dpi, fps=10),),
+        frame_at=layout_frame_at if source == "mapping" else None,
+    )
+    render(spec, tmp_path / "full")
+    full = dict(captured)
+    captured.clear()
+    render(spec, tmp_path / "part", (first / 10, 0.5))
+    factor = 1 if source == "count" else 2
+    assert [k for k, _ in captured] == [k * factor for k in range(first, 5)]
+    for k, pixels in captured:
+        np.testing.assert_array_equal(pixels, full[k], err_msg=f"source frame {k}")
+
+
+def test_narrated_excerpt_hold_rejected(tmp_path, monkeypatch):
+    import shutil
+    import wave
+
+    rate, fps = 48000, 10
+    pcm = np.repeat(np.arange(1, 11) * 1000, rate // fps).astype("<i2")
+    audio = tmp_path / "speech.wav"
+    with wave.open(str(audio), "wb") as stream:
+        stream.setnchannels(1)
+        stream.setsampwidth(2)
+        stream.setframerate(rate)
+        stream.writeframes(pcm.tobytes())
+    heard = []
+
+    def mux(video, audio, path, **kwargs):
+        with wave.open(str(audio), "rb") as stream:
+            heard.append(np.frombuffer(stream.readframes(stream.getnframes()), "<i2"))
+        shutil.copyfile(video, path)
+
+    monkeypatch.setattr(ep.narration, "mux", mux)
+    spec = ep.render.ClipSpec(
+        "audio",
+        build_layout,
+        6,
+        (ep.render.Venue("doc", dpi=100, fps=fps),),
+        hold_s=(0.2, 0),
+        audio=lambda variant: audio,
+    )
+
+    def narrated(folder, time_range=None):
+        return ep.render.render_variants(
+            spec,
+            [ep.render.Variant("doc", "light", True)],
+            folder,
+            manifest=ep.render.Manifest(folder / "manifest.json"),
+            workers=1,
+            time_range=time_range,
+        )
+
+    narrated(tmp_path / "full")
+    # Source frame 3 follows two hold frames, at full-output time 0.5 s.
+    assert np.all(heard[0][rate // 2 : rate // 2 + rate // 10] == 6000)
+    with pytest.raises(ValueError, match=r"time_range.*hold_s"):
+        narrated(tmp_path / "part", (0.3, 0.6))
+    assert len(heard) == 1
+
+
+@pytest.mark.parametrize("hold_s", [(0.2, 0), (0, 0.2), (0.001, 0)])
+@pytest.mark.parametrize("time_range", [(0.2, 0.5), (0, None)])
+def test_narrated_range_holds_fail_before_build(spec, tmp_path, hold_s, time_range):
+    def unexpected_audio(variant):
+        pytest.fail("audio must not be loaded for an invalid request")
+
+    spec = replace(spec, hold_s=hold_s, audio=unexpected_audio)
+    folder = tmp_path / "out"
+    with pytest.raises(ValueError, match=r"time_range.*hold_s"):
+        ep.render.render_variants(
+            spec,
+            [ep.render.Variant("doc", "light", True)],
+            folder,
+            manifest=ep.render.Manifest(folder / "manifest.json"),
+            time_range=time_range,
+        )
+    assert not (tmp_path / "builds").exists()
+    assert not folder.exists()
