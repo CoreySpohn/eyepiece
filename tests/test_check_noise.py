@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from matplotlib import patheffects
 from matplotlib.patches import Rectangle
+from matplotlib.text import Text
 from matplotlib.transforms import IdentityTransform
 
 import eyepiece as ep
@@ -399,14 +400,14 @@ def test_hidden_group_member_must_not_hide_visible_tear():
     def at(t):
         b.set_position((0.5 + 0.2 * t, 0.5))
 
-    waiver = ep.testing.Waive("tear", artist=c, reason="c intentionally absent")
+    with pytest.raises(ValueError, match=r"tear.*representative pair"):
+        ep.testing.Waive("tear", artist=c, reason="c intentionally absent")
     found = ep.testing.motion_faults(
-        fig, at, [0, 0.5, 1], groups=[[a, b, c]], kinds=("tear",), waive=[waiver]
+        fig, at, [0, 0.5, 1], groups=[[a, b, c]], kinds=("tear",)
     )
     assert any(f.waived is None and {f.artist, f.other} == {a, b} for f in found)
-    assert len(found.waived) == 1
-    assert found.waived[0].artist is c
-    assert "no ink" in found.waived[0].detail
+    assert not found.waived
+    assert any(f.artist is c and "no ink" in f.detail for f in found)
 
 
 def test_check_clip_does_not_pass_a_visible_tear():
@@ -426,7 +427,6 @@ def test_check_clip_does_not_pass_a_visible_tear():
         draw,
         plan,
         moves=[{"artists": [b], "groups": [[a, b, c]]}],
-        waive=[ep.testing.Waive("tear", artist=c, reason="c intentionally absent")],
     )
     assert not report.ok
 
@@ -510,3 +510,219 @@ def test_normal_effect_does_not_create_zero_width_stroke():
     ax.plot([0, 1], [0.5, 0.5], lw=0, path_effects=[patheffects.Normal()])
     ax.text(0.5, 0.5, "value", color="black", va="center")
     assert not ep.testing.readability_faults(fig, kinds=("on-marks",))
+
+
+@pytest.mark.parametrize("pair", [True, False], ids=["pair", "artist"])
+def test_pair_waiver_preserves_other_group_tears(pair):
+    fig = plt.figure(figsize=(4, 2), dpi=100)
+    a = fig.text(0.1, 0.5, "A", fontsize=18)
+    b = fig.text(0.4, 0.5, "B", fontsize=18)
+    c = fig.text(0.8, 0.5, "C", fontsize=18)
+    timeline = ep.Timeline({"u": 0})
+    timeline.run("move", 1, to={"u": 1})
+    plan = timeline.at_fps(5)
+
+    def draw(k):
+        t = plan.value(k, "u")
+        b.set_position((0.4 + 0.1 * t, 0.5))
+        c.set_position((0.8 - 0.2 * t, 0.5))
+
+    report = ep.testing.check_clip(
+        fig, draw, plan, moves=[{"artists": [b, c], "groups": [[a, b, c]]}]
+    )
+    assert not report.ok
+    assert any(f.kind == "tear" for f in report.motion)
+    # A tear reports only a representative pair. Neither waiver scope can
+    # safely excuse it without also hiding the unwaived A-B or A-C tears.
+    with pytest.raises(ValueError, match=r"tear.*representative pair"):
+        ep.testing.Waive(
+            "tear", artist=b, other=c if pair else None, reason="Only B-C may separate"
+        )
+
+
+def test_annotation_bounds_do_not_establish_identical_text():
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_axis_off()
+    measure = ax.text(0.3, 0.5, "same", fontsize=24)
+    fig.canvas.draw()
+    width = measure.get_window_extent().width
+    measure.remove()
+    delta = (
+        ax.transData.transform((0.35, 0.5))[0] - ax.transData.transform((0.3, 0.5))[0]
+    )
+    annotations = []
+    for x, relative in ((0.3, -0.5), (0.35, -0.5 - delta / width)):
+        annotations.append(
+            ax.annotate(
+                "same",
+                xy=(0.95, 0.95),
+                xytext=(x, 0.5),
+                fontsize=24,
+                alpha=0.5,
+                arrowprops={
+                    "arrowstyle": "-",
+                    "color": "none",
+                    "relpos": (relative, -1),
+                    "patchA": None,
+                    "shrinkA": 0,
+                    "shrinkB": 0,
+                },
+            )
+        )
+    timeline = ep.Timeline()
+    timeline.hold(1)
+    report = ep.testing.check_clip(fig, lambda k: None, timeline.at_fps(3))
+    assert not report.ok, "The words visibly overprint at positions 15.5 px apart"
+    assert any(
+        f.kind == "overlap" and {f.artist, f.other} == set(annotations)
+        for f in report.readability
+    )
+
+
+def test_normal_effect_does_not_make_an_invisible_referent_visible():
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_axis_off()
+    (line,) = ax.plot(
+        [0.1, 0.9],
+        [0.2, 0.2],
+        color="C2",
+        alpha=0,
+        path_effects=[patheffects.Normal()],
+    )
+    equation = ep.motion.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30)
+    equation.bind("sigma", line)
+    equation.update(1)
+    fig.canvas.draw()
+    shown = np.asarray(fig.canvas.buffer_rgba()).copy()
+    line.set_visible(False)
+    fig.canvas.draw()
+    hidden = np.asarray(fig.canvas.buffer_rgba()).copy()
+    line.set_visible(True)
+    assert np.array_equal(shown, hidden), "The referent paints exactly zero pixels"
+    assert any(f.kind == "no-referent" for f in ep.testing.grounding_faults(equation))
+
+
+@pytest.mark.parametrize("hidden", [{"alpha": 0}, {"color": "none"}])
+def test_normal_effect_does_not_make_an_invisible_group_member_present(hidden):
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    (line,) = ax.plot([0.1, 0.9], [0.2, 0.2], path_effects=[patheffects.Normal()])
+    line.set(**hidden)
+    label = ax.text(0.5, 0.5, "label")
+    found = ep.testing.motion_faults(
+        fig, lambda t: None, [0, 0.5, 1], groups=[[line, label]], kinds=("tear",)
+    )
+    assert any(f.artist is line and "no ink" in f.detail for f in found)
+
+
+@pytest.mark.parametrize("first_plain", [False, True])
+def test_text_subclasses_never_get_the_crossfade_exemption(first_plain):
+    class CustomText(Text):
+        pass
+
+    fig = plt.figure()
+    for cls in (Text if first_plain else CustomText, CustomText):
+        fig.add_artist(cls(0.3, 0.5, "same", alpha=0.5, transform=fig.transFigure))
+    assert ep.testing.readability_faults(fig, kinds=("overlap",))
+
+
+@pytest.mark.parametrize("kind", ["line", "patch", "text", "collection"])
+@pytest.mark.parametrize(
+    "base_alpha, effect_kw, painted_kinds",
+    [
+        (0, {"foreground": "black"}, ("line", "collection")),
+        (0, {"foreground": "black", "alpha": 0}, ()),
+        (1, {"foreground": "black", "alpha": 0}, ()),
+        (None, {"foreground": (0, 0, 0, 0)}, ("patch", "text", "collection")),
+        (
+            0,
+            {"foreground": "black", "alpha": 1},
+            ("line", "patch", "text", "collection"),
+        ),
+        (
+            None,
+            {"foreground": (0, 0, 0, 0), "alpha": 1},
+            ("line", "patch", "text", "collection"),
+        ),
+    ],
+)
+def test_path_effect_presence_uses_effect_alpha_and_color(
+    kind, base_alpha, effect_kw, painted_kinds
+):
+    paints = kind in painted_kinds
+    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_axis_off()
+    if kind == "line":
+        (mark,) = ax.plot([0.1, 0.9], [0.2, 0.2])
+    elif kind == "patch":
+        mark = ax.add_patch(Rectangle((0.1, 0.1), 0.8, 0.1))
+    elif kind == "text":
+        mark = ax.text(0.1, 0.2, "referent", fontsize=18)
+    else:
+        mark = ax.scatter([0.3, 0.6], [0.2, 0.2], s=50)
+    mark.set_alpha(base_alpha)
+    mark.set_path_effects([patheffects.Stroke(linewidth=4, **effect_kw)])
+    label = ax.text(0.5, 0.8, "label")
+    fig.canvas.draw()
+    shown = np.asarray(fig.canvas.buffer_rgba()).copy()
+    mark.set_visible(False)
+    fig.canvas.draw()
+    hidden = np.asarray(fig.canvas.buffer_rgba()).copy()
+    mark.set_visible(True)
+    assert bool(np.any(shown != hidden)) is paints
+    found = ep.testing.motion_faults(
+        fig, lambda t: None, [0, 0.5, 1], groups=[[mark, label]], kinds=("tear",)
+    )
+    assert any(f.artist is mark and "no ink" in f.detail for f in found) is not paints
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_effect_collision_ink_does_not_establish_group_presence(cached):
+    fig = plt.figure(figsize=(4, 2), dpi=100)
+    labels = [
+        fig.text(0.2, 0.5, word, alpha=0, path_effects=[patheffects.Normal()])
+        for word in ("one", "two")
+    ]
+    timeline = ep.Timeline({"u": 0})
+    timeline.run("move", 1, to={"u": 1})
+    plan = timeline.at_fps(5)
+
+    def at(t):
+        for label in labels:
+            label.set_x(0.2 + 0.5 * t)
+
+    move = {"groups": [labels]}
+    if cached:
+        report = ep.testing.check_clip(
+            fig, lambda k: at(plan.value(k, "u")), plan, moves=[move]
+        )
+        found = report.motion
+        assert not report.ok
+    else:
+        found = ep.testing.motion_faults(
+            fig, at, [0, 0.5, 1], moves=[move], kinds=("tear", "overlap")
+        )
+    assert {f.artist for f in found if f.kind == "tear"} == set(labels)
+    assert any(f.kind == "overlap" for f in found)
+
+
+@pytest.mark.parametrize("effect_alpha", [None, 0, 1])
+def test_path_effect_readout_requires_real_ink(effect_alpha):
+    fig = plt.figure(figsize=(4, 2), dpi=100)
+    effect = (
+        patheffects.Normal()
+        if effect_alpha is None
+        else patheffects.Stroke(foreground="black", alpha=effect_alpha, linewidth=2)
+    )
+    readout = fig.text(0.5, 0.5, "8", alpha=0, path_effects=[effect])
+    line = ep.narration.Line("number", "8")
+    narration = ep.narration.Narration(
+        ep.narration.Script((line,)),
+        {"number": ep.narration.Spoken("number", 1, (ep.narration.Word("8", 0, 1),))},
+    )
+    found = ep.testing.timing_faults(
+        narration, at=lambda t: None, readouts={("number", 0): readout}
+    )
+    assert any(f.kind == "number-late" for f in found) is (effect_alpha != 1)

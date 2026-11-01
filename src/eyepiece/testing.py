@@ -79,7 +79,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 from matplotlib import rc_context, rcParams
 from matplotlib.axis import Axis
-from matplotlib.backend_bases import GraphicsContextBase
+from matplotlib.backend_bases import RendererBase
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.collections import Collection, LineCollection, PathCollection
 from matplotlib.colors import to_hex, to_rgb, to_rgba
@@ -203,12 +203,14 @@ class Waive:
     A matching finding stays in the result with its reason in ``waived``.
     Assertions and ClipReport.ok count only unwaived findings.
 
-    Artist waivers support overlap, outside, small, on-marks, drift, tear,
+    Artist waivers support overlap, outside, small, on-marks, drift,
     spike, shape-class, and hop-rate. Jump supports artist waivers only for
     attributed geometry findings, not pixel-based findings. Dead supports
     them only when the move declares participating artists. At use, any
     matching kind with no attributable artist raises ValueError rather than
     silently ignoring the waiver. This rule applies to every finding kind.
+    Tear supports neither artist nor pair waivers: its representative pair
+    can stand for tears between other, unwaived group members.
 
     Attributes:
         kind: One readability or motion kind.
@@ -226,6 +228,11 @@ class Waive:
         """Require a narrow exception with a usable audit reason."""
         if self.kind not in (*KINDS, *MOTION_KINDS):
             raise ValueError(f"unknown waiver kind {self.kind!r}")
+        if self.kind == "tear":
+            raise ValueError(
+                "cannot apply 'tear' artist or pair waiver: a representative pair "
+                "can hide tears between unwaived group members"
+            )
         if self.artist is None:
             raise ValueError("a waiver needs an artist")
         if not isinstance(self.reason, str) or not self.reason.strip():
@@ -482,29 +489,14 @@ def _walk(artist):
             yield from _walk(child)
 
 
-def _text_alpha(artist):
-    """The greatest opacity of a text's fill or stroked outline."""
-    alpha = _alpha(artist, artist.get_color())
-    for effect in artist.get_path_effects():
-        if isinstance(effect, withStroke):
-            # Reproduce the graphics context that Text.draw passes to Stroke,
-            # including explicit opacity overrides on either one.
-            gc = GraphicsContextBase()
-            gc.set_foreground(to_rgba(artist.get_color()), isRGBA=True)
-            gc.set_alpha(artist.get_alpha())
-            effect._update_gc(gc, effect._gc)
-            if gc.get_linewidth() > 0:
-                alpha = max(alpha, gc.get_rgb()[3])
-    return alpha
-
-
-def _visible_texts(fig):
+def _visible_texts(fig, *, collision=False):
     out = []
     for artist in _walk(fig):
         if (
             isinstance(artist, Text)
             and artist.get_text().strip()
-            and _text_alpha(artist) >= _SHOWN
+            and (_collision_ink(artist) if collision else _presence_ink(artist))
+            >= _SHOWN
         ):
             out.append(artist)
     return out
@@ -529,7 +521,9 @@ def _finite(box):
 
 def _same_text(a, b):
     return (
-        a.get_text() == b.get_text()
+        type(a) is Text
+        and type(b) is Text
+        and a.get_text() == b.get_text()
         and to_rgba(a.get_color())[:3] == to_rgba(b.get_color())[:3]
         and a.get_fontproperties() == b.get_fontproperties()
         and a.get_rotation() == b.get_rotation()
@@ -553,8 +547,8 @@ def _same_text(a, b):
         and a.get_bbox_patch() is None
         and b.get_bbox_patch() is None
         and np.array_equal(
-            a.get_window_extent().extents,
-            b.get_window_extent().extents,
+            Text.get_window_extent(a).extents,
+            Text.get_window_extent(b).extents,
         )
     )
 
@@ -678,7 +672,7 @@ def _parts(mark, dpi):
     if mark.get_path_effects():
         return _effect_parts(mark, dpi)
     out = []
-    if _ink(mark) <= 0:
+    if _collision_ink(mark) <= 0:
         return out
     if isinstance(mark, Line2D):
         xy = mark.get_transform().transform(mark.get_xydata())
@@ -740,8 +734,6 @@ def _parts(mark, dpi):
 
 def _effect_parts(mark, dpi):
     """Capture effect paths with their actual transforms and stroke widths."""
-    from matplotlib.backend_bases import RendererBase
-
     parts = []
 
     class PathRecorder(RendererBase):
@@ -807,7 +799,7 @@ def _on_marks(fig, texts, boxes, dpi):
         [
             mark
             for mark in _default_avoid(ax, set())
-            if mark.get_visible() and _ink(mark) > 0
+            if mark.get_visible() and _collision_ink(mark) > 0
         ]
         for ax in fig.axes
         if ax.get_visible()
@@ -858,7 +850,11 @@ def _check_once(fig, dpi, minimum, overlap_tol, frame_tol, kinds, *, drawn=False
         if sample is not None:
             return sample["readability"]
     renderer = _renderer(fig)
-    texts = [t for t in _visible_texts(fig) if _finite(t.get_window_extent(renderer))]
+    texts = [
+        t
+        for t in _visible_texts(fig, collision=True)
+        if _finite(t.get_window_extent(renderer))
+    ]
     boxes = [_bbox(t, renderer) for t in texts]
     found = []
     if "overlap" in kinds:
@@ -1146,7 +1142,7 @@ def caption_line(
             at(t)
         fig.canvas.draw()
         renderer = _renderer(fig)
-        for text in _visible_texts(fig):
+        for text in _visible_texts(fig, collision=True):
             if _finite(text.get_window_extent(renderer)):
                 box = _bbox(text, renderer)
                 left, right = box.x0 / fig.bbox.width, box.x1 / fig.bbox.width
@@ -1279,14 +1275,44 @@ def _alpha_value(artist):
     return float(np.max(np.asarray(alpha, dtype=float)))
 
 
-def _ink(artist):
+def _collision_ink(artist):
+    """Possible ink opacity, conservatively including arbitrary path effects."""
+    return 1.0 if artist.get_path_effects() else _presence_ink(artist)
+
+
+def _effect_presence_ink(artist):
+    """Opacity actually requested by effect paths, never inferred from existence."""
+
+    class InkRecorder(RendererBase):
+        ink = 0.0
+
+        def points_to_pixels(self, points):
+            fig = artist.get_figure()
+            return points * (fig.dpi if fig is not None else 72.0) / 72.0
+
+        def draw_path(self, gc, path, transform, rgbFace=None):
+            if not len(path.vertices):
+                return
+            if gc.get_linewidth() > 0 and len(path.vertices) > 1:
+                self.ink = max(self.ink, gc.get_rgb()[3])
+            if rgbFace is not None:
+                alpha = gc.get_alpha() if gc.get_forced_alpha() else None
+                self.ink = max(self.ink, to_rgba(rgbFace, alpha)[3])
+
+    renderer = InkRecorder()
+    artist.draw(renderer)
+    return renderer.ink
+
+
+def _presence_ink(artist):
     """Opacity of the strongest ink the artist paints, 0 when it paints none.
 
     A patch or collection folds its alpha into its colors. Text and lines
-    use artist alpha in place of color alpha. Effects may paint independently.
+    use artist alpha in place of color alpha. Effects count only with the
+    effective alpha and color of the paths they actually draw.
     """
     if artist.get_path_effects():
-        return 1.0
+        return _effect_presence_ink(artist)
     base = _alpha_value(artist)
     base = 1.0 if base is None else base
     if isinstance(artist, Text):
@@ -1391,7 +1417,7 @@ def _grounding_mark_shown(mark):
         mark.get_visible()
         and (mark.axes is None or mark.axes.get_visible())
         and mark.get_figure() is not None
-        and _ink(mark) >= _SHOWN
+        and _presence_ink(mark) >= _SHOWN
     )
 
 
@@ -1473,10 +1499,7 @@ def grounding_faults(
             if mark_shown:
                 first_mark.setdefault(key, k)
             glyphs = term._pieces
-            shown = any(
-                g.get_visible() and _alpha(g, g.get_facecolor()) >= _SHOWN
-                for g in glyphs
-            )
+            shown = any(g.get_visible() and _presence_ink(g) >= _SHOWN for g in glyphs)
             if not shown:
                 continue
             first_term.setdefault(key, k)
@@ -1588,12 +1611,16 @@ def _traced(fig, extra=()):
         if id(artist) in skip or isinstance(artist, Spine):
             continue
         if isinstance(artist, (Text, Patch, Collection, Line2D)) and (
-            _ink(artist) >= _SHOWN
+            _collision_ink(artist) >= _SHOWN
         ):
             done.add(id(artist))
             yield artist
     for artist in extra:
-        if id(artist) not in done and artist.get_visible() and _ink(artist) >= _SHOWN:
+        if (
+            id(artist) not in done
+            and artist.get_visible()
+            and _collision_ink(artist) >= _SHOWN
+        ):
             yield artist
 
 
@@ -1711,7 +1738,7 @@ def _trace_box(artist, renderer):
         clip = None
     clip = None if clip is None else _tuple(clip)
     box = _tuple(box)
-    return box, clip, _ink(artist), _ink_centroid(artist, box)
+    return box, clip, _presence_ink(artist), _ink_centroid(artist, box)
 
 
 def _declared(move, key, default=None):
@@ -1763,6 +1790,7 @@ class _Trace:
         self.frames = []
         self.rasters = _RasterPool()
         self.boxes = {}  # artist -> {sample index: (box, clip, ink, centroid)}
+        self.collision_boxes = {}  # possible ink, including unproven effects
         self.order = []  # artists in order of first appearance
         self.size = (0.0, 0.0)
         self.ticks = set()  # tick labels, which trade places as limits move
@@ -1773,7 +1801,7 @@ class _Trace:
     def add_shapes(self, k, artists):
         """Record the drawn outline of each visible artist in `artists`."""
         for artist in artists:
-            if artist.get_visible() and artist.get_alpha() != 0:
+            if artist.get_visible() and _presence_ink(artist) >= _SHOWN:
                 outline = _display_outline(artist)
                 if outline:
                     self.shapes.setdefault(artist, {})[k] = outline
@@ -1786,6 +1814,9 @@ class _Trace:
                 self.frames.append(self.rasters.intern(snapshot.frames[0], copy=False))
             self.size = snapshot.size
             self.ticks.update(snapshot.ticks)
+            for artist, boxes in snapshot.collision_boxes.items():
+                if not isinstance(artist, AxesImage) or artist in extra:
+                    self.collision_boxes.setdefault(artist, {})[k] = boxes[0]
             for artist in snapshot.order:
                 if isinstance(artist, AxesImage) and artist not in extra:
                     continue
@@ -1819,6 +1850,14 @@ class _Trace:
             got = _trace_box(artist, renderer)
             if got is None:
                 continue
+            self.collision_boxes.setdefault(artist, {})[k] = (
+                got[0],
+                got[1],
+                _collision_ink(artist),
+                got[3],
+            )
+            if got[2] < _SHOWN:
+                continue
             if artist not in self.boxes:
                 self.boxes[artist] = {}
                 self.order.append(artist)
@@ -1837,29 +1876,37 @@ class _Trace:
         """Reuse observations only under a caller's complete-state promise."""
         if self.keep_frames:
             self.frames.repeat()
-        for observations in (self.boxes, self.tick_text, self.shapes, self.wipes):
+        for observations in (
+            self.boxes,
+            self.collision_boxes,
+            self.tick_text,
+            self.shapes,
+            self.wipes,
+        ):
             for values in observations.values():
                 if k - 1 in values:
                     values[k] = values[k - 1]
 
-    def box(self, artist, k):
-        got = self.boxes.get(artist, {}).get(k)
+    def box(self, artist, k, *, collision=False):
+        boxes = self.collision_boxes if collision else self.boxes
+        got = boxes.get(artist, {}).get(k)
         return None if got is None else got[0]
 
-    def seen(self, artist, k):
+    def seen(self, artist, k, *, collision=False):
         """The box of the artist at sample k after its clip, None when invisible."""
-        got = self.boxes.get(artist, {}).get(k)
+        boxes = self.collision_boxes if collision else self.boxes
+        got = boxes.get(artist, {}).get(k)
         if got is None:
             return None
         return got[0] if got[1] is None else _intersect(got[0], got[1])
 
-    def moving(self, artist, k, tol):
+    def moving(self, artist, k, tol, *, collision=False):
         """True when the artist would travel more than `tol` in `_WINDOW_S`.
 
         The test is a speed over elapsed clip time, so it gives the same
         answer at any frame rate.
         """
-        here = self.box(artist, k)
+        here = self.box(artist, k, collision=collision)
         if here is None:
             return False
         for direction in (-1, 1):
@@ -1868,7 +1915,7 @@ class _Trace:
                 dt = abs(self.times[j] - self.times[k])
                 if dt > _WINDOW_S + 1e-9 and abs(j - k) > 1:
                     break
-                there = self.box(artist, j)
+                there = self.box(artist, j, collision=collision)
                 if (
                     there is not None
                     and dt > 0
@@ -2381,15 +2428,15 @@ def _check_overlap(trace, candidates, allowed, tol, move_tol):
     allowances = {}
     for pair, lo, hi in allowed:
         allowances.setdefault(pair, []).append((lo, hi))
-    cand = [a for a in trace.order if a in candidates]
+    cand = [a for a in trace.collision_boxes if a in candidates]
     for k in range(len(trace.times)):
         here = [
             a
             for a in cand
-            if k in trace.boxes[a]
-            and trace.boxes[a][k][2] >= _OVERLAP_INK
-            and trace.seen(a, k) is not None
-            and trace.moving(a, k, move_tol)
+            if k in trace.collision_boxes[a]
+            and trace.collision_boxes[a][k][2] >= _OVERLAP_INK
+            and trace.seen(a, k, collision=True) is not None
+            and trace.moving(a, k, move_tol, collision=True)
         ]
         for i, a in enumerate(here):
             for b in here[i + 1 :]:
@@ -2403,7 +2450,9 @@ def _check_overlap(trace, candidates, allowed, tol, move_tol):
                     for lo, hi in allowances.get(pair, ())
                 ):
                     continue
-                x = _intersect(trace.seen(a, k), trace.seen(b, k))
+                x = _intersect(
+                    trace.seen(a, k, collision=True), trace.seen(b, k, collision=True)
+                )
                 if x is None or x[2] - x[0] <= tol or x[3] - x[1] <= tol:
                     continue
                 key = (id(a), id(b))
@@ -3172,7 +3221,10 @@ def _analyze(
         found += declared_findings(_check_tear, group_list, tol_px, "group")
     texts = {a for a in trace.order if isinstance(a, Text)}
     if "overlap" in kinds:
-        found += _check_overlap(trace, texts | declared, allowed, overlap_tol, tol_px)
+        collision_texts = {a for a in trace.collision_boxes if isinstance(a, Text)}
+        found += _check_overlap(
+            trace, collision_texts | declared, allowed, overlap_tol, tol_px
+        )
     if "outside" in kinds:
         found += _check_outside(trace, texts | declared, frame_tol)
     if "spike" in kinds:
@@ -4035,7 +4087,7 @@ def _timing_numbers(narration, readouts, at, plan, settle_tol_s, fps):
         for t in times:
             at(t)
             text = artist.get_text()
-            ink = _ink(artist) if artist.get_visible() else 0.0
+            ink = _presence_ink(artist) if artist.get_visible() else 0.0
             token = _READOUT_NUMBER.search(text)
             value = float(token.group().replace(",", "")) if token is not None else None
             science = _READOUT_SCIENTIFIC.search(text)

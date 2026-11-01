@@ -837,6 +837,7 @@ def test_overlap_indexes_allowances_once_and_preserves_fault_records():
             k: ((k + 2 * j, 0, k + 2 * j + 20, 10), None, 1, None)
             for k in range(len(times))
         }
+        trace.collision_boxes[artist] = trace.boxes[artist]
 
     class Allowances(list):
         visits = 0
