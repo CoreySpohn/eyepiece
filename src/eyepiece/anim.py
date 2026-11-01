@@ -99,6 +99,7 @@ from eyepiece._ffmpeg import (
     resolve_ffmpeg,
     with_caller_pixels,
 )
+from eyepiece._glyph_cache import glyph_cache
 from eyepiece._motion import frame_count
 
 
@@ -321,11 +322,15 @@ def _agg_canvas(fig):
     with the frame wrapping further sideways down every row. Nothing
     raises: the mp4 is silently wrong while the gif beside it, whose
     writer never resizes anything, is correct. Agg does not snap.
+
+    Text layouts and glyph bitmaps are reused while the block is open (see
+    `eyepiece._glyph_cache`); the pixels are those of stock Agg.
     """
     original = fig.canvas
     FigureCanvasAgg(fig)
     try:
-        yield
+        with glyph_cache():
+            yield
     finally:
         fig.canvas = original
 

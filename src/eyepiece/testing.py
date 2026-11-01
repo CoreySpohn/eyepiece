@@ -65,6 +65,7 @@ Example::
     ept.assert_readable(fig, at=clip.pose, times=cue_times)
 """
 
+import functools
 import itertools
 import math
 import numbers
@@ -103,6 +104,7 @@ from eyepiece._check_samples import (
 )
 from eyepiece._check_video import _source_samples
 from eyepiece._equation import _binding_rgb
+from eyepiece._glyph_cache import glyph_cache
 from eyepiece._meaning import (
     MEANING_KINDS,
     MeaningError,
@@ -891,6 +893,18 @@ def _check_once(fig, dpi, minimum, overlap_tol, frame_tol, kinds, *, drawn=False
     return found
 
 
+def _with_glyph_cache(check):
+    """Run a check with Agg text layouts and glyph bitmaps reused (same pixels)."""
+
+    @functools.wraps(check)
+    def wrapper(*args, **kwargs):
+        with glyph_cache():
+            return check(*args, **kwargs)
+
+    return wrapper
+
+
+@_with_glyph_cache
 def readability_faults(
     fig,
     *,
@@ -2826,6 +2840,7 @@ def _boxes_mask(trace, artists, k, shape):
     return mask
 
 
+@_with_glyph_cache
 def motion_faults(
     fig,
     at,
@@ -4440,6 +4455,7 @@ def _clip_moves(moves, plan):
     ]
 
 
+@_with_glyph_cache
 def check_clip(
     fig,
     draw,
