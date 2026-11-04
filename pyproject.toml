@@ -90,8 +90,8 @@ filterwarnings = [
     'ignore:invalid escape sequence:SyntaxWarning:.*colorspacious[./]comparison',
     # pydub 0.25 imports stdlib audioop, deprecated in Python 3.12.
     "ignore:'audioop' is deprecated and slated for removal in Python 3.13:DeprecationWarning:pydub.utils",
-    # Manim 0.21 passes Image.fromarray(mode=), deprecated since Pillow 11.3.
-    "ignore:'mode' parameter is deprecated and will be removed in Pillow 13.*:DeprecationWarning:manim.camera.camera",
+    # Manim 0.21 passes Image.fromarray(mode=), deprecated since Pillow 11.3 (wording changed in 12).
+    "ignore:'mode' parameter.* deprecated and will be removed in Pillow 13.*:DeprecationWarning:manim.camera.camera",
 ]
 markers = [
     "medium: tests with a 30-second default time budget",
