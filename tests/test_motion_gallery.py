@@ -19,7 +19,7 @@ def _gallery_cell(catalog, marker):
     return next(code for code in cells if marker in code)
 
 
-def test_collapse_copy_is_continuous():
+def test_collapse_copy_is_continuous(draw_notebook_figures):
     hwostyle.use("dark")
     ns = {"np": np, "plt": plt, "ep": ep}
     exec(_gallery_cell("motion-staging", "gather = ep.motion.collapse("), ns)
@@ -66,7 +66,7 @@ def test_follow_zoom_halos_fade_continuously():
     ept.assert_motion(fig, lambda t: move.update(t / 2), ept.Window(0, 2))
 
 
-def test_gallery_emphasis_labels_stay_inside_frame():
+def test_gallery_emphasis_labels_stay_inside_frame(draw_notebook_figures):
     hwostyle.use("dark")
     ns = {"np": np, "plt": plt, "ep": ep}
     exec(_gallery_cell("motion-attention", "ring = ep.motion.circumscribe(orbiter"), ns)

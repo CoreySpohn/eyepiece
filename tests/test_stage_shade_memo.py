@@ -85,5 +85,6 @@ def test_unusual_levels_and_pairs_take_the_original_path():
         look._shade("red", Decimal("0.5"), 0.5, False)
     with pytest.raises(IndexError):
         look._shade(("none", 0.5), 0.5, 0.5, False)
-    inf = look._shade("red", 0.5, float("inf"), False)
+    with pytest.warns(RuntimeWarning, match="invalid value encountered in multiply"):
+        inf = look._shade("red", 0.5, float("inf"), False)
     assert np.isnan(inf[1]) or np.isinf(inf[0])

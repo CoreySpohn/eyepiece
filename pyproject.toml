@@ -80,6 +80,19 @@ packages = ["src/eyepiece"]
 exclude = ["/scripts", "/docs", "/tests", "/.github"]
 
 [tool.pytest.ini_options]
+filterwarnings = [
+    "error",
+    # tol_colors constructs colormaps with Matplotlib's pending-deprecated set_bad.
+    'ignore:The set_bad function will be deprecated.*:PendingDeprecationWarning:tol_colors',
+    # pydub 0.25 uses non-raw regex strings that warn when Python compiles utils.py.
+    'ignore:invalid escape sequence:SyntaxWarning:.*pydub[./]utils',
+    # colorspacious 1.1.2 has a non-raw math docstring in comparison.py.
+    'ignore:invalid escape sequence:SyntaxWarning:.*colorspacious[./]comparison',
+    # pydub 0.25 imports stdlib audioop, deprecated in Python 3.12.
+    "ignore:'audioop' is deprecated and slated for removal in Python 3.13:DeprecationWarning:pydub.utils",
+    # Manim 0.21 passes Image.fromarray(mode=), deprecated since Pillow 11.3.
+    "ignore:'mode' parameter is deprecated and will be removed in Pillow 13.*:DeprecationWarning:manim.camera.camera",
+]
 markers = [
     "medium: tests with a 30-second default time budget",
     "slow: tests with a 300-second default time budget, run nightly",

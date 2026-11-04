@@ -366,8 +366,11 @@ def test_tagged_into_untagged_pairs_by_glyph_order():
 
 def test_a_tag_with_a_lost_partner_warns():
     _fig, a, b = _pair(r"${{t:a}}+{{u:b}}$", r"${{t:b}}+{{v:a}}$")
-    with pytest.warns(UserWarning, match="'u'"):
+    with pytest.warns(UserWarning, match="has no partner") as caught:
         ep.transform(a, b)
+    assert len(caught) == 2
+    assert any("tag 'u'" in str(item.message) for item in caught)
+    assert any("tag 'v'" in str(item.message) for item in caught)
 
 
 def test_update_order_and_interleaved_levels_do_not_change_pixels():

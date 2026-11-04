@@ -194,7 +194,7 @@ def test_manim_parity_cell_lists_all_rows():
         assert re.search(rf'^\s+"{re.escape(name)}[", ]', code, re.M), name
 
 
-def test_land_an_answer_stays_inside_the_axes():
+def test_land_an_answer_stays_inside_the_axes(draw_notebook_figures):
     import matplotlib.pyplot as plt
 
     import eyepiece.testing as ept

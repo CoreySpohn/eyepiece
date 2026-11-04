@@ -1839,6 +1839,8 @@ def _ink_centroid(artist, box):
         if isinstance(artist, Line2D):
             xy = artist.get_transform().transform(artist.get_xydata())
             xy = xy[np.isfinite(xy).all(axis=1)]
+            if not len(xy):
+                return _center(box)
             seg = np.linalg.norm(np.diff(xy, axis=0), axis=1)
             if artist.get_linestyle() not in ("None", "none", "", " ") and (
                 seg.sum() > 1e-9

@@ -53,6 +53,18 @@ def close_figures():
 
 
 @pytest.fixture
+def draw_notebook_figures(monkeypatch):
+    """Render notebook show calls on Agg when executing documentation cells."""
+    import matplotlib.pyplot as plt
+
+    def show(*, block=None):
+        for number in plt.get_fignums():
+            plt.figure(number).canvas.draw()
+
+    monkeypatch.setattr(plt, "show", show)
+
+
+@pytest.fixture
 def media_in_tmp(tmp_path):
     """Keep Manim's text-layout cache out of the working directory."""
     manim = importlib.import_module("manim")
