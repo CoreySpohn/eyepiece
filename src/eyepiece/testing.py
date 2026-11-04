@@ -12,7 +12,7 @@ returns a list of `ReadabilityFault` records, each naming the artist, the
 time and the box in output pixels. `assert_readable` is the same check as a
 test assertion that raises with a readable report.
 
-Four kinds of fault are reported:
+Six kinds of fault are reported:
 
 - ``"overlap"``: two visible text artists, or a text and the backing box of
   another, whose rendered extents intersect by more than `overlap_tol`
@@ -28,6 +28,11 @@ Four kinds of fault are reported:
   and this check covers the words.
   Marks with path effects use their effect geometry, including stroke widths
   and offsets, but skip the base color and opacity exclusions.
+
+- ``"on-image"``: text, including an opaque backing box, hides valid image
+  or mesh data. Masked and nonfinite samples do not count.
+- ``"empty-panel"``: an axes has drawn marks but too little visible ink, or
+  its displayed image data have too little spatial color range.
 
 `motion_faults` is the same idea for the path between two states. A clip is
 checked at u = 0 and u = 1 and at stills, and the defects that matter lie in
@@ -124,6 +129,7 @@ from eyepiece._motif_checks import (
     motif_margins,
 )
 from eyepiece._motion import frame_count
+from eyepiece._visual_checks import _visual_findings
 from eyepiece.attention import _STAGE_BASES, _default_avoid, _renderer
 
 if TYPE_CHECKING:
@@ -195,7 +201,7 @@ __all__ = [
     "timing_faults",
 ]
 
-KINDS = ("overlap", "outside", "small", "on-marks")
+KINDS = ("overlap", "outside", "small", "on-marks", "on-image", "empty-panel")
 
 
 @dataclass(frozen=True)
@@ -205,8 +211,9 @@ class Waive:
     A matching finding stays in the result with its reason in ``waived``.
     Assertions and ClipReport.ok count only unwaived findings.
 
-    Artist waivers support overlap, outside, small, on-marks, drift,
-    spike, shape-class, and hop-rate. Jump supports artist waivers only for
+    Artist waivers support overlap, outside, small, on-marks, on-image,
+    empty-panel, drift, spike, shape-class, and hop-rate. Jump supports artist
+    waivers only for
     attributed geometry findings, not pixel-based findings. Dead supports
     them only when the move declares participating artists. At use, any
     matching kind with no attributable artist raises ValueError rather than
@@ -417,13 +424,13 @@ class ReadabilityFault:
     Attributes:
         kind: One of `KINDS`.
         artist: The artist at fault: the text, or for ``"outside"`` the text
-            or mark.
-        other: The second artist of an ``"overlap"`` or ``"on-marks"`` fault;
-            None for the others.
+            or mark; the axes for ``"empty-panel"``.
+        other: The second artist of an ``"overlap"``, ``"on-marks"`` or
+            ``"on-image"`` fault; None for the others.
         time: The sample time, None when the figure was checked as drawn.
         box: ``(x0, y0, x1, y1)`` of the fault in output pixels, origin at
             the lower left of the figure: the overlap region, the clipped
-            artist's extent, or the text extent.
+            artist's extent, or the text or axes extent.
         detail: A one-line description.
         waived: Reason for an explicit exception, or None.
     """
@@ -862,7 +869,19 @@ def _on_marks(fig, texts, boxes, dpi):
     return found
 
 
-def _check_once(fig, dpi, minimum, overlap_tol, frame_tol, kinds, *, drawn=False):
+def _check_once(
+    fig,
+    dpi,
+    minimum,
+    overlap_tol,
+    frame_tol,
+    kinds,
+    *,
+    drawn=False,
+    min_ink_fraction=0.002,
+    min_image_range=0.02,
+    ink_tol=0.02,
+):
     if not drawn:
         sample = _draw_sample(fig)
         if sample is not None:
@@ -890,7 +909,46 @@ def _check_once(fig, dpi, minimum, overlap_tol, frame_tol, kinds, *, drawn=False
         found += _small(present_texts, present_boxes, dpi, minimum)
     if "on-marks" in kinds:
         found += _on_marks(fig, texts, boxes, dpi)
+    if {"on-image", "empty-panel"} & set(kinds):
+        found += _visual_findings(
+            fig,
+            present_texts,
+            present_boxes,
+            [mark for mark in _marks(fig) if _collision_ink(mark) > 0],
+            kinds=kinds,
+            overlap_tol=overlap_tol,
+            min_ink_fraction=min_ink_fraction,
+            min_image_range=min_image_range,
+            ink_tol=ink_tol,
+        )
     return found
+
+
+def _visual_thresholds(min_ink_fraction, min_image_range, ink_tol):
+    for name, value in (
+        ("min_ink_fraction", min_ink_fraction),
+        ("min_image_range", min_image_range),
+        ("ink_tol", ink_tol),
+    ):
+        if not math.isfinite(value) or not 0 <= value <= 1:
+            raise ValueError(f"{name} must be finite and in [0, 1]")
+
+
+def _overlap_allowed(artist, other, time, moves, may_overlap):
+    pair = frozenset((artist, other))
+    if any(pair == frozenset(p) for p in may_overlap):
+        return True
+    for move in moves:
+        span = _declared(move, "span")
+        if (
+            time is not None
+            and span is not None
+            and not span[0] <= time <= span[1] + 0.1
+        ):
+            continue
+        if any(pair == frozenset(p) for p in _declared(move, "may_overlap") or ()):
+            return True
+    return False
 
 
 def _with_glyph_cache(check):
@@ -918,6 +976,11 @@ def readability_faults(
     kinds=KINDS,
     frame_key=None,
     waive=(),
+    may_overlap=(),
+    moves=(),
+    min_ink_fraction=0.002,
+    min_image_range=0.02,
+    ink_tol=0.02,
 ):
     """Check a figure, or a clip sampled at chosen times, for readability faults.
 
@@ -943,6 +1006,21 @@ def readability_faults(
             boxes that only touch are fine.
         frame_tol: Largest overshoot past the figure edge, in pixels, that is
             not reported.
+        may_overlap: Intentional artist pairs, as in `MotionContract`.
+            Suppresses text/text and text/image overlaps in either order.
+        moves: Results, contracts or declaration dicts carrying `may_overlap`.
+            A declared span applies at its sample times and for 0.1 s after;
+            checking as drawn applies all declarations.
+        min_ink_fraction: Minimum fraction of axes-area pixels with visible
+            data ink, default 0.002 (0.2 percent). Axes decoration and text
+            are excluded. Zero disables this part of ``"empty-panel"``.
+        min_image_range: Minimum spatial range of displayed image RGB in
+            any channel, default 0.02 on [0, 1]. Measured over valid data,
+            with opacity composited over the axes facecolor. Zero disables
+            this part of ``"empty-panel"``.
+        ink_tol: Per-channel RGB difference from the axes facecolor that
+            counts as data ink, default 0.02 on [0, 1]. All three visual
+            thresholds must be finite and in [0, 1].
         kinds: The kinds of fault to look for, a subset of `KINDS`.
         waive: Sequence of `Waive` declarations. Matching findings retain their
             reasons in ``waived`` and are excluded by assertion helpers.
@@ -966,6 +1044,8 @@ def readability_faults(
 
         faults = ept.readability_faults(fig, at=pose, times=[1.0, 2.5])
     """
+    _visual_thresholds(min_ink_fraction, min_image_range, ink_tol)
+    moves, may_overlap = tuple(moves or ()), tuple(may_overlap)
     kinds = tuple(kinds)
     unknown = [k for k in kinds if k not in KINDS]
     if unknown:
@@ -982,6 +1062,11 @@ def readability_faults(
     if frame_key is not None and at is None:
         raise ValueError("frame_key requires at and times")
     old_dpi = fig.dpi
+    old_canvas = fig.canvas
+    if {"on-image", "empty-panel"} & set(kinds) and not isinstance(
+        fig.canvas, FigureCanvasAgg
+    ):
+        FigureCanvasAgg(fig)
     if dpi is not None:
         fig.set_dpi(dpi)
     found = []
@@ -994,15 +1079,28 @@ def readability_faults(
                 if at is not None:
                     at(t)
                 observations = _check_once(
-                    fig, fig.dpi, min_text_px, overlap_tol, frame_tol, kinds
+                    fig,
+                    fig.dpi,
+                    min_text_px,
+                    overlap_tol,
+                    frame_tol,
+                    kinds,
+                    min_ink_fraction=min_ink_fraction,
+                    min_image_range=min_image_range,
+                    ink_tol=ink_tol,
                 )
                 # The callback may have enabled layout or a filter.
                 key = _reuse_key(fig, frame_key, t, inspect_artists=True)
             previous = key
             for kind, artist, other, box, detail in observations:
+                if kind in ("overlap", "on-image") and _overlap_allowed(
+                    artist, other, t, moves, may_overlap
+                ):
+                    continue
                 found.append(ReadabilityFault(kind, artist, other, t, box, detail))
     finally:
-        if dpi is not None:
+        fig.set_canvas(old_canvas)
+        if dpi is not None or fig.dpi != old_dpi:
             fig.set_dpi(old_dpi)
     order = {kind: i for i, kind in enumerate(KINDS)}
     index = {t: i for i, t in enumerate(samples)}
@@ -4469,6 +4567,10 @@ def check_clip(
     hops=None,
     driven=None,
     waive=(),
+    may_overlap=(),
+    min_ink_fraction=0.002,
+    min_image_range=0.02,
+    ink_tol=0.02,
 ) -> ClipReport:
     """Re-render a plan-driven clip and collect checks without an animation file.
 
@@ -4506,6 +4608,14 @@ def check_clip(
         hops: Hop groups, each ``{"artists": [...], "rate": draws_per_second}``,
             as in `motion_faults`; a declared move's ``hops`` adds to them.
         waive: Sequence of `Waive` declarations for readability and motion.
+        may_overlap: Intentional artist pairs, applied to readability and
+            motion as in `motion_faults`. Move contracts also apply.
+        min_ink_fraction: Minimum axes data-ink coverage, default 0.002,
+            as in `readability_faults`.
+        min_image_range: Minimum displayed image RGB range, default 0.02,
+            as in `readability_faults`.
+        ink_tol: RGB difference counted as ink, default 0.02,
+            as in `readability_faults`.
         driven: The artists the clip's knob drives, for the report's
             ``motion_ink`` (see `motion_ink`). None leaves it None.
 
@@ -4519,6 +4629,8 @@ def check_clip(
         ValueError: If a step is neither a span name nor a frame index in
             the plan.
     """
+    _visual_thresholds(min_ink_fraction, min_image_range, ink_tol)
+    may_overlap = tuple(may_overlap)
     declared = _clip_moves(moves, plan)
     step_frames = set(plan.step_frames())
     if isinstance(steps, str):
@@ -4567,7 +4679,16 @@ def check_clip(
         return {
             "trace": trace,
             "readability": _check_once(
-                fig, fig.dpi, VENUES[venue], 2.0, 1.0, KINDS, drawn=True
+                fig,
+                fig.dpi,
+                VENUES[venue],
+                2.0,
+                1.0,
+                KINDS,
+                drawn=True,
+                min_ink_fraction=min_ink_fraction,
+                min_image_range=min_image_range,
+                ink_tol=ink_tol,
             )
             if t in review_set
             else [],
@@ -4581,7 +4702,16 @@ def check_clip(
     try:
         with _share_samples(fig, review_times if driven is None else times, capture):
             readability = readability_faults(
-                fig, at=at, times=review_times, venue=venue, waive=waive
+                fig,
+                at=at,
+                times=review_times,
+                venue=venue,
+                waive=waive,
+                moves=declared,
+                may_overlap=may_overlap,
+                min_ink_fraction=min_ink_fraction,
+                min_image_range=min_image_range,
+                ink_tol=ink_tol,
             )
             # A persistent collision is one finding, rather than one per still.
             seen = set()
@@ -4601,6 +4731,7 @@ def check_clip(
                 at=at,
                 times=times,
                 moves=declared,
+                may_overlap=may_overlap,
                 steps=step_times,
                 hops=hops or (),
                 fps=plan.fps,
