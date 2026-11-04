@@ -221,3 +221,11 @@ __marimo__/
 
 # hatch-vcs generated version file
 *_version.py
+
+# Local tooling state and CI reports
+.DS_Store
+.claude/
+.testmondata*
+.testbudget/
+.testbudget*.json
+junit-*.xml

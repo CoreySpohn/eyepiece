@@ -1,4 +1,6 @@
 [codespell]
 skip = .git,*.ipynb,uv.lock,*/_build,*.fits
-# add domain words only if codespell flags them (clean on the libraries sampled)
-# ignore-words-list =
+# Cue sound and color operations use these words in their ordinary meanings.
+ignore-words-list = sting,lightening
+# Preserve deliberate invalid-knob, byte-content, and escaped Unicode fixtures.
+ignore-regex = ^ignore-regex = .*|plan\.reached\(0, "buid"\)|path\.write_bytes\(b"abd"\)|"A caf\\u00e9\."
