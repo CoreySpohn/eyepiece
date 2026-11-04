@@ -98,13 +98,8 @@ def test_motif_kwargs_carry_the_key_as_gid(helper):
     kwargs = getattr(motif, helper)
     assert kwargs()["gid"] == motif.key
     assert kwargs(gid=None)["gid"] == motif.key
-
-
-@pytest.mark.parametrize("helper", ["line_kw", "marker_kw", "patch_kw", "label_kw"])
-@pytest.mark.parametrize("gid", ["planet:orbit", ""])
-def test_motif_kwargs_accept_an_explicit_gid(helper, gid):
-    motif = _m("planet", "planet", marker="o")
-    assert getattr(motif, helper)(gid=gid)["gid"] == gid
+    assert kwargs(gid="planet:orbit")["gid"] == "planet:orbit"
+    assert kwargs(gid="")["gid"] == ""
 
 
 def test_meaning_keys_maps_each_motif_key_to_itself():
@@ -180,6 +175,10 @@ def test_default_set_shares_its_never_together_pairs(default_set):
     assert default_set.never_together("prior", "disk")
     assert default_set.never_together("pupil", "probability")
     assert not default_set.never_together("star", "planet")
+    assert default_set.never_together("local_zodi", "alert")
+    assert default_set.never_together("posterior", "local_zodi")
+    both = default_set.only("local_zodi", "alert")
+    assert "sharing" in [f.kind for f in ept.motif_faults(both, mode="dark")]
 
 
 def test_the_cue_resolves_to_the_text_color(default_set):
@@ -195,14 +194,9 @@ def _hex(color):
     return to_hex(color).lower()
 
 
-def test_the_dim_level_follows_the_mode():
-    assert ep._style.dim_level("dark") == 0.35
-    assert ep._style.dim_level("light") == 0.5
-    assert ep._style.dim_level("paper") == 0.5
-
-
 def test_stage_dim_resolves_by_mode_and_an_explicit_value_wins():
     for mode, expected in (("dark", 0.35), ("light", 0.5), ("paper", 0.5)):
+        assert ep._style.dim_level(mode) == expected
         hwostyle.use(mode)
         fig, ax = plt.subplots()
         (line,) = ax.plot([0, 1], [0, 1])
@@ -276,6 +270,7 @@ def test_faint_fills_can_collide_when_the_solid_colors_pass(mode, severity, dist
     pair = ep.MotifSet(
         [_m("s", "star", fill_alpha=0.1), _m("p", "planet", fill_alpha=0.1)]
     )
+    assert "cvd-fill" not in [f.kind for f in ept.motif_faults(pair, mode=mode)]
     found = ept.motif_faults(pair, mode=mode, fills=True)
     assert "cvd" not in [f.kind for f in found]
     (fill,) = [f for f in found if f.kind == "cvd-fill"]
@@ -285,13 +280,6 @@ def test_faint_fills_can_collide_when_the_solid_colors_pass(mode, severity, dist
     assert "alpha" in fill.detail and "0.1" in fill.detail
     with pytest.raises(ept.MotifError, match="cvd-fill"):
         ept.assert_motifs(pair, mode=mode, strict=True, fills=True)
-
-
-def test_fill_check_is_opt_in():
-    pair = ep.MotifSet(
-        [_m("s", "star", fill_alpha=0.1), _m("p", "planet", fill_alpha=0.1)]
-    )
-    assert "cvd-fill" not in [f.kind for f in ept.motif_faults(pair, mode="light")]
 
 
 def test_fill_check_uses_each_motifs_mode_opacity_and_skips_absent_fills():
@@ -579,13 +567,6 @@ def test_a_label_falls_back_to_the_mark_without_a_table(monkeypatch):
     hwostyle.use("dark")
     assert zodi.label_color == "zodi"
     assert zodi.label in (zodi.color, "#15903e")
-
-
-def test_the_default_sets_local_zodi_is_never_with_alert_or_posterior(default_set):
-    assert default_set.never_together("local_zodi", "alert")
-    assert default_set.never_together("posterior", "local_zodi")
-    both = default_set.only("local_zodi", "alert")
-    assert "sharing" in [f.kind for f in ept.motif_faults(both, mode="dark")]
 
 
 def test_an_accepted_pair_passes_only_with_its_second_channels(table_set):

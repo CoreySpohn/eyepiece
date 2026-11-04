@@ -52,14 +52,10 @@ def test_schematic_draws_and_highlights():
     plt.close(res.fig)
 
 
-def test_schematic_unknown_highlight_raises():
+@pytest.mark.parametrize("highlight", ["nope", 3])
+def test_schematic_unknown_highlight_raises(highlight):
     with pytest.raises(ValueError, match="highlight"):
-        schematic("imager", highlight="nope")
-
-
-def test_schematic_non_string_highlight_raises_value_error():
-    with pytest.raises(ValueError, match="highlight"):
-        schematic("imager", highlight=3)
+        schematic("imager", highlight=highlight)
 
 
 def _envelope_facecolor():
@@ -77,21 +73,8 @@ def test_schematic_neutrals_follow_the_mode():
     assert dark_envelope != light_envelope
 
 
-def test_rail_acceptance_gate():
-    r = eyepiece.rail([("PP", "pupil"), ("FP", "focal")])
-    assert r.ax is not None
-    plt.close(r.fig)
-    for g in ("source", "apodizer", "fpm"):
-        res = eyepiece.rail([("s", g)])
-        assert res.ax is not None
-        plt.close(res.fig)
-
-
-def test_rail_is_exported_at_top_level():
-    assert eyepiece.rail is rail
-
-
 def test_glyph_vocabulary_is_exported_at_top_level():
+    assert eyepiece.rail is rail
     assert eyepiece.GLYPHS is GLYPHS
     assert "GLYPHS" in eyepiece.plot.__all__
 
@@ -127,10 +110,6 @@ def test_source_star_size_follows_rcparams():
     assert big == pytest.approx(2 * small)
 
 
-def test_every_glyph_in_the_vocabulary_has_a_signature():
-    assert set(GLYPH_SIGNATURES) == set(GLYPHS)
-
-
 @pytest.mark.parametrize("glyph", sorted(GLYPH_SIGNATURES))
 def test_glyph_draws_its_own_artists(glyph):
     res = rail([("Plane", glyph)], cap=False)
@@ -142,6 +121,7 @@ def test_glyph_draws_its_own_artists(glyph):
 
 
 def test_rail_draws_every_glyph_together():
+    assert set(GLYPH_SIGNATURES) == set(GLYPHS)
     planes = [(g.upper(), g) for g in sorted(GLYPHS)]
     res = rail(planes, cap=False)
     expected_lines = sum(sig[0] for sig in GLYPH_SIGNATURES.values())
@@ -165,13 +145,10 @@ def _cap_rectangles(**kwargs):
     return rects
 
 
-def test_cap_defaults_to_capping_a_focal_terminated_rail():
+@pytest.mark.parametrize("kwargs, expected", [({}, 3), ({"cap": False}, 2)])
+def test_cap_defaults_to_capping_a_focal_terminated_rail(kwargs, expected):
     # The pupil glyph contributes two bars; the cap is the third rectangle.
-    assert _cap_rectangles() == 3
-
-
-def test_cap_false_leaves_a_focal_rail_uncapped():
-    assert _cap_rectangles(cap=False) == 2
+    assert _cap_rectangles(**kwargs) == expected
 
 
 def test_cap_true_caps_a_rail_that_would_not_be_capped():
@@ -209,14 +186,10 @@ def test_unknown_glyph_raises_naming_the_vocabulary():
         assert name in message
 
 
-def test_rail_unknown_highlight_raises():
+@pytest.mark.parametrize("highlight", ["nope", 1])
+def test_rail_unknown_highlight_raises(highlight):
     with pytest.raises(ValueError, match="highlight"):
-        rail([("PP", "pupil"), ("FP", "focal")], highlight="nope")
-
-
-def test_rail_non_string_highlight_raises():
-    with pytest.raises(ValueError, match="highlight"):
-        rail([("PP", "pupil"), ("FP", "focal")], highlight=1)
+        rail([("PP", "pupil"), ("FP", "focal")], highlight=highlight)
 
 
 def test_rail_highlight_matches_the_label_case_insensitively():
@@ -259,6 +232,7 @@ def test_single_plane_rail_works():
     assert len(res.artists["lines"]) == 1
     x = float(res.artists["lines"][0].get_xdata()[0])
     assert 0.0 < x < 1.0
+    assert "ellipse" not in res.artists
     plt.close(res.fig)
 
 
@@ -272,12 +246,6 @@ def test_rail_draws_into_a_given_ax():
     res = rail([("PP", "pupil"), ("FP", "focal")], ax=ax)
     assert res.ax is ax
     plt.close(fig)
-
-
-def test_rail_artist_keys_are_in_the_vocabulary():
-    res = rail([("PP", "pupil"), ("FP", "focal")])
-    assert set(res.artists) <= set(eyepiece.ARTIST_KEYS)
-    plt.close(res.fig)
 
 
 def _rail_envelope_facecolor():
@@ -644,12 +612,6 @@ def test_lenses_are_returned_under_ellipse_in_optical_order():
     plt.close(res.fig)
 
 
-def test_a_rail_without_lenses_omits_the_ellipse_key():
-    res = rail([("Only", "pupil")])
-    assert "ellipse" not in res.artists
-    plt.close(res.fig)
-
-
 def _styles(res):
     lines = [
         (ln.get_color(), ln.get_linewidth(), ln.get_linestyle())
@@ -724,11 +686,6 @@ def test_data_coords_place_the_train_in_data_units():
     for x in (1.2, 2.0, 6.0, 6.8):  # collimated around both pupils
         top = float(np.interp(x, upper.get_xdata(), upper.get_ydata()))
         assert top - 0.25 == pytest.approx(1.0)
-    plt.close(res.fig)
-
-
-def test_data_coords_leave_the_callers_limits_and_axis_alone():
-    res = _data_rail()
     assert res.ax.get_xlim() == pytest.approx((-0.3, 10.4))
     assert res.ax.get_ylim() == pytest.approx((-1.9, 2.0))
     assert res.ax.axison

@@ -18,11 +18,6 @@ def test_own_figure_shape_and_keys():
     res = show_field(_field())
     assert res.axes.shape == (2, 2)
     assert len(res.artists["image"]) == 4
-    plt.close(res.fig)
-
-
-def test_phase_masked_where_amplitude_zero():
-    res = show_field(_field())
     phase = res.artists["image"][3].get_array()
     assert np.ma.is_masked(phase) or np.isnan(np.asarray(phase)).any()
     plt.close(res.fig)

@@ -36,13 +36,6 @@ def test_keys_counts_and_tones_in_either_mode(mode):
     bar_color = res.artists["hist"][0].get_facecolor()[:3]
     assert bar_color == pytest.approx(_style.neutral(0.55))
     assert res.artists["text"].get_bbox_patch() is not None
-    res.fig.canvas.draw()
-    plt.close(res.fig)
-
-
-def test_y_axis_is_pinned_to_the_final_or_expected_counts():
-    looks = _looks()
-    res = ep.hist_fill(looks, EDGES, law=lambda x: np.exp(-x))
     counts, _ = np.histogram(looks, EDGES)
     expected_top = looks.size * 0.5 * 1.0
     assert res.ax.get_ylim() == pytest.approx(
@@ -53,6 +46,7 @@ def test_y_axis_is_pinned_to_the_final_or_expected_counts():
     np.testing.assert_allclose(
         curve.get_ydata(), looks.size * 0.5 * np.exp(-curve.get_xdata())
     )
+    res.fig.canvas.draw()
     plt.close(res.fig)
 
 

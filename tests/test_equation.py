@@ -81,10 +81,6 @@ def test_glyph_tuple_format_is_pinned():
     glyphs = eq.artists["glyphs"]
     assert len(glyphs) == 6  # a, b, =, x, 2 and the bar
     assert list(eq.artists["terms"]) == ["all"]
-
-
-def test_no_markers_is_one_term_all():
-    _fig, _ax, at = _stage()
     eq = ep.equation(at, r"$a+b$", fontsize=30)
     assert list(eq.artists["terms"]) == ["all"]
     assert len(eq.artists["glyphs"]) == 3
@@ -207,24 +203,18 @@ def test_transform_rest_is_b_and_ends_equal_each_equation_alone():
     assert not np.array_equal(rest, _pixels(fig))
 
 
-def test_every_glyph_is_accounted_for_exactly_once():
+def test_every_glyph_is_accounted_for_exactly_once(recwarn):
+    """Canary: Bayes pairs 9 glyphs, drops 17 and adds 18, with no lost tag.
+
+    The counts pin both mathtext layout and matching rules.
+    """
     _fig, a, b = _pair(BAYES_A, BAYES_B)
     move = ep.transform(a, b)
+    assert not [w for w in recwarn if issubclass(w.category, UserWarning)]
     ia = [i for i, _ in move.pairs] + list(move.gone)
     ib = [j for _, j in move.pairs] + list(move.new)
     assert sorted(ia) == list(range(len(a.artists["glyphs"])))
     assert sorted(ib) == list(range(len(b.artists["glyphs"])))
-
-
-def test_bayes_pair_count_canary():
-    """Canary: the Bayes example pairs 9 glyphs, drops 17 and adds 18.
-
-    The numbers depend on matplotlib's mathtext layout and on the matching
-    rules; a change in either shows up here first, so a failure means look at
-    both before adjusting the numbers.
-    """
-    _fig, a, b = _pair(BAYES_A, BAYES_B)
-    move = ep.transform(a, b)
     assert (len(move.pairs), len(move.gone), len(move.new)) == (9, 17, 18)
 
 
@@ -307,6 +297,7 @@ def test_transform_level_changes_alpha_only():
 
 
 def test_a_fraction_bar_changes_length_through_the_morph_sampling():
+    """The bar stretches while its ends stay square, never slanted."""
     fig, a, b = _pair(r"$\frac{a}{b}$", r"$\frac{a+c}{b+d}$")
     move = ep.transform(a, b)
 
@@ -323,12 +314,6 @@ def test_a_fraction_bar_changes_length_through_the_morph_sampling():
     move.update(1.0)
     end = bar_width(b)
     assert start < mid < end
-
-
-def test_a_fraction_bar_stays_a_rectangle_while_it_stretches():
-    """The ends of the bar stay square at every step, never slanted."""
-    fig, a, b = _pair(r"$\frac{a}{b}$", r"$\frac{a+c}{b+d}$")
-    move = ep.transform(a, b)
     for u in (0.1, 0.25, 0.5, 0.75, 0.9):
         move.update(u)
         fig.canvas.draw()
@@ -387,12 +372,6 @@ def test_a_tag_with_a_lost_partner_warns():
     _fig, a, b = _pair(r"${{t:a}}+{{u:b}}$", r"${{t:b}}+{{v:a}}$")
     with pytest.warns(UserWarning, match="'u'"):
         ep.transform(a, b)
-
-
-def test_a_new_tag_that_adds_content_does_not_warn(recwarn):
-    _fig, a, b = _pair(BAYES_A, BAYES_B)
-    ep.transform(a, b)
-    assert not [w for w in recwarn if issubclass(w.category, UserWarning)]
 
 
 def test_update_order_and_interleaved_levels_do_not_change_pixels():
@@ -677,9 +656,10 @@ def _left_anchored_bayes(replace="fade"):
     return fig, ep.transform(a, b, stagger=0.55, **options)
 
 
-def test_left_anchored_bayes_moves_without_a_jump_into_or_out_of_rest():
+@pytest.mark.parametrize("replace", ["fade", "morph"])
+def test_left_anchored_bayes_moves_without_a_jump_into_or_out_of_rest(replace):
     """Pixel snapping on the fraction bar and the signs is not a step at the ends."""
-    fig, move = _left_anchored_bayes()
+    fig, move = _left_anchored_bayes(replace)
     duration = 2.0
 
     def at(t):
@@ -758,6 +738,8 @@ def test_morph_and_fade_pair_the_same_glyphs():
 
 def test_morph_rest_states_are_each_equation_as_drawn():
     fig, a, b = _pair(BAYES_A, BAYES_B)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
     move = ep.transform(a, b, replace="morph")
     move.update(0.0)
     assert np.array_equal(_pixels(fig), _alone(BAYES_A))
@@ -774,15 +756,15 @@ def test_morph_rest_states_are_each_equation_as_drawn():
         move.update(u)
     move.update(1.0)
     assert np.array_equal(_pixels(fig), rest)
-
-
-def test_left_anchored_morph_moves_without_a_jump_into_or_out_of_rest():
-    fig, move = _left_anchored_bayes("morph")
-
-    def at(t):
-        move.update(min(1.0, max(0.0, (t - 0.4) / 1.2)))
-
-    ept.assert_motion(fig, at, ept.Window(0.0, 2.0), fps=30)
+    for u in np.linspace(0.0, 1.0, 41):
+        move.update(float(u))
+        for v in _all_vertices(move, renderer):
+            assert np.isfinite(v).all(), u
+    for u in (1e-9, 0.5, 1 - 1e-9):
+        move.update(u, level=0.0)
+        move.update(u, level=0.5)
+        for v in _all_vertices(move, renderer):
+            assert np.isfinite(v).all(), u
 
 
 def test_morph_changes_shape_where_fade_only_moves_a_box():
@@ -806,22 +788,6 @@ def test_morph_changes_shape_where_fade_only_moves_a_box():
     alphas = [ga[i].get_alpha() for i in ia]
     assert all(al is None or 0.0 <= al <= 1.0 for al in alphas)
     assert any(al is not None and al < 1.0 for al in alphas)  # copies fade out
-
-
-def test_morph_never_makes_a_nan_or_an_infinity():
-    fig, a, b = _pair(BAYES_A, BAYES_B)
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    move = ep.transform(a, b, replace="morph")
-    for u in np.linspace(0.0, 1.0, 41):
-        move.update(float(u))
-        for v in _all_vertices(move, renderer):
-            assert np.isfinite(v).all(), u
-    for u in (1e-9, 0.5, 1 - 1e-9):
-        move.update(u, level=0.0)
-        move.update(u, level=0.5)
-        for v in _all_vertices(move, renderer):
-            assert np.isfinite(v).all(), u
 
 
 @pytest.mark.parametrize(

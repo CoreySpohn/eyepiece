@@ -72,13 +72,6 @@ def test_chain_tips_are_the_cumulative_sum():
     plt.close(res.fig)
 
 
-def test_a_uniform_full_turn_chain_closes():
-    res = ep.phasor(_slit_steps(24), chain=True)
-    last_tip = _ends(res.artists["arrow"][-1])[1]
-    assert abs(last_tip) < 1e-12
-    plt.close(res.fig)
-
-
 def test_the_resultant_is_drawn_last_to_the_sum():
     values = np.array([1.0, 1j, -0.25 + 0.5j])
     res = ep.phasor(values, chain=True, show_sum=True, origin=0.5j)
@@ -183,6 +176,13 @@ def test_dial_is_centered_and_leaves_the_parent_in_place():
     width = np.diff(ax.transData.inverted().transform([(box.x0, 0), (box.x1, 0)])[:, 0])
     assert width[0] == pytest.approx(2.0, rel=1e-6)
     assert "text" not in res.artists
+    locator = res.ax.get_axes_locator()
+    assert tuple(locator._bounds) == pytest.approx((0.5, -2.0, 2.0, 2.0))
+    assert locator._transform is ax.transData
+    assert res.ax.get_zorder() == 6
+    assert not res.ax.get_in_layout()
+    assert res.ax.patch.get_alpha() == 0.0
+    assert res.ax.get_anchor() == "C"
     plt.close(fig)
 
 
@@ -289,11 +289,15 @@ def test_axis_labels_and_routed_kwargs():
     plt.close(res.fig)
 
 
-def test_a_closed_chain_draws_without_error_and_skips_the_zero_resultant():
-    res = ep.phasor(_slit_steps(200), chain=True, show_sum=True)
-    total = res.artists["arrow"][-1]
-    assert abs(_ends(total)[1]) < 1e-12
-    assert total._length_pt() < 0.05
+@pytest.mark.parametrize("n, show_sum", [(24, False), (200, True)])
+def test_a_closed_chain_draws_without_error_and_skips_the_zero_resultant(n, show_sum):
+    res = ep.phasor(_slit_steps(n), chain=True, show_sum=show_sum)
+    last_link = res.artists["arrow"][-2 if show_sum else -1]
+    assert abs(_ends(last_link)[1]) < 1e-12
+    if show_sum:
+        total = res.artists["arrow"][-1]
+        assert abs(_ends(total)[1]) < 1e-12
+        assert total._length_pt() < 0.05
     res.fig.canvas.draw()
     plt.close(res.fig)
 
@@ -374,20 +378,6 @@ def test_default_geometry_matches_the_released_layout():
     assert not res.ax.get_xticks().size and not res.ax.get_yticks().size
     assert not any(s.get_visible() for s in res.ax.spines.values())
     plt.close(res.fig)
-
-
-def test_default_dial_is_a_data_unit_inset():
-    fig, ax = plt.subplots(figsize=(6.0, 4.0))
-    ax.set(xlim=(-4, 4), ylim=(-4, 4))
-    res = ep.phasor([1j], ax=ax, at=(1.5, -1.0), size=2.0)
-    locator = res.ax.get_axes_locator()
-    assert tuple(locator._bounds) == pytest.approx((0.5, -2.0, 2.0, 2.0))
-    assert locator._transform is ax.transData
-    assert res.ax.get_zorder() == 6
-    assert not res.ax.get_in_layout()
-    assert res.ax.patch.get_alpha() == 0.0
-    assert res.ax.get_anchor() == "C"
-    plt.close(fig)
 
 
 def test_starts_place_each_arrow_and_the_resultant_keeps_the_origin():
@@ -479,17 +469,6 @@ def test_unknown_size_units_raise():
     plt.close(fig)
 
 
-def test_separate_moves_the_resultant_of_a_straight_chain_beneath_it():
-    res = ep.phasor([1.0, 0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
-    e1, e2, total = res.artists["arrow"]
-    # Consecutive links touch at a point only and stay on the line.
-    assert _ends(e1) == pytest.approx((0j, 1.0))
-    assert _ends(e2) == pytest.approx((1.0, 1.5))
-    # The rightward resultant moves clockwise from its direction: below.
-    assert _ends(total) == pytest.approx((-0.14j, 1.5 - 0.14j))
-    plt.close(res.fig)
-
-
 def test_separate_draws_a_folded_back_link_beside_the_one_before_it():
     res = ep.phasor([1.0, -0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
     e1, e2, total = res.artists["arrow"]
@@ -522,7 +501,12 @@ def test_separate_moves_a_shorter_arrow_along_a_longer_one_from_the_origin():
 
 def test_update_separates_with_the_first_draws_offset():
     res = ep.phasor([1.0, 0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
-    total = res.artists["arrow"][-1]
+    e1, e2, total = res.artists["arrow"]
+    # Consecutive links touch at a point only and stay on the line.
+    assert _ends(e1) == pytest.approx((0j, 1.0))
+    assert _ends(e2) == pytest.approx((1.0, 1.5))
+    # The rightward resultant moves clockwise from its direction: below.
+    assert _ends(total) == pytest.approx((-0.14j, 1.5 - 0.14j))
     res.update([1.0, 0.5j])
     assert _ends(total) == pytest.approx((0j, 1.0 + 0.5j))
     res.update([0.5j, 0.5j])

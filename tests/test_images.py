@@ -32,12 +32,6 @@ def test_imshow_log_floor_and_keys():
     plt.close(res.fig)
 
 
-def test_imshow_log_extent_applied():
-    res = imshow_log(_img(), extent=(-2, 2, -2, 2))
-    assert tuple(res.artists["image"].get_extent()) == (-2, 2, -2, 2)
-    plt.close(res.fig)
-
-
 def test_colorbar_does_not_steal_sibling_space():
     fig, axes = plt.subplots(1, 2)
     imshow_log(_img(), ax=axes[0])
@@ -57,14 +51,6 @@ def test_update_no_artist_leak():
     for _ in range(3):
         res.update(_img())
     assert len(res.ax.images) == n0
-    plt.close(res.fig)
-
-
-def test_compare_row_shared_norm():
-    a, b = _img(), _img(1e-10, 1e-5)
-    res = compare_row([a, b], titles=["A", "B"])
-    ims = [res.artists["image"][0], res.artists["image"][1]]
-    assert ims[0].norm is ims[1].norm
     plt.close(res.fig)
 
 
@@ -238,30 +224,13 @@ def test_compare_row_vmin_vmax_pin_diverging_norm():
 
 
 def test_compare_row_imshow_kw_overrides_interpolation():
-    res = compare_row([_img(), _img()], imshow_kw={"interpolation": "bilinear"})
+    res = compare_row(
+        [_img(), _img()],
+        imshow_kw={"interpolation": "bilinear"},
+        cbar_kw={"extend": "both"},
+    )
     assert res.artists["image"][0].get_interpolation() == "bilinear"
-    plt.close(res.fig)
-
-
-def test_compare_row_cbar_kw_reaches_colorbar():
-    res = compare_row([_img(), _img()], cbar_kw={"extend": "both"})
     assert res.artists["cbar"].extend == "both"
-    plt.close(res.fig)
-
-
-def test_triptych_ratio_three_panels_and_shared_ab_norm():
-    a, b = _img(), _img(1e-10, 1e-5)
-    res = triptych(a, b, mode="ratio")
-    assert len(res.artists["image"]) == 3
-    assert res.artists["image"][0].norm is res.artists["image"][1].norm
-    plt.close(res.fig)
-
-
-def test_triptych_ratio_norm_centered_on_one():
-    a, b = _img(), _img(1e-10, 1e-5)
-    res = triptych(a, b, mode="ratio")
-    norm = res.artists["image"][2].norm
-    assert (norm.vmin + norm.vmax) / 2.0 == pytest.approx(1.0)
     plt.close(res.fig)
 
 
@@ -273,9 +242,12 @@ def test_triptych_ratio_default_clip_is_the_99th_percentile():
     a = rng.uniform(1.0, 2.0, (16, 16))
     b = a * rng.uniform(0.5, 1.5, (16, 16))
     res = triptych(a, b, mode="ratio")
+    assert len(res.artists["image"]) == 3
+    assert res.artists["image"][0].norm is res.artists["image"][1].norm
     deviation = np.abs(b / a - 1.0)
     expected = float(np.percentile(deviation, 99.0))
     norm = res.artists["image"][2].norm
+    assert (norm.vmin + norm.vmax) / 2.0 == pytest.approx(1.0)
     assert norm.vmax == pytest.approx(1.0 + expected)
     assert norm.vmin == pytest.approx(1.0 - expected)
     # another percentile would give a materially different clip on this
@@ -293,27 +265,15 @@ def test_triptych_ratio_tight_clip_is_overridable():
     plt.close(res.fig)
 
 
-def test_triptych_ratio_division_by_zero_is_defined():
+@pytest.mark.parametrize("numerator, expected", [(3.0, 1.5), (0.0, 1.0)])
+def test_triptych_ratio_division_by_zero_is_defined(numerator, expected):
     a = np.array([[0.0, 1.0], [2.0, 4.0]])
-    b = np.array([[3.0, 1.0], [2.0, 4.0]])
+    b = np.array([[numerator, 1.0], [2.0, 4.0]])
     res = triptych(a, b, mode="ratio", ratio_clip=0.5)
     ratio_panel = res.artists["image"][2].get_array()
-    # a[0, 0] == 0 and b[0, 0] == 3.0 > 0 -> +inf ratio, clipped to the
-    # panel's upper bound (1 + clip) rather than left as inf.
+    # Positive / 0 clips to the upper bound; 0 / 0 means no change (1).
     assert np.isfinite(ratio_panel).all()
-    assert ratio_panel[0, 0] == pytest.approx(1.5)
-    plt.close(res.fig)
-
-
-def test_triptych_ratio_zero_over_zero_is_defined():
-    a = np.array([[0.0, 1.0], [2.0, 4.0]])
-    b = np.array([[0.0, 1.0], [2.0, 4.0]])
-    res = triptych(a, b, mode="ratio", ratio_clip=0.5)
-    ratio_panel = res.artists["image"][2].get_array()
-    # 0 / 0 is undefined; treated as "no change" (ratio == 1) rather than
-    # left as nan.
-    assert np.isfinite(ratio_panel).all()
-    assert ratio_panel[0, 0] == pytest.approx(1.0)
+    assert ratio_panel[0, 0] == pytest.approx(expected)
     plt.close(res.fig)
 
 
@@ -356,17 +316,15 @@ def test_triptych_axes_draws_into_caller_axes():
 def test_triptych_extent_reaches_all_three_panels():
     a, b = _img(), _img(1e-10, 1e-5)
     for mode in ("ratio", "residual"):
-        res = triptych(a, b, mode=mode, extent=(-2, 2, -2, 2))
+        res = triptych(
+            a,
+            b,
+            mode=mode,
+            extent=(-2, 2, -2, 2),
+            imshow_kw={"interpolation": "bilinear"},
+        )
         for im in res.artists["image"]:
             assert tuple(im.get_extent()) == (-2, 2, -2, 2)
-        plt.close(res.fig)
-
-
-def test_triptych_imshow_kw_overrides_interpolation_on_all_panels():
-    a, b = _img(), _img(1e-10, 1e-5)
-    for mode in ("ratio", "residual"):
-        res = triptych(a, b, mode=mode, imshow_kw={"interpolation": "bilinear"})
-        for im in res.artists["image"]:
             assert im.get_interpolation() == "bilinear"
         plt.close(res.fig)
 
@@ -379,26 +337,18 @@ def test_triptych_cbar_kw_reaches_both_colorbars():
     plt.close(res.fig)
 
 
-def test_triptych_wrong_axes_count_raises_before_drawing():
+@pytest.mark.parametrize(
+    "n_axes, kwargs, match",
+    [
+        (2, {}, "needs 3 axes"),
+        (3, {"titles": ["X", "Y"]}, "needs 3 titles"),
+        (3, {"a_b_norm": "diverging"}, "unknown a_b_norm"),
+    ],
+)
+def test_triptych_wrong_axes_count_raises_before_drawing(n_axes, kwargs, match):
     fig, axes = plt.subplots(1, 3)
-    with pytest.raises(ValueError, match="needs 3 axes"):
-        triptych(_img(), _img(), axes=axes[:2])
-    assert all(len(ax.images) == 0 for ax in axes)  # nothing was drawn
-    plt.close(fig)
-
-
-def test_triptych_wrong_titles_count_raises_before_drawing():
-    fig, axes = plt.subplots(1, 3)
-    with pytest.raises(ValueError, match="needs 3 titles"):
-        triptych(_img(), _img(), axes=axes, titles=["X", "Y"])
-    assert all(len(ax.images) == 0 for ax in axes)
-    plt.close(fig)
-
-
-def test_triptych_unknown_a_b_norm_raises():
-    fig, axes = plt.subplots(1, 3)
-    with pytest.raises(ValueError, match="unknown a_b_norm"):
-        triptych(_img(), _img(), axes=axes, a_b_norm="diverging")
+    with pytest.raises(ValueError, match=match):
+        triptych(_img(), _img(), axes=axes[:n_axes], **kwargs)
     assert all(len(ax.images) == 0 for ax in axes)
     plt.close(fig)
 
@@ -453,6 +403,8 @@ def test_every_image_primitive_keeps_ticks_with_an_extent():
         show_field(img + 1j * img, extent=extent),
     ]
     for result in results:
+        for im in np.ravel(result.artists["image"]):
+            assert tuple(im.get_extent()) == extent
         for ax in _axes_of(result):
             assert ax.get_xticks().size > 0, result
         plt.close(result.fig)
@@ -655,19 +607,14 @@ def test_display_limits_low_scale_anchors_a_floor_below_the_median():
     assert vmin == pytest.approx(0.5 * median, rel=1e-6)
 
 
-def test_display_limits_guards_data_with_nothing_positive_left():
-    # Several hand-rolled versions omit this guard and raise on an all-zero
-    # frame; several others invent a different sentinel each time.
-    vmin, vmax = display_limits(np.zeros((8, 8)), positive=True)
+@pytest.mark.parametrize(
+    "value, positive", [(0.0, True), (3.0, False), (np.nan, False)]
+)
+def test_display_limits_guards_constant_and_all_nan_data(value, positive):
+    # Empty positive support, constant data and all-NaN data need ordered bounds.
+    vmin, vmax = display_limits(np.full((8, 8), value), positive=positive)
     assert np.isfinite(vmin) and np.isfinite(vmax)
     assert vmin < vmax
-
-
-def test_display_limits_guards_constant_and_all_nan_data():
-    for data in (np.full((8, 8), 3.0), np.full((8, 8), np.nan)):
-        vmin, vmax = display_limits(data)
-        assert np.isfinite(vmin) and np.isfinite(vmax)
-        assert vmin < vmax
 
 
 def test_display_limits_feeds_a_primitive():
