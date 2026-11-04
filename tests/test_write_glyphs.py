@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from test_render_helpers import rgb_pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
@@ -10,22 +11,11 @@ import eyepiece.testing as ept
 STRING = "Write the light down"
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _text_fig(string=STRING, size=30):
     fig = plt.figure(figsize=(6.0, 1.6), dpi=100, facecolor="white")
     text = fig.text(0.04, 0.35, string, fontsize=size, color="black")
     fig.canvas.draw()
     return fig, text
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
 
 
 def test_progress_is_linear_inside_each_glyph_window():

@@ -11,12 +11,6 @@ import eyepiece as ep
 import eyepiece.testing as ept
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 @pytest.mark.parametrize("mode", ["light", "dark"])
 @pytest.mark.parametrize("corner", ["upper left", "upper right"])
 def test_carried_tag_placement_and_ink(mode, corner):

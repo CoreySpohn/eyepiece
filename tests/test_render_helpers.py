@@ -10,13 +10,14 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import to_rgb
 
 
-def write_render_audio(path):
+def write_render_audio(path, frequency=440, *, duration=2):
     """Write a deterministic audio track long enough for the tiny test clips."""
     rate = 48_000
     samples = np.round(
-        6000 * np.sin(2 * np.pi * 440 * np.arange(2 * rate) / rate)
+        6000 * np.sin(2 * np.pi * frequency * (np.arange(duration * rate) / rate))
     ).astype("<i2")
     with wave.open(str(path), "wb") as stream:
         stream.setnchannels(1)
@@ -306,3 +307,33 @@ class CountingRenderer:
     def draw_path(self, *args, **kwargs):
         self.paths += 1
         return self.renderer.draw_path(*args, **kwargs)
+
+
+def pixels(fig):
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba()).copy()
+
+
+def rgb_pixels(fig):
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
+
+
+def attention_axes(log=False):
+    fig, ax = plt.subplots(figsize=(4.0, 3.0), dpi=100, layout="constrained")
+    ax.set(xlim=(0.0, 1.0), ylim=(0.5, 2.0), xlabel="albedo", ylabel="radius")
+    if log:
+        ax.set_yscale("log")
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+    return fig, ax
+
+
+def luminance(color):
+    r, g, b = to_rgb(color)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def write_audio(path, frequency=440):
+    """Write one second of the variant test tone."""
+    return write_render_audio(path, frequency=frequency, duration=1)

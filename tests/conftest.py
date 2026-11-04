@@ -26,6 +26,24 @@ from eyepiece.prepared import (
 
 matplotlib.use("Agg")
 
+
+@pytest.fixture(autouse=True)
+def close_figures():
+    """Close test figures after each test."""
+    yield
+    import matplotlib.pyplot as plt
+
+    plt.close("all")
+
+
+@pytest.fixture
+def media_in_tmp(tmp_path):
+    """Keep Manim's text-layout cache out of the working directory."""
+    manim = importlib.import_module("manim")
+    with manim.tempconfig({"media_dir": str(tmp_path / "media")}):
+        yield
+
+
 # The render CI job sets EYEPIECE_REQUIRE_MANIM=1. There, the Manim tests may
 # not skip: Manim must import at session start, and any skipped Manim test
 # fails the session. Without it (the base job), those tests skip through

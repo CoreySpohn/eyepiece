@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.path import Path
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
@@ -23,11 +24,6 @@ def _stage(size=(8.0, 3.0), dpi=100):
     ax.set(xlim=(0, 1), ylim=(0, 1))
     ax.axis("off")
     return fig, ax, ep.Anchor.from_data(ax, (0.5, 0.45))
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
 def _pair(tex_a, tex_b, **kw):

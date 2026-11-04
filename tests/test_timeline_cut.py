@@ -1,17 +1,10 @@
 """An explicit zero-duration cut works on the strict clip clock."""
 
 import matplotlib.pyplot as plt
-import pytest
 
 import eyepiece as ep
 import eyepiece.testing as ept
 from eyepiece import narration as nr
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def test_cut_builds_strictly_changes_on_its_frame_and_checks_cleanly():

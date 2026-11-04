@@ -5,26 +5,16 @@ import numpy as np
 import pytest
 from matplotlib import colormaps
 from matplotlib.colors import LogNorm
+from test_render_helpers import rgb_pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def _board():
     fig, ax = plt.subplots(figsize=(3, 3), dpi=100, facecolor="black")
     ax.set_axis_off()
     return fig, ax
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
 
 
 def _rate():

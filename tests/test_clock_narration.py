@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers import cached_narration_script
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -31,20 +32,7 @@ RING_S = 1.3
 TAIL_S = 0.6
 
 # The two-line script whose timing is the fixture of test_narration.
-SMALL = nr.Script(
-    (
-        nr.Line(
-            "open",
-            "The coronagraph blocks the {indicate:star}starlight.",
-            pad_after_s=0.4,
-        ),
-        nr.Line(
-            "leak",
-            "What leaks through is {indicate:speckle}speckle, and the "
-            "{circumscribe:planet}planet must stand out.",
-        ),
-    )
-)
+SMALL = cached_narration_script()
 
 BAYES = nr.Script(
     (

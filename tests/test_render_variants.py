@@ -4,7 +4,6 @@ import errno
 import os
 import subprocess
 import tempfile
-import wave
 from dataclasses import FrozenInstanceError, replace
 from functools import partial
 from pathlib import Path
@@ -18,7 +17,9 @@ from test_render_helpers import (
     build_variant_clip,
     setup_video_style,
     variant_frame_at,
+    write_audio,
 )
+from test_render_helpers import decode_variant_video as decode
 
 import eyepiece as ep
 import eyepiece._render_variants as variant_driver
@@ -33,31 +34,6 @@ from eyepiece.render import (
     render_variants,
     variants,
 )
-
-
-def write_audio(path, frequency=440):
-    rate = 48_000
-    time = np.arange(rate) / rate
-    samples = np.round(6000 * np.sin(2 * np.pi * frequency * time)).astype("<i2")
-    with wave.open(str(path), "wb") as stream:
-        stream.setnchannels(1)
-        stream.setsampwidth(2)
-        stream.setframerate(rate)
-        stream.writeframes(samples.tobytes())
-    return path
-
-
-def decode(path):
-    result = subprocess.run(
-        [
-            resolve_ffmpeg(), "-v", "error", "-i", str(path), "-map", "0:v:0",
-            "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
-        ],
-        capture_output=True,
-        check=True,
-        timeout=30,
-    )  # fmt: skip
-    return np.frombuffer(result.stdout, dtype=np.uint8).reshape(-1, 54, 96, 3)
 
 
 def builds(folder):

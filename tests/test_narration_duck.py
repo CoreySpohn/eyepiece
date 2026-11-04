@@ -4,6 +4,7 @@ import wave
 
 import numpy as np
 import pytest
+from helpers import rms_dbfs as _rms_db
 
 from eyepiece import narration as nr
 
@@ -28,10 +29,6 @@ def _track(tmp_path, name, **kwargs):
         rate = w.getframerate()
         data = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float)
     return rate, data, tl
-
-
-def _rms_db(x):
-    return 20 * np.log10(np.sqrt(np.mean(x**2)) / 32767.0)
 
 
 def test_no_windows_leaves_the_track_byte_identical(tmp_path):

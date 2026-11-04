@@ -5,15 +5,10 @@ import itertools
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from test_render_helpers import rgb_pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def _draws(n=12, m=40, seed=3):
@@ -35,11 +30,6 @@ def _board(tally=True):
         return fig, ax, panel
     fig, ax = plt.subplots(figsize=(3, 3), dpi=100)
     return fig, ax, None
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
 
 
 def _hop(n=12, **kw):

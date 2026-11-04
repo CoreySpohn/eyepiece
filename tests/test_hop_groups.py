@@ -9,12 +9,6 @@ FPS = 30.0
 TIMES = [k / FPS for k in range(61)]
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _scene():
     fig = plt.figure(figsize=(6, 3), dpi=100)
     ax = fig.add_axes([0.05, 0.1, 0.4, 0.8])

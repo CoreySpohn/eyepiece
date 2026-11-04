@@ -4,15 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.colors import to_rgb
+from test_render_helpers import rgb_pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def _board(face="white"):
@@ -20,11 +15,6 @@ def _board(face="white"):
     ax.set(xlim=(0, 1), ylim=(0, 1), facecolor=face)
     ax.set_axis_off()
     return fig, ax
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba())[..., :3].astype(int)
 
 
 def _tip(fig, move, i=0):

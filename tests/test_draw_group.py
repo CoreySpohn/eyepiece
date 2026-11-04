@@ -8,12 +8,6 @@ import eyepiece as ep
 import eyepiece.testing as ept
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _run(n=6, glide=False):
     rng = np.random.default_rng(5)
     draws = rng.standard_normal((n, 25, 2)).cumsum(axis=1) * 0.1

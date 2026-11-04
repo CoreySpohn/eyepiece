@@ -3,15 +3,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def _board():
@@ -19,11 +14,6 @@ def _board():
     ax.set(xlim=(0, 1), ylim=(0, 1))
     ax.set_axis_off()
     return fig, ax
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
 def _ink(fig, ax):

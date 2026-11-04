@@ -26,12 +26,6 @@ SPAN = ept.Window(0.0, 2.0)  # 61 frames at 30 fps
 DURATION = 2.0
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _figure():
     fig = plt.figure(figsize=(4.0, 2.0), dpi=DPI)
     fig.patch.set_facecolor("white")

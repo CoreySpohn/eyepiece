@@ -15,12 +15,7 @@ from eyepiece.style import snapshot_profile
 
 manim = pytest.importorskip("manim")
 
-
-@pytest.fixture(autouse=True)
-def media_in_tmp(tmp_path):
-    """Keep Manim's text-layout cache out of the working directory."""
-    with manim.tempconfig({"media_dir": str(tmp_path / "media")}):
-        yield
+pytestmark = pytest.mark.usefixtures("media_in_tmp")
 
 
 def _ticks(animation, fps):

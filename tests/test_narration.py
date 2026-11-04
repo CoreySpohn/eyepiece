@@ -15,6 +15,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers import cached_narration_script
+from helpers import rms_dbfs as _dbfs
+from helpers import write_narration_wav as _write_wav
 
 from eyepiece import _ffmpeg
 from eyepiece import narration as nr
@@ -22,20 +25,7 @@ from eyepiece.narration import _align, synth
 
 DATA = Path(__file__).parent / "data" / "narration"
 
-SCRIPT = nr.Script(
-    (
-        nr.Line(
-            "open",
-            "The coronagraph blocks the {indicate:star}starlight.",
-            pad_after_s=0.4,
-        ),
-        nr.Line(
-            "leak",
-            "What leaks through is {indicate:speckle}speckle, and the "
-            "{circumscribe:planet}planet must stand out.",
-        ),
-    )
-)
+SCRIPT = cached_narration_script()
 
 
 # The cue parser
@@ -394,17 +384,6 @@ def _fake_speak(calls, rate=8000):
         return audio, rate, words
 
     return speak
-
-
-def _write_wav(directory, key, audio, rate):
-    name = f"{key}.wav"
-    data = np.round(audio * 32767).astype("<i2")
-    with wave.open(str(Path(directory) / name), "wb") as handle:
-        handle.setnchannels(1)
-        handle.setsampwidth(2)
-        handle.setframerate(rate)
-        handle.writeframes(data.tobytes())
-    return name
 
 
 def _synthesize(tmp_path, calls, **kwargs):
@@ -796,10 +775,6 @@ def _read_track(path):
         rate = handle.getframerate()
         data = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
     return rate, data.astype(float)
-
-
-def _dbfs(x):
-    return 20.0 * np.log10(np.sqrt(np.mean(x**2)) / 32767.0)
 
 
 def test_the_48_khz_room_tone_has_the_requested_level_and_is_seeded(tmp_path):

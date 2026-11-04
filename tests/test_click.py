@@ -3,17 +3,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
 
 LW = 2.0
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def _scene():
@@ -34,11 +29,6 @@ def _scene():
 
 def _land(ring, count, rule, end):
     return ep.click(ring, dot=end, readout=count, ruler=rule)
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
 def test_the_beat_is_0_6_s_and_a_1_5_s_stillness_follows_at_any_tempo():

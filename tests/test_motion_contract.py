@@ -18,12 +18,6 @@ import eyepiece as ep
 import eyepiece.testing as ept
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _board():
     fig, ax = plt.subplots(figsize=(5, 3), dpi=80)
     ax.set(xlim=(0, 1), ylim=(0, 1), aspect="equal")

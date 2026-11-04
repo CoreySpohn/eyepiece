@@ -13,12 +13,6 @@ import eyepiece as ep
 import eyepiece.testing as ept
 
 
-@pytest.fixture(autouse=True)
-def _close_figures():
-    yield
-    plt.close("all")
-
-
 def _gallery_cell(catalog, marker):
     page = Path(__file__).resolve().parents[1] / f"docs/gallery/{catalog}.md"
     cells = re.findall(r"```\{code-cell\} python\n(.*?)```", page.read_text(), re.S)

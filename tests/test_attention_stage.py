@@ -13,21 +13,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.colors import to_rgba
+from test_render_helpers import attention_axes as _axes
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
 
 MODES = ["light", "dark"]
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
 def _scene():
@@ -133,16 +124,6 @@ def test_weigh_sets_only_the_groups_it_names():
 
 
 # Axis build
-
-
-def _axes(log=False):
-    fig, ax = plt.subplots(figsize=(4.0, 3.0), dpi=100, layout="constrained")
-    ax.set(xlim=(0.0, 1.0), ylim=(0.5, 2.0), xlabel="albedo", ylabel="radius")
-    if log:
-        ax.set_yscale("log")
-    fig.canvas.draw()
-    fig.set_layout_engine("none")
-    return fig, ax
 
 
 @pytest.mark.parametrize("mode", MODES)

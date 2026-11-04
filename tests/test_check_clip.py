@@ -13,12 +13,6 @@ import eyepiece.testing as ept
 from eyepiece import narration as nr
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _marker(fig, x=40, y=80, **kwargs):
     artist = Line2D(
         [x],

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from helpers import write_narration_wav as _write
 
 from eyepiece import narration as nr
 from eyepiece.narration import synth
@@ -87,17 +88,6 @@ def _speak(calls):
         return audio, RATE, words
 
     return speak
-
-
-def _write(directory, key, audio, rate):
-    name = f"{key}.wav"
-    data = np.round(np.asarray(audio) * 32767).astype("<i2")
-    with wave.open(str(Path(directory) / name), "wb") as handle:
-        handle.setnchannels(1)
-        handle.setsampwidth(2)
-        handle.setframerate(rate)
-        handle.writeframes(data.tobytes())
-    return name
 
 
 def _read(directory, name):

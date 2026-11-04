@@ -6,13 +6,9 @@ import numpy as np
 import pytest
 from matplotlib.colors import to_rgb
 from matplotlib.patches import Circle
+from test_render_helpers import luminance as _lum
 
 import eyepiece as ep
-
-
-def _lum(color):
-    r, g, b = to_rgb(color)
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
 def test_a_circle_larger_than_the_view_leaves_the_limits_alone():

@@ -7,12 +7,6 @@ import pytest
 import eyepiece as ep
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _lines(n=3):
     fig, ax = plt.subplots(figsize=(4, 3), dpi=100)
     ax.set(xlim=(0, 1), ylim=(0, 1))

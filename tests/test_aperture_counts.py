@@ -7,12 +7,6 @@ import pytest
 import eyepiece as ep
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _scene():
     yy, xx = np.mgrid[-8:8:32j, -8:8:32j]
     leak = 50.0 * np.exp(-(xx**2 + yy**2) / 8.0) + 0.2

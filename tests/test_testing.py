@@ -17,12 +17,6 @@ def _figure():
     return fig
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _collision(fig, overlap_px):
     """Third label whose box overlaps the second row's by `overlap_px` px."""
     fig.text(0.1, 0.8, "1  Steer the beam", fontsize=14)

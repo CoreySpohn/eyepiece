@@ -9,12 +9,6 @@ import eyepiece as ep
 import eyepiece.testing as ept
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _scene():
     fig = plt.figure(figsize=(4, 2), dpi=100)
     dot = Line2D(

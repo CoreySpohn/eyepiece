@@ -11,19 +11,9 @@ import pytest
 from matplotlib.lines import Line2D
 from matplotlib.patches import Rectangle
 from matplotlib.text import Text
+from test_render_helpers import pixels
 
 import eyepiece as ep
-
-
-@pytest.fixture(autouse=True)
-def close_figures():
-    yield
-    plt.close("all")
-
-
-def pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
 @contextmanager

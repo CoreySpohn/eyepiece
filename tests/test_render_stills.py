@@ -18,8 +18,8 @@ from test_render_helpers import (
     build_variant_clip,
     poster_frame_at,
     setup_style,
+    write_audio,
 )
-from test_render_variants import write_audio
 
 import eyepiece as ep
 import eyepiece.render as render

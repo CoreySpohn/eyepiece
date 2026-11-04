@@ -8,12 +8,6 @@ from PIL import Image
 from eyepiece.style import snapshot_profile
 
 
-@pytest.fixture(autouse=True)
-def close_figures():
-    yield
-    plt.close("all")
-
-
 @pytest.fixture
 def drawn_means(monkeypatch):
     """Record the image mean each `MplResult.update` is handed, in call order."""

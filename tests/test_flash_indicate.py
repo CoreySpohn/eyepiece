@@ -3,16 +3,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
 from eyepiece.attention import _pulse
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def _board():
@@ -22,11 +17,6 @@ def _board():
     note = ax.text(0.5, 0.5, "this one", ha="center", va="center", fontsize=18)
     fig.canvas.draw()
     return fig, ax, note
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
 def test_flash_starts_and_ends_on_the_still_and_leaves_nothing_behind():

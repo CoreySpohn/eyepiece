@@ -3,6 +3,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from helpers import marked_track as _track
+from helpers import weighted_heads as _weighted_heads
 from matplotlib.colors import LogNorm, to_rgba
 
 from eyepiece.prepared import (
@@ -23,39 +25,6 @@ from eyepiece.prepared import (
     weight_opacity,
 )
 from eyepiece.style import SourceCast, snapshot_profile
-
-
-@pytest.fixture(autouse=True)
-def close_figures():
-    yield
-    plt.close("all")
-
-
-def _track(view_id="track", prefix=""):
-    """A TrackView with every mark kind, RA increasing to the left."""
-    axes = AxisSpec("RA", "Dec", (-2.0, 2.0), (-1.0, 1.0), x_reverse=True)
-    angles = np.linspace(0.0, np.pi, 5)
-    circle = np.column_stack([np.cos(angles), np.sin(angles)])
-    return TrackView(
-        view_id,
-        axes,
-        marks=(
-            Path(f"{prefix}path/0", circle, source_id="b", weight=1.0),
-            Path(f"{prefix}path/1", circle * 0.5, source_id="c", weight=0.25),
-            Points(
-                f"{prefix}obs",
-                np.array([[0.5, 0.25], [-0.5, -0.25]]),
-                source_id="b",
-                xerr=np.array([0.1, 0.2]),
-                yerr=np.array([0.05, 0.15]),
-            ),
-            Region(f"{prefix}iwa", np.array([0.0, 0.0]), 0.3),
-            Region(f"{prefix}owa", np.array([0.0, 0.0]), 1.8, inner_radius=1.5),
-            ReferenceLine(f"{prefix}zero", "y", 0.0),
-            Label(f"{prefix}clock", "0 d", (0.02, 0.95)),
-            Label(f"{prefix}tag", "b", (0.5, 0.25), space="data"),
-        ),
-    )
 
 
 def _pixel_rgba(fig, ax, x, y):
@@ -312,20 +281,6 @@ def test_path_opacity_uses_the_shared_weight_mapping():
     expected = weight_opacity([1.0, 0.25])
     assert result.parts["path/0"].get_alpha() == pytest.approx(expected[0])
     assert result.parts["path/1"].get_alpha() == pytest.approx(expected[1])
-
-
-def _weighted_heads(heavy=1.0, light=0.25):
-    """Two weighted point sets beside two weighted paths on one panel."""
-    return TrackView(
-        "track",
-        AxisSpec("x", "y", (0, 1), (0, 1)),
-        (
-            Path("path/a", np.array([[0.1, 0.1], [0.9, 0.9]]), weight=1.0),
-            Path("path/b", np.array([[0.1, 0.9], [0.9, 0.1]]), weight=0.5),
-            Points("head/a", np.array([[0.9, 0.9]]), weight=heavy, xerr=np.ones(1)),
-            Points("head/b", np.array([[0.9, 0.1]]), weight=light),
-        ),
-    )
 
 
 def test_point_opacity_uses_the_shared_weight_mapping_per_group():

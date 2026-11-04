@@ -10,6 +10,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
 
@@ -21,17 +22,6 @@ def _axes():
     fig.canvas.draw()
     fig.set_layout_engine("none")
     return fig, ax
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def _head(arc_result, ax):

@@ -18,12 +18,6 @@ ORANGE = "#FFA040"  # apart from PINKISH under normal vision, 6.4 dE under trita
 PINKISH = "#FF80C0"
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _axes():
     fig, ax = plt.subplots(figsize=(4, 3), dpi=80)
     fig.set_facecolor("#101010")

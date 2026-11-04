@@ -13,12 +13,6 @@ from eyepiece import motifs as motif_module
 MODES = ("dark", "light", "paper")
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 @pytest.fixture
 def table_set():
     """The default set built from the hwostyle table; skipped when it is absent."""

@@ -5,20 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.colors import to_rgba
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
 import eyepiece.testing as ept
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
 @pytest.mark.parametrize("mode", ["light", "dark"])

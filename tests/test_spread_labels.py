@@ -9,12 +9,6 @@ import pytest
 import eyepiece as ep
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _labels(ax, ys):
     for y in ys:
         ax.plot([0, 0.8], [0.2, y])

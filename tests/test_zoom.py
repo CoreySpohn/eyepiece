@@ -10,14 +10,9 @@ from matplotlib.collections import Collection
 from matplotlib.image import AxesImage
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Rectangle
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 def _panel(inverted=False):
@@ -33,11 +28,6 @@ def _panel(inverted=False):
 
 def _track(t):
     return 1.0 + 6.0 * t, 1.0 + 0.8 * np.sin(4.0 * t)
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
 
 
 def _center(inset):

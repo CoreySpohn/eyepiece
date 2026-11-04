@@ -10,12 +10,6 @@ import eyepiece.testing as ept
 N_TOTAL = 1_000_000
 
 
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
-
-
 def _scene(*, final=False):
     fig = plt.figure(figsize=(6.4, 3.2), dpi=100, facecolor="white")
     ax_p = fig.add_axes([0.04, 0.1, 0.4, 0.8])

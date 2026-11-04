@@ -11,12 +11,6 @@ from matplotlib.transforms import IdentityTransform
 import eyepiece as ep
 
 
-@pytest.fixture(autouse=True)
-def close_figures():
-    yield
-    plt.close("all")
-
-
 def test_arrow_on_marks_uses_drawn_extent():
     fig, ax = plt.subplots(figsize=(6, 3), dpi=100)
     ax.set(xlim=(0, 1), ylim=(0, 1))

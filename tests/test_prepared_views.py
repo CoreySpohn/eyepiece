@@ -2,6 +2,8 @@
 
 import numpy as np
 import pytest
+from helpers import linear_scale as _scale
+from helpers import prepared_axes as _axes
 
 from eyepiece.prepared import (
     AxisSpec,
@@ -18,15 +20,6 @@ from eyepiece.prepared import (
     find_element,
     replace_elements,
 )
-
-
-def _axes(x_limits=(0.0, 4.0), y_limits=(0.0, 4.0)):
-    return AxisSpec("x", "y", x_limits, y_limits)
-
-
-def _scale(vmin=0.0, vmax=1.0):
-    return Scale("linear", vmin, vmax)
-
 
 # --- R2 mask/valid fixture (verbatim from the task brief) -----------------
 

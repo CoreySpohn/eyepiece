@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 from matplotlib.colors import to_rgb, to_rgba
+from test_render_helpers import pixels as _pixels
 
 import eyepiece as ep
 from eyepiece import _style
@@ -41,17 +42,6 @@ def _two_panels():
     fig.canvas.draw()
     fig.set_layout_engine("none")
     return fig, top, bottom, dot, landed
-
-
-def _pixels(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
-
-
-@pytest.fixture(autouse=True)
-def _close():
-    yield
-    plt.close("all")
 
 
 # Anchors
