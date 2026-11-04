@@ -116,9 +116,9 @@ def _resolve(dotted):
     elif head in PREFIXES:
         obj = _module(PREFIXES[head])
     else:
-        assert (
-            head in eyepiece.__all__ or dotted in DEPRECATED
-        ), f"{head!r} needs its canonical task namespace"
+        assert head in eyepiece.__all__ or dotted in DEPRECATED, (
+            f"{head!r} needs its canonical task namespace"
+        )
         obj = getattr(eyepiece, head)
     for part in rest:
         if hasattr(obj, part):
