@@ -476,6 +476,7 @@ increases to the left, as orbix's sky plots draw it.
 
 ```{code-cell} python
 from hwoutils.constants import G, Msun2kg
+from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 from orbix.equations.orbit import mean_motion, period_n
 from orbix.orbit import KeplerianOrbit
@@ -570,8 +571,11 @@ note = {"color": ep.style.neutral(0.7), "fontsize": 8}
 sky.plot(0.0, 0.0, "*", color=grey, ms=9)
 sky.plot(*nominal_orbit.T, color=grey, lw=0.8, ls="--")
 circle = np.linspace(0.0, 2.0 * np.pi, 121)
-sky.plot(*(nominal + WITHIN_MAS * np.column_stack([np.cos(circle), np.sin(circle)])).T,
-         color=grey, lw=1.0)  # fmt: skip
+(circle_mark,) = sky.plot(
+    *(nominal + WITHIN_MAS * np.column_stack([np.cos(circle), np.sin(circle)])).T,
+    color=grey,
+    lw=1.0,
+)
 sky.plot(*nominal, "+", color=grey, ms=11, mew=1.4)
 sky.set_aspect("equal")
 sky.invert_xaxis()  # RA increasing to the left, as orbix draws the sky
@@ -616,10 +620,6 @@ ep.motion.callout(ep.motion.Anchor.from_data(sky, (0.0, 0.0)), "star",
 left = nominal_orbit[np.argmax(nominal_orbit[:, 0])]
 ep.motion.callout(ep.motion.Anchor.from_data(sky, left), "nominal orbit\n(dashed)",
                   side="right", leader=False, color=grey, fontsize=8)  # fmt: skip
-# The lower rim leaves room for the caption above the RA ticks in either face.
-ep.motion.callout(ep.motion.Anchor.from_data(sky, nominal - [0.0, WITHIN_MAS]),
-                  f"circle: {WITHIN_MAS:g} mas\naround +\nnominal at t",
-                  side="below", leader=False, color=grey, fontsize=8)  # fmt: skip
 panel.annotate(f"dashed:\nanswer from\n{len(reference):,}\ndraws: {p_ref:.1%}", (1.0, p_ref),
                xycoords=("axes fraction", "data"), xytext=(8, 0),
                textcoords="offset points", va="center", **note)  # fmt: skip
@@ -643,6 +643,50 @@ words = sky.get_tightbbox().transformed(to_fig)
 low = pad + box.y0 - words.y0
 high = 1.0 - pad - (words.y1 - box.y1)
 sky.set_position([0.12, low, 0.40, high - low])
+# Fit beside the whole circle after layout, avoiding the axis text and the other
+# labels. Keep a small margin so font metrics at the encoding dpi have room too.
+fig.draw_without_rendering()
+circle_caption = ep.motion.callout(
+    circle_mark,
+    f"circle: {WITHIN_MAS:g} mas\naround +\nnominal at t",
+    leader=False,
+    color=grey,
+    fontsize=8,
+)
+caption = circle_caption.artists["text"]
+obstacles = [
+    *fig.texts,
+    *(artist for artist in fig.artists if isinstance(artist, Text)),
+]
+for axis in (sky, panel):
+    # Ask the axes for active ticks, rather than Matplotlib's cached tick artists.
+    obstacles.extend(
+        [
+            *axis.texts,
+            axis.title,
+            axis.xaxis.label,
+            axis.yaxis.label,
+            *axis.get_xticklabels(),
+            *axis.get_yticklabels(),
+        ]
+    )
+obstacles = [
+    text
+    for text in obstacles
+    if text is not caption and text.get_visible() and text.get_text()
+]
+for side in ("right", "left", "above", "below"):
+    caption.set_side(side)
+    caption.place()
+    box = caption.get_window_extent().padded(2.0 * fig.dpi / 72.0)
+    if (
+        fig.bbox.contains(*box.p0)
+        and fig.bbox.contains(*box.p1)
+        and not any(box.overlaps(text.get_window_extent()) for text in obstacles)
+    ):
+        break
+else:
+    raise RuntimeError("No room beside the circle for its caption")
 
 tl = ep.clock.Timeline({"u": 0.0})
 tl.hold(0.5, name="open")
