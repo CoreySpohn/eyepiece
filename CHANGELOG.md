@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.17.0](https://github.com/CoreySpohn/eyepiece/compare/v0.16.0...v0.17.0) (2026-11-04)
+
+
+### Features
+
+* opt-in skip_held_draws skips the draw callback on held frames ([89c7199](https://github.com/CoreySpohn/eyepiece/commit/89c7199847a94ce4aa9ba238ff9f5b6ad139c915))
+* **render:** render_variants work_dir keeps chunks and scratch out of out_dir ([1883cbf](https://github.com/CoreySpohn/eyepiece/commit/1883cbf8853594e512c56b5842711c14b92d48f2))
+* **testing:** opt-in cvd-fill check of motif fills at their opacities ([e24e675](https://github.com/CoreySpohn/eyepiece/commit/e24e6751e86d1dc0b7fc4d603d40c6f02cc66d10))
+* waive allowlist, stamp as furniture, time-range renders, quieter clip checks ([9b15f77](https://github.com/CoreySpohn/eyepiece/commit/9b15f7722d81b99be20bd4eaa869575561cee1a0))
+
+
+### Bug Fixes
+
+* bound memory of variant visual keys with a digest ([a4dc36c](https://github.com/CoreySpohn/eyepiece/commit/a4dc36cab805d482477de5d19c56f118f53d0aa9))
+* crossfade only for plain text, reject tear waivers, presence ignores path effects ([74aabed](https://github.com/CoreySpohn/eyepiece/commit/74aabedcb51c2f5269a03e7f15feb0d5070c2682))
+* drop time-range renders, check visible group members, effect geometry, reject unattributable waivers ([da658be](https://github.com/CoreySpohn/eyepiece/commit/da658becbceee9bd0bef49e41a0b92e7d3a353b1))
+* excerpts keep full layout, conservative ink and crossfade checks, distinct dead moves, inert waivers rejected ([0893d10](https://github.com/CoreySpohn/eyepiece/commit/0893d108a642c2a3b9cc6c624a10d1bf757999d3))
+* **eyepiece:** flag image occlusion and visibly empty panels ([f743aa5](https://github.com/CoreySpohn/eyepiece/commit/f743aa5b0ac9fda7109ca791cc87e31caa0ff839))
+* **eyepiece:** skip the empty-panel check in clips unless requested ([e8eef11](https://github.com/CoreySpohn/eyepiece/commit/e8eef11c1db0457be26230ae0c8e24d1bedb361d))
+* frame keys type scalars and never share nan, cgroup worker memory, untrimmed key checks ([b335b21](https://github.com/CoreySpohn/eyepiece/commit/b335b21be0bf8dabd9ba0f66c3a075e08fa3a728))
+* glyph cache probe is lock-free and TeX-safe, keeps foreign hooks, bounds layouts; skip_held_draws is the last ClipSpec field ([258908c](https://github.com/CoreySpohn/eyepiece/commit/258908c5b634df9ae901abc5714e5a9833fbb3a7))
+* number finding labels by base artist type under the stage guard ([12f9651](https://github.com/CoreySpohn/eyepiece/commit/12f96511e9cc54b6b73cc90f7a3f52c25e100fac))
+* paint-skip absent stage leaves, keep visibility, exact mux and frame reuse ([178bd14](https://github.com/CoreySpohn/eyepiece/commit/178bd1406b91ad5465c88d933f85a29f19c0da5b))
+* presence checks keep base visibility, effect handling only for collisions ([0a8d2d1](https://github.com/CoreySpohn/eyepiece/commit/0a8d2d1ddb13f3ef7bca60a88805060be9f591d8))
+* share variant frames only for exact inputs, keep rasterization, guard fewer leaves ([c0fc575](https://github.com/CoreySpohn/eyepiece/commit/c0fc5758a22358b6b278a9f7716ce9fb6182e224))
+* stage shade memo only for finite plain levels, keeps signed zeros and none pairs on the original path ([c7a4bea](https://github.com/CoreySpohn/eyepiece/commit/c7a4bea5a34b8751b4791bf74ea35bcd9da54cb1))
+* video sampling works with ffmpeg 4, narrow the clip-check memory claim ([1b99cab](https://github.com/CoreySpohn/eyepiece/commit/1b99cab05545e25a8d66cc1a8c6482b7696d12cb))
+
+
+### Performance Improvements
+
+* exact plan frame keys, frame-key checker, cpu and memory worker budget ([fce7c6d](https://github.com/CoreySpohn/eyepiece/commit/fce7c6d3b45e4b4cae64e26024ef7d0a68fd96e1))
+* hide inkless stage leaves, render frames once, share check samples ([e136756](https://github.com/CoreySpohn/eyepiece/commit/e13675620f89803a130a06833a6e427fd22bce7f))
+* memoize stage shading of single colors ([13adb40](https://github.com/CoreySpohn/eyepiece/commit/13adb40baf03cda91dcc448f0966d13426e5987d))
+* plan reached state, frame keys cover build latches ([ab19e38](https://github.com/CoreySpohn/eyepiece/commit/ab19e381d30a5062c57e27cb78df1d01792692d0))
+* reuse Agg text layouts and glyph bitmaps in movie rasters and clip checks ([ec2dea5](https://github.com/CoreySpohn/eyepiece/commit/ec2dea595adc000a6fae212e9b87bb16526f6f4c))
+* streamed bounded-memory clip checks, keyed readability reuse, opt-in video sources ([9c4cd36](https://github.com/CoreySpohn/eyepiece/commit/9c4cd36e120a874e10d7d81ba560a5d9e0bfba3c))
+
 ## [0.16.0](https://github.com/CoreySpohn/eyepiece/compare/v0.15.0...v0.16.0) (2026-10-21)
 
 
