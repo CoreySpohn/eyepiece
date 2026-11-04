@@ -1,0 +1,169 @@
+name: CI
+
+# Replaces tests.yml. Quick tier on every push and pull request, docs with executed
+# examples, and the slow tier on a nightly schedule. Renderer dependencies are
+# installed for both test tiers; the required-Manim guard rejects missing Manim.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: "17 7 * * *"   # nightly, 07:17 UTC (default branch only)
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: "Test selection for a manual run"
+        default: "not slow"
+        type: choice
+        options: [ "not slow", "slow", "all" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+env:
+  MPLBACKEND: Agg
+  PYTHONHASHSEED: "0"
+
+jobs:
+  quick:
+    name: Quick tier (py${{ matrix.python-version }})
+    if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.tier != 'slow')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      EYEPIECE_REQUIRE_MANIM: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@eb1897b8dc4b5d5bfe39a428a8f2304605e0983c # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install Cairo, Pango, fonts, and ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libcairo2-dev libpango1.0-dev pkg-config fonts-dejavu-core ffmpeg
+
+      - name: Install the package and test tools
+        run: |
+          uv venv .venv --python ${{ matrix.python-version }}
+          echo "VIRTUAL_ENV=$PWD/.venv" >> "$GITHUB_ENV"
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          uv pip install --python .venv/bin/python -e ".[test,hwo,manim]" "orbix>=1.0" ruff==0.15.18 deptry ty==0.0.96
+
+      - name: Lint and formatting
+        run: |
+          ruff check src/eyepiece tests
+          ruff format --check src/eyepiece tests
+
+      - name: Check dependencies
+        run: deptry src/eyepiece
+
+      - name: Check types (advisory)
+        continue-on-error: true
+        run: ty check src/eyepiece
+
+      - name: Quick tier
+        run: |
+          pytest tests/ -m "not slow" -ra --tb=short \
+            --timeout=300 --fail-slow=30s \
+            --durations=15 --durations-min=1.0 \
+            --junitxml=junit-quick.xml
+
+      # The existing no-ffmpeg test deliberately skips when ffmpeg is installed.
+      # Manim skips still fail through the conftest guard.
+      - name: Job summary
+        if: always()
+        run: python .github/scripts/ci_summary.py junit-quick.xml --title "Quick tier" --budget-seconds 600 --allow-skips
+
+  docs:
+    name: Docs with executed examples
+    if: github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.tier != 'slow')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0   # hatch-vcs uses tags for the docs version
+
+      - uses: astral-sh/setup-uv@eb1897b8dc4b5d5bfe39a428a8f2304605e0983c # v7.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install Cairo, Pango, fonts, and ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libcairo2-dev libpango1.0-dev pkg-config fonts-dejavu-core ffmpeg
+
+      - name: Install docs dependencies
+        run: |
+          uv venv .venv --python 3.12
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          uv pip install --python .venv/bin/python -e ".[docs,hwo,manim]"
+
+      # Preserve the Sphinx build and execute every gallery cell on each run.
+      - name: Build the documentation
+        run: |
+          sphinx-build -b html -D nb_execution_mode=force \
+            -D nb_execution_raise_on_error=1 docs docs/_build/html
+
+  slow:
+    name: Slow tier
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.tier != 'not slow')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      EYEPIECE_REQUIRE_MANIM: "1"
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@eb1897b8dc4b5d5bfe39a428a8f2304605e0983c # v7.0.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: "pyproject.toml"
+
+      - name: Install Cairo, Pango, fonts, and ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libcairo2-dev libpango1.0-dev pkg-config fonts-dejavu-core ffmpeg
+
+      - name: Install the package and test tools
+        run: |
+          uv venv .venv --python 3.12
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          uv pip install --python .venv/bin/python -e ".[test,hwo,manim]" "orbix>=1.0"
+
+      - name: Slow tier (hypothesis nightly profile)
+        env:
+          HYPOTHESIS_PROFILE: nightly
+        run: |
+          status=0
+          pytest tests/ -m slow -ra --tb=short --timeout=900 \
+            --durations=25 --junitxml=junit-slow.xml || status=$?
+          if [ "$status" -ne 0 ] && [ "$status" -ne 5 ]; then
+            exit "$status"
+          fi
+
+      - name: Job summary
+        if: always()
+        run: python .github/scripts/ci_summary.py junit-slow.xml --title "Slow tier" --allow-skips
