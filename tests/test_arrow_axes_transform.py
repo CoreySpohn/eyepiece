@@ -79,6 +79,8 @@ def test_scaled_growth_rests_on_the_arrow_as_made():
     np.testing.assert_array_equal(_pixels(fig), made)
     grown.update(0.0)
     np.testing.assert_array_equal(_pixels(fig), still)
+    frames = np.linspace(0.0, 1.0, 37)
+    assert ept.motion_faults(fig, grown.update, frames, moves=[grown]) == []
 
 
 def test_length_growth_is_unchanged_by_default():
@@ -91,13 +93,6 @@ def test_length_growth_is_unchanged_by_default():
     assert FancyArrowPatch.get_mutation_scale(patch) == nominal
     with pytest.raises(ValueError, match="grow"):
         ep.arrow((0, 0), (1, 1), ax=ax, grow="tips")
-
-
-def test_scaled_arrow_clip_has_no_motion_fault():
-    fig, ax = _board()
-    grown = ep.arrow((0.5, 0.5), (3.5, 2.0), ax=ax, label="v", grow="scaled")
-    frames = np.linspace(0.0, 1.0, 37)
-    assert ept.motion_faults(fig, grown.update, frames, moves=[grown]) == []
 
 
 # Axis build
@@ -296,16 +291,11 @@ def test_drift_rests_where_the_plain_transform_rests():
     drift.update(0.5)
     drift.update(1.0)
     np.testing.assert_array_equal(_pixels(fig2), plain_rest)
-
-
-def test_drift_clip_has_no_motion_fault_and_declares_the_drifters():
-    fig, a, b = _pair()
-    move = ep.transform(a, b, fade_toward=True)
-    leaving = {a.artists["glyphs"][i] for i in move.gone}
-    assert leaving <= set(move.contract.moves)
-    assert not leaving & set(move.contract.rest)
+    leaving = {a2.artists["glyphs"][i] for i in drift.gone}
+    assert leaving <= set(drift.contract.moves)
+    assert not leaving & set(drift.contract.rest)
     frames = np.linspace(0.0, 1.0, 61)
-    assert ept.motion_faults(fig, move.update, frames, moves=[move]) == []
+    assert ept.motion_faults(fig2, drift.update, frames, moves=[drift]) == []
 
 
 @pytest.mark.parametrize("fade_toward", [False, True])

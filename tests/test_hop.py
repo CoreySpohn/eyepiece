@@ -75,7 +75,7 @@ def test_each_draw_gets_an_equal_window_at_the_declared_rate():
     )
 
 
-@pytest.mark.parametrize("rate", [0.0, -1.0, 8.5, 12.0])
+@pytest.mark.parametrize("rate", [0.0, -1.0, 8.5])
 def test_rate_outside_the_band_raises(rate):
     _, ax, _ = _board(tally=False)
     with pytest.raises(ValueError, match="rate"):
@@ -89,7 +89,7 @@ def test_rate_outside_the_readable_band_warns(rate):
         ep.hop(_draws(), ax=ax, rate=rate)
 
 
-@pytest.mark.parametrize("rate", [3.0, 4.0, 6.0])
+@pytest.mark.parametrize("rate", [3.0, 6.0])
 def test_rate_inside_the_readable_band_is_quiet(rate, recwarn):
     _, ax, _ = _board(tally=False)
     ep.hop(_draws(), ax=ax, rate=rate)

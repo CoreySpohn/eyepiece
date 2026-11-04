@@ -54,6 +54,11 @@ def test_hops_at_a_declared_rate_are_clean():
     # Undeclared, the same cuts are reported.
     blind = ept.motion_faults(fig, at, TIMES, moves=[{"artists": [glider]}])
     assert any(f.kind == "jump" for f in blind)
+    moves = [
+        {"artists": [glider]},
+        {"hops": [{"artists": [dot], "rate": 3.0}]},
+    ]
+    assert ept.motion_faults(fig, at, TIMES, moves=moves) == []
 
 
 def test_a_rate_above_eight_per_second_is_a_fault():
@@ -84,16 +89,6 @@ def test_another_artist_cutting_with_a_hop_is_still_reported():
     assert len(jumps) == 1
     assert jumps[0].time == pytest.approx(20 / FPS)
     assert jumps[0].box[0] > 300  # the side axes, clear of the hopping dot
-
-
-def test_a_move_contract_can_name_the_hops():
-    fig, dot, glider, label = _scene()
-    at = _poser(dot, glider, label, every=10)
-    moves = [
-        {"artists": [glider]},
-        {"hops": [{"artists": [dot], "rate": 3.0}]},
-    ]
-    assert ept.motion_faults(fig, at, TIMES, moves=moves) == []
 
 
 def test_a_smooth_caption_arrival_does_not_count_as_hops():

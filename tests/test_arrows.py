@@ -114,6 +114,7 @@ def test_arc_sweeps_on_the_same_artists_and_keeps_the_limits():
 
 def test_arc_rest_state_is_pixel_exact():
     fig, ax = _axes()
+    bare = _pixels(fig)
     arc = ep.angle_arc((0.0, 0.0), 0.0, 75.0, 1.0, ax=ax, label="a")
     rest = _pixels(fig)
     for u in (0.0, 0.4, 0.9):
@@ -121,15 +122,12 @@ def test_arc_rest_state_is_pixel_exact():
         assert not np.array_equal(_pixels(fig), rest)
     arc.update(1.0, end_angle=75.0, level=1.0)
     assert np.array_equal(_pixels(fig), rest)
-
-
-def test_arc_is_absent_at_u_zero():
-    fig, ax = _axes()
-    bare = _pixels(fig)
-    arc = ep.angle_arc((0.0, 0.0), 0.0, 75.0, 1.0, ax=ax, label="a")
-    arc.update(0.0)
+    arc.artists["arrow"].remove()
+    arc.artists["text"].remove()
+    fresh = ep.angle_arc((0.0, 0.0), 0.0, 75.0, 1.0, ax=ax, label="a")
+    fresh.update(0.0)
     assert np.array_equal(_pixels(fig), bare)
-    assert not arc.artists["text"].get_visible()
+    assert not fresh.artists["text"].get_visible()
 
 
 def test_arc_label_sits_at_the_midpoint_on_a_backing_box():
@@ -187,36 +185,27 @@ def test_tiny_arc_draws_nothing_instead_of_raising():
 @pytest.mark.parametrize("kind", ["vector", "double", "dimension"])
 def test_arrow_updates_reuse_the_artists(kind):
     fig, ax = _axes()
+    bare = _pixels(fig)
     result = ep.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax, kind=kind, label="d")
     patch, text = result.artists["arrow"], result.artists["text"]
     children = list(ax.get_children())
     limits = (ax.get_xlim(), ax.get_ylim())
+    rest = _pixels(fig)
     for u in np.linspace(0.0, 1.0, 7):
         result.update(u, tail=(-1.0, -0.5 * u), head=(1.0 + u, 0.5))
         fig.canvas.draw()
     assert result.artists["arrow"] is patch and result.artists["text"] is text
     assert list(ax.get_children()) == children
     assert (ax.get_xlim(), ax.get_ylim()) == limits
-
-
-@pytest.mark.parametrize("kind", ["vector", "double", "dimension"])
-def test_arrow_rest_state_is_pixel_exact(kind):
-    fig, ax = _axes()
-    result = ep.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax, kind=kind, label="d")
-    rest = _pixels(fig)
     for u in (0.0, 0.3, 0.8):
         result.update(u, tail=(-1.0, 0.2), head=(0.5, -0.5), level=0.4)
         assert not np.array_equal(_pixels(fig), rest)
     result.update(1.0, tail=(-1.0, 0.0), head=(1.0, 0.5), level=1.0)
     assert np.array_equal(_pixels(fig), rest)
-
-
-@pytest.mark.parametrize("kind", ["vector", "double", "dimension"])
-def test_arrow_is_absent_at_u_zero(kind):
-    fig, ax = _axes()
-    bare = _pixels(fig)
-    result = ep.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax, kind=kind, label="d")
-    result.update(0.0)
+    patch.remove()
+    text.remove()
+    fresh = ep.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax, kind=kind, label="d")
+    fresh.update(0.0)
     assert np.array_equal(_pixels(fig), bare)
 
 

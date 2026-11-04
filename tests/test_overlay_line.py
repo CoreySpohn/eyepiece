@@ -98,11 +98,6 @@ def test_update_moves_lines_and_label_without_new_artists():
     assert res.artists["text"].get_position() == pytest.approx((0.0, 1.0), abs=1e-12)
     with pytest.raises(ValueError, match="matching"):
         res.update([0, 1], [0])
-    plt.close(fig)
-
-
-def test_mismatched_path_raises():
-    fig, ax = plt.subplots()
     with pytest.raises(ValueError, match="matching"):
         ep.overlay_line(ax, [0, 1, 2], [0, 1])
     plt.close(fig)

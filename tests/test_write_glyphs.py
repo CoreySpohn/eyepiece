@@ -41,22 +41,11 @@ def test_progress_is_linear_inside_each_glyph_window():
             slope = np.diff(series)[moving[1:] & moving[:-1]]
             assert slope.size > 10
             np.testing.assert_allclose(slope, slope[0], rtol=1e-6)
-
-
-def test_a_glyph_traces_first_then_fills():
-    _, text = _text_fig()
-    ghost = ep.write(text).artists["fill"]
     for u in np.linspace(0.0, 1.0, 101):
         traced, fill = ghost.times(u)
         for t, f in zip(traced, fill, strict=True):
             assert f == 0.0 or t == 1.0
     assert ghost.times(1.0)[1] == [1.0] * len(ghost.glyphs())
-
-
-def test_a_short_front_of_glyphs_is_in_flux():
-    _, text = _text_fig()
-    ghost = ep.write(text).artists["fill"]
-    n = len(ghost.glyphs())
     assert n >= 15
     busy = []
     for u in np.linspace(0.0, 0.9, 181):
@@ -71,6 +60,9 @@ def test_glyphs_finish_one_by_one_in_reading_order():
     move = ep.write(text)
     ghost = move.artists["fill"]
     glyphs = ghost.glyphs()
+    move.update(0.2)
+    fig.canvas.draw()
+    assert ghost._stroke.get_linewidth() <= 0.75
     move.update(0.45)
     mid = _pixels(fig)
     height = mid.shape[0]
@@ -84,14 +76,6 @@ def test_glyphs_finish_one_by_one_in_reading_order():
     first, last = glyphs[0], glyphs[-1]
     assert ink(mid, first) >= 0.9 * ink(final, first)
     assert ink(mid, last) == 0
-
-
-def test_the_pen_is_thin_by_default():
-    fig, text = _text_fig()
-    move = ep.write(text)
-    move.update(0.2)
-    fig.canvas.draw()
-    assert move.artists["fill"]._stroke.get_linewidth() <= 0.75
 
 
 def test_handoff_never_lightens_the_finished_ink():

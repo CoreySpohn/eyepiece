@@ -214,12 +214,6 @@ def test_twelve_glyphs_into_four_stack_copies_of_the_four():
         assert _distance_to(ref[::200], back) < 5e-3
     for pair_a, pair_b in zip(al.a, al.b, strict=True):
         assert [len(c) for c in pair_a] == [len(c) for c in pair_b]
-
-
-def test_aligning_a_dozen_glyphs_keeps_the_curve_counts_small():
-    sources = [_glyph(c) for c in "Pr(E|H)Pr(H)"[:12]]
-    targets = [_glyph(c) for c in "0.24"]
-    al = _bezier.align_groups(sources, targets)
     original = [sum(len(c) for c in g) for g in sources]
     for k, (pair_a, pair_b) in enumerate(zip(al.a, al.b, strict=True)):
         total = sum(len(c) for c in pair_a)

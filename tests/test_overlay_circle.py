@@ -15,27 +15,6 @@ def _lum(color):
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
-@pytest.mark.parametrize("mode", ["light", "dark"])
-def test_light_dash_over_a_solid_dark_underlay_in_either_mode(mode):
-    hwostyle.use(mode)
-    fig, ax = plt.subplots()
-    ax.imshow(np.random.default_rng(0).random((8, 8)), extent=(-4, 4, -4, 4))
-    res = ep.overlay_circle(ax, (1.0, -0.5), 2.0)
-    under, dash = res.artists["ellipse"]
-    assert isinstance(dash, Circle) and isinstance(under, Circle)
-    assert dash.center == under.center == (1.0, -0.5)
-    assert dash.radius == under.radius == 2.0
-    assert dash.get_linestyle() not in ("-", "solid")
-    assert under.get_linestyle() in ("-", "solid")
-    assert _lum(dash.get_edgecolor()) > _lum(under.get_edgecolor())
-    assert under.get_linewidth() > dash.get_linewidth()
-    # The dash is drawn after the underlay, on the same layer.
-    order = ax.get_children()
-    assert order.index(dash) > order.index(under)
-    assert dash.get_zorder() == under.get_zorder()
-    plt.close(fig)
-
-
 def test_a_circle_larger_than_the_view_leaves_the_limits_alone():
     fig, ax = plt.subplots()
     ax.imshow(np.ones((4, 4)), extent=(-1, 1, -1, 1))
@@ -65,6 +44,9 @@ def test_underlay_can_be_colored_or_omitted():
     bare = ep.overlay_circle(ax, (0, 0), 1.0, underlay=False)
     assert len(bare.artists["ellipse"]) == 1
     assert set(bare.artists) <= ep.ARTIST_KEYS
+    res = ep.overlay_circle(ax, (0, 0), 1.0, underlay=False, underlay_kw={"lw": 9.0})
+    (dash,) = res.artists["ellipse"]
+    assert dash.get_linewidth() == pytest.approx(1.0)
     plt.close(fig)
 
 
@@ -84,14 +66,6 @@ def test_underlay_kw_sets_the_underlay_width_and_tags_it():
     # Only what was passed changes: the underlay stays solid, on the dash's layer.
     assert under.get_linestyle() in ("-", "solid")
     assert under.get_zorder() == dash.get_zorder()
-    plt.close(fig)
-
-
-def test_underlay_kw_is_ignored_without_an_underlay():
-    fig, ax = plt.subplots()
-    res = ep.overlay_circle(ax, (0, 0), 1.0, underlay=False, underlay_kw={"lw": 9.0})
-    (dash,) = res.artists["ellipse"]
-    assert dash.get_linewidth() == pytest.approx(1.0)
     plt.close(fig)
 
 
@@ -125,6 +99,17 @@ def test_default_circles_are_pinned(mode):
     assert dash.get_zorder() == under.get_zorder() == 4
     assert dash.get_gid() is None and under.get_gid() is None
     assert res.update is None
+    assert isinstance(dash, Circle) and isinstance(under, Circle)
+    assert dash.center == under.center == (0.5, -0.25)
+    assert dash.radius == under.radius == 1.5
+    assert dash.get_linestyle() not in ("-", "solid")
+    assert under.get_linestyle() in ("-", "solid")
+    assert _lum(dash.get_edgecolor()) > _lum(under.get_edgecolor())
+    assert under.get_linewidth() > dash.get_linewidth()
+    # The dash is drawn after the underlay, on the same layer.
+    order = ax.get_children()
+    assert order.index(dash) > order.index(under)
+    assert dash.get_zorder() == under.get_zorder()
     plt.close(fig)
 
 

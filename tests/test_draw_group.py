@@ -53,14 +53,10 @@ def _moves(mark, *, with_draws=True):
     return [move]
 
 
-def test_hop_declares_its_draw_group():
-    _, mark, *_ = _run()
-    assert set(mark.contract.draws) == set(mark.contract.moves)
-    assert mark.artists["line"] in mark.contract.draws
-
-
 def test_draw_cuts_alone_are_clean():
     fig, mark, times, cuts, *_ = _run()
+    assert set(mark.contract.draws) == set(mark.contract.moves)
+    assert mark.artists["line"] in mark.contract.draws
     faults = ept.motion_faults(fig, _poser(mark), times, moves=[mark], steps=cuts)
     assert faults == []
 

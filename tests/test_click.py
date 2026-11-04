@@ -68,36 +68,26 @@ def test_a_placed_click_keeps_its_hold_after_the_beat():
     assert holds[0].end_s - holds[0].start_s == pytest.approx(1.5)
 
 
-def test_start_is_the_figure_before_the_beat():
+def test_rest_is_the_landed_still_whatever_the_path():
     fig, ring, count, rule, end = _scene()
     before = _pixels(fig)
     landed = _land(ring, count, rule, end)
     landed.update(0.0)
     np.testing.assert_array_equal(_pixels(fig), before)
-
-
-def test_rest_is_the_landed_still_whatever_the_path():
-    fig, *parts = _scene()
-    landed = _land(*parts)
     for u in np.linspace(0.0, 1.0, 37):
         landed.update(u)
         _pixels(fig)
     traversed = _pixels(fig)
-    fig2, *parts2 = _scene()
-    _land(*parts2).update(1.0)
-    np.testing.assert_array_equal(_pixels(fig2), traversed)
-
-
-def test_landed_state_dot_set_number_bold_ruler_gone_width_back():
-    _, ring, count, rule, end = _scene()
-    landed = _land(ring, count, rule, end)
-    landed.update(1.0)
-    dot = landed.artists["dot"]
+    fig2, ring2, count2, rule2, end2 = _scene()
+    landed2 = _land(ring2, count2, rule2, end2)
+    landed2.update(1.0)
+    dot = landed2.artists["dot"]
     assert dot.get_visible() and dot.get_markersize() == pytest.approx(3.2 * LW)
-    assert all(t.get_fontweight() == "bold" for t in count.artists["text"])
-    assert not rule.artists["arrow"].get_visible()
-    assert not rule.artists["text"].get_visible()
-    assert ring.get_linewidth() == pytest.approx(LW)
+    assert all(t.get_fontweight() == "bold" for t in count2.artists["text"])
+    assert not rule2.artists["arrow"].get_visible()
+    assert not rule2.artists["text"].get_visible()
+    assert ring2.get_linewidth() == pytest.approx(LW)
+    np.testing.assert_array_equal(_pixels(fig2), traversed)
 
 
 def test_swell_holds_its_plateau_and_returns():
