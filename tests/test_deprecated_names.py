@@ -16,9 +16,6 @@ def test_testing_span_is_window_with_a_warning():
     assert old is ept.Window
     assert "Window" in ept.__all__
     assert "Span" not in ept.__all__
-
-
-def test_from_import_of_testing_span_warns():
     with pytest.warns(DeprecationWarning, match="Window"):
         from eyepiece.testing import Span
     assert Span(0.0, 1.0) == ept.Window(0.0, 1.0)
@@ -30,9 +27,6 @@ def test_spans_is_shade_intervals_with_a_warning():
     assert old is ep.shade_intervals
     assert "shade_intervals" in ep.plot.__all__
     assert "spans" not in ep.__all__
-
-
-def test_deprecated_name_warns_on_every_access():
     for _ in range(2):
         with pytest.warns(DeprecationWarning):
             ep.spans  # noqa: B018
@@ -76,10 +70,6 @@ def test_old_timeline_verbs_warn_and_place_the_same_span(old, new):
         b.value(k, f"{old}.dot") for k in range(b.n_frames)
     ]
     assert b.unused_knobs() == a.unused_knobs()
-
-
-@pytest.mark.parametrize("old,new", [("pulse", "indicate"), ("ring", "circumscribe")])
-def test_old_span_kinds_warn_and_place_as_the_new_kind(old, new):
     current = ep.Timeline({"k": 0.0})
     placed = current.span("k", 0.5, kind=new, to=1.0)
     legacy = ep.Timeline({"k": 0.0})

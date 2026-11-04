@@ -116,9 +116,9 @@ def _resolve(dotted):
     elif head in PREFIXES:
         obj = _module(PREFIXES[head])
     else:
-        assert head in eyepiece.__all__ or dotted in DEPRECATED, (
-            f"{head!r} needs its canonical task namespace"
-        )
+        assert (
+            head in eyepiece.__all__ or dotted in DEPRECATED
+        ), f"{head!r} needs its canonical task namespace"
         obj = getattr(eyepiece, head)
     for part in rest:
         if hasattr(obj, part):
@@ -158,6 +158,19 @@ def test_not_cataloged_names_are_public():
 def test_catalog_names_resolve(span):
     match = NAME.match(span)
     assert match, f"Use column entry is not a name: {span!r}"
+    name = match.group(0).rstrip(".")
+    assert name not in DEPRECATED, f"{span!r}: use {DEPRECATED.get(name)}"
+    head, *rest = name.split(".")
+    if head == "ep":
+        assert rest, span
+        assert rest[0] in eyepiece.__all__ or rest[0] in PREFIXES, span
+        name = name.removeprefix("ep.")
+        head, *rest = name.split(".")
+    assert head in eyepiece.__all__ or head in INSTANCES or head in PREFIXES, span
+    assert name not in CANONICAL_ALIASES, f"{span!r}: use {CANONICAL_ALIASES.get(name)}"
+    if head in PREFIXES and head not in {"ep", "synth"}:
+        assert rest, span
+        assert rest[0] in _module(PREFIXES[head]).__all__, span
     obj = _resolve(match.group(0).rstrip("."))
     call = span[match.end() :]
     if obj is None or not call.startswith("(") or not callable(obj):
@@ -170,32 +183,6 @@ def test_catalog_names_resolve(span):
         return
     for keyword in re.findall(r"(\w+)=", call.split(")")[0]):
         assert keyword in params, f"{span!r}: no parameter {keyword!r}"
-
-
-@pytest.mark.parametrize("span", _use_cells())
-def test_catalog_uses_no_deprecated_alias(span):
-    match = NAME.match(span)
-    if match:
-        name = match.group(0).rstrip(".")
-        assert name not in DEPRECATED, f"{span!r}: use {DEPRECATED.get(name)}"
-
-
-@pytest.mark.parametrize("span", _use_cells())
-def test_task_rows_use_canonical_paths(span):
-    match = NAME.match(span)
-    assert match, span
-    name = match.group(0).rstrip(".")
-    head, *rest = name.split(".")
-    if head == "ep":
-        assert rest, span
-        assert rest[0] in eyepiece.__all__ or rest[0] in PREFIXES, span
-        name = name.removeprefix("ep.")
-        head, *rest = name.split(".")
-    assert head in eyepiece.__all__ or head in INSTANCES or head in PREFIXES, span
-    assert name not in CANONICAL_ALIASES, f"{span!r}: use {CANONICAL_ALIASES.get(name)}"
-    if head in PREFIXES and head not in {"ep", "synth"}:
-        assert rest, span
-        assert rest[0] in _module(PREFIXES[head]).__all__, span
 
 
 @pytest.mark.parametrize(("old", "new"), DEPRECATED.items())

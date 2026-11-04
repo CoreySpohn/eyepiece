@@ -12,6 +12,13 @@ import eyepiece as ep
 NAMESPACES = ("plot", "clock", "motion", "style", "render", "testing", "narration")
 
 
+def _run(code):
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
 @pytest.mark.parametrize("namespace", NAMESPACES)
 def test_every_namespace_export_keeps_its_original_identity(namespace):
     module = importlib.import_module(f"eyepiece.{namespace}")
@@ -31,11 +38,6 @@ def test_every_namespace_export_keeps_its_original_identity(namespace):
                 owner = ORIGINAL_OWNERS[namespace][name]
                 assert value is getattr(importlib.import_module(owner), name)
     assert not [w for w in caught if w.category is DeprecationWarning]
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_namespace_rejects_unknown_names(namespace):
-    module = importlib.import_module(f"eyepiece.{namespace}")
     with pytest.raises(AttributeError, match="not_an_export"):
         _ = module.not_an_export
 
@@ -53,14 +55,8 @@ assert set(module.__all__) <= set(dir(module))
 heavy = ('matplotlib', 'kokoro', 'torch', 'manim', 'hwoutils')
 assert not [name for name in sys.modules if name.split('.')[0] in heavy]
 """
-    result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True
-    )
-    assert result.returncode == 0, result.stderr
-
-
-def test_clock_helpers_remain_numerical_without_matplotlib():
-    code = """
+    if namespace == "clock":
+        code += """
 import sys
 from eyepiece import clock
 clock.Timeline().hold(0.5)
@@ -73,10 +69,7 @@ assert clock.pulse_shape(0.0) == 0.0
 assert clock.pulse_shape(1.0) == 0.0
 assert not any(name.startswith('matplotlib') for name in sys.modules)
 """
-    result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True
-    )
-    assert result.returncode == 0, result.stderr
+    _run(code)
 
 
 def test_task_assignments_cover_every_former_root_name_once():
@@ -430,8 +423,14 @@ def test_root_discovery_stays_small_after_legacy_access():
     assert set(ep.__all__) == SHORTCUTS
     assert len(ep.__all__) == len(SHORTCUTS)
     assert set(dir(ep)) == SHORTCUTS | TASK_MODULES
-    for name in OLD_ROOT:
-        getattr(ep, name)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        for name in OLD_ROOT:
+            value = getattr(ep, name)
+            imported = {}
+            exec(f"from eyepiece import {name}", imported)
+            assert imported[name] is value, name
+    assert not [w for w in caught if w.category is DeprecationWarning]
     assert set(dir(ep)) == SHORTCUTS | TASK_MODULES
 
 
@@ -439,17 +438,6 @@ def test_star_import_exposes_only_stable_shortcuts():
     namespace = {}
     exec("from eyepiece import *", namespace)
     assert set(namespace) - {"__builtins__"} == SHORTCUTS
-
-
-@pytest.mark.parametrize("name", OLD_ROOT)
-def test_every_former_root_name_still_resolves_silently(name):
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", DeprecationWarning)
-        value = getattr(ep, name)
-        imported = {}
-        exec(f"from eyepiece import {name}", imported)
-        assert imported[name] is value
-    assert not [w for w in caught if w.category is DeprecationWarning]
 
 
 def test_fresh_root_discovery_loads_no_renderers():
@@ -462,10 +450,7 @@ assert 'matplotlib' not in sys.modules
 assert 'eyepiece.plot' not in sys.modules
 assert 'eyepiece.motion' not in sys.modules
 """
-    result = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True
-    )
-    assert result.returncode == 0, result.stderr
+    _run(code)
 
 
 def test_version_has_only_its_root_home():

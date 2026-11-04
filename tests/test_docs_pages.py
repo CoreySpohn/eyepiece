@@ -144,8 +144,15 @@ def test_explanation_toctree_order():
     ]
 
 
-@pytest.mark.parametrize("name", REFERENCE_NAMES)
-def test_reference_page_links(name):
+@pytest.mark.parametrize(
+    ("name", "anchor"),
+    [
+        ("attention-moves", "`follow_zoom`"),
+        ("clip-checks", "`shape-class`"),
+        ("motion-contract", "- `moves` is"),
+    ],
+)
+def test_reference_page_links(name, anchor):
     _, blocks = split_fences((DOCS / "index.md").read_text())
     tree = next(
         body
@@ -159,6 +166,7 @@ def test_reference_page_links(name):
     links = re.findall(r"\{doc\}`([^`]+)`", clock)
     targets = [re.sub(r"^.*<([^>]+)>$", r"\1", link) for link in links]
     assert f"../reference/{name}" in targets
+    assert anchor in (DOCS / "reference" / f"{name}.md").read_text()
 
 
 def test_clock_has_no_reference_lists():
@@ -166,18 +174,6 @@ def test_clock_has_no_reference_lists():
     assert "## Motion contract" not in clock
     assert "## Two spans, two uses" not in clock
     assert not re.search(r"^- `moves` is", clock, re.M)
-
-
-@pytest.mark.parametrize(
-    ("name", "anchor"),
-    [
-        ("attention-moves", "`follow_zoom`"),
-        ("clip-checks", "`shape-class`"),
-        ("motion-contract", "- `moves` is"),
-    ],
-)
-def test_reference_anchor_content(name, anchor):
-    assert anchor in (DOCS / "reference" / f"{name}.md").read_text()
 
 
 def test_manim_parity_cell_lists_all_rows():
