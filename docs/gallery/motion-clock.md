@@ -610,16 +610,16 @@ mark = ep.plot.hop(
 )
 # A thin interval, so at the first draws it reads as an error bar, not a bar.
 mark.tally_artists["lines"][0].set_linewidth(1.0)
-# Scenery labels, placed from the computed geometry so they track the data.
-sky.annotate("star", (0.0, 0.0), xytext=(6, -10), textcoords="offset points", **note)
-# The labels sit inside the orbits, where no draw passes, with arrows out.
-arrow = {"arrowstyle": "-", "color": note["color"], "lw": 0.6}
+# Scenery labels sit beside their marks, in the same ink, without leaders.
+ep.motion.callout(ep.motion.Anchor.from_data(sky, (0.0, 0.0)), "star",
+                  side="below", leader=False, color=grey, fontsize=8)  # fmt: skip
 left = nominal_orbit[np.argmax(nominal_orbit[:, 0])]
-sky.annotate("nominal orbit\n(dashed)", left, xytext=(35.0, 35.0), ha="center",
-             va="center", arrowprops=arrow, **note)  # fmt: skip
-sky.annotate(f"circle: {WITHIN_MAS:g} mas\naround +, the\nnominal at t",
-             nominal + [WITHIN_MAS, 0.0], xytext=(80.0, -112.0), ha="center",
-             va="center", arrowprops=arrow, **note)  # fmt: skip
+ep.motion.callout(ep.motion.Anchor.from_data(sky, left), "nominal orbit\n(dashed)",
+                  side="right", leader=False, color=grey, fontsize=8)  # fmt: skip
+# The lower rim leaves room for the caption above the RA ticks in either face.
+ep.motion.callout(ep.motion.Anchor.from_data(sky, nominal - [0.0, WITHIN_MAS]),
+                  f"circle: {WITHIN_MAS:g} mas\naround +\nnominal at t",
+                  side="below", leader=False, color=grey, fontsize=8)  # fmt: skip
 panel.annotate(f"dashed:\nanswer from\n{len(reference):,}\ndraws: {p_ref:.1%}", (1.0, p_ref),
                xycoords=("axes fraction", "data"), xytext=(8, 0),
                textcoords="offset points", va="center", **note)  # fmt: skip
