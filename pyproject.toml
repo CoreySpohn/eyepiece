@@ -16,19 +16,31 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
-dependencies = ["matplotlib>=3.11", "numpy", "hwostyle>=1.7.0"]
+dependencies = ["matplotlib>=3.11", "numpy", "hwostyle>=1.7.0", "pillow"]
 
 [project.optional-dependencies]
 hwo = ["hwoutils"]
 # mp4 export; supplies the ffmpeg binary when none is on PATH.
 video = ["imageio-ffmpeg"]
 docs = ["sphinx", "myst-nb", "sphinx-book-theme", "sphinx-autoapi", "sphinx_autodoc_typehints", "ipython", "imageio-ffmpeg", "colorspacious", "physicaloptix>=2.3", "orbix>=1.0"]
-test = ["pytest", "pytest-cov", "imageio-ffmpeg", "hypothesis", "colorspacious", "ipython"]
+test = [
+    "pytest>=7.3.2",
+    "pytest-cov",
+    "pytest-xdist>=2.5",
+    "pytest-testmon>=2.0.7",
+    "pytest-timeout>=1.3.1",
+    "pytest-fail-slow>=0.1.0",
+    "pytest-markdown-docs>=0.5.0",
+    "imageio-ffmpeg",
+    "hypothesis",
+    "colorspacious",
+    "ipython",
+]
 # Pillow 13 removes the Image.fromarray mode argument that manim 0.21 uses for
 # every image mobject, so both Manim extras cap it until manim adapts.
-manim = ["manim>=0.21,<0.22", "pillow<13"]
+manim = ["manim>=0.21,<0.22", "manimpango>=0.6,<1", "pillow<13"]
 # The pyside6 extra supplies the Qt binding that `manim-slides present` needs.
-slides = ["manim>=0.21,<0.22", "manim-slides[pyside6]>=5.7,<6", "pillow<13"]
+slides = ["manim>=0.21,<0.22", "manimpango>=0.6,<1", "manim-slides[pyside6]>=5.7,<6", "pillow<13"]
 # Speech for narrated clips; only eyepiece.narration.synth imports them, and
 # only when a line has to be spoken. Kokoro pulls in torch and supports
 # Python 3.10 to 3.12, so run it in an environment of its own. The pin is
@@ -66,3 +78,29 @@ packages = ["src/eyepiece"]
 
 [tool.hatch.build.targets.sdist]
 exclude = ["/scripts", "/docs", "/tests", "/.github"]
+
+[tool.pytest.ini_options]
+markers = [
+    "medium: tests with a 30-second default time budget",
+    "slow: tests with a 300-second default time budget, run nightly",
+]
+
+[tool.testbudget]
+library = "eyepiece"
+mode = "report"
+unit_s = 5
+medium_s = 30
+slow_s = 300
+
+[tool.deptry]
+known_first_party = ["eyepiece"]
+# Documentation and test tools are not runtime package requirements.
+optional_dependencies_dev_groups = ["dev", "docs", "test"]
+
+[tool.deptry.package_module_name_map]
+pillow = ["PIL"]
+ipython = ["IPython"]
+
+[tool.deptry.per_rule_ignores]
+# The slides extra supplies the external `manim-slides present` command.
+DEP002 = ["manim-slides"]
