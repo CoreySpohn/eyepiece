@@ -14,14 +14,11 @@ def test_a_line_speed_defaults_to_the_script_speed_and_keeps_the_key():
     assert same.cache_keys() == plain.cache_keys()
 
 
-def test_the_line_speed_enters_the_cache_key():
+def test_a_line_speed_enters_only_its_own_cache_key():
     base = nr.Script((nr.Line("a", "A definition."),))
     slow = nr.Script((nr.Line("a", "A definition.", speed=0.8),))
     assert slow.cache_keys() != base.cache_keys()
     assert slow.cache_keys()[0] == nr.line_hash("A definition.", "bm_george", 0.8, "b")
-
-
-def test_only_the_slowed_line_changes_key():
     lines = (nr.Line("a", "Plain."), nr.Line("b", "Definition.", speed=0.8))
     mixed = nr.Script(lines)
     flat = nr.Script((nr.Line("a", "Plain."), nr.Line("b", "Definition.")))

@@ -541,7 +541,7 @@ def test_a_cue_in_an_earlier_line_is_clamped_to_the_line_and_flagged():
     assert plan.spans["indicate.speckle"].clamped is False
 
 
-def test_a_motion_longer_than_its_line_pushes_the_next_line_and_its_cues():
+def test_a_motion_longer_than_its_line_pushes_the_next_line_and_its_cues(tmp_path):
     small = nr.Narration.load(SMALL, DATA)
     tl = ep.Timeline(narration=small)
     tl.line("open")
@@ -558,6 +558,26 @@ def test_a_motion_longer_than_its_line_pushes_the_next_line_and_its_cues():
     shift = 4.6 - 2.1
     assert plan.spans["circumscribe.planet"].start_s == pytest.approx(4.3 + shift)
     assert plan.n_frames == ep.frame_count(leak.end_s, 30)
+    solved = tl.narration
+    assert solved is not small and small.beat("leak").start_s == 2.1
+    for line in SMALL.lines:
+        beat = solved.beat(line.key)
+        data = np.full(round((beat.speech_end_s - beat.speech_start_s) * 24000), 1000)
+        with wave.open(str(tmp_path / f"{SMALL.line_key(line)}.wav"), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(24000)
+            handle.writeframes(data.astype("<i2").tobytes())
+    path = nr.audio_track(
+        solved, tmp_path, tmp_path / "track.wav", rate=None, fade_s=0.0
+    )
+    with wave.open(str(path), "rb") as handle:
+        rate = handle.getframerate()
+        pcm = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
+    assert len(pcm) == round(solved.total_s * rate)
+    assert pcm[int(1.0 * rate)] == 1000
+    assert not pcm[int(2.0 * rate) : int(4.55 * rate)].any()
+    assert pcm[int(4.7 * rate)] == 1000
 
 
 @pytest.mark.parametrize("offset", [-1.0, -0.25, 2.0])
@@ -598,37 +618,6 @@ def test_a_line_wait_keeps_the_tail_of_a_later_extending_span(bayes):
     assert tl.narration.beat("question").end_s == want
     tl.line("square")
     assert sec.end == want
-
-
-def test_the_rebuilt_narration_feeds_the_audio_track_with_the_solved_starts(tmp_path):
-    small = nr.Narration.load(SMALL, DATA)
-    tl = ep.Timeline(narration=small)
-    tl.line("open")
-    tl.indicate("star")
-    tl.move("long", 4.0, at=0.0)
-    tl.line("leak")
-    tl.indicate("speckle")
-    tl.circumscribe("planet")
-    solved = tl.narration
-    assert solved is not small and small.beat("leak").start_s == 2.1
-    for line in SMALL.lines:
-        beat = solved.beat(line.key)
-        data = np.full(round((beat.speech_end_s - beat.speech_start_s) * 24000), 1000)
-        with wave.open(str(tmp_path / f"{SMALL.line_key(line)}.wav"), "wb") as handle:
-            handle.setnchannels(1)
-            handle.setsampwidth(2)
-            handle.setframerate(24000)
-            handle.writeframes(data.astype("<i2").tobytes())
-    path = nr.audio_track(
-        solved, tmp_path, tmp_path / "track.wav", rate=None, fade_s=0.0
-    )
-    with wave.open(str(path), "rb") as handle:
-        rate = handle.getframerate()
-        pcm = np.frombuffer(handle.readframes(handle.getnframes()), dtype="<i2")
-    assert len(pcm) == round(solved.total_s * rate)
-    assert pcm[int(1.0 * rate)] == 1000
-    assert not pcm[int(2.0 * rate) : int(4.55 * rate)].any()
-    assert pcm[int(4.7 * rate)] == 1000
 
 
 def test_place_is_pure_and_the_clock_never_changes_the_narration_it_was_given():

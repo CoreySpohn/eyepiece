@@ -99,14 +99,12 @@ def test_duplicate_keys_and_empty_lines_are_refused():
 # The cache key
 
 
-def test_the_default_voice_is_british_george():
-    assert (SCRIPT.voice, SCRIPT.lang) == ("bm_george", "b")
-
-
 def test_the_cache_key_is_pinned_and_ignores_cue_marks():
+    assert (SCRIPT.voice, SCRIPT.lang) == ("bm_george", "b")
     assert SCRIPT.line_key(SCRIPT.line("open")) == "491f7023363ff02d"
     moved = nr.Line("open", "The {indicate:star}coronagraph blocks the starlight.")
     assert SCRIPT.line_key(moved) == SCRIPT.line_key(SCRIPT.line("open"))
+    assert SCRIPT.cache_keys() == ("491f7023363ff02d", "ce02f99ce8f3585a")
 
 
 @pytest.mark.parametrize(
@@ -129,10 +127,6 @@ def test_the_cache_key_changes_with_everything_that_voices_the_line(field, value
 def test_the_cache_key_changes_with_the_words():
     line = SCRIPT.line("open")
     assert nr.line_hash("Other words.", "bm_george", 1.0, "b") != SCRIPT.line_key(line)
-
-
-def test_the_script_lists_the_keys_of_its_lines():
-    assert SCRIPT.cache_keys() == ("491f7023363ff02d", "ce02f99ce8f3585a")
 
 
 def test_script_json_round_trip_preserves_all_fields_and_cache_keys(tmp_path):
@@ -217,6 +211,9 @@ def test_a_cue_is_the_start_of_its_word_with_no_lead():
     word = tl.beat("leak").words[4]
     assert word.text == "speckle,"
     assert tl.cue("leak", "indicate", "speckle") == word.start_s
+    times = [tl.cue("leak", c.kind, c.target) for c in SCRIPT.line("leak").cues]
+    assert times == sorted(times)
+    assert times[0] > tl.start("leak")
 
 
 def test_place_is_pure_and_puts_the_line_where_it_is_told():
@@ -237,13 +234,6 @@ def test_a_line_cannot_start_before_the_line_before_it_ends():
     tl = nr.Narration.load(SCRIPT, DATA)
     with pytest.raises(ValueError, match="before the line before"):
         nr.Narration(SCRIPT, tl.spoken, starts={"leak": 0.5})
-
-
-def test_cue_times_are_in_reading_order():
-    tl = nr.Narration.load(SCRIPT, DATA)
-    times = [tl.cue("leak", c.kind, c.target) for c in SCRIPT.line("leak").cues]
-    assert times == sorted(times)
-    assert times[0] > tl.start("leak")
 
 
 def test_beat_at_names_the_running_beat():
@@ -470,6 +460,7 @@ def test_synthesis_speaks_each_line_once_and_records_the_pair(tmp_path):
     assert (record["engine"], record["engine_version"]) == ("kokoro", "0.9.4")
     assert record["text"] == "The coronagraph blocks the starlight."
     assert nr.Narration.load(SCRIPT, tmp_path).total_s > 0.0
+    assert _synthesize(tmp_path, [], force=True) == ["open", "leak"]
 
 
 def test_json_without_its_audio_is_an_error_unless_respeak_is_given(tmp_path):
@@ -489,11 +480,6 @@ def test_audio_without_json_is_spoken_again(tmp_path):
     key = SCRIPT.line_key(SCRIPT.line("leak"))
     (tmp_path / f"{key}.json").unlink()
     assert _synthesize(tmp_path, []) == ["leak"]
-
-
-def test_force_speaks_every_line_again(tmp_path):
-    _synthesize(tmp_path, [])
-    assert _synthesize(tmp_path, [], force=True) == ["open", "leak"]
 
 
 def test_an_interrupted_line_leaves_no_json(tmp_path):
@@ -622,7 +608,7 @@ def test_sentences_split_at_sentence_punctuation_not_commas():
     ]
 
 
-def test_srt_has_numbered_cues_with_increasing_times(tmp_path):
+def test_srt_and_vtt_keep_their_headers_text_and_timestamp_conventions(tmp_path):
     tl = nr.Narration.load(SCRIPT, DATA)
     path = nr.write_srt(tl, tmp_path / "clip.srt")
     blocks = path.read_text().strip().split("\n\n")
@@ -631,6 +617,12 @@ def test_srt_has_numbered_cues_with_increasing_times(tmp_path):
     assert first[0] == "1"
     assert first[1].startswith("00:00:00,100 --> 00:00:01,")
     assert first[2] == "The coronagraph blocks the starlight."
+    text = nr.write_vtt(tl, tmp_path / "clip.vtt").read_text()
+    lines = text.splitlines()
+    assert lines[0] == "WEBVTT"
+    assert lines[2] == "00:00:00.100 --> 00:00:01.950"
+    assert lines[3] == "The coronagraph blocks the starlight."
+    assert "," not in lines[2]
 
 
 def _stamps(text, sep):
@@ -655,16 +647,6 @@ def test_captions_never_overlap_when_sentences_are_close(tmp_path):
         path = write(tl, tmp_path / f"clip{sep}x")
         (first, second) = _stamps(path.read_text(), sep)
         assert first[0] < first[1] <= second[0]
-
-
-def test_vtt_is_webvtt_with_dot_timestamps(tmp_path):
-    tl = nr.Narration.load(SCRIPT, DATA)
-    text = nr.write_vtt(tl, tmp_path / "clip.vtt").read_text()
-    lines = text.splitlines()
-    assert lines[0] == "WEBVTT"
-    assert lines[2] == "00:00:00.100 --> 00:00:01.950"
-    assert lines[3] == "The coronagraph blocks the starlight."
-    assert "," not in lines[2]
 
 
 # The audio track and the mux
@@ -820,7 +802,7 @@ def _dbfs(x):
     return 20.0 * np.log10(np.sqrt(np.mean(x**2)) / 32767.0)
 
 
-def test_the_track_is_48_khz_with_a_finite_room_tone_below_the_floor(tmp_path):
+def test_the_48_khz_room_tone_has_the_requested_level_and_is_seeded(tmp_path):
     _ffmpeg_or_skip()
     tl = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
     _fill_audio(tl, tmp_path)
@@ -833,6 +815,12 @@ def test_the_track_is_48_khz_with_a_finite_room_tone_below_the_floor(tmp_path):
     assert np.isfinite(level)
     assert level < -55.0
     assert level > -65.0
+    two = nr.audio_track(tl, tmp_path, tmp_path / "two.wav", room_tone_db=-60.0)
+    other = nr.audio_track(
+        tl, tmp_path, tmp_path / "three.wav", seed=1, room_tone_db=-60.0
+    )
+    assert path.read_bytes() == two.read_bytes()
+    assert path.read_bytes() != other.read_bytes()
 
 
 def test_the_track_has_no_bed_unless_asked(tmp_path):
@@ -857,18 +845,6 @@ def test_lines_start_and_stop_without_a_click(tmp_path):
     first = round(tl.beat("open").speech_start_s * rate)
     assert soft[first] == 0.0
     assert soft[first + int(0.01 * rate)] == 1000
-
-
-def test_the_track_is_reproducible_and_the_seed_changes_it(tmp_path):
-    _ffmpeg_or_skip()
-    tl = nr.Narration.load(SCRIPT, DATA, starts={"open": 1.0})
-    _fill_audio(tl, tmp_path)
-    kw = {"room_tone_db": -60.0}
-    one = nr.audio_track(tl, tmp_path, tmp_path / "one.wav", **kw)
-    two = nr.audio_track(tl, tmp_path, tmp_path / "two.wav", **kw)
-    other = nr.audio_track(tl, tmp_path, tmp_path / "three.wav", seed=1, **kw)
-    assert one.read_bytes() == two.read_bytes()
-    assert one.read_bytes() != other.read_bytes()
 
 
 def test_a_negative_fade_is_refused(tmp_path):
@@ -905,23 +881,15 @@ def _silent_video(ffmpeg, path, seconds):
     )  # fmt: skip
 
 
-@pytest.mark.parametrize("level", [800, 6000])
-def test_mux_normalizes_to_the_target_within_one_lu(tmp_path, level):
+@pytest.mark.parametrize("level,target", [(800, None), (6000, None), (3000, -23.0)])
+def test_mux_normalizes_to_the_target_within_one_lu(tmp_path, level, target):
     ffmpeg = _ffmpeg_or_skip()
     _silent_video(ffmpeg, tmp_path / "v.mp4", 6)
     _tone(tmp_path / "a.wav", 6.0, level)
-    out = nr.mux(tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4")
-    assert abs(_integrated_lufs(ffmpeg, out) - (-16.0)) < 1.0
-
-
-def test_the_loudness_target_is_a_parameter(tmp_path):
-    ffmpeg = _ffmpeg_or_skip()
-    _silent_video(ffmpeg, tmp_path / "v.mp4", 6)
-    _tone(tmp_path / "a.wav", 6.0, 3000)
-    out = nr.mux(
-        tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4", loudness=-23.0
-    )
-    assert abs(_integrated_lufs(ffmpeg, out) - (-23.0)) < 1.0
+    kwargs = {} if target is None else {"loudness": target}
+    out = nr.mux(tmp_path / "v.mp4", tmp_path / "a.wav", tmp_path / "o.mp4", **kwargs)
+    expected = -16.0 if target is None else target
+    assert abs(_integrated_lufs(ffmpeg, out) - expected) < 1.0
 
 
 def test_mux_keeps_silence_silent_instead_of_failing(tmp_path):
@@ -992,7 +960,7 @@ def test_caption_breaks_keep_parenthetical_text_together(max_lines):
             assert line.count("(") == line.count(")")
 
 
-def test_the_79_character_line_becomes_two_lines_within_the_limits():
+def test_the_79_character_line_becomes_two_lines_within_the_limits(tmp_path):
     words = D51.split()
     tl = _one_line_narration(D51, _even(len(words), 5.0))
     (cue,) = nr.captions(tl)
@@ -1006,6 +974,10 @@ def test_the_79_character_line_becomes_two_lines_within_the_limits():
     assert all(len(x) <= 42 for x in lines)
     assert start == 0.0
     assert 5.0 <= end <= 5.0 + 0.15 + 1e-9
+    vtt, srt = nr.write_captions(tl, tmp_path / "clip")
+    assert vtt.suffix == ".vtt" and srt.suffix == ".srt"
+    assert "0.24,\nand dry worlds" in vtt.read_text()
+    assert "0.24,\nand dry worlds" in srt.read_text()
 
 
 def test_captions_without_a_clause_break_split_evenly():
@@ -1055,15 +1027,6 @@ def test_caption_limits_are_validated():
         nr.captions(tl, max_lines=3)
     with pytest.raises(ValueError, match="positive"):
         nr.captions(tl, max_cps=0.0)
-
-
-def test_srt_and_vtt_carry_the_wrapped_cue(tmp_path):
-    words = D51.split()
-    tl = _one_line_narration(D51, _even(len(words), 5.0))
-    vtt, srt = nr.write_captions(tl, tmp_path / "clip")
-    assert vtt.suffix == ".vtt" and srt.suffix == ".srt"
-    assert "0.24,\nand dry worlds" in vtt.read_text()
-    assert "0.24,\nand dry worlds" in srt.read_text()
 
 
 def test_vtt_line_setting_is_written_on_every_cue(tmp_path):

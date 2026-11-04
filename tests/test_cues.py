@@ -174,7 +174,7 @@ def events(**kwargs):
     return nr.CueEvents(**base)
 
 
-def test_cue_track_is_deterministic_and_of_exact_length():
+def test_cue_track_has_exact_length_and_only_ticks_depend_on_the_seed():
     a = nr.cue_track(events(), 5.0, rate=RATE, seed=0)
     b = nr.cue_track(events(), 5.0, rate=RATE, seed=0)
     assert a.tobytes() == b.tobytes()
@@ -182,10 +182,6 @@ def test_cue_track_is_deterministic_and_of_exact_length():
     assert 0.0 < np.max(np.abs(a)) < 1.0
     odd = nr.cue_track(events(), 4.99999, rate=44100)
     assert len(odd) == round(4.99999 * 44100)
-
-
-def test_a_different_seed_moves_only_the_ticks():
-    a = nr.cue_track(events(), 5.0, seed=0)
     b = nr.cue_track(events(), 5.0, seed=1)
     differ = np.flatnonzero(a != b) / RATE
     assert len(differ)

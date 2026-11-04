@@ -117,7 +117,7 @@ def _run(script, cache, calls, **kwargs):
     )
 
 
-def test_a_gapped_line_is_spoken_a_sentence_at_a_time_and_joined(tmp_path):
+def test_a_gapped_line_joins_sentence_audio_timing_and_cue_marks(tmp_path):
     script = nr.Script((nr.Line("a", TEXT, sentence_gap_s=0.5),))
     calls = []
     assert _run(script, tmp_path, calls) == ["a"]
@@ -135,11 +135,6 @@ def test_a_gapped_line_is_spoken_a_sentence_at_a_time_and_joined(tmp_path):
     audio, _ = _read(tmp_path, record["audio"])
     gap = audio[round(1.0 * RATE) : round(1.5 * RATE)]
     assert not gap.any()
-
-
-def test_cue_marks_stay_bound_to_their_words_on_the_joined_clock(tmp_path):
-    script = nr.Script((nr.Line("a", TEXT, sentence_gap_s=0.5),))
-    _run(script, tmp_path, [])
     tl = nr.Narration.load(script, tmp_path)
     assert script.line("a").cue("indicate", "six").word == 2
     assert tl.cue("a", "indicate", "six") == pytest.approx(tl.start("a") + 0.5)

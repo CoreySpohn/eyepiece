@@ -19,6 +19,8 @@ def test_several_sentences_in_one_call_are_flagged_unless_the_gap_is_set():
     assert _codes(nr.Line("a", text)) == [("multi-sentence", "a")]
     assert _codes(nr.Line("a", text, sentence_gap_s=0.4)) == []
     assert _codes(nr.Line("a", "Just a sentence here.")) == []
+    (fault,) = nr.lint_script(nr.Script((nr.Line("a", "Some things. Done."),)))
+    assert fault.key == "a" and "sentence" in fault.message
 
 
 def test_a_question_after_a_statement_is_flagged_even_with_a_gap():
@@ -76,11 +78,6 @@ def test_a_quantity_after_a_scientific_exponent_is_independently_linted(power):
     faults = nr.lint_script(nr.Script((line,)))
     assert [fault.code for fault in faults] == ["many-numbers", "number-without-cue"]
     assert line.words[faults[1].word] == "five"
-
-
-def test_findings_name_the_line_and_a_message():
-    (fault,) = nr.lint_script(nr.Script((nr.Line("a", "Some things. Done."),)))
-    assert fault.key == "a" and "sentence" in fault.message
 
 
 def test_check_script_speech_raises_on_the_rules_only_when_asked():

@@ -30,10 +30,6 @@ def _check(values, **kwargs):
     )
 
 
-def test_a_counter_that_lands_before_the_word_is_clean():
-    assert _check(_count(0.0, WORD - 0.1, 0.0, 96.0)) == []
-
-
 def test_a_counter_that_lands_after_the_word_is_late_by_how_much():
     (fault,) = _check(_count(0.0, WORD + 0.5, 0.0, 96.0))
     assert fault.code == "late-settle"
@@ -42,6 +38,7 @@ def test_a_counter_that_lands_after_the_word_is_late_by_how_much():
 
 
 def test_the_settle_tolerance_is_a_keyword_defaulting_to_zero():
+    assert _check(_count(0.0, WORD - 0.1, 0.0, 96.0)) == []
     values = _count(0.0, WORD + 0.15, 0.0, 96.0)
     assert [f.code for f in _check(values)] == ["late-settle"]
     assert _check(values, settle_tol_s=0.2) == []

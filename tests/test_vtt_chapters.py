@@ -43,10 +43,13 @@ def test_titles_override_the_key(tmp_path):
     assert titles == ["Blocking the star", "hold", "The planet"]
 
 
-def test_a_title_for_no_beat_is_refused(tmp_path):
+@pytest.mark.parametrize(
+    "titles,match", [({"nope": "x"}, "nope"), ({"open": "  "}, "empty")]
+)
+def test_invalid_titles_are_refused(tmp_path, titles, match):
     tl = nr.Narration.estimated(SCRIPT)
-    with pytest.raises(ValueError, match="nope"):
-        nr.write_chapters(tl, tmp_path / "c.vtt", titles={"nope": "x"})
+    with pytest.raises(ValueError, match=match):
+        nr.write_chapters(tl, tmp_path / "c.vtt", titles=titles)
 
 
 def test_write_captions_adds_chapters_only_when_asked(tmp_path):
@@ -57,12 +60,3 @@ def test_write_captions_adds_chapters_only_when_asked(tmp_path):
     vtt, _srt, chapters = nr.write_captions(tl, tmp_path / "clip", chapters=True)
     assert chapters.name == "clip.chapters.vtt" and chapters.exists()
     assert vtt.read_text() == plain[0].read_text()
-
-
-def test_an_empty_title_is_refused(tmp_path):
-    from eyepiece import narration as nr
-
-    script = nr.Script((nr.Line("a", "One line here."),))
-    tl = nr.Narration.estimated(script)
-    with pytest.raises(ValueError, match="empty"):
-        nr.write_chapters(tl, tmp_path / "c.vtt", titles={"a": "  "})

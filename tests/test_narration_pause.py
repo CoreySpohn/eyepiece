@@ -18,7 +18,7 @@ LINES = (
 SCRIPT = nr.Script(LINES)
 
 
-def test_a_pause_has_a_key_a_duration_and_a_description():
+def test_a_pause_enters_the_timing_like_a_line_with_no_audio():
     pause = SCRIPT.line("beat")
     assert (pause.key, pause.duration_s, pause.description) == (
         "beat",
@@ -26,6 +26,13 @@ def test_a_pause_has_a_key_a_duration_and_a_description():
         "the speckle map holds still",
     )
     assert pause.spoken == "" and pause.words == () and pause.cues == ()
+    tl = nr.Narration.estimated(SCRIPT)
+    open_, beat, close = tl.beats
+    assert beat.start_s == open_.end_s
+    assert beat.end_s == pytest.approx(beat.start_s + 2.5)
+    assert beat.speech_start_s == beat.speech_end_s == beat.start_s
+    assert beat.words == () and beat.cues == ()
+    assert close.start_s == beat.end_s
 
 
 @pytest.mark.parametrize("duration", [0.0, -1.0, float("nan")])
@@ -39,16 +46,6 @@ def test_a_pause_needs_a_description_and_shares_the_key_namespace():
         nr.Pause("p", 1.0, "  ")
     with pytest.raises(ValueError, match="unique"):
         nr.Script((nr.Line("a", "Words."), nr.Pause("a", 1.0, "still")))
-
-
-def test_a_pause_enters_the_timing_like_a_line_with_no_audio():
-    tl = nr.Narration.estimated(SCRIPT)
-    open_, beat, close = tl.beats
-    assert beat.start_s == open_.end_s
-    assert beat.end_s == pytest.approx(beat.start_s + 2.5)
-    assert beat.speech_start_s == beat.speech_end_s == beat.start_s
-    assert beat.words == () and beat.cues == ()
-    assert close.start_s == beat.end_s
 
 
 def test_a_pause_can_be_held_longer_by_the_motion_inside_it():

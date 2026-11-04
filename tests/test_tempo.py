@@ -7,16 +7,12 @@ import pytest
 import eyepiece as ep
 
 
-def test_reading_hold_scales_with_words():
+def test_default_reading_hold_scales_with_words_at_the_expected_pace():
     tempo = ep.Tempo()
     holds = [tempo.read_s(" ".join(["word"] * n)) for n in range(9)]
     steps = [b - a for a, b in pairwise(holds)]
     assert steps == pytest.approx([tempo.factor * tempo.word_s] * 8)
     assert holds[0] == pytest.approx(tempo.factor * tempo.base_s)
-
-
-def test_default_hold_is_about_one_second_plus_four_tenths_per_word():
-    tempo = ep.Tempo()
     assert tempo.read_s("") == pytest.approx(1.0, abs=0.05)
     assert tempo.read_s("a b c d e") - tempo.read_s("") == pytest.approx(2.0, abs=0.05)
 

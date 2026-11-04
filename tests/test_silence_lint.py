@@ -30,16 +30,12 @@ def test_a_first_cue_far_after_the_line_start_is_flagged():
     faults = nr.check_silence(tl)
     assert _codes(faults) == ["late-first-cue"]
     assert faults[0].key == "a"
+    assert nr.check_silence(tl, max_cue_gap_s=60.0) == []
 
 
 def test_a_last_cue_far_before_the_line_end_is_flagged():
     tl = _nar(nr.Line("a", f"{{show:x}}start {LONG}"))
     assert _codes(nr.check_silence(tl)) == ["early-last-cue"]
-
-
-def test_the_cue_distance_is_a_parameter():
-    tl = _nar(nr.Line("a", f"{LONG}{{show:x}}end."))
-    assert nr.check_silence(tl, max_cue_gap_s=60.0) == []
 
 
 def test_a_line_without_cues_is_not_a_cue_finding():
