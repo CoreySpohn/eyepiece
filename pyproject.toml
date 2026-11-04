@@ -1,5 +1,5 @@
 [build-system]
-requires = ['hatchling', "hatch-fancy-pypi-readme", "hatch-vcs"]
+requires = ['hatchling>=1.26', "hatch-fancy-pypi-readme>=24.1", "hatch-vcs>=0.4"]
 build-backend = "hatchling.build"
 
 [project]
@@ -16,37 +16,37 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
-dependencies = ["matplotlib>=3.11", "numpy", "hwostyle>=1.7.0", "pillow"]
+dependencies = ["matplotlib>=3.11", "numpy>=2.1.2", "hwostyle>=1.7.0", "pillow>=11.3"]
 
 [project.optional-dependencies]
-hwo = ["hwoutils"]
+hwo = ["hwoutils>=1.10"]
 # mp4 export; supplies the ffmpeg binary when none is on PATH.
-video = ["imageio-ffmpeg"]
-docs = ["sphinx", "myst-nb", "sphinx-book-theme", "sphinx-autoapi", "sphinx_autodoc_typehints", "ipython", "imageio-ffmpeg", "colorspacious", "physicaloptix>=2.3", "orbix>=1.0"]
+video = ["imageio-ffmpeg>=0.6"]
+docs = ["sphinx>=8.0.2", "myst-nb>=1.2", "sphinx-book-theme>=1.1.4", "sphinx-autoapi>=3.3", "sphinx_autodoc_typehints>=2.4", "ipython>=8.18", "imageio-ffmpeg>=0.6", "colorspacious>=1.1.2", "physicaloptix>=2.3", "orbix>=2.0"]
 test = [
-    "pytest>=7.3.2",
-    "pytest-cov",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
     "pytest-xdist>=2.5",
-    "pytest-testmon>=2.0.7",
+    "pytest-testmon>=2.1.1",
     "pytest-timeout>=1.3.1",
     "pytest-fail-slow>=0.1.0",
     "pytest-markdown-docs>=0.5.0",
-    "imageio-ffmpeg",
-    "hypothesis",
-    "colorspacious",
-    "ipython",
+    "imageio-ffmpeg>=0.6",
+    "hypothesis>=6.112",
+    "colorspacious>=1.1.2",
+    "ipython>=8.18",
 ]
 # Pillow 13 removes the Image.fromarray mode argument that manim 0.21 uses for
 # every image mobject, so both Manim extras cap it until manim adapts.
-manim = ["manim>=0.21,<0.22", "manimpango>=0.6,<1", "pillow<13"]
+manim = ["manim>=0.21,<0.22", "manimpango>=0.6,<1", "pillow>=11.3,<13"]
 # The pyside6 extra supplies the Qt binding that `manim-slides present` needs.
-slides = ["manim>=0.21,<0.22", "manimpango>=0.6,<1", "manim-slides[pyside6]>=5.7,<6", "pillow<13"]
+slides = ["manim>=0.21,<0.22", "manimpango>=0.6,<1", "manim-slides[pyside6]>=5.7,<6", "pillow>=11.3,<13"]
 # Speech for narrated clips; only eyepiece.narration.synth imports them, and
 # only when a line has to be spoken. Kokoro pulls in torch and supports
 # Python 3.10 to 3.12, so run it in an environment of its own. The pin is
 # eyepiece.narration.KOKORO_VERSION, which enters every cache key.
-narration = ["kokoro==0.9.4", "soundfile"]
-dev = ["pre-commit"]
+narration = ["kokoro==0.9.4", "soundfile>=0.12.1"]
+dev = ["pre-commit>=3.7.1"]
 
 [project.urls]
 Homepage = "https://github.com/CoreySpohn/eyepiece"
