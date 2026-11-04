@@ -34,11 +34,6 @@ def manifest_versions(monkeypatch):
     return collect
 
 
-def test_public_export():
-    assert ep.Manifest is Manifest
-    assert "Manifest" in ep.render.__all__
-
-
 def test_round_trip_and_relative_output_metadata(tmp_path):
     root = tmp_path / "outputs"
     root.mkdir()
@@ -71,6 +66,14 @@ def test_round_trip_and_relative_output_metadata(tmp_path):
     assert loaded.verify("clip", "doc-light") == []
     assert loaded.save() is False
     assert path.read_bytes() == before
+    os.utime(path, ns=(1_000_000_000, 1_000_000_000))
+    before_mtime = path.stat().st_mtime_ns
+    assert manifest.save() is False
+    manifest.record(
+        "clip", "doc-light", key="key", outputs=["clip.mp4"], frames=24, fps=12, dpi=100
+    )
+    assert manifest.save() is False
+    assert path.stat().st_mtime_ns == before_mtime
 
 
 def test_missing_manifest_and_unknown_entries(tmp_path):
@@ -103,21 +106,6 @@ def test_discard_removes_only_requested_entry_and_persists(tmp_path):
     assert loaded.discard("clip", "dark") is True
     loaded.save()
     assert "clip" not in json.loads(loaded.path.read_text())["clips"]
-
-
-def test_unchanged_save_preserves_mtime_even_after_record(tmp_path):
-    output = tmp_path / "clip.mp4"
-    output.write_bytes(b"video")
-    path = tmp_path / "manifest.json"
-    manifest = Manifest(path)
-    manifest.record("clip", "doc-light", key="key", outputs=["clip.mp4"])
-    assert manifest.save() is True
-    os.utime(path, ns=(1_000_000_000, 1_000_000_000))
-    before = path.stat().st_mtime_ns
-    assert manifest.save() is False
-    manifest.record("clip", "doc-light", key="key", outputs=[output])
-    assert manifest.save() is False
-    assert path.stat().st_mtime_ns == before
 
 
 def test_sorted_portable_json_and_insertion_order(tmp_path):

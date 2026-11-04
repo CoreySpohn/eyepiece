@@ -20,6 +20,9 @@ def test_dir_resolution_chain(tmp_path, monkeypatch):
     monkeypatch.setenv("EYEPIECE_OUT", str(tmp_path / "env"))
     enved = save_fig(fig, "c")
     assert enved.parent == tmp_path / "env"
+
+    named = save_fig(fig, "named.pdf", dir=tmp_path)
+    assert named.suffix == ".pdf" and named.exists()
     plt.close(fig)
 
 
@@ -33,13 +36,6 @@ def test_dark_mode_png_is_not_white(tmp_path):
         assert corner.max() < 0.5  # black-ish, not white
     finally:
         plt.close("all")  # the mode itself is restored by the autouse fixture
-
-
-def test_suffix_and_return(tmp_path):
-    fig, _ = plt.subplots()
-    p = save_fig(fig, "named.pdf", dir=tmp_path)
-    assert p.suffix == ".pdf" and p.exists()
-    plt.close(fig)
 
 
 def test_overrides_win(tmp_path):

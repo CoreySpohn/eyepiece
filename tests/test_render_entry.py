@@ -263,6 +263,7 @@ assert instances['Variant'].name == 'doc-dark-narrated'
 assert instances['VariantResult'] == (
     instances['Variant'], ['clip.mp4'], 'key', False, 2, False
 )
+assert instances['VariantResult'].adopted is False
 assert instances['Venue'] == ('doc', {'font.size': 7}, 80, 12, None)
 """,
         payload,

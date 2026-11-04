@@ -76,7 +76,7 @@ def clip(tmp_path):
     )
 
 
-def test_public_types_defaults_and_fixed_order():
+def test_public_types_defaults_and_fixed_order(clip):
     for name in (
         "Venue",
         "Variant",
@@ -103,9 +103,6 @@ def test_public_types_defaults_and_fixed_order():
     )
     with pytest.raises(ValueError, match="missing"):
         variants(("doc",), narrated=("missing",))
-
-
-def test_spec_is_frozen(clip):
     with pytest.raises(FrozenInstanceError):
         clip.slug = "changed"
 

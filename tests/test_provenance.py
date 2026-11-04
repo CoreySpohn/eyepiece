@@ -53,9 +53,6 @@ def test_provenance_text_assembles_only_supplied_fields():
     assert "2026-08-21" in text
     assert "seed 3" in text
     assert "simulated" in text
-
-
-def test_provenance_text_omits_absent_fields():
     text = ep.provenance_text(date="2026-08-21")
     assert text == "2026-08-21"
 
@@ -88,15 +85,10 @@ def test_stamp_carries_the_word_simulated(note):
     plt.close(fig)
 
 
-def test_stamp_marks_its_artist_with_a_gid():
+def test_stamp_leaves_a_structured_payload_for_the_file_channel():
     fig = plt.figure()
     artist = ep.stamp(fig, script="demo.py")
     assert artist.get_gid() == "eyepiece-provenance"
-    plt.close(fig)
-
-
-def test_stamp_leaves_a_structured_payload_for_the_file_channel():
-    fig = plt.figure()
     ep.stamp(fig, script="demo.py", seed=3, note="simulated", sha="abc1234")
     payload = getattr(fig, eyepiece.provenance.PAYLOAD_ATTR)
     assert payload["script"] == "demo.py"
@@ -166,14 +158,8 @@ def test_save_fig_is_byte_identical_across_saves(tmp_path, suffix):
     fig2 = _mixed_fig()
     c = ep.save_fig(fig2, f"c.{suffix}", dir=tmp_path)
     assert a.read_bytes() == c.read_bytes()
-    plt.close("all")
-
-
-@pytest.mark.parametrize("suffix", ["png", "svg", "pdf"])
-def test_save_fig_changed_figure_changes_file(tmp_path, suffix):
-    a = ep.save_fig(_mixed_fig(1.0), f"a.{suffix}", dir=tmp_path)
-    b = ep.save_fig(_mixed_fig(3.0), f"b.{suffix}", dir=tmp_path)
-    assert a.read_bytes() != b.read_bytes()
+    changed = ep.save_fig(_mixed_fig(3.0), f"changed.{suffix}", dir=tmp_path)
+    assert a.read_bytes() != changed.read_bytes()
     plt.close("all")
 
 

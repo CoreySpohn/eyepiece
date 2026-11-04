@@ -72,36 +72,30 @@ def draw_count(path):
 def test_raw_frames_identical_and_only_consecutive_keys_skip_draw(tmp_path):
     frames = [0, 1, 2, 3, 4, 5, 0, 1, 9]
     baseline = []
-    for name, key in (("full", None), ("dedup", state_key)):
+    for name, key, skip in (
+        ("full", None, False),
+        ("dedup", state_key, False),
+        ("skip", state_key, True),
+    ):
         calls = tmp_path / name
         build = partial(build_steps, calls=calls)
-        with pool._figure(build, frames, 100, None, None, None, frame_key=key) as state:
+        with pool._figure(
+            build, frames, 100, None, None, None, frame_key=key,
+            skip_held_draws=skip,
+        ) as state:  # fmt: skip
             rasters = [pool._raster(state, k).tobytes() for k in range(len(frames))]
         if key is None:
             baseline = rasters
             assert draw_count(calls) == len(frames)
         else:
             assert rasters == baseline
-            assert draw_count(calls) == len(frames)
+            if skip:
+                # The layout draw of item 0, then only the frames whose key changed.
+                assert calls.read_text().splitlines() == ["0", "3", "0", "9"]
+            else:
+                assert draw_count(calls) == len(frames)
             # Four rasters plus the initial layout freeze.
             assert draw_count(Path(str(calls) + ".paint")) == 5
-
-
-def test_skip_held_draws_keeps_rasters_and_draws_only_key_changes(tmp_path):
-    frames = [0, 1, 2, 3, 4, 5, 0, 1, 9]  # keys 0 0 0 1 1 1 0 0 3
-    rasters = {}
-    for skip in (False, True):
-        calls = tmp_path / f"skip-{skip}"
-        build = partial(build_steps, calls=calls)
-        with pool._figure(
-            build, frames, 100, None, None, None, frame_key=state_key,
-            skip_held_draws=skip,
-        ) as state:  # fmt: skip
-            rasters[skip] = [pool._raster(state, k).tobytes() for k in range(9)]
-        if skip:
-            # The layout draw of item 0, then only the frames whose key changed.
-            assert calls.read_text().splitlines() == ["0", "3", "0", "9"]
-    assert rasters[True] == rasters[False]
 
 
 @pytest.mark.parametrize("workers", [1, 2])
@@ -461,48 +455,6 @@ def test_key_receives_mapped_items_and_spec_defaults_to_full_draws(tmp_path):
     assert (tmp_path / dedup.outputs[0]).read_bytes() == full
 
 
-@pytest.mark.parametrize("custom", ["rgb", "matrix", "chroma"])
-def test_mux_preserves_base_custom_encoded_picture(tmp_path, custom):
-    audio = write_render_audio(tmp_path / "track.wav")
-    options = {
-        "rgb": {
-            "extra_ffmpeg_args": [
-                "-c:v",
-                "libx264rgb",
-                "-pix_fmt",
-                "rgb24",
-                "-crf",
-                "0",
-            ]
-        },
-        "matrix": {"encoder": {"colorspace": None}},
-        "chroma": {"encoder": {"pix_fmt": "yuv444p"}},
-    }
-    spec = ClipSpec(
-        "colors",
-        partial(build_variant_clip, markers=tmp_path / "builds"),
-        6,
-        (Venue("doc", fps=12),),
-        audio=lambda variant: audio,
-        **options[custom],
-    )
-    results = render_variants(
-        spec,
-        [Variant("doc", "dark"), Variant("doc", "dark", True)],
-        tmp_path,
-        manifest=Manifest(tmp_path / "manifest.json"),
-        workers=1,
-    )
-    paths = [tmp_path / result.outputs[0] for result in results]
-    from eyepiece.narration import mux
-
-    reference = tmp_path / "base-mux.mp4"
-    mux(paths[0], audio, reference)
-    assert paths[1].read_bytes() == reference.read_bytes()
-    assert decoded(reference) == decoded(paths[1])
-    assert draw_count(tmp_path / "builds" / "doc-dark") == 1
-
-
 def test_narrated_only_request_can_reuse_a_current_silent_entry(tmp_path):
     spec = ClipSpec(
         "prior",
@@ -670,7 +622,7 @@ def test_visual_canonical_preserves_mapping_and_sequence_order():
     assert encode([1, 2]) != encode((1, 2))
 
 
-@pytest.mark.parametrize("custom", ["default", "rgb", "matrix", "faststart"])
+@pytest.mark.parametrize("custom", ["default", "rgb", "matrix", "faststart", "chroma"])
 def test_narrated_output_equals_base_mux(tmp_path, custom):
     # The mux implementation is unchanged from 98aeecd. Import it directly so
     # a mutation of the variant driver's narration.mux call cannot alter this oracle.
@@ -691,6 +643,7 @@ def test_narrated_output_equals_base_mux(tmp_path, custom):
         },
         "matrix": {"encoder": {"colorspace": None}},
         "faststart": {"encoder": {"faststart": False}},
+        "chroma": {"encoder": {"pix_fmt": "yuv444p"}},
     }
     spec = ClipSpec(
         "base-mux",
@@ -713,6 +666,7 @@ def test_narrated_output_equals_base_mux(tmp_path, custom):
     base_mux(silent, audio, reference)
     assert narrated.read_bytes() == reference.read_bytes()
     assert decoded(narrated) == decoded(reference)
+    assert draw_count(tmp_path / "builds" / "doc-dark") == 1
 
 
 def test_ordered_frame_mappings_do_not_share_pixels(tmp_path):

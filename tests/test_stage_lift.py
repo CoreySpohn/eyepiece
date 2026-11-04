@@ -102,12 +102,6 @@ def test_weigh_without_lift_and_rest_put_labels_back():
     stage.weigh({"labels": 0.4}, lift_pt=5.0)
     stage.rest()
     np.testing.assert_array_equal(_pixels(fig), still)
-
-
-def test_colors_stay_the_labels_own_ink():
-    _, ax = _board()
-    _, labels = _labels(ax)
-    stage = ep.Stage({"labels": list(labels.values())})
     stage.weigh({"labels": 0.5}, lift_pt=5.0)
     stage.weigh({"labels": 1.0}, lift_pt=5.0)
     for text in labels.values():

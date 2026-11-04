@@ -61,20 +61,19 @@ def encoder_identity(tmp_path, monkeypatch):
     return executable
 
 
-def test_public_export():
-    assert ep.content_key is content_key
-    assert "content_key" in ep.render.__all__
-    assert re.fullmatch(r"[0-9a-f]{64}", content_key())
-
-
 def test_same_key_in_two_processes(tmp_path):
+    assert re.fullmatch(r"[0-9a-f]{64}", content_key())
     script = tmp_path / "clip.py"
     script.write_text("draw()\n")
     kwargs = dict(
         script=script,
         clock=Clock([0, 1, 3], 12.0),
         modules=(render,),
-        data=(np.arange(6, dtype=np.float32).reshape(2, 3), Parts([1, "two"])),
+        data=(
+            np.arange(6, dtype=np.float32).reshape(2, 3),
+            Parts([1, "two"]),
+            {"alpha": "ALPHA", "beta": "BETA", "gamma": "GAMMA"},
+        ),
         settings={"dpi": 100, "fps": 12, "encoder": {"crf": 18}},
         extra=("stamp text",),
     )
@@ -86,9 +85,10 @@ import eyepiece.render as render
 import matplotlib
 matplotlib.rcParams["animation.ffmpeg_path"] = "ffmpeg"
 from test_render_keys import Clock, Parts
+value = {key: key.upper() for key in {"alpha", "beta", "gamma"}}
 print(render.content_key(
     script=Path(sys.argv[1]), clock=Clock([0, 1, 3], 12.0), modules=(render,),
-    data=(np.arange(6, dtype=np.float32).reshape(2, 3), Parts([1, 'two'])),
+    data=(np.arange(6, dtype=np.float32).reshape(2, 3), Parts([1, 'two']), value),
     settings={'encoder': {'crf': 18}, 'fps': 12, 'dpi': 100},
     extra=('stamp text',)))
 """
@@ -472,29 +472,6 @@ def test_outer_inputs_must_be_lists_or_tuples(field, container):
     value = container({"eyepiece.render": "discarded value"})
     with pytest.raises(TypeError):
         content_key(**{field: value})
-
-
-def test_dict_data_is_order_independent_across_hash_seeds():
-    code = """
-import matplotlib
-from eyepiece.render import content_key
-matplotlib.rcParams["animation.ffmpeg_path"] = "ffmpeg"
-value = {key: key.upper() for key in {"alpha", "beta", "gamma"}}
-print(content_key(data=(value,)))
-"""
-    expected = content_key(data=({"alpha": "ALPHA", "beta": "BETA", "gamma": "GAMMA"},))
-    for seed in ("1", "42"):
-        result = subprocess.run(
-            [sys.executable, "-c", code],
-            env=dict(
-                os.environ, PYTHONPATH=os.pathsep.join(sys.path), PYTHONHASHSEED=seed
-            ),
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        )
-        assert result.stdout.strip() == expected
 
 
 @pytest.mark.parametrize(

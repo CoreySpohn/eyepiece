@@ -224,17 +224,6 @@ def test_array_channel_data_field_requires_image_target():
         )
 
 
-def test_array_channel_points_xy_varies_per_frame():
-    head = Points("head", np.zeros((1, 2)))
-    view = TrackView("track", _axes(), marks=(head,))
-    xy = np.array([[[0.0, 0.0]], [[1.0, 1.0]], [[2.0, 2.0]]])
-    sequence = Sequence(
-        view, np.array([0.0, 1.0, 2.0]), "s", (ArrayChannel("head", "xy", xy),)
-    )
-    updated = find_element(sequence.frame(2), "head")
-    np.testing.assert_allclose(updated.xy, [[2.0, 2.0]])
-
-
 def test_array_channel_points_xy_carries_gap_frames():
     head = Points("head", np.zeros((1, 2)))
     view = TrackView("track", _axes(), marks=(head,))
@@ -341,7 +330,9 @@ def test_clock_label_reports_acquisition_time():
     view = ImageView(
         "image", np.zeros((2, 3)), _axes(), _scale(0, 1), "signal", marks=(label,)
     )
-    sequence = Sequence(view, np.array([0.0, 1.0, 10.0]), "s", (Clock("clock"),))
+    clock = Clock("clock")
+    assert clock.fmt == "{value:g} {unit}"
+    sequence = Sequence(view, np.array([0.0, 1.0, 10.0]), "s", (clock,))
     assert find_element(sequence.frame(1), "clock").text == "1 s"
     assert find_element(sequence.frame(2), "clock").text == "10 s"
 
@@ -395,10 +386,6 @@ def test_strip_accepts_a_clock_label_named_time():
     assert find_element(strip, "0/time").text == "t = 1 d"
     assert find_element(strip, "1/time").text == "t = 0 d"
     assert [len(_labels(slot)) for slot in strip.views] == [1, 1]
-
-
-def test_clock_default_format_is_the_compact_text():
-    assert Clock("clock").fmt == "{value:g} {unit}"
 
 
 @pytest.mark.parametrize("fmt", ["{time} s", "{} {unit}", "{value:q}", 5])

@@ -17,20 +17,8 @@ def test_plotresult_fig_and_frozen():
     plt.close(fig)
 
 
-def test_mosaicresult_fig():
-    fig, axes = plt.subplots(2, 2)
-    res = MosaicResult(axes=axes, artists={})
-    assert res.fig is fig
-    plt.close(fig)
-
-
 def test_artist_keys_vocabulary():
-    assert {"image", "cbar", "line", "title"} <= ARTIST_KEYS
-
-
-def test_artist_keys_name_arrows():
-    """Vector arrows have their own key, read like "text" and "fill"."""
-    assert "arrow" in ARTIST_KEYS
+    assert {"image", "cbar", "line", "title", "arrow"} <= ARTIST_KEYS
 
 
 def test_results_are_identity_based():
@@ -38,6 +26,7 @@ def test_results_are_identity_based():
     fig, axes = plt.subplots(2, 2)
     res1 = MosaicResult(axes=axes, artists={})
     res2 = MosaicResult(axes=axes, artists={})
+    assert res1.fig is fig
     assert res1 != res2
     assert res1 == res1
     hash(res1)

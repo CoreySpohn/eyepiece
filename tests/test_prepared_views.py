@@ -156,9 +156,6 @@ def test_scale_rejects_degenerate_bounds():
 def test_scale_log_requires_positive_floor():
     with pytest.raises(ValueError, match="img"):
         ImageView("img", np.zeros((2, 2)), _axes(), Scale("log", 0.1, 1.0), "intensity")
-
-
-def test_scale_log_accepts_positive_floor():
     view = ImageView(
         "img",
         np.zeros((2, 2)),

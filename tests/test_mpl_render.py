@@ -194,14 +194,22 @@ def test_invalid_pixels_use_the_bad_color_not_a_clipped_extreme():
 
 
 @pytest.mark.parametrize(
-    ("scale", "norm_type"),
+    ("scale", "norm_type", "values"),
     [
-        (Scale("linear", 0.0, 20.0), "Normalize"),
-        (Scale("symmetric", -5.0, 5.0, cmap_role="residual"), "Normalize"),
-        (Scale("log", 1e-3, 1.0, floor=1e-4), "LogNorm"),
+        (Scale("linear", 0.0, 20.0), "Normalize", np.linspace(0.0, 20.0, 2001)),
+        (
+            Scale("symmetric", -5.0, 5.0, cmap_role="residual"),
+            "Normalize",
+            np.linspace(-5.0, 5.0, 2001),
+        ),
+        (
+            Scale("log", 1e-3, 1.0, floor=1e-4),
+            "LogNorm",
+            np.geomspace(1e-3, 1.0, 2001),
+        ),
     ],
 )
-def test_colorbar_shares_the_scale_and_lut(scale, norm_type):
+def test_colorbar_shares_the_scale_and_lut(scale, norm_type, values):
     import eyepiece.mpl as mpl
 
     profile = snapshot_profile()
@@ -224,6 +232,20 @@ def test_colorbar_shares_the_scale_and_lut(scale, norm_type):
         cbar.cmap.colors, profile.colormaps[scale.cmap_role] / 255.0
     )
     assert cbar.ax.get_ylabel() == "contrast"
+
+    # A constant image cannot supply the colorbar's bounds. Separately,
+    # densely sample the scale to catch differing image/colorbar LUT bins.
+    dense_view = ImageView(
+        "image",
+        values.reshape(1, -1),
+        AxisSpec("x", "y", (0, values.size), (0, 1)),
+        scale,
+        "q",
+    )
+    result = mpl.render(dense_view)
+    image_rgba = np.asarray(result.parts["image"].get_array())[0]
+    mappable = result.parts["image/colorbar"].mappable
+    np.testing.assert_array_equal(image_rgba, mappable.to_rgba(values, bytes=True))
 
 
 # --- Marks: one coordinate mapping, named handles ----------------------------
@@ -420,9 +442,10 @@ def test_result_keeps_the_profile_it_rendered_with(monkeypatch):
 # --- Updates -------------------------------------------------------------------
 
 
-def test_update_reuses_image_and_original_scale(image_sequence):
+def test_bounds_hold_through_out_of_order_updates(image_sequence):
     import eyepiece.mpl as mpl
 
+    profile = snapshot_profile()
     sequence = image_sequence()
     result = mpl.render(sequence.frame(0))
     image = result.parts["image"]
@@ -430,18 +453,15 @@ def test_update_reuses_image_and_original_scale(image_sequence):
     assert result.parts["image"] is image
     assert tuple(image.get_extent()) == (0, 3, 0, 2)
 
-
-def test_bounds_hold_through_out_of_order_updates(image_sequence):
-    import eyepiece.mpl as mpl
-
-    profile = snapshot_profile()
-    sequence = image_sequence()
     fig, ax = plt.subplots()
     result = mpl.render(sequence.frame(2), ax=ax, profile=profile)
+    image = result.parts["image"]
     lut = profile.colormaps["intensity"]
     cbar = result.parts["image/colorbar"]
     for index, lut_index in ((0, 0), (1, 128), (2, 255), (0, 0)):
         result.update(sequence.frame(index))
+        assert result.parts["image"] is image
+        assert tuple(image.get_extent()) == (0, 3, 0, 2)
         np.testing.assert_array_equal(_pixel_rgba(fig, ax, 1.5, 0.5), lut[lut_index])
         assert (cbar.mappable.norm.vmin, cbar.mappable.norm.vmax) == (0, 20)
         assert ax.get_xlim() == (0.0, 3.0)
@@ -589,33 +609,6 @@ def test_update_reuses_mapped_image_while_index_is_held(image_sequence, monkeypa
 
 
 # --- Image and colorbar agree; coordinate gaps ----------------------------------
-
-
-@pytest.mark.parametrize(
-    ("scale", "values"),
-    [
-        (Scale("linear", 0.0, 20.0), np.linspace(0.0, 20.0, 2001)),
-        (
-            Scale("symmetric", -5.0, 5.0, cmap_role="residual"),
-            np.linspace(-5.0, 5.0, 2001),
-        ),
-        (Scale("log", 1e-3, 1.0, floor=1e-4), np.geomspace(1e-3, 1.0, 2001)),
-    ],
-)
-def test_image_and_colorbar_pick_the_same_lut_entry(scale, values):
-    import eyepiece.mpl as mpl
-
-    view = ImageView(
-        "image",
-        values.reshape(1, -1),
-        AxisSpec("x", "y", (0, values.size), (0, 1)),
-        scale,
-        "q",
-    )
-    result = mpl.render(view)
-    image_rgba = np.asarray(result.parts["image"].get_array())[0]
-    mappable = result.parts["image/colorbar"].mappable
-    np.testing.assert_array_equal(image_rgba, mappable.to_rgba(values, bytes=True))
 
 
 def _gap_track(head_xy, path_xy):

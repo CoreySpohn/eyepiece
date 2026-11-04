@@ -37,10 +37,17 @@ def _hue_deg(color):
 
 
 def test_every_video_role_is_within_the_chroma_cap_and_reads_on_black():
-    for name, color in ep.video_roles().items():
+    dark, video = _dark_roles(), ep.video_roles()
+    for name, color in video.items():
         cap, floor = _limits(name)
         assert _video.ycc_chroma(to_rgb(color)) <= cap, name
         assert _video.contrast(color, BLACK) >= floor, name
+    for name in ("disk", "reference"):
+        assert _video.contrast(dark[name], BLACK) < 4.5
+        assert _video.contrast(video[name], BLACK) >= _limits(name)[1]
+    for name in ("planet", "star", "alert"):
+        assert _video.ycc_chroma(to_rgb(dark[name])) > 95.0
+        assert _video.ycc_chroma(to_rgb(video[name])) <= _limits(name)[0]
 
 
 def test_only_the_gate_forced_roles_are_relaxed_and_never_past_aa():
@@ -65,16 +72,6 @@ def test_each_role_keeps_its_hue_and_a_role_inside_the_limits_is_unchanged():
         )
         if inside:
             assert video[name].lower() == color.lower(), name
-
-
-def test_the_dim_roles_are_lifted_and_the_pure_rgb_roles_capped():
-    dark, video = _dark_roles(), ep.video_roles()
-    for name in ("disk", "reference"):
-        assert _video.contrast(dark[name], BLACK) < 4.5
-        assert _video.contrast(video[name], BLACK) >= _limits(name)[1]
-    for name in ("planet", "star", "alert"):
-        assert _video.ycc_chroma(to_rgb(dark[name])) > 95.0
-        assert _video.ycc_chroma(to_rgb(video[name])) <= _limits(name)[0]
 
 
 def test_default_palette_is_unchanged_until_video_is_asked_for():

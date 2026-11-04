@@ -19,7 +19,6 @@ from eyepiece.render import (
     ClipSpec,
     Manifest,
     Variant,
-    VariantResult,
     Venue,
     render_variants,
 )
@@ -321,8 +320,3 @@ def test_failed_adoption_cleans_scratch_and_preserves_target(
     assert (target.read_bytes(), target.stat().st_mtime_ns) == before
     assert manifest.entry(clip.slug, variant.name) is None
     assert_no_scratch(tmp_path)
-
-
-def test_variant_result_adopted_default_is_backward_compatible():
-    result = VariantResult(Variant("doc", "light"), [], "key", False, 4)
-    assert result.adopted is False

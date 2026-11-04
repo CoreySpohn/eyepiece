@@ -17,19 +17,24 @@ from eyepiece.style import snapshot_profile
 
 def test_signed_normalization_is_not_log_clipping():
     values = np.array([-2.0, 0.0, 2.0, np.nan])
+    before = values.copy()
     result = normalize_values(
         values, valid=None, scale=Scale("symmetric", -2, 2, "residual")
     )
     np.testing.assert_allclose(result[:3], [0, 0.5, 1])
     assert result.mask[3]
     assert values[0] == -2
+    normalize_values(values, valid=None, scale=Scale("symmetric", -2, 2))
+    np.testing.assert_array_equal(values, before, err_msg="nan-safe compare")
+    assert np.isnan(values[3])
 
 
 def test_linear_normalization_maps_endpoints():
-    values = np.array([0.0, 5.0, 10.0])
+    values = np.array([0.0, 5.0, 10.0, -5.0, 15.0])
     result = normalize_values(values, valid=None, scale=Scale("linear", 0.0, 10.0))
-    np.testing.assert_allclose(result, [0.0, 0.5, 1.0])
+    np.testing.assert_allclose(result, [0.0, 0.5, 1.0, 0.0, 1.0])
     assert not np.ma.getmaskarray(result).any()
+    assert not result.mask.any()
 
 
 def test_explicit_invalid_is_masked_even_when_finite():
@@ -39,13 +44,6 @@ def test_explicit_invalid_is_masked_even_when_finite():
     assert result.mask.tolist() == [False, True, False]
 
 
-def test_out_of_range_valid_value_clamps_to_display_edge():
-    values = np.array([-5.0, 15.0])
-    result = normalize_values(values, valid=None, scale=Scale("linear", 0.0, 10.0))
-    np.testing.assert_allclose(result, [0.0, 1.0])
-    assert not result.mask.any()
-
-
 def test_log_valid_zero_is_clipped_not_masked():
     """A valid zero on a log scale renders at the floor; it is not masked.
 
@@ -53,13 +51,15 @@ def test_log_valid_zero_is_clipped_not_masked():
     choice for an in-range-but-sub-floor valid sample) is not the same
     thing as masking (an invalid or nonfinite sample).
     """
-    values = np.array([0.0, np.nan])
+    values = np.array([0.0, np.nan, -3.0])
     scale = Scale("log", 0.01, 1.0, floor=0.01)
     result = normalize_values(values, valid=None, scale=scale)
     assert not result.mask[0]
     assert result.mask[1]
     # Zero clips to the floor, i.e. the bottom of the display range.
     assert result[0] == pytest.approx(0.0)
+    assert not result.mask[2]
+    assert result[2] == pytest.approx(0.0)
 
 
 def test_log_normalization_maps_in_log_space():
@@ -67,14 +67,6 @@ def test_log_normalization_maps_in_log_space():
     scale = Scale("log", 0.01, 1.0, floor=0.01)
     result = normalize_values(values, valid=None, scale=scale)
     np.testing.assert_allclose(result, [0.0, 0.5, 1.0], atol=1e-12)
-
-
-def test_log_negative_value_clips_to_floor_display():
-    values = np.array([-3.0])
-    scale = Scale("log", 0.01, 1.0, floor=0.01)
-    result = normalize_values(values, valid=None, scale=scale)
-    assert not result.mask[0]
-    assert result[0] == pytest.approx(0.0)
 
 
 # --- normalize_values / map_rgba reject an incoherent Scale before mapping ---
@@ -143,14 +135,6 @@ def test_map_rgba_rejects_log_scale_with_nonpositive_vmin():
             scale=Scale("log", -1.0, 10.0, floor=1.0),
             profile=profile,
         )
-
-
-def test_normalize_values_never_mutates_input():
-    values = np.array([-2.0, 0.0, 2.0, np.nan])
-    before = values.copy()
-    normalize_values(values, valid=None, scale=Scale("symmetric", -2, 2))
-    np.testing.assert_array_equal(values, before, err_msg="nan-safe compare")
-    assert np.isnan(values[3])
 
 
 # --- resolve_bounds -----------------------------------------------------------
