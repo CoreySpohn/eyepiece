@@ -234,6 +234,14 @@ def test_compare_row_imshow_kw_overrides_interpolation():
     plt.close(res.fig)
 
 
+def test_triptych_ratio_norm_centered_on_one():
+    a, b = _img(), _img(1e-10, 1e-5)
+    res = triptych(a, b, mode="ratio")
+    norm = res.artists["image"][2].norm
+    assert (norm.vmin + norm.vmax) / 2.0 == pytest.approx(1.0)
+    plt.close(res.fig)
+
+
 def test_triptych_ratio_default_clip_is_the_99th_percentile():
     # Pins the magnitude of the default clip, not just that the norm is
     # centered on 1: the percentile constant sets how much of every default

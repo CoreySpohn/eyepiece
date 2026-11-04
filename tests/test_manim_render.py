@@ -24,7 +24,10 @@ from eyepiece.style import SourceCast, snapshot_profile
 
 manim = pytest.importorskip("manim")
 
-pytestmark = pytest.mark.usefixtures("media_in_tmp")
+
+@pytest.fixture(autouse=True)
+def _media_in_tmp(media_in_tmp):
+    """Use the shared temporary media directory for every test."""
 
 
 def _xy(point):

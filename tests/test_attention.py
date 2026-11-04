@@ -1000,6 +1000,7 @@ def test_words_joined_line_is_pixel_identical_to_one_text(string, dpi, fontsize,
     ("string", "dpi", "fontsize"),
     [
         pytest.param(MATH_LINES[0], 100, 10, id="interior-math"),
+        pytest.param(MATH_LINES[0], 200, 20, id="interior-math-high-dpi"),
         pytest.param(MATH_LINES[1], 200, 20, id="trailing-math"),
         pytest.param(MATH_LINES[2], 110, 14, id="multiple-math"),
     ],
@@ -1061,6 +1062,8 @@ SPACED_LINES = [
         pytest.param(SPACED_LINES[1], 100, 12, "dark", id="leading-math-dark"),
         pytest.param(SPACED_LINES[2], 110, 15, "light", id="interior-math"),
         pytest.param(SPACED_LINES[3], 110, 15, "dark", id="adjacent-math"),
+        pytest.param(SPACED_LINES[3], 200, 20, "light", id="adjacent-math-light"),
+        pytest.param(SPACED_LINES[3], 200, 20, "dark", id="adjacent-math-dark"),
     ],
 )
 def test_words_gap_before_and_after_math_matches_a_plain_gap(
@@ -1837,13 +1840,13 @@ def test_morph_ghost_is_visible_only_between_the_ends(mode):
     hwostyle.use(mode)
     fig, ax = _morph_axes()
     move = ep.morph(_circle(), _square(), ax=ax)
+    before = _pixels(fig)
     ghost = move.artists["fill"]
     assert not ghost.get_visible()  # rest state
     for u, shown in ((0.0, False), (0.3, True), (0.999, True), (1.0, False)):
         move.update(u)
         assert ghost.get_visible() is shown
     # Drawn at both ends the frame is the frame without the move.
-    before = _pixels(fig)
     move.update(0.0)
     assert np.array_equal(before, _pixels(fig))
     move.update(1.0)

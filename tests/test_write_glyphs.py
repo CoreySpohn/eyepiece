@@ -21,6 +21,7 @@ def _text_fig(string=STRING, size=30):
 def test_progress_is_linear_inside_each_glyph_window():
     _, text = _text_fig()
     ghost = ep.write(text).artists["fill"]
+    assert ghost.times(1.0)[1] == [1.0] * len(ghost.glyphs())
     n = len(ghost.glyphs())
     us = np.linspace(0.0, 0.9, 901)
     traced = np.array([ghost.times(u)[0] for u in us])
@@ -35,7 +36,6 @@ def test_progress_is_linear_inside_each_glyph_window():
         traced, fill = ghost.times(u)
         for t, f in zip(traced, fill, strict=True):
             assert f == 0.0 or t == 1.0
-    assert ghost.times(1.0)[1] == [1.0] * len(ghost.glyphs())
     assert n >= 15
     busy = []
     for u in np.linspace(0.0, 0.9, 181):

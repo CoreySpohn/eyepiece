@@ -55,8 +55,11 @@ assert set(module.__all__) <= set(dir(module))
 heavy = ('matplotlib', 'kokoro', 'torch', 'manim', 'hwoutils')
 assert not [name for name in sys.modules if name.split('.')[0] in heavy]
 """
-    if namespace == "clock":
-        code += """
+    _run(code)
+
+
+def test_clock_helpers_remain_numerical_without_matplotlib():
+    code = """
 import sys
 from eyepiece import clock
 clock.Timeline().hold(0.5)

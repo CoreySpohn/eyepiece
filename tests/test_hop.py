@@ -79,7 +79,7 @@ def test_rate_outside_the_readable_band_warns(rate):
         ep.hop(_draws(), ax=ax, rate=rate)
 
 
-@pytest.mark.parametrize("rate", [3.0, 6.0])
+@pytest.mark.parametrize("rate", [3.0, 4.0, 6.0])
 def test_rate_inside_the_readable_band_is_quiet(rate, recwarn):
     _, ax, _ = _board(tally=False)
     ep.hop(_draws(), ax=ax, rate=rate)

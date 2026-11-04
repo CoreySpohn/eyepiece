@@ -363,6 +363,7 @@ def test_record_with_no_layout_engine_records_without_error(tmp_path):
     with record(fig, tmp_path / "a.gif", fps=5) as rec:
         assert fig.canvas is not original_canvas
         rec.hold(2)
+        assert fig.canvas is not original_canvas
         assert fig.get_layout_engine() is None
     assert fig.get_layout_engine() is None
     assert fig.canvas is original_canvas

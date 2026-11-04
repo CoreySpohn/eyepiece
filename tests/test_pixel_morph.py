@@ -116,6 +116,7 @@ def test_brush_starts_hidden_and_shows_the_masked_items_over_a_veil():
         assert len(overlay.get_paths()) == int(mask.sum())
         assert np.allclose(overlay.get_paths()[0].vertices[0], q[mask][0, 0])
     assert overlays[0].zorder > veils[0].zorder
+    res = ep.brush(axes, quads, values)
     mask = np.zeros(values.size, bool)
     mask[3] = True
     moved = [q + 1.0 for q in quads]
