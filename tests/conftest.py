@@ -1,6 +1,7 @@
 """Headless backend, a style state that cannot leak, and shared sequences."""
 
 import importlib
+import importlib.util
 import os
 from contextlib import contextmanager
 
@@ -8,6 +9,7 @@ import hwostyle.core
 import matplotlib
 import numpy as np
 import pytest
+from hypothesis import settings
 
 from eyepiece.prepared import (
     ArrayChannel,
@@ -25,6 +27,20 @@ from eyepiece.prepared import (
 )
 
 matplotlib.use("Agg")
+
+# Released hwoutils versions may not include the optional budget plugin yet.
+# The hwo extra itself is optional, so its parent package may also be absent.
+pytest_plugins = []
+try:
+    if importlib.util.find_spec("hwoutils.testbudget") is not None:
+        pytest_plugins.append("hwoutils.testbudget.plugin")
+except ModuleNotFoundError as err:
+    if err.name != "hwoutils":
+        raise
+
+settings.register_profile("quick", max_examples=25, deadline=None)
+settings.register_profile("nightly", max_examples=200, deadline=None)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "quick"))
 
 
 @pytest.fixture(autouse=True)
@@ -44,9 +60,9 @@ def media_in_tmp(tmp_path):
         yield
 
 
-# The render CI job sets EYEPIECE_REQUIRE_MANIM=1. There, the Manim tests may
+# Both CI test tiers set EYEPIECE_REQUIRE_MANIM=1. There, the Manim tests may
 # not skip: Manim must import at session start, and any skipped Manim test
-# fails the session. Without it (the base job), those tests skip through
+# fails the session. In local runs without it, those tests skip through
 # `pytest.importorskip("manim")` when the presentation packages are absent.
 _REQUIRE_MANIM = os.environ.get("EYEPIECE_REQUIRE_MANIM") == "1"
 _MANIM_SKIPS = []
