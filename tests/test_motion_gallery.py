@@ -101,22 +101,39 @@ def test_gallery_quad_image_unroll_settles_continuously():
     )
 
 
+@pytest.fixture(scope="module")
+def orbit_gallery_data():
+    """Compute the gallery's font-independent orbit arrays once for both faces."""
+    pytest.importorskip("orbix")
+    jax = pytest.importorskip("jax")
+    ns = {"np": np, "plt": plt, "ep": ep, "jax": jax, "jnp": jax.numpy}
+    exec(_gallery_cell("motion-clock", "KeplerianOrbit"), ns)
+    return ns
+
+
 # The page is drawn in the style's own face, and readers see it in whatever face
 # they have: the layout must hold in both, so a wide face is forced as well.
 @pytest.mark.parametrize("face", [None, "DejaVu Sans"], ids=["style-face", "dejavu"])
-def test_gallery_orbit_draws_pass_check_clip(face):
-    pytest.importorskip("orbix")
-    jax = pytest.importorskip("jax")
+def test_gallery_orbit_draws_pass_check_clip(face, orbit_gallery_data):
     with plt.rc_context():
         hwostyle.use("dark")
         if face is not None:
             plt.rcParams["font.sans-serif"] = [face]
-        ns = {"np": np, "plt": plt, "ep": ep, "jax": jax, "jnp": jax.numpy}
-        exec(_gallery_cell("motion-clock", "KeplerianOrbit"), ns)
+        ns = orbit_gallery_data.copy()
         # The figure cell up to its timeline; the player that encodes it is left out.
         figure = _gallery_cell("motion-clock", "ep.plot.hop(")
         exec(figure.split("plan = tl.at_fps(30)")[0] + "plan = tl.at_fps(30)\n", ns)
-        mark, plan = ns["mark"], ns["plan"]
+        mark, full_plan = ns["mark"], ns["plan"]
+        # Hop is constant between draws. Sample at its draw rate rather than
+        # rendering each held picture six times, retaining all 40 draw states.
+        plan = ns["tl"].at_fps(mark.n / mark.duration)
+        shown = [mark.draw(plan.value(k, "u")) for k in range(plan.n_frames)]
+        assert set(shown) == set(range(1, mark.n + 1))
+        # check_clip reviews these states for readability; keep exactly the
+        # same ones as the page's 30 fps plan, including its final-only text.
+        assert [mark.draw(plan.value(k, "u")) for k in plan.review_frames()] == [
+            mark.draw(full_plan.value(k, "u")) for k in full_plan.review_frames()
+        ]
         ns["fig"].set_dpi(200)  # the page encodes the clip at dpi=200
         steps = mark.steps([plan.value(k, "u") for k in range(plan.n_frames)])
         assert len(steps) == mark.n - 1

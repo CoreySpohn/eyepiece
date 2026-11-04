@@ -13,14 +13,14 @@ from matplotlib.patches import Rectangle
 import eyepiece as ep
 
 
-def scene():
-    """Make 2100 artists in 300 groups, with 90 percent absent each frame."""
+def scene(n_groups=300):
+    """Make seven artists per group, with 90 percent absent each frame."""
     rng = np.random.default_rng(0)
     fig, ax = plt.subplots(figsize=(6.4, 3.6), dpi=80)
     ax.set(xlim=(0, 1), ylim=(0, 1))
     ax.set_axis_off()
     groups = {}
-    for i in range(300):
+    for i in range(n_groups):
         x, y = rng.uniform(0.05, 0.9, size=2)
         color = (0.1, 0.2 + (i % 3) * 0.2, 0.5)
         texts = [
@@ -53,7 +53,9 @@ def scene():
 
     def draw(k):
         phase = k % 10
-        stage.weigh({str(i): (1.0 if i % 10 == phase else 0.0) for i in range(300)})
+        stage.weigh(
+            {str(i): (1.0 if i % 10 == phase else 0.0) for i in range(n_groups)}
+        )
 
     return fig, stage, draw
 
