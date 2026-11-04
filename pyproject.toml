@@ -104,3 +104,6 @@ ipython = ["IPython"]
 [tool.deptry.per_rule_ignores]
 # The slides extra supplies the external `manim-slides present` command.
 DEP002 = ["manim-slides"]
+# Optional features imported lazily with an ImportError message naming the
+# extra: the meaning check (colorspacious) and notebook video display (IPython).
+DEP004 = ["colorspacious", "IPython"]
