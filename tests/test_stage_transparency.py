@@ -203,8 +203,11 @@ def test_large_stage_matches_unoptimized_frames_and_findings(monkeypatch):
 
     from eyepiece import attention
 
-    reference, ref_stage, ref_draw = scene()
-    optimized, opt_stage, opt_draw = scene()
+    # Stage guards each leaf regardless of scene size; there is no size cutoff.
+    # Thirty groups cover every combination of ten phases and three colors,
+    # including both scalar-alpha modes and all seven artists in each group.
+    reference, ref_stage, ref_draw = scene(n_groups=30)
+    optimized, opt_stage, opt_draw = scene(n_groups=30)
     frames = [0, 9, 3, 1, 8, 2, 7, 4, 6, 5, 0, 4, 2, 9, 1, 0]
     for k in frames:
         with monkeypatch.context() as baseline:
