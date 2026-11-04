@@ -373,7 +373,7 @@ def test_clip_visual_gates_match_independent_passes(monkeypatch):
     def draw(k):
         pass
 
-    shared = ept.check_clip(fig, draw, plan)
+    shared = ept.check_clip(fig, draw, plan, empty_panels=True)
     visual = [f for f in shared.readability if f.kind in ("on-image", "empty-panel")]
     assert [(f.kind, f.artist) for f in visual] == [
         ("on-image", label),
@@ -382,10 +382,16 @@ def test_clip_visual_gates_match_independent_passes(monkeypatch):
     assert not shared.ok
     with monkeypatch.context() as patch:
         patch.setattr(ept, "_share_samples", lambda *a, **k: nullcontext())
-        separate = ept.check_clip(fig, draw, plan)
+        separate = ept.check_clip(fig, draw, plan, empty_panels=True)
     assert [str(f) for f in separate.readability] == [
         str(f) for f in shared.readability
     ]
     allowed = ep.MotionContract(may_overlap=((label, image),))
-    report = ept.check_clip(fig, draw, plan, moves=[allowed], min_ink_fraction=0)
+    report = ept.check_clip(
+        fig, draw, plan, moves=[allowed], empty_panels=True, min_ink_fraction=0
+    )
     assert not any(f.kind in ("on-image", "empty-panel") for f in report.readability)
+    # A build-up starts panels empty, so clips skip the empty-panel check by default.
+    default = ept.check_clip(fig, draw, plan)
+    assert [f.kind for f in default.readability if f.kind == "empty-panel"] == []
+    assert any(f.kind == "on-image" for f in default.readability)

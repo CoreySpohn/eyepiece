@@ -41,7 +41,9 @@ covering a varying image underneath it. Masked pixels and antialiased outer edge
 do not supply image range. Set either minimum to zero to disable that part.
 All three thresholds must be finite and in [0, 1]. `check_clip` accepts the
 same thresholds, `may_overlap`, and move contracts, and reports the same
-readability findings at review frames. These findings have the same assertion
+readability findings at review frames, except `empty-panel`: a build-up starts
+its panels empty and draws them on, so `check_clip` reports empty panels only
+with `empty_panels=True`. Check the finished still with `readability_faults`. These findings have the same assertion
 behavior as the existing kinds and support explicit `Waive` declarations;
 an empty-panel finding names the axes as its artist.
 

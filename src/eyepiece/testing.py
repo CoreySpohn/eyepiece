@@ -4568,6 +4568,7 @@ def check_clip(
     driven=None,
     waive=(),
     may_overlap=(),
+    empty_panels=False,
     min_ink_fraction=0.002,
     min_image_range=0.02,
     ink_tol=0.02,
@@ -4610,8 +4611,11 @@ def check_clip(
         waive: Sequence of `Waive` declarations for readability and motion.
         may_overlap: Intentional artist pairs, applied to readability and
             motion as in `motion_faults`. Move contracts also apply.
+        empty_panels: Also report ``"empty-panel"`` at review frames. Off by
+            default, because a build-up starts panels empty and draws them on;
+            check the finished still with `readability_faults` instead.
         min_ink_fraction: Minimum axes data-ink coverage, default 0.002,
-            as in `readability_faults`.
+            as in `readability_faults`; used only with ``empty_panels``.
         min_image_range: Minimum displayed image RGB range, default 0.02,
             as in `readability_faults`.
         ink_tol: RGB difference counted as ink, default 0.02,
@@ -4654,6 +4658,9 @@ def check_clip(
         keys = motifs.meaning_keys()
     review_times = [k / plan.fps for k in plan.review_frames()]
     times = [k / plan.fps for k in range(plan.n_frames)]
+    clip_kinds = (
+        KINDS if empty_panels else tuple(k for k in KINDS if k != "empty-panel")
+    )
 
     def at(t):
         draw(frame_count(t, plan.fps))
@@ -4684,7 +4691,7 @@ def check_clip(
                 VENUES[venue],
                 2.0,
                 1.0,
-                KINDS,
+                clip_kinds,
                 drawn=True,
                 min_ink_fraction=min_ink_fraction,
                 min_image_range=min_image_range,
@@ -4706,6 +4713,7 @@ def check_clip(
                 at=at,
                 times=review_times,
                 venue=venue,
+                kinds=clip_kinds,
                 waive=waive,
                 moves=declared,
                 may_overlap=may_overlap,
