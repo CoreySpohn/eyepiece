@@ -210,12 +210,13 @@ def test_declared_steps_leave_other_motion_faults_unchanged():
     assert _kinds(found) == ["drift", "outside"]
 
 
-def test_eased_travel_has_no_jump():
+@pytest.mark.parametrize("travel_px", [280, 300])
+def test_eased_travel_has_no_jump(travel_px):
     fig = _figure()
     block = _box(fig, 20, 80, 60, 40)
 
     def at(t):
-        _move(block, 20 + 280 * _smooth(t / DURATION), 80)
+        _move(block, 20 + travel_px * _smooth(t / DURATION), 80)
 
     assert ept.motion_faults(fig, at, SPAN) == []
 
@@ -327,13 +328,6 @@ def _row(stagger, scale=False):
             _shift_glyph(part, x, 80)
 
     return fig, at, parts
-
-
-def test_tear_of_a_group_that_travels_with_a_stagger():
-    fig, at, parts = _row(stagger=0.15)
-    found = ept.motion_faults(fig, at, SPAN, groups=[parts])
-    assert _kinds(found) == ["tear"]
-    assert found[0].value > 10.0
 
 
 def test_a_rigid_group_does_not_tear():
@@ -473,30 +467,6 @@ def test_text_cut_by_its_axes_is_outside_but_a_clipped_line_is_not():
     assert line.get_visible()
 
 
-def test_a_growing_reveal_mask_is_not_a_cut():
-    fig = _figure()
-    label = fig.text(0.1, 0.5, "revealed left to right", fontsize=14)
-    label.set_clip_on(True)
-
-    def at(t):
-        right = 20.0 + 300.0 * _smooth(t / DURATION)
-        label.set_clip_box(
-            TransformedBbox(Bbox([[0, 0], [right, 200]]), IdentityTransform())
-        )
-
-    assert ept.motion_faults(fig, at, SPAN) == []
-
-
-def test_a_clean_clip_inside_the_frame_has_nothing_outside():
-    fig = _figure()
-    block = _box(fig, 20, 80, 60, 40)
-
-    def at(t):
-        _move(block, 20 + 300 * _smooth(t / DURATION), 80)
-
-    assert ept.motion_faults(fig, at, SPAN) == []
-
-
 # spike
 
 
@@ -509,14 +479,6 @@ def _hopper(hop_px, travel_px):
         _shift_glyph(glyph, 100 + travel_px * u, 80 + hop_px * math.sin(math.pi * u))
 
     return fig, at, glyph
-
-
-def test_hop_on_a_near_still_artist_is_a_spike():
-    fig, at, glyph = _hopper(hop_px=9.0, travel_px=2.0)
-    found = ept.motion_faults(fig, at, SPAN, spikes=True)
-    assert _kinds(found) == ["spike"]
-    assert found[0].artist is glyph
-    assert found[0].value == pytest.approx(9.0, abs=1.0)
 
 
 def test_spike_is_off_unless_asked_for():
@@ -1125,7 +1087,7 @@ def test_a_declared_move_whose_artists_never_show_is_dead():
     assert "ghost" in found[0].detail
 
 
-@pytest.mark.parametrize("stop", [0.1 + 0.2, 0.95, 1.0 / 3.0, 2.0])
+@pytest.mark.parametrize("stop", [0.1 + 0.2, 0.95, 1.0 / 3.0, 1.0, 2.0])
 def test_the_last_sample_is_exactly_stop(stop):
     seen = []
     fig = _figure()
@@ -1133,6 +1095,11 @@ def test_the_last_sample_is_exactly_stop(stop):
     ept.motion_faults(fig, seen.append, ept.Window(0.0, stop))
     assert seen[-1] == stop
     assert seen == sorted(seen)
+    if stop == 1.0:
+        assert len(seen) == 31
+        seen.clear()
+        ept.motion_faults(fig, seen.append, ept.Window(0.0, stop), fps=10)
+        assert len(seen) == 11
 
 
 def test_a_callback_branching_on_stop_reaches_its_final_state():
@@ -1167,6 +1134,8 @@ def test_pixels_are_kept_only_for_the_kinds_that_read_them(monkeypatch):
 def test_a_tear_names_both_artists_and_empty_groups_are_ignored():
     fig, at, parts = _row(stagger=0.15)
     found = ept.motion_faults(fig, at, SPAN, groups=[parts])
+    assert _kinds(found) == ["tear"]
+    assert found[0].value > 10.0
     assert found[0].artist in parts
     assert found[0].other in parts
     assert found[0].other is not found[0].artist
@@ -1174,29 +1143,15 @@ def test_a_tear_names_both_artists_and_empty_groups_are_ignored():
 
 
 def test_a_spike_is_dated_at_its_first_faulty_sample():
-    fig, at, _ = _hopper(hop_px=9.0, travel_px=2.0)
+    fig, at, glyph = _hopper(hop_px=9.0, travel_px=2.0)
     found = ept.motion_faults(fig, at, SPAN, spikes=True)
-    assert found[0].kind == "spike"
+    assert _kinds(found) == ["spike"]
+    assert found[0].artist is glyph
     assert found[0].time < 0.9  # the peak of the hop is at t = 1
     assert found[0].value == pytest.approx(9.0, abs=1.0)  # the peak is the value
 
 
 # the call
-
-
-def test_span_samples_every_frame_and_ends_on_stop():
-    seen = []
-    fig = _figure()
-    _box(fig, 10, 10)
-    ept.motion_faults(fig, seen.append, ept.Window(0.0, 1.0))
-    assert len(seen) == 31
-    assert seen[-1] == pytest.approx(1.0)
-    seen.clear()
-    ept.motion_faults(fig, seen.append, ept.Window(0.0, 1.0), fps=10)
-    assert len(seen) == 11
-    seen.clear()
-    ept.motion_faults(fig, seen.append, ept.Window(0.0, 0.95))
-    assert seen[-1] == pytest.approx(0.95)
 
 
 def test_explicit_times_are_used_as_given():

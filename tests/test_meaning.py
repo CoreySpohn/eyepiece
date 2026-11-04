@@ -45,7 +45,7 @@ def _fault_kinds(faults, severity=None):
 def test_same_frame_flags_two_keys_in_one_color():
     fig, ax = _axes()
     _line(ax, 3, CYAN, "a")
-    _line(ax, 6, BLUE, "b")
+    other = _line(ax, 6, BLUE, "b")
     found = ept.meaning_faults(fig, keys={"a": "planet", "b": "library"})
     same = [f for f in found if f.kind == "same-frame"]
     assert len(same) == 1
@@ -54,12 +54,11 @@ def test_same_frame_flags_two_keys_in_one_color():
     assert same[0].de < 10.0
     with pytest.raises(ept.MeaningError, match="same-frame"):
         ept.assert_meaning(fig, keys={"a": "planet", "b": "library"})
-
-
-def test_same_frame_passes_distinct_hues():
-    fig, ax = _axes()
-    _line(ax, 3, CYAN, "a")
-    _line(ax, 6, YELLOW, "b")
+    found = ept.meaning_faults(
+        fig, keys={"a": "disk", "b": "prior"}, sharing=[("disk", "prior")]
+    )
+    assert "same-frame" not in _fault_kinds(found)
+    other.set_color(YELLOW)
     found = ept.meaning_faults(fig, keys={"a": "planet", "b": "star"})
     assert "same-frame" not in _fault_kinds(found)
 
@@ -77,29 +76,14 @@ def test_same_frame_warns_on_the_cyan_pink_pair_under_deuteranopia():
 def test_same_frame_downgrades_a_second_channel():
     fig, ax = _axes()
     _line(ax, 3, CYAN, "a")
-    _line(ax, 6, NEAR, "b", linestyle="--")
+    other = _line(ax, 6, NEAR, "b", linestyle="--")
     found = ept.meaning_faults(fig, keys={"a": "planet", "b": "library"})
     same = [f for f in found if f.kind == "same-frame"]
     assert [f.severity for f in same] == ["warning"]
     assert "line style" in same[0].detail
-
-
-def test_a_second_channel_does_not_save_a_pair_under_the_hard_floor():
-    fig, ax = _axes()
-    _line(ax, 3, CYAN, "a")
-    _line(ax, 6, BLUE, "b", linestyle="--")  # under 5 dE: a dash cannot help
+    other.set_color(BLUE)  # Under 5 dE: a dash cannot help.
     found = ept.meaning_faults(fig, keys={"a": "planet", "b": "library"})
     assert [f.severity for f in found if f.kind == "same-frame"] == ["fault"]
-
-
-def test_same_frame_exempts_a_sharing_set():
-    fig, ax = _axes()
-    _line(ax, 3, CYAN, "a")
-    _line(ax, 6, BLUE, "b")
-    found = ept.meaning_faults(
-        fig, keys={"a": "disk", "b": "prior"}, sharing=[("disk", "prior")]
-    )
-    assert "same-frame" not in _fault_kinds(found)
 
 
 def test_a_hidden_artist_is_not_drawn():
@@ -137,6 +121,14 @@ def test_rebound_reports_the_gap_when_the_hue_changes_meaning():
         fig, at, [0.0, 1.0, 2.0, 3.0, 4.0], keys=KEYS, strict=True
     )
     assert [f.severity for f in strict if f.kind == "rebound"] == ["fault"]
+    found = ept.meaning_faults(
+        fig, at, [0.0, 1.0, 2.0, 3.0, 4.0], keys=KEYS, rebind=[2.5]
+    )
+    assert "rebound" not in _fault_kinds(found)
+    times = [0.0, 1.0, 3.0, 4.0]
+    (loose,) = ept.meaning_faults(fig, at, times, keys=KEYS)
+    (tight,) = ept.meaning_faults(fig, at, times, keys=KEYS, strict=True)
+    assert (loose.severity, tight.severity) == ("warning", "fault")
 
 
 def test_rebound_is_silent_for_one_key():
@@ -148,13 +140,6 @@ def test_rebound_is_silent_for_one_key():
 
     found = ept.meaning_faults(fig, at, [0.0, 1.0, 3.0, 4.0], keys={"planet": "p"})
     assert found == []
-
-
-def test_a_declared_rebind_releases_the_hue():
-    fig, at = _two_clip_figure()
-    times = [0.0, 1.0, 2.0, 3.0, 4.0]
-    found = ept.meaning_faults(fig, at, times, keys=KEYS, rebind=[2.5])
-    assert "rebound" not in _fault_kinds(found)
 
 
 def test_sharing_pair_in_one_clip_is_still_reported():
@@ -169,14 +154,6 @@ def test_sharing_pair_in_one_clip_is_still_reported():
     (rebound,) = [f for f in found if f.kind == "rebound"]
     assert "never to share a clip" in rebound.detail
     assert rebound.severity == "fault"  # a declared pair is a fault, even unstrict
-
-
-def test_an_undeclared_rebound_is_a_warning_until_strict():
-    fig, at = _two_clip_figure()
-    times = [0.0, 1.0, 3.0, 4.0]
-    (loose,) = ept.meaning_faults(fig, at, times, keys=KEYS)
-    (tight,) = ept.meaning_faults(fig, at, times, keys=KEYS, strict=True)
-    assert (loose.severity, tight.severity) == ("warning", "fault")
 
 
 def test_chain_finds_the_hue_across_clips():
@@ -235,17 +212,12 @@ def test_cue_ring_in_a_hue_another_key_uses_is_flagged():
 def test_a_cue_in_a_hue_no_key_uses_is_still_flagged():
     fig, ax = _axes()
     _line(ax, 3, CYAN, "planet")
-    ax.add_patch(Circle((5, 5), 2, fill=False, ec=PINK, lw=3, gid="cue"))
+    cue = ax.add_patch(Circle((5, 5), 2, fill=False, ec=PINK, lw=3, gid="cue"))
     found = ept.meaning_faults(
         fig, keys={"planet": "planet", "cue": "cue"}, cue_keys=["cue"]
     )
     assert [f.keys for f in found if f.kind == "cue-form"] == [("cue",)]
-
-
-def test_a_cue_ring_in_the_text_color_passes():
-    fig, ax = _axes()
-    _line(ax, 3, CYAN, "planet")
-    ax.add_patch(Circle((5, 5), 2, fill=False, ec="#f0f0f0", lw=3, gid="cue"))
+    cue.set_edgecolor("#f0f0f0")
     found = ept.meaning_faults(
         fig, keys={"planet": "planet", "cue": "cue"}, cue_keys=["cue"]
     )
@@ -296,7 +268,10 @@ def test_a_waiver_keeps_the_finding_in_the_report():
     report = ept.meaning_report(found)
     assert "waived (badge names itself" in report
     assert "no unwaived tier 1 or 2 findings" in report
+    assert "no unwaived tier 1 or 2 findings; 1 waived" in report
     ept.assert_meaning(fig, keys=keys, waive=waive)
+    open_ = ept.meaning_faults(fig, keys=keys)
+    assert "waived" not in ept.meaning_report(open_).splitlines()[0]
 
 
 def test_report_never_says_clean():
@@ -365,12 +340,8 @@ def test_dimmed_pair_in_two_clips_is_advisory_not_a_rebound():
         keys={"a": "planet", "b": "star"},
         fault_de=25.0,
     )
-
-
-def test_full_strength_pair_in_two_clips_has_no_dimmed_finding():
-    fig, ax = _axes()
-    a = _line(ax, 3, CYAN, "a")
-    b = _line(ax, 6, YELLOW, "b")
+    a.set_alpha(None)
+    b.set_alpha(None)
     found = ept.meaning_faults(
         fig, _pose_pair(a, b), [0.0, 1.0], keys={"a": "planet", "b": "star"}
     )
@@ -408,16 +379,11 @@ def test_a_stage_pair_fine_at_full_color_fails_when_dimmed():
 def test_a_pair_apart_only_under_normal_vision_is_flagged_for_tritanomaly():
     fig, ax = _axes()
     _line(ax, 3, ORANGE, "a")
-    _line(ax, 6, PINKISH, "b")
+    other = _line(ax, 6, PINKISH, "b")
     (found,) = ept.meaning_faults(fig, keys={"a": "planet", "b": "star"})
     assert (found.kind, found.severity) == ("same-frame", "fault")
     assert 5.0 < found.de < 10.0  # the tritanomaly distance; the others are over 30
-
-
-def test_a_pair_far_under_every_vision_type_is_not_flagged():
-    fig, ax = _axes()
-    _line(ax, 3, ORANGE, "a")
-    _line(ax, 6, "#2060FF", "b")
+    other.set_color("#2060FF")
     assert ept.meaning_faults(fig, keys={"a": "planet", "b": "star"}) == []
 
 
@@ -472,17 +438,3 @@ def test_a_line_alpha_replaces_its_color_alpha():
     _line(ax, 6, (*to_rgb(BLUE), 0.5), "b", alpha=1.0)  # alpha 1 wins over 0.5
     (found,) = ept.meaning_faults(fig, keys=keys)
     assert found.de < 5.0  # drawn at full strength, not blended to half
-
-
-def test_a_report_with_every_finding_waived_says_so():
-    fig, ax = _axes()
-    _line(ax, 3, CYAN, "a")
-    _line(ax, 6, BLUE, "b")
-    found = ept.meaning_faults(
-        fig,
-        keys={"a": "planet", "b": "library"},
-        waive={"same-frame:library+planet": "reason"},
-    )
-    assert "no unwaived tier 1 or 2 findings; 1 waived" in ept.meaning_report(found)
-    open_ = ept.meaning_faults(fig, keys={"a": "planet", "b": "library"})
-    assert "waived" not in ept.meaning_report(open_).splitlines()[0]

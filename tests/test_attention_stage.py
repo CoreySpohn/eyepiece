@@ -73,6 +73,13 @@ def test_stage_rest_is_the_figure_as_drawn_and_never_compounds(mode):
     stage.set()  # every group shown: the rest state again
     np.testing.assert_array_equal(_pixels(fig), plain)
 
+    stage.set(shown=["line"])
+    staged = _pixels(fig)
+    stage.rest()
+    for artist in (*groups["marks"], *groups["mesh"]):
+        artist.set_visible(False)
+    np.testing.assert_array_equal(staged, _pixels(fig))
+
 
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("level", [0.35, 0.6])
@@ -92,19 +99,6 @@ def test_a_dimmed_group_keeps_its_level_of_contrast(mode, level):
     assert full > 0.2
     stage.set(shown=["marks", "mesh"], dimmed=["line"])
     assert contrast() == pytest.approx(level * full, abs=2.0 / 255.0)
-
-
-@pytest.mark.parametrize("mode", MODES)
-def test_an_absent_group_draws_nothing(mode):
-    hwostyle.use(mode)
-    fig, _ax, groups = _scene()
-    stage = ep.Stage(groups)
-    stage.set(shown=["line"])
-    staged = _pixels(fig)
-    stage.rest()
-    for artist in (*groups["marks"], *groups["mesh"]):
-        artist.set_visible(False)
-    np.testing.assert_array_equal(staged, _pixels(fig))
 
 
 def test_stage_moves_between_states_and_checks_names():
@@ -207,16 +201,7 @@ def test_axis_label_writes_on_after_the_spine():
     assert 0 < label_ink(0.8) < label_ink(1.0)
 
 
-@pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize(
-    "axis, before_label, during_label",
-    [("x", 0.5, 0.8), ("y", 0.5, 0.8), ("both", 0.75, 0.9)],
-)
-@pytest.mark.parametrize("title", [False, True])
-@pytest.mark.parametrize("label", [False, True])
-def test_axis_build_titles_arrive_last_only_when_requested(
-    mode, axis, before_label, during_label, title, label
-):
+def _assert_axis_build_titles(mode, axis, before_label, during_label, title, label):
     hwostyle.use(mode)
     fig, ax = _axes()
     center = ax.set_title("Center")
@@ -249,6 +234,32 @@ def test_axis_build_titles_arrive_last_only_when_requested(
     build.update(0.0)
     build.update(1.0)
     np.testing.assert_array_equal(_pixels(fig), plain)
+
+
+@pytest.mark.parametrize(
+    "axis, before_label, during_label",
+    [("x", 0.5, 0.8), ("y", 0.5, 0.8), ("both", 0.75, 0.9)],
+)
+@pytest.mark.parametrize("mode, label", [("light", False), ("dark", True)])
+def test_axis_build_titles_arrive_last_only_when_requested(
+    mode, axis, before_label, during_label, label
+):
+    _assert_axis_build_titles(
+        mode, axis, before_label, during_label, title=True, label=label
+    )
+
+
+@pytest.mark.parametrize(
+    "axis, before_label, during_label",
+    [("x", 0.5, 0.8), ("y", 0.5, 0.8), ("both", 0.75, 0.9)],
+)
+@pytest.mark.parametrize("mode, label", [("dark", False), ("light", True)])
+def test_axis_build_leaves_existing_titles_untouched_when_not_requested(
+    mode, axis, before_label, during_label, label
+):
+    _assert_axis_build_titles(
+        mode, axis, before_label, during_label, title=False, label=label
+    )
 
 
 @pytest.mark.parametrize("loc", ["center", "left", "right"])

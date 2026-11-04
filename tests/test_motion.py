@@ -23,9 +23,6 @@ def test_frame_count_rounds_half_up_after_snapping():
     assert ep.frame_count(0.25, 10) == 3  # half rounds up, not to even
     assert ep.frame_count(2.0, 24) == 48
     assert ep.frame_count(0.0, 30) == 0
-
-
-def test_frame_count_rounds_exact_halves_up_despite_float_noise():
     assert ep.frame_count(0.29, 50) == 15  # 14.499999999999998 is 14.5
     assert ep.frame_count(0.9, 25) == 23
 
@@ -87,9 +84,6 @@ def test_smooth_is_manims_sigmoid():
     # longer dwell than smoothstep near the ends, steeper through the middle
     assert ep.ease(0.1, "smooth") < ep.ease(0.1, "smoothstep")
     assert ep.ease(0.4, "smooth") < ep.ease(0.4, "smoothstep")
-
-
-def test_smoothstep_stays_available_by_name():
     assert ep.ease(0.25, "smoothstep") == pytest.approx(0.15625)
 
 
@@ -321,13 +315,6 @@ def test_unnamed_spans_get_distinct_names():
 # zoom_path, view_limits
 
 
-def test_zoom_path_hits_both_views():
-    path, length = ep.zoom_path((0.0, 0.0, 64.0), (8.0, 0.0, 3.0))
-    assert np.allclose(path(0.0), (0.0, 0.0, 64.0))
-    assert np.allclose(path(1.0), (8.0, 0.0, 3.0))
-    assert length > 0
-
-
 def test_pure_zoom_is_geometric_in_width():
     path, length = ep.zoom_path((1.0, 2.0, 10.0), (1.0, 2.0, 0.1))
     assert length == pytest.approx(math.log(100.0) / math.sqrt(2.0))
@@ -362,6 +349,11 @@ def test_zoom_out_with_a_tiny_pan_keeps_exact_endpoints():
 
 
 def test_random_view_pairs_land_on_both_views():
+    path, length = ep.zoom_path((0.0, 0.0, 64.0), (8.0, 0.0, 3.0))
+    assert np.allclose(path(0.0), (0.0, 0.0, 64.0))
+    assert np.allclose(path(1.0), (8.0, 0.0, 3.0))
+    assert length > 0
+
     rng = np.random.default_rng(7)
     for _ in range(2000):
         a = (*rng.normal(0.0, 10.0, 2), 10.0 ** rng.uniform(-3, 3))

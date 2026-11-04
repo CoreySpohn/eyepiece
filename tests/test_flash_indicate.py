@@ -31,6 +31,7 @@ def _pixels(fig):
 
 def test_flash_starts_and_ends_on_the_still_and_leaves_nothing_behind():
     fig, _, note = _board()
+    before = (note.get_color(), note.get_fontsize(), note.get_position())
     still = _pixels(fig)
     flash = ep.circumscribe(note, style="flash")
     for u in (0.0, 1.0):
@@ -40,6 +41,10 @@ def test_flash_starts_and_ends_on_the_still_and_leaves_nothing_behind():
         flash.update(u)
         _pixels(fig)
     np.testing.assert_array_equal(_pixels(fig), still)
+    for u in np.linspace(0.0, 1.0, 21):
+        flash.update(u)
+        fig.canvas.draw()
+        assert (note.get_color(), note.get_fontsize(), note.get_position()) == before
 
 
 def test_flash_window_is_time_width_long_and_runs_empty_to_empty():
@@ -81,16 +86,6 @@ def test_flash_comet_tapers_to_its_tail():
     assert widths[-1] == pytest.approx(4.0) and alphas[-1] == pytest.approx(1.0)
     assert widths[0] == pytest.approx(4.0 * (0.4 + 0.6 / 8))
     assert line.get_linewidth() == pytest.approx(4.0) and line.get_alpha() is None
-
-
-def test_flash_never_touches_the_target():
-    fig, _, note = _board()
-    before = (note.get_color(), note.get_fontsize(), note.get_position())
-    flash = ep.circumscribe(note, style="flash")
-    for u in np.linspace(0.0, 1.0, 21):
-        flash.update(u)
-        fig.canvas.draw()
-        assert (note.get_color(), note.get_fontsize(), note.get_position()) == before
 
 
 def test_flash_clip_has_no_motion_fault():

@@ -283,13 +283,11 @@ def test_former_public_surface_remains_resolvable():
     )
     for name in _LEGACY_PUBLIC_NAMES:
         assert getattr(eyepiece, name) is not None
-
-
-def test_lazy_attribute_access_resolves_and_caches():
-    """Every exported name resolves via __getattr__ and is then a plain attribute."""
     for name in eyepiece.__all__:
         value = getattr(eyepiece, name)
         assert eyepiece.__dict__[name] is value
+    # __version__ is eager; every other root shortcut has a lazy export.
+    assert set(eyepiece._LAZY_EXPORTS) == set(eyepiece.__all__) - {"__version__"}
 
 
 def test_submodule_attribute_access_imports_the_submodule():
@@ -308,39 +306,6 @@ def test_submodule_attribute_access_imports_the_submodule():
 def test_unknown_attribute_still_raises_attribute_error():
     with pytest.raises(AttributeError):
         _ = eyepiece.not_a_real_export
-
-
-def test_lazy_exports_table_matches_public_names():
-    """_LAZY_EXPORTS must cover exactly __all__ minus the eagerly bound names.
-
-    __version__ is bound eagerly in __init__.py (cheap, no matplotlib), so
-    it is the only name __all__ carries that _LAZY_EXPORTS does not.
-    """
-    eager = {"__version__"}
-    assert set(eyepiece._LAZY_EXPORTS) == set(eyepiece.__all__) - eager
-
-
-def test_flat_namespace():
-    for name in (
-        "imshow_log",
-        "show_field",
-        "compare_row",
-        "triptych",
-        "save_fig",
-        "record",
-        "animate",
-        "Animation",
-        "extent_lod",
-        "rail",
-        "plot_radial",
-        "plot_radial_image",
-        "plot_contrast_curve",
-        "PlotResult",
-        "ARTIST_KEYS",
-        "PRESETS",
-        "GLYPHS",
-    ):
-        assert hasattr(eyepiece, name), name
 
 
 _EXPORTS_SURVIVE_SUBMODULE_IMPORTS = """

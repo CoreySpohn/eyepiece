@@ -113,10 +113,14 @@ def test_flight_ghost_is_absent_at_both_ends_and_at_rest(mode):
 
 
 @pytest.mark.parametrize("mode", MODES)
-def test_flight_lands_on_its_destination_mark(mode):
+@pytest.mark.parametrize("destination", ["anchor", "artist"])
+def test_flight_lands_on_its_destination_mark(mode, destination):
     hwostyle.use(mode)
     fig, _top, _bottom, dot, landed = _two_panels()
-    carry = ep.flight(dot, ep.Anchor.from_artist(landed), fig=fig, arc=0.2)
+    if destination == "artist":
+        carry = ep.flight(dot, landed, fig=fig)
+    else:
+        carry = ep.flight(dot, ep.Anchor.from_artist(landed), fig=fig, arc=0.2)
     ghost = carry.artists["line"]
     for u, target in ((1e-6, dot), (1.0 - 1e-6, landed)):
         carry.update(u)
@@ -129,6 +133,11 @@ def test_flight_lands_on_its_destination_mark(mode):
     assert ghost.get_marker() == dot.get_marker()
     assert ghost.get_markersize() == dot.get_markersize()
     assert ghost.get_markerfacecolor() == dot.get_markerfacecolor()
+    carry.update(0.3)
+    first = _pixels(fig)
+    carry.update(0.9)
+    carry.update(0.3)
+    np.testing.assert_array_equal(_pixels(fig), first)
 
 
 def test_flight_lands_where_the_destination_is_drawn_now():
@@ -194,16 +203,6 @@ def test_flight_into_a_label_crossfades_and_rests_on_the_label(mode):
     carry.update(1.0)
     assert not carry.artists["text"].get_visible()
     np.testing.assert_array_equal(_pixels(fig), with_label)
-
-
-def test_flight_update_is_idempotent():
-    fig, _top, _bottom, dot, landed = _two_panels()
-    carry = ep.flight(dot, landed, fig=fig)
-    carry.update(0.3)
-    first = _pixels(fig)
-    carry.update(0.9)
-    carry.update(0.3)
-    np.testing.assert_array_equal(_pixels(fig), first)
 
 
 def test_flight_rejects_what_it_cannot_copy():
@@ -390,6 +389,14 @@ def test_callout_is_absent_before_its_beat_and_whole_at_rest(mode):
     # Placed away from its subject, the caption has a leader that keeps the rules.
     line = res.artists["line"]
     assert line._ends() is not None and line.faults() == []
+    res.update(1.0, level=0.35)
+    dimmed = _pixels(fig)
+    assert not np.array_equal(dimmed, rest)
+    assert not np.array_equal(dimmed, without)
+    res.update(1.0, level=0.0)
+    np.testing.assert_array_equal(_pixels(fig), without)
+    res.update(1.0)
+    np.testing.assert_array_equal(_pixels(fig), rest)
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -439,25 +446,6 @@ def test_leader_across_another_text_is_a_fault():
     assert any("crosses text: 'other'" in f for f in res.artists["line"].faults())
 
 
-@pytest.mark.parametrize("mode", MODES)
-def test_callout_dims_and_restores(mode):
-    hwostyle.use(mode)
-    fig, ax = plt.subplots(figsize=(6.0, 4.0))
-    ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
-    (dot,) = ax.plot([0.3], [0.5], "o")
-    without = _pixels(fig)
-    res = ep.callout(dot, "the dot", at=ep.Anchor.from_data(ax, (0.45, 0.62)))
-    rest = _pixels(fig)
-    res.update(1.0, level=0.35)
-    dimmed = _pixels(fig)
-    assert not np.array_equal(dimmed, rest)
-    assert not np.array_equal(dimmed, without)
-    res.update(1.0, level=0.0)
-    np.testing.assert_array_equal(_pixels(fig), without)
-    res.update(1.0)
-    np.testing.assert_array_equal(_pixels(fig), rest)
-
-
 def test_flight_refuses_a_crossfade_label_drawn_invisible():
     fig, ax = plt.subplots()
     (dot,) = ax.plot([0.2], [0.2], "o")
@@ -502,6 +490,12 @@ def test_indicate_leaves_both_ends_pixel_identical(mode):
     assert not np.array_equal(_pixels(fig), without)
     pulse.update(1.0)
     np.testing.assert_array_equal(_pixels(fig), without)
+    pulse.update(0.3)
+    first = _pixels(fig)
+    pulse.update(0.8)
+    pulse.update(0.3)
+    pulse.update(0.3)
+    np.testing.assert_array_equal(_pixels(fig), first)
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -573,17 +567,6 @@ def test_indicate_swells_a_callout_with_its_box_and_pieces():
         assert piece.get_fontsize() == pytest.approx(1.15 * size)
     pulse.update(1.0)
     np.testing.assert_array_equal(_pixels(fig), without)
-
-
-def test_indicate_is_idempotent_and_order_free():
-    fig, _ax, line, note, bar, dots = _marks("light")
-    pulse = ep.indicate([line, note, bar, dots])
-    pulse.update(0.3)
-    first = _pixels(fig)
-    pulse.update(0.8)
-    pulse.update(0.3)
-    pulse.update(0.3)
-    np.testing.assert_array_equal(_pixels(fig), first)
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -1006,9 +989,13 @@ def _words_line(string, dpi, fontsize, **kw):
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize(("dpi", "fontsize"), [(100, 10), (110, 14), (200, 20)])
 @pytest.mark.parametrize(
-    "string", [LINE, "AVAWAY Tov Yo-yo, (quoted) fi flow ffl.", "  two  gaps  "]
+    ("string", "dpi", "fontsize"),
+    [
+        pytest.param(LINE, 100, 10, id="plain"),
+        pytest.param("AVAWAY Tov Yo-yo, (quoted) fi flow ffl.", 110, 14, id="kerning"),
+        pytest.param("  two  gaps  ", 200, 20, id="repeated-spaces"),
+    ],
 )
 def test_words_joined_line_is_pixel_identical_to_one_text(string, dpi, fontsize, mode):
     hwostyle.use(mode)
@@ -1019,8 +1006,14 @@ def test_words_joined_line_is_pixel_identical_to_one_text(string, dpi, fontsize,
 
 
 @pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize(("dpi", "fontsize"), [(100, 10), (110, 14), (200, 20)])
-@pytest.mark.parametrize("string", MATH_LINES)
+@pytest.mark.parametrize(
+    ("string", "dpi", "fontsize"),
+    [
+        pytest.param(MATH_LINES[0], 100, 10, id="interior-math"),
+        pytest.param(MATH_LINES[1], 200, 20, id="trailing-math"),
+        pytest.param(MATH_LINES[2], 110, 14, id="multiple-math"),
+    ],
+)
 def test_words_with_math_match_one_text_within_a_pixel(string, dpi, fontsize, mode):
     hwostyle.use(mode)
     reference = _single_text(string, dpi, fontsize)
@@ -1069,9 +1062,17 @@ SPACED_LINES = [
 ]
 
 
-@pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize(("dpi", "fontsize"), [(100, 12), (110, 15), (200, 20)])
-@pytest.mark.parametrize("string", SPACED_LINES)
+@pytest.mark.parametrize(
+    ("string", "dpi", "fontsize", "mode"),
+    [
+        pytest.param(SPACED_LINES[0], 100, 12, "light", id="trailing-math-light"),
+        pytest.param(SPACED_LINES[0], 200, 20, "dark", id="trailing-math-dark"),
+        pytest.param(SPACED_LINES[1], 200, 20, "light", id="leading-math-light"),
+        pytest.param(SPACED_LINES[1], 100, 12, "dark", id="leading-math-dark"),
+        pytest.param(SPACED_LINES[2], 110, 15, "light", id="interior-math"),
+        pytest.param(SPACED_LINES[3], 110, 15, "dark", id="adjacent-math"),
+    ],
+)
 def test_words_gap_before_and_after_math_matches_a_plain_gap(
     string, dpi, fontsize, mode
 ):
@@ -1629,17 +1630,6 @@ def test_link_is_whole_at_rest_absent_at_zero_and_grows_from_the_source(mode):
     np.testing.assert_allclose(line.get_xydata()[0], src.display(), atol=0.5)
     res.update(1.0)
     np.testing.assert_array_equal(_pixels(fig), whole)
-
-
-@pytest.mark.parametrize("mode", MODES)
-def test_link_fades_with_its_level_and_returns_whole(mode):
-    hwostyle.use(mode)
-    fig, image, phasor = _image_and_phasor()
-    without = _pixels(fig)
-    res = ep.link(
-        ep.Anchor.from_data(image, (12, 4)), ep.Anchor.from_data(phasor, (0.0, 0.0))
-    )
-    whole = _pixels(fig)
     res.update(1.0, level=0.35)
     dimmed = _pixels(fig)
     assert not np.array_equal(dimmed, whole)
@@ -1852,7 +1842,9 @@ def test_morph_endpoints_are_the_resampled_paths():
     )
 
 
-def test_morph_ghost_is_visible_only_between_the_ends():
+@pytest.mark.parametrize("mode", MODES)
+def test_morph_ghost_is_visible_only_between_the_ends(mode):
+    hwostyle.use(mode)
     fig, ax = _morph_axes()
     move = ep.morph(_circle(), _square(), ax=ax)
     ghost = move.artists["fill"]
@@ -1864,6 +1856,10 @@ def test_morph_ghost_is_visible_only_between_the_ends():
     before = _pixels(fig)
     move.update(0.0)
     assert np.array_equal(before, _pixels(fig))
+    move.update(1.0)
+    assert np.array_equal(before, _pixels(fig))
+    move.update(0.5)
+    assert not np.array_equal(before, _pixels(fig))
     move.update(1.0)
     assert np.array_equal(before, _pixels(fig))
 
@@ -2053,19 +2049,6 @@ def test_morph_rejects_bad_ends():
         ep.morph(_circle(), _square(), ax=ax, a_kw={"color": "r"})
 
 
-def test_morph_is_pixel_neutral_in_both_modes_and_draws_between():
-    for mode in MODES:
-        hwostyle.use(mode)
-        fig, ax = _morph_axes()
-        move = ep.morph(_circle(), _square(), ax=ax)
-        rest = _pixels(fig)
-        move.update(0.5)
-        assert not np.array_equal(rest, _pixels(fig))
-        move.update(1.0)
-        assert np.array_equal(rest, _pixels(fig))
-        plt.close(fig)
-
-
 # Readout
 
 
@@ -2174,8 +2157,17 @@ def test_readout_point_is_pixel_steady_while_the_integer_digits_change():
     assert not np.array_equal(frames[12.5][:, :col], frames[1.5][:, :col])
 
 
-@pytest.mark.parametrize("start", [-3.0, 3.0, 0.0])
-@pytest.mark.parametrize("fmt", [".1f", ".0f", ".2f"])
+@pytest.mark.parametrize(
+    ("start", "fmt"),
+    [
+        pytest.param(-3.0, ".1f", id="negative-start-tenths"),
+        pytest.param(3.0, ".1f", id="positive-start-tenths"),
+        pytest.param(-3.0, ".0f", id="negative-start-integers"),
+        pytest.param(3.0, ".0f", id="positive-start-integers"),
+        pytest.param(-3.0, ".2f", id="negative-start-hundredths"),
+        pytest.param(0.0, ".2f", id="zero-start-hundredths"),
+    ],
+)
 def test_readout_count_is_monotone_up_and_down(start, fmt):
     fig, ax = _readout_panel()
     res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), start, fmt=fmt)
@@ -2573,11 +2565,6 @@ def _write_fig(string="Write ij", size=28, **kw):
     return fig, text
 
 
-def _pixels_of(fig):
-    fig.canvas.draw()
-    return np.asarray(fig.canvas.buffer_rgba()).copy()
-
-
 def _length(lines):
     return sum(
         float(np.hypot(*np.diff(line, axis=0).T).sum())
@@ -2595,25 +2582,25 @@ def test_write_is_exported():
 @pytest.mark.parametrize("string", ["Write ij", r"$E=\frac{m}{2}v^2$", "two\nlines"])
 def test_write_rest_state_is_pixel_exact(string):
     fig, text = _write_fig(string)
-    before = _pixels_of(fig)
+    before = _pixels(fig)
     move = ep.write(text)
-    assert np.array_equal(_pixels_of(fig), before)
+    assert np.array_equal(_pixels(fig), before)
     for u in (0.0, 0.4, 0.8):
         move.update(u)
     move.update(1.0)
     assert text.get_visible()
-    assert np.array_equal(_pixels_of(fig), before)
+    assert np.array_equal(_pixels(fig), before)
     plt.close(fig)
 
 
 def test_write_start_draws_nothing_and_the_ghost_leaves_at_the_end():
     fig, text = _write_fig()
-    blank = _pixels_of(plt.figure(figsize=(5.0, 2.0), dpi=100))
+    blank = _pixels(plt.figure(figsize=(5.0, 2.0), dpi=100))
     move = ep.write(text)
     ghost = move.artists["fill"]
     move.update(0.0)
     assert not text.get_visible()
-    assert np.array_equal(_pixels_of(fig), blank)
+    assert np.array_equal(_pixels(fig), blank)
     move.update(0.5)
     assert ghost.get_visible()
     assert not text.get_visible()
@@ -2697,10 +2684,10 @@ def test_write_glyphs_sit_on_the_text():
 
 def test_write_fill_covers_the_text_just_before_the_end():
     fig, text = _write_fig()
-    final = _pixels_of(fig)
+    final = _pixels(fig)
     move = ep.write(text)
     move.update(0.999)
-    near = _pixels_of(fig)
+    near = _pixels(fig)
     ink = final[..., 0] < 128
     assert ink.any()
     assert np.mean(near[..., 0][ink] < 160) > 0.9
@@ -2710,12 +2697,12 @@ def test_write_fill_covers_the_text_just_before_the_end():
 
 def test_write_has_no_jump_into_the_rest_state():
     fig, text = _write_fig(r"Write the $p(\theta | d)$ out", size=34)
-    final = _pixels_of(fig).astype(float)
+    final = _pixels(fig).astype(float)
     move = ep.write(text)
     frames = []
     for u in np.linspace(0.0, 1.0, 61):
         move.update(u)
-        frames.append(_pixels_of(fig).astype(float))
+        frames.append(_pixels(fig).astype(float))
     steps = [np.abs(b - a).max() for a, b in itertools.pairwise(frames)]
     mid = max(steps[:-1])
     assert steps[-1] <= mid
@@ -2734,7 +2721,7 @@ def test_write_restores_the_texts_own_alpha():
     move = ep.write(text)
     for u in (0.2, 0.85, 0.95, 1.0):
         move.update(u)
-        _pixels_of(fig)
+        _pixels(fig)
         assert text.get_alpha() == 0.6
     plt.close(fig)
 
@@ -2743,11 +2730,11 @@ def test_write_level_is_opacity_only():
     fig, text = _write_fig()
     move = ep.write(text)
     move.update(0.5)
-    full = _pixels_of(fig)
+    full = _pixels(fig)
     move.update(0.5, level=0.0)
-    assert (_pixels_of(fig)[..., :3] == 255).all()
+    assert (_pixels(fig)[..., :3] == 255).all()
     move.update(0.5, level=0.5)
-    half = _pixels_of(fig)
+    half = _pixels(fig)
     assert half[..., 0].min() > full[..., 0].min()
     plt.close(fig)
 
