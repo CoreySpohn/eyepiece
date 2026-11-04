@@ -1,5 +1,6 @@
 """Readability checks: a row collision, a clean figure, a control per fault."""
 
+import matplotlib
 import matplotlib.pyplot as plt
 import pytest
 
@@ -417,3 +418,250 @@ def test_halo_lint_skips_transparent_fill_without_a_visible_stroke(stroke):
         path_effects=[patheffects.withStroke(**stroke)],
     )
     assert ept.halo_faults(fig) == []
+
+
+# Visual gates: data occlusion and panels that draw too little to see.
+@pytest.mark.parametrize("mesh", [False, True])
+@pytest.mark.parametrize("backed", [False, True])
+def test_text_hiding_image_data_is_a_fault(mesh, backed):
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    data = np.arange(100).reshape(10, 10)
+    image = ax.pcolormesh(data) if mesh else ax.imshow(data, origin="lower")
+    label = ax.text(
+        0.5,
+        0.5,
+        "data",
+        transform=ax.transAxes,
+        ha="center",
+        va="center",
+        bbox={"facecolor": "white", "alpha": 1} if backed else None,
+    )
+    found = ept.readability_faults(fig, kinds=("on-image",))
+    assert len(found) == 1
+    assert found[0].artist is label and found[0].other is image
+    assert found[0].time is None
+    with pytest.raises(ept.ReadabilityError, match="on-image"):
+        ept.assert_readable(fig, kinds=("on-image",))
+    assert (
+        ept.readability_faults(fig, kinds=("on-image",), may_overlap=[(image, label)])
+        == []
+    )
+    result = ep.PlotResult(
+        ax=ax, artists={}, contract=ep.MotionContract(may_overlap=((label, image),))
+    )
+    assert ept.readability_faults(fig, kinds=("on-image",), moves=[result]) == []
+
+
+@pytest.mark.parametrize("mesh", [False, True])
+@pytest.mark.parametrize("invalid", ["mask", "nan"])
+def test_text_over_invalid_image_region_is_clean(mesh, invalid):
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    data = np.ma.array(np.arange(100, dtype=float).reshape(10, 10), mask=False)
+    if invalid == "mask":
+        data.mask[2:8, 2:8] = True
+    else:
+        data[2:8, 2:8] = np.nan
+    # Even an opaque bad-sample color must not count as valid data.
+    cmap = plt.get_cmap("viridis").with_extremes(bad="red")
+    if mesh:
+        ax.pcolormesh(data, cmap=cmap)
+    else:
+        ax.imshow(data, origin="lower", cmap=cmap)
+    ax.text(0.5, 0.5, "x", transform=ax.transAxes, ha="center", va="center")
+    assert ept.readability_faults(fig, kinds=("on-image",)) == []
+
+
+def test_image_overlap_respects_clipping_visibility_and_drawn_extent():
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    image = ax.imshow(np.arange(4).reshape(2, 2), extent=(0, 1, 0, 1))
+    ax.set(xlim=(0, 2), ylim=(0, 2))
+    label = ax.text(1.5, 1.5, "x", ha="center", va="center")
+    assert ept.readability_faults(fig, kinds=("on-image",)) == []
+    label.set_position((0.5, 0.5))
+    image.set_alpha(0)
+    assert ept.readability_faults(fig, kinds=("on-image",)) == []
+    image.set_alpha(1)
+    label.set_alpha(0)
+    assert ept.readability_faults(fig, kinds=("on-image",)) == []
+    label.set_alpha(1)
+    label.set_clip_on(True)
+    label.set_clip_box(matplotlib.transforms.Bbox.from_bounds(0, 0, 1, 1))
+    assert ept.readability_faults(fig, kinds=("on-image",)) == []
+
+
+@pytest.mark.parametrize(
+    "content", ["tiny", "faint", "line", "blank", "uniform", "image"]
+)
+def test_visibly_empty_panel_and_clean_controls(content):
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    if content == "tiny":
+        ax.plot([0.5], [0.5], "o", ms=0.1, mew=0)
+        ax.grid(True)
+        ax.set_title("Decoration is not data")
+    elif content == "faint":
+        ax.plot([0, 1], [0, 1], alpha=0.01)
+    elif content == "line":
+        ax.plot([0, 1], [0, 1])
+    else:
+        data = np.zeros((10, 10))
+        if content == "uniform":
+            data[5:, :] = 0.005
+        elif content == "image":
+            data[5:, :] = 1
+        ax.imshow(data, cmap="gray", vmin=0, vmax=1)
+    found = ept.readability_faults(fig, kinds=("empty-panel",))
+    if content in ("tiny", "faint", "blank", "uniform"):
+        assert len(found) == 1 and found[0].artist is ax
+        assert found[0].other is None
+    else:
+        assert found == []
+
+
+def test_empty_panel_thresholds_and_waiver():
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    ax.plot([0.5], [0.5], "o", ms=0.1, mew=0)
+    assert ept.readability_faults(fig, kinds=("empty-panel",), min_ink_fraction=0) == []
+    ax.clear()
+    data = np.zeros((10, 10))
+    data[5:, :] = 0.005
+    ax.imshow(data, cmap="gray", vmin=0, vmax=1)
+    assert ept.readability_faults(fig, kinds=("empty-panel",), min_image_range=0) == []
+    waiver = ept.Waive("empty-panel", artist=ax, reason="intentional blank control")
+    ept.assert_readable(fig, kinds=("empty-panel",), waive=[waiver])
+    assert (
+        len(ept.readability_faults(fig, kinds=("empty-panel",), waive=[waiver]).waived)
+        == 1
+    )
+
+
+@pytest.mark.parametrize(
+    "parameter", ["min_ink_fraction", "min_image_range", "ink_tol"]
+)
+@pytest.mark.parametrize("value", [-0.1, 1.1, float("nan")])
+def test_invalid_visual_thresholds_raise(parameter, value):
+    fig = _figure()
+    with pytest.raises(ValueError, match=parameter):
+        ept.readability_faults(fig, **{parameter: value})
+
+
+def test_unused_axes_and_hidden_content_are_not_empty_panels():
+    fig, axes = plt.subplots(1, 3, figsize=(3, 1), dpi=80)
+    axes[1].plot([0, 1], [0, 1], visible=False)
+    axes[2].plot([0, 1], [0, 1], alpha=0)
+    assert ept.readability_faults(fig, kinds=("empty-panel",)) == []
+
+
+@pytest.mark.parametrize("mesh", [False, True])
+def test_image_overlap_uses_rendered_transforms_and_view(mesh):
+    import numpy as np
+    from matplotlib.transforms import Affine2D
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    data = np.arange(16).reshape(4, 4)
+    transform = Affine2D().translate(10, 20) + ax.transData
+    if mesh:
+        ax.pcolormesh(data, transform=transform)
+    else:
+        ax.imshow(data, origin="upper", extent=(0, 4, 0, 4), transform=transform)
+    ax.set(xlim=(14, 10), ylim=(20, 24))
+    label = ax.text(12, 22, "x", ha="center", va="center")
+    found = ept.readability_faults(fig, kinds=("on-image",))
+    assert len(found) == 1 and found[0].artist is label
+    ax.set_xlim(0, 4)
+    assert ept.readability_faults(fig, kinds=("on-image",)) == []
+
+
+@pytest.mark.parametrize("rgba", [False, True])
+def test_image_overlap_respects_array_opacity(rgba):
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    data = np.arange(100).reshape(10, 10)
+    if rgba:
+        data = plt.get_cmap("viridis")(data / 100)
+    opacity = np.ones((10, 10))
+    opacity[2:8, 2:8] = 0
+    ax.imshow(data, origin="lower", alpha=opacity)
+    ax.text(4.5, 4.5, "x", ha="center", va="center")
+    assert ept.readability_faults(fig, kinds=("on-image",)) == []
+
+
+def test_overlap_contract_span_is_applied_when_reusing_frames():
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    image = ax.imshow(np.arange(100).reshape(10, 10))
+    label = ax.text(4, 4, "x")
+    declared = {"span": (0.0, 0.2), "may_overlap": [(label, image)]}
+    found = ept.readability_faults(
+        fig,
+        at=lambda t: None,
+        times=[0, 0.2, 0.3, 0.4],
+        frame_key=lambda t: 1,
+        kinds=("on-image",),
+        moves=[declared],
+    )
+    assert [f.time for f in found] == [0.4]
+
+
+def test_visual_checks_preserve_image_data_canvas_and_pixels():
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    image = ax.imshow(np.arange(100).reshape(10, 10), alpha=0.5)
+    ax.text(4, 4, "x")
+    fig.canvas.draw()
+    canvas = fig.canvas
+    before = np.asarray(canvas.buffer_rgba()).copy()
+    data = image.get_array().copy()
+    ept.readability_faults(fig)
+    assert fig.canvas is canvas
+    np.testing.assert_array_equal(image.get_array(), data)
+    np.testing.assert_array_equal(canvas.buffer_rgba(), before)
+    assert image.get_alpha() == 0.5
+
+
+def test_image_panel_range_uses_the_composited_display():
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    ax.imshow(np.arange(100).reshape(10, 10))
+    ax.imshow(np.zeros((10, 10)))
+    found = ept.readability_faults(fig, kinds=("empty-panel",))
+    assert len(found) == 1 and found[0].artist is ax
+
+
+def test_visual_checks_use_agg_and_restore_a_vector_canvas():
+    import numpy as np
+    from matplotlib.backends.backend_svg import FigureCanvasSVG
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    ax.imshow(np.arange(100).reshape(10, 10))
+    label = ax.text(4, 4, "x")
+    canvas = FigureCanvasSVG(fig)
+    found = ept.readability_faults(fig, kinds=("on-image",))
+    assert len(found) == 1 and found[0].artist is label
+    assert fig.canvas is canvas and fig.dpi == 80
+
+
+def test_image_range_threshold_uses_displayed_opacity():
+    import numpy as np
+
+    fig, ax = plt.subplots(figsize=(2, 2), dpi=80)
+    data = np.zeros((10, 10))
+    data[5:, :] = 1
+    ax.imshow(data, cmap="gray", vmin=0, vmax=1, alpha=0.04)
+    # Four percent displayed contrast clears a one percent range threshold.
+    assert (
+        ept.readability_faults(fig, kinds=("empty-panel",), min_image_range=0.01) == []
+    )

@@ -354,3 +354,38 @@ def test_a_step_outside_the_plan_is_refused(bad):
     fig, draw, plan, _ = _clip()
     with pytest.raises(ValueError, match="frame index"):
         ept.check_clip(fig, draw, plan, steps=[bad])
+
+
+def test_clip_visual_gates_match_independent_passes(monkeypatch):
+    from contextlib import nullcontext
+
+    fig, axes = plt.subplots(1, 2, figsize=(4, 2), dpi=80, layout="constrained")
+    image = axes[0].imshow(np.arange(100).reshape(10, 10))
+    label = axes[0].text(4, 4, "x", fontsize=20)
+    axes[1].plot([0.5], [0.5], "o", ms=0.1, mew=0)
+    tl = ep.Timeline({}, tempo=ep.Tempo(factor=1))
+    tl.hold(0.4)
+    plan = tl.at_fps(10)
+
+    fig.canvas.draw()
+    fig.set_layout_engine("none")
+
+    def draw(k):
+        pass
+
+    shared = ept.check_clip(fig, draw, plan)
+    visual = [f for f in shared.readability if f.kind in ("on-image", "empty-panel")]
+    assert [(f.kind, f.artist) for f in visual] == [
+        ("on-image", label),
+        ("empty-panel", axes[1]),
+    ]
+    assert not shared.ok
+    with monkeypatch.context() as patch:
+        patch.setattr(ept, "_share_samples", lambda *a, **k: nullcontext())
+        separate = ept.check_clip(fig, draw, plan)
+    assert [str(f) for f in separate.readability] == [
+        str(f) for f in shared.readability
+    ]
+    allowed = ep.MotionContract(may_overlap=((label, image),))
+    report = ept.check_clip(fig, draw, plan, moves=[allowed], min_ink_fraction=0)
+    assert not any(f.kind in ("on-image", "empty-panel") for f in report.readability)

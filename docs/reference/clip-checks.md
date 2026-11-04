@@ -13,10 +13,37 @@ suite and not to a figure.
 time, draws it, and returns a list of faults in output pixels: two visible
 texts, or a text and another's backing box, whose extents overlap by more than
 a tolerance; text or marks the figure edge clips; text under the venue's
-minimum height; and text drawn over a data mark of its own color. It does not
+minimum height; text drawn over a data mark of its own color; text hiding
+valid image or mesh data (`on-image`); and visibly empty axes (`empty-panel`). It does not
 repeat `audit`, which owns the connectors, and a label with an opaque backing
-box is not reported over marks. The result is deterministic and the figure
+box is not reported over same-color marks. A backing box still hides image
+data and therefore counts for `on-image`. The text's rendered box is compared
+to the image or mesh's rendered valid coverage, respecting transforms, clipping,
+masks, NaNs and transparency. Text over an invalid region is clean. Intentional
+pairs can be passed as `may_overlap=[(text, image)]`, in either order, or through
+`moves=[result]` using the result's existing `MotionContract.may_overlap`.
+These declarations also excuse text/text overlap. With sampled times a declared
+span scopes the exception, including 0.1 seconds after its end; a still checked
+as drawn applies all supplied declarations. The result is deterministic and the figure
 keeps its dpi. `assert_readable` raises `ReadabilityError` with the report.
+
+`empty-panel` measures data ink inside the axes at the output dpi using Agg.
+It excludes ticks, spines, grids, text and a one-pixel boundary, so decoration
+cannot make sub-pixel marks pass. Unused axes and axes whose marks are all
+hidden or transparent are skipped. Pixels count as ink when any RGB channel
+differs from the composited axes facecolor by more than `ink_tol=0.02` on
+[0, 1]. Coverage below `min_ink_fraction=0.002` (0.2 percent) is a fault.
+For image and mesh panels, the maximum per-channel spatial range of the
+composited data render over valid image coverage must also reach
+`min_image_range=0.02`. This catches constant and near-uniform images even
+when their fill differs from the background, including a uniform image
+covering a varying image underneath it. Masked pixels and antialiased outer edges
+do not supply image range. Set either minimum to zero to disable that part.
+All three thresholds must be finite and in [0, 1]. `check_clip` accepts the
+same thresholds, `may_overlap`, and move contracts, and reports the same
+readability findings at review frames. These findings have the same assertion
+behavior as the existing kinds and support explicit `Waive` declarations;
+an empty-panel finding names the axes as its artist.
 
 An explicit `frame_key(t)` can skip consecutive repeated states. Equal keys
 promise identical complete figure state, including geometry and draw-time

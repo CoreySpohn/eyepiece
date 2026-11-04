@@ -162,7 +162,8 @@ unread knobs, and speaking pace in one `ep.testing.ClipReport`. Each check also 
 alone: `ep.testing.motion_faults` (jumps, dead moves, drift, torn groups, overlaps,
 departures) against the moves a clip declares, or the `ep.motion.MotionContract` a
 move's result carries,
-`ep.testing.readability_faults`, `ep.testing.meaning_faults` and `ep.testing.meaning_faults_chain` (one
+`ep.testing.readability_faults` (text collisions, image occlusion and visibly empty panels),
+`ep.testing.meaning_faults` and `ep.testing.meaning_faults_chain` (one
 meaning per hue, within and across clips), `ep.testing.motif_faults` and
 `ep.testing.motif_margins`, `ep.testing.timing_faults` (pace, gaps, still screens, numbers said
 before they are shown), `ep.testing.speech_rate`, `ep.testing.grounding_faults` (equation terms
