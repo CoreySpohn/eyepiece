@@ -31,55 +31,28 @@ def test_plot_radial_creates_own_figure():
     res = plot_radial(r, values)
     assert len(res.fig.axes) == 1
     assert isinstance(res.fig.get_layout_engine(), ConstrainedLayoutEngine)
-    plt.close(res.fig)
-
-
-def test_plot_radial_log_sets_yscale():
-    r, values = _profile()
-    res = plot_radial(r, values, log=True)
-    assert res.ax.get_yscale() == "log"
-    plt.close(res.fig)
-
-
-def test_plot_radial_defaults_to_linear_yscale():
-    r, values = _profile()
-    res = plot_radial(r, values)
     assert res.ax.get_yscale() == "linear"
-    plt.close(res.fig)
-
-
-def test_plot_radial_color_override():
-    r, values = _profile()
-    res = plot_radial(r, values, color="red")
-    assert res.artists["line"].get_color() == "red"
-    plt.close(res.fig)
-
-
-def test_plot_radial_label_reaches_legend():
-    r, values = _profile()
-    res = plot_radial(r, values, label="model")
-    assert res.artists["line"].get_label() == "model"
-    plt.close(res.fig)
-
-
-def test_plot_radial_line_kw_routes_to_plot():
-    r, values = _profile()
-    res = plot_radial(r, values, line_kw={"linestyle": ":"})
-    assert res.artists["line"].get_linestyle() == ":"
-    plt.close(res.fig)
-
-
-def test_plot_radial_sets_no_label_unless_asked():
-    r, values = _profile()
-    res = plot_radial(r, values)
     assert res.ax.get_xlabel() == ""
     assert res.ax.get_ylabel() == ""
     plt.close(res.fig)
 
 
-def test_plot_radial_xlabel_ylabel_applied_when_given():
+def test_plot_radial_line_kw_routes_to_plot():
     r, values = _profile()
-    res = plot_radial(r, values, xlabel="separation", ylabel="value")
+    res = plot_radial(
+        r,
+        values,
+        log=True,
+        label="model",
+        color="red",
+        line_kw={"linestyle": ":"},
+        xlabel="separation",
+        ylabel="value",
+    )
+    assert res.artists["line"].get_linestyle() == ":"
+    assert res.ax.get_yscale() == "log"
+    assert res.artists["line"].get_label() == "model"
+    assert res.artists["line"].get_color() == "red"
     assert res.ax.get_xlabel() == "separation"
     assert res.ax.get_ylabel() == "value"
     plt.close(res.fig)
@@ -90,16 +63,14 @@ def test_plot_contrast_curve_draws_curve():
     res = plot_contrast_curve(r, contrast)
     assert "line" in res.artists
     np.testing.assert_allclose(res.artists["line"].get_ydata(), contrast)
-    plt.close(res.fig)
-
-
-def test_plot_contrast_curve_iwa_owa_markers():
-    r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast, iwa=1.0, owa=8.0)
-    assert len(res.artists["fill"]) == 2
-    assert len(res.artists["text"]) == 2
-    labels = {t.get_text() for t in res.artists["text"]}
-    assert labels == {"IWA", "OWA"}
+    assert "fill" not in res.artists
+    assert "text" not in res.artists
+    assert "lines" not in res.artists
+    assert res.ax.get_xlabel() == ""
+    assert res.ax.get_ylabel() == ""
+    assert len(res.fig.axes) == 1
+    assert isinstance(res.fig.get_layout_engine(), ConstrainedLayoutEngine)
+    assert res.ax.get_yscale() == "log"
     plt.close(res.fig)
 
 
@@ -110,6 +81,17 @@ def test_plot_contrast_curve_markers_clear_the_title():
     # axes, which is what makes it reach a marker near the left edge.
     r, contrast = _profile()
     res = plot_contrast_curve(r, contrast, iwa=1.0, owa=8.0)
+    assert len(res.artists["fill"]) == 2
+    assert len(res.artists["text"]) == 2
+    assert {t.get_text() for t in res.artists["text"]} == {"IWA", "OWA"}
+    # The markers also stay inside the axes when there is no title.
+    res.fig.canvas.draw()
+    renderer = res.fig.canvas.get_renderer()
+    axes_top = res.ax.get_window_extent(renderer).y1
+    for text in res.artists["text"]:
+        assert text.get_window_extent(renderer).y1 <= axes_top, (
+            f"{text.get_text()} is drawn above the axes, where the title lives"
+        )
     title = res.ax.set_title(
         "On-axis stellar leakage: ~1e-11 (true) vs ~1e-6 (single-MFT)"
     )
@@ -122,48 +104,18 @@ def test_plot_contrast_curve_markers_clear_the_title():
     plt.close(res.fig)
 
 
-def test_plot_contrast_curve_markers_stay_inside_the_axes():
-    # the invariant behind the fix, independent of any particular title:
-    # the markers belong inside the axes, not in the band above it.
-    r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast, iwa=1.0, owa=8.0)
-    res.fig.canvas.draw()
-    renderer = res.fig.canvas.get_renderer()
-    axes_top = res.ax.get_window_extent(renderer).y1
-    for text in res.artists["text"]:
-        assert text.get_window_extent(renderer).y1 <= axes_top, (
-            f"{text.get_text()} is drawn above the axes, where the title lives"
-        )
-    plt.close(res.fig)
-
-
-def test_plot_contrast_curve_iwa_only():
-    r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast, iwa=1.0)
-    assert len(res.artists["fill"]) == 1
-    assert res.artists["text"][0].get_text() == "IWA"
-    plt.close(res.fig)
-
-
 def test_plot_contrast_curve_floors_labeled():
     r, contrast = _profile()
     floors = [
         (r, contrast * 0.5, "photon floor"),
         (r, contrast * 0.25, "speckle floor"),
     ]
-    res = plot_contrast_curve(r, contrast, floors=floors)
+    # Use the default's "ls" spelling so Matplotlib sees only one alias.
+    res = plot_contrast_curve(r, contrast, floors=floors, floor_kw={"ls": "-."})
     assert len(res.artists["lines"]) == 2
     labels = [line.get_label() for line in res.artists["lines"]]
     assert labels == ["photon floor", "speckle floor"]
-    plt.close(res.fig)
-
-
-def test_plot_contrast_curve_no_markers_no_annotation_keys():
-    r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast)
-    assert "fill" not in res.artists
-    assert "text" not in res.artists
-    assert "lines" not in res.artists
+    assert all(line.get_linestyle() == "-." for line in res.artists["lines"])
     plt.close(res.fig)
 
 
@@ -362,58 +314,25 @@ def test_plot_radial_explicit_color_wins_without_advancing_the_cycle():
 
 def test_plot_contrast_curve_line_kw_routes_to_plot():
     r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast, line_kw={"linestyle": ":"})
+    res = plot_contrast_curve(
+        r,
+        contrast,
+        line_kw={"linestyle": ":"},
+        xlabel="separation",
+        ylabel="contrast",
+    )
     assert res.artists["line"].get_linestyle() == ":"
+    assert res.ax.get_xlabel() == "separation"
+    assert res.ax.get_ylabel() == "contrast"
     plt.close(res.fig)
 
 
 def test_plot_contrast_curve_span_kw_routes_to_axvspan():
     r, contrast = _profile()
     res = plot_contrast_curve(r, contrast, iwa=1.0, span_kw={"alpha": 0.9})
+    assert len(res.artists["fill"]) == 1
+    assert res.artists["text"][0].get_text() == "IWA"
     assert res.artists["fill"][0].get_alpha() == pytest.approx(0.9)
-    plt.close(res.fig)
-
-
-def test_plot_contrast_curve_floor_kw_routes_to_plot():
-    r, contrast = _profile()
-    floors = [(r, contrast * 0.5, "floor")]
-    # "ls" (not "linestyle") -- the default floor kwargs already set "ls",
-    # and matplotlib rejects being handed both spellings of the same alias
-    # at once, so overriding via the alias already in use is what a caller
-    # actually has to do here.
-    res = plot_contrast_curve(r, contrast, floors=floors, floor_kw={"ls": "-."})
-    assert res.artists["lines"][0].get_linestyle() == "-."
-    plt.close(res.fig)
-
-
-def test_plot_contrast_curve_sets_no_label_unless_asked():
-    r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast)
-    assert res.ax.get_xlabel() == ""
-    assert res.ax.get_ylabel() == ""
-    plt.close(res.fig)
-
-
-def test_plot_contrast_curve_xlabel_ylabel_applied_when_given():
-    r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast, xlabel="separation", ylabel="contrast")
-    assert res.ax.get_xlabel() == "separation"
-    assert res.ax.get_ylabel() == "contrast"
-    plt.close(res.fig)
-
-
-def test_plot_contrast_curve_creates_own_figure():
-    r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast)
-    assert len(res.fig.axes) == 1
-    assert isinstance(res.fig.get_layout_engine(), ConstrainedLayoutEngine)
-    plt.close(res.fig)
-
-
-def test_plot_contrast_curve_default_log_yscale():
-    r, contrast = _profile()
-    res = plot_contrast_curve(r, contrast)
-    assert res.ax.get_yscale() == "log"
     plt.close(res.fig)
 
 
@@ -483,6 +402,7 @@ def test_plot_radial_image_computes_and_plots():
         expected_sep, expected_profile = radial.radial_profile(img, 1.0)
         res = plot_radial_image(img, 1.0)
         _assert_same_profile(res, expected_sep, expected_profile, img.size)
+        assert res.ax.get_xlabel() == r"$r$ [$\lambda/D$]"
         plt.close(res.fig)
 
 
@@ -492,30 +412,9 @@ def test_plot_radial_image_forwards_plot_kwargs():
     except ImportError:
         pytest.skip("hwoutils not installed")
     img = _image()
-    res = plot_radial_image(img, 1.0, color="red", log=True)
+    res = plot_radial_image(img, 1.0, color="red", log=True, xlabel="custom")
     assert res.artists["line"].get_color() == "red"
     assert res.ax.get_yscale() == "log"
-    plt.close(res.fig)
-
-
-def test_plot_radial_image_default_xlabel_is_lod_mathtext():
-    try:
-        import hwoutils  # noqa: F401
-    except ImportError:
-        pytest.skip("hwoutils not installed")
-    img = _image()
-    res = plot_radial_image(img, 1.0)
-    assert res.ax.get_xlabel() == r"$r$ [$\lambda/D$]"
-    plt.close(res.fig)
-
-
-def test_plot_radial_image_xlabel_override_wins():
-    try:
-        import hwoutils  # noqa: F401
-    except ImportError:
-        pytest.skip("hwoutils not installed")
-    img = _image()
-    res = plot_radial_image(img, 1.0, xlabel="custom")
     assert res.ax.get_xlabel() == "custom"
     plt.close(res.fig)
 

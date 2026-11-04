@@ -43,6 +43,7 @@ def test_area_is_proportional_to_weight():
     np.testing.assert_allclose(sizes / sizes.max(), w / w.max())
     assert sizes.max() == pytest.approx(200.0)
     np.testing.assert_allclose(mark.weights(), w / w.sum())
+    assert np.all(np.diff(mark.artists["scatter"].get_sizes()) <= 0.0)
 
 
 def test_alpha_is_proportional_to_weight_at_one_size():
@@ -53,11 +54,16 @@ def test_alpha_is_proportional_to_weight_at_one_size():
     np.testing.assert_allclose(alpha / alpha.max(), w / w.max())
 
 
-def test_tiny_weights_are_not_floored():
+@pytest.mark.parametrize(
+    ("encode", "expected"),
+    [("area", [100.0, 1e-4]), ("alpha", [1.0, 1e-6])],
+)
+def test_tiny_weights_are_not_floored(encode, expected):
     xy = np.array([[0.0, 0.0], [1.0, 0.0]])
-    mark = _mark(xy, [1.0, 1e-6], max_size=100.0)
-    sizes = _by_input(mark, xy, mark.artists["scatter"].get_sizes())
-    np.testing.assert_allclose(sizes, [100.0, 1e-4])
+    mark = _mark(xy, [1.0, 1e-6], encode=encode, max_size=100.0)
+    scatter = mark.artists["scatter"]
+    values = scatter.get_sizes() if encode == "area" else scatter.get_facecolor()[:, 3]
+    np.testing.assert_allclose(_by_input(mark, xy, values), expected)
 
 
 def test_resampling_is_systematic_and_seeded():
@@ -82,6 +88,10 @@ def test_resampled_set_keeps_the_true_weights_on_one_scale():
     np.testing.assert_allclose(sizes, 120.0 * end / top)
     assert np.all(sizes[mark.counts == 0] == 0.0)
     assert len(set(np.round(sizes[mark.counts > 0], 9))) > 1  # not equalized
+    ones, threes = sizes[mark.counts == 1], sizes[mark.counts == 3]
+    assert len(ones) and len(threes)
+    np.testing.assert_allclose(threes, 3.0 * ones[0])
+    np.testing.assert_allclose(ones, ones[0])
     mark.update(0.0)
     sizes0 = _by_input(mark, xy, mark.artists["scatter"].get_sizes())
     np.testing.assert_allclose(sizes0, 120.0 * (w / w.sum()) / top)
@@ -93,13 +103,6 @@ def test_resampled_set_keeps_the_true_weights_on_one_scale():
     assert mark.ess == pytest.approx(1.0 / np.sum((w / w.sum()) ** 2))
 
 
-def test_heavy_draws_go_down_first():
-    xy, w = _set()
-    mark = _mark(xy, w)
-    sizes = mark.artists["scatter"].get_sizes()
-    assert np.all(np.diff(sizes) <= 0.0)
-
-
 def test_without_resample_update_holds_the_weights():
     xy, w = _set()
     mark = _mark(xy, w)
@@ -107,6 +110,8 @@ def test_without_resample_update_holds_the_weights():
     mark.update(0.4)
     np.testing.assert_array_equal(mark.artists["scatter"].get_sizes(), before)
     assert mark.counts is None
+    mark.update(1.0, level=0.5)
+    assert np.all(mark.artists["scatter"].get_facecolor()[:, 3] == pytest.approx(0.5))
 
 
 def test_beat_is_continuous_with_no_jump():
@@ -120,13 +125,6 @@ def test_beat_is_continuous_with_no_jump():
 
     faults = ept.motion_faults(ax.figure, at, times, moves=[mark])
     assert [f for f in faults if f.kind == "jump"] == []
-
-
-def test_level_dims():
-    xy, w = _set()
-    mark = _mark(xy, w)
-    mark.update(1.0, level=0.5)
-    assert np.all(mark.artists["scatter"].get_facecolor()[:, 3] == pytest.approx(0.5))
 
 
 def test_rejects_bad_inputs():
@@ -165,20 +163,3 @@ def test_rest_is_the_still(kw):
     np.testing.assert_array_equal(_pixels(mark.ax.figure), still)
     fresh = _mark(xy, w, **kw)
     np.testing.assert_array_equal(_pixels(fresh.ax.figure), still)
-
-
-def test_tiny_weights_are_not_floored_in_alpha():
-    xy = np.array([[0.0, 0.0], [1.0, 0.0]])
-    mark = _mark(xy, [1.0, 1e-6], encode="alpha")
-    alpha = _by_input(mark, xy, mark.artists["scatter"].get_facecolor()[:, 3])
-    np.testing.assert_allclose(alpha, [1.0, 1e-6])
-
-
-def test_a_parent_with_three_offspring_is_three_times_one_with_one():
-    xy, w = _set(n=60)
-    mark = _mark(xy, w, resample=1, max_size=120.0)
-    sizes = _by_input(mark, xy, mark.artists["scatter"].get_sizes())
-    ones, threes = sizes[mark.counts == 1], sizes[mark.counts == 3]
-    assert len(ones) and len(threes)
-    np.testing.assert_allclose(threes, 3.0 * ones[0])
-    np.testing.assert_allclose(ones, ones[0])

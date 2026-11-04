@@ -177,17 +177,13 @@ def test_options_and_routed_kwargs():
         ({"x": np.arange(3)}, "x has"),
         ({"band": 0.1}, "pass refs"),
         ({"refs": [1.0, 2.0], "ref_labels": ["a"]}, "ref_labels"),
+        ({"values": []}, "at least one"),
     ],
 )
 def test_bad_arguments_raise(kwargs, match):
     with pytest.raises(ValueError, match=match):
-        ep.convergence(_looks(10), **kwargs)
+        ep.convergence(**{"values": _looks(10), **kwargs})
     plt.close("all")
-
-
-def test_empty_values_raise():
-    with pytest.raises(ValueError, match="at least one"):
-        ep.convergence([])
 
 
 def test_reference_styles_may_mix_names_and_dash_patterns():

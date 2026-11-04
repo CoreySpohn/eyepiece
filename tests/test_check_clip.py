@@ -306,7 +306,7 @@ def test_discrete_hold_sweep_reports_only_the_unplanned_jump():
 
 @pytest.mark.parametrize(
     ("step", "frame"),
-    [("slide", 3), (3, 3), ("late", 8), (8, 8), (np.int64(8), 8)],
+    [("slide", 3), (3, 3), ("late", 8), (np.int64(8), 8)],
 )
 def test_explicit_steps_add_span_starts_or_frame_indices(step, frame):
     fig, draw, plan = _stepped_clip()
@@ -317,6 +317,8 @@ def test_explicit_steps_add_span_starts_or_frame_indices(step, frame):
         extra.set_xdata([40 + (80 if k >= frame else 0)])
 
     assert ept.check_clip(fig, with_jump, plan, steps=[step]).ok
+    if isinstance(step, str):
+        assert ept.check_clip(fig, with_jump, plan, steps=step).ok
     other = 8 if frame == 3 else 3
     assert not ept.check_clip(fig, with_jump, plan, steps=[other]).ok
 
@@ -358,8 +360,3 @@ def test_a_step_outside_the_plan_is_refused(bad):
     fig, draw, plan, _ = _clip()
     with pytest.raises(ValueError, match="frame index"):
         ept.check_clip(fig, draw, plan, steps=[bad])
-
-
-def test_a_bare_span_name_is_one_step():
-    fig, draw, plan = _stepped_clip()
-    assert ept.check_clip(fig, draw, plan, steps="slide").ok

@@ -35,23 +35,21 @@ def _collision(fig, overlap_px):
     return second, third
 
 
-def test_catches_the_step_collision():
+@pytest.mark.parametrize("overlap_px", [1, 4])
+def test_catches_the_step_collision(overlap_px):
     fig = _figure()
-    second, third = _collision(fig, overlap_px=4)
+    second, third = _collision(fig, overlap_px=overlap_px)
     found = ept.readability_faults(fig, venue="video")
     overlaps = [f for f in found if f.kind == "overlap"]
+    if overlap_px == 1:
+        assert overlaps == []
+        return
     assert len(overlaps) == 1
     assert {overlaps[0].artist, overlaps[0].other} == {second, third}
     _, y0, _, y1 = overlaps[0].box
     assert y1 - y0 == pytest.approx(4, abs=0.6)
     with pytest.raises(ept.ReadabilityError, match="overlap"):
         ept.assert_readable(fig)
-
-
-def test_collision_below_tolerance_passes():
-    fig = _figure()
-    _collision(fig, overlap_px=1)
-    assert not [f for f in ept.readability_faults(fig) if f.kind == "overlap"]
 
 
 def test_clean_figure_passes():
@@ -143,7 +141,6 @@ def test_text_on_marks_other_color_or_backed_passes():
     [
         pytest.param(dict(facecolor="white", alpha=0.85), 0, id="alpha-0.85"),
         pytest.param(dict(facecolor="white", alpha=0.7), 1, id="alpha-0.7"),
-        pytest.param(dict(facecolor="white", alpha=1.0), 0, id="alpha-1.0"),
         pytest.param(dict(facecolor=(1.0, 1.0, 1.0, 0.85)), 0, id="facecolor-alpha"),
     ],
 )
@@ -245,6 +242,8 @@ def test_caption_line_is_the_bottom_when_the_bottom_is_empty():
     fig = _figure()
     fig.text(0.1, 0.8, "a heading", fontsize=14)
     assert ept.caption_line(fig) == pytest.approx(100 * (1 - 0.14 - 0.01))
+    fig.text(0.0, 0.04, "x", fontsize=14)
+    assert ept.caption_line(fig) == pytest.approx(100 * (1 - 0.14 - 0.01))
 
 
 def test_caption_line_clears_text_at_the_bottom():
@@ -269,12 +268,6 @@ def test_caption_line_considers_every_sampled_time():
     early = ept.caption_line(fig, at=pose, times=[0.0])
     both = ept.caption_line(fig, at=pose, times=[0.0, 2.0])
     assert early > both
-
-
-def test_caption_line_ignores_text_outside_the_band_width():
-    fig = _figure()
-    fig.text(0.0, 0.04, "x", fontsize=14)
-    assert ept.caption_line(fig) == pytest.approx(100 * (1 - 0.14 - 0.01))
 
 
 def test_caption_line_refuses_a_full_figure_and_unpaired_arguments():

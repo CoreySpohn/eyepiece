@@ -31,7 +31,23 @@ def video(tmp_path, request):
     return path
 
 
-def test_source_samples_match_separate_seeks_including_tail_and_duplicates(video):
+@pytest.fixture
+def decoder_starts(monkeypatch):
+    starts = []
+    original = subprocess.Popen
+
+    class CountedPopen(original):
+        def __init__(self, command, *args, **kwargs):
+            starts.append(command)
+            super().__init__(command, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", CountedPopen)
+    return starts
+
+
+def test_source_samples_match_separate_seeks_including_tail_and_duplicates(
+    video, decoder_starts
+):
     times = [
         0.9,
         0.0,
@@ -48,25 +64,12 @@ def test_source_samples_match_separate_seeks_including_tail_and_duplicates(video
         0.0335005,
     ]
     expected = [ept._source_frame(video, t) for t in times]
+    decoder_starts.clear()
     actual = list(ept._source_samples(video, times))
     assert len(actual) == len(expected)
+    assert len(decoder_starts) == 1
     for before, after in zip(expected, actual, strict=True):
         np.testing.assert_array_equal(before, after)
-
-
-def test_source_samples_start_one_decoder(video, monkeypatch):
-    starts = []
-    original = subprocess.Popen
-
-    class CountedPopen(original):
-        def __init__(self, command, *args, **kwargs):
-            starts.append(command)
-            super().__init__(command, *args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "Popen", CountedPopen)
-    actual = list(ept._source_samples(video, [0.1, 0.4, 0.8]))
-    assert len(actual) == 3
-    assert len(starts) == 1
 
 
 def test_requests_wholly_past_video_tail_keep_last_frame(video):
@@ -77,7 +80,9 @@ def test_requests_wholly_past_video_tail_keep_last_frame(video):
         np.testing.assert_array_equal(frame, expected)
 
 
-def test_callable_path_uses_one_video_decoder_and_rejects_plan_keys(video, monkeypatch):
+def test_callable_path_uses_one_video_decoder_and_rejects_plan_keys(
+    video, decoder_starts
+):
     class CallablePath:
         def __fspath__(self):
             return str(video)
@@ -85,18 +90,9 @@ def test_callable_path_uses_one_video_decoder_and_rejects_plan_keys(video, monke
         def __call__(self, time):
             raise AssertionError("a video path is not a pixel callback")
 
-    starts = []
-    original = subprocess.Popen
-
-    class CountedPopen(original):
-        def __init__(self, command, *args, **kwargs):
-            starts.append(command)
-            super().__init__(command, *args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "Popen", CountedPopen)
     source = CallablePath()
     assert len(list(ept._source_samples(source, [0.1, 0.4, 0.8]))) == 3
-    assert len(starts) == 1
+    assert len(decoder_starts) == 1
     with pytest.raises(ValueError, match="callable source"):
         with ept.sample_source(source, [0], frame_key=lambda t: 0):
             pass
@@ -118,22 +114,13 @@ def test_variable_rate_samples_match_input_seeks(video, tmp_path):
         np.testing.assert_array_equal(frame, ept._source_frame(sparse, t))
 
 
-def test_sample_source_video_shared_consumers_decode_once(video, monkeypatch):
-    calls = []
-    original = subprocess.Popen
-
-    class CountedPopen(original):
-        def __init__(self, command, *args, **kwargs):
-            calls.append(command)
-            super().__init__(command, *args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "Popen", CountedPopen)
+def test_sample_source_video_shared_consumers_decode_once(video, decoder_starts):
     with ept.sample_source(video, [0, 0.1, 0.2]) as source:
         first = [source(t).copy() for t in [0, 0.1, 0.2]]
         second = [source(t) for t in [0.2, 0.1, 0]]
         for a, b in zip(first, reversed(second), strict=True):
             np.testing.assert_array_equal(a, b)
-    assert len(calls) == 1
+    assert len(decoder_starts) == 1
 
 
 def test_motion_source_callable_matches_drawn_pixels_and_geometry():

@@ -580,7 +580,10 @@ def test_annotation_bounds_do_not_establish_identical_text():
     )
 
 
-def test_normal_effect_does_not_make_an_invisible_referent_visible():
+@pytest.mark.parametrize(
+    "effect", [patheffects.Normal(), patheffects.SimplePatchShadow()]
+)
+def test_normal_effect_does_not_make_an_invisible_referent_visible(effect):
     fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
     ax.set(xlim=(0, 1), ylim=(0, 1))
     ax.set_axis_off()
@@ -589,7 +592,7 @@ def test_normal_effect_does_not_make_an_invisible_referent_visible():
         [0.2, 0.2],
         color="C2",
         alpha=0,
-        path_effects=[patheffects.Normal()],
+        path_effects=[effect],
     )
     equation = ep.motion.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30)
     equation.bind("sigma", line)
@@ -601,7 +604,8 @@ def test_normal_effect_does_not_make_an_invisible_referent_visible():
     hidden = np.asarray(fig.canvas.buffer_rgba()).copy()
     line.set_visible(True)
     assert np.array_equal(shown, hidden), "The referent paints exactly zero pixels"
-    assert any(f.kind == "no-referent" for f in ep.testing.grounding_faults(equation))
+    found = ep.testing.grounding_faults(equation)
+    assert any(f.kind == "no-referent" and f.term == "sigma" for f in found)
 
 
 @pytest.mark.parametrize("hidden", [{"alpha": 0}, {"color": "none"}])
@@ -699,28 +703,3 @@ def test_hatched_rectangle_path_effects_preserve_rest_drift(cached):
     assert len(drift) == 1
     assert drift[0].value == pytest.approx(93)
     assert drift[0].time == 0.5
-
-
-def test_zero_area_patch_shadow_does_not_establish_referent_presence():
-    fig, ax = plt.subplots(figsize=(4, 2), dpi=100)
-    ax.set(xlim=(0, 1), ylim=(0, 1))
-    ax.set_axis_off()
-    (line,) = ax.plot(
-        [0.1, 0.9],
-        [0.2, 0.2],
-        color="C2",
-        alpha=0,
-        path_effects=[patheffects.SimplePatchShadow()],
-    )
-    equation = ep.motion.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30)
-    equation.bind("sigma", line)
-    equation.update(1)
-    fig.canvas.draw()
-    shown = np.asarray(fig.canvas.buffer_rgba()).copy()
-    line.set_visible(False)
-    fig.canvas.draw()
-    hidden = np.asarray(fig.canvas.buffer_rgba()).copy()
-    line.set_visible(True)
-    assert np.array_equal(shown, hidden), "The shadow fills a zero-area path"
-    found = ep.testing.grounding_faults(equation)
-    assert any(f.kind == "no-referent" and f.term == "sigma" for f in found)

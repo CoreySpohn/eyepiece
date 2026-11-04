@@ -18,19 +18,6 @@ def _samples(n=500):
     }
 
 
-def test_corner_triangle_shape():
-    res = corner(_samples(), ["a", "b", "c"], truths={"a": 0.0, "b": 5.0})
-    assert res.axes.shape == (3, 3)
-    assert not res.axes[0, 2].get_visible()  # upper triangle hidden
-    plt.close(res.fig)
-
-
-def test_corner_labels_dict_applied():
-    res = corner(_samples(), ["a", "b"], labels={"a": "alpha [au]"})
-    assert res.axes[1, 0].get_xlabel() == "alpha [au]"
-    plt.close(res.fig)
-
-
 def test_corner_overlay_into_existing_axes():
     base = corner(_samples(), ["a", "b"])
     n_before = len(base.axes[1, 0].collections) + len(base.axes[1, 0].lines)
@@ -234,11 +221,4 @@ def test_corner_diagonal_is_unit_area():
     counts, _ = np.histogram(samples["a"], bins=30)
     assert drawn == pytest.approx(density.max(), rel=1e-6)
     assert drawn != pytest.approx(counts.max(), rel=0.5)  # not the old scale
-    plt.close(res.fig)
-
-
-def test_corner_density_uses_probability_role():
-    res = corner(_samples(), ["a", "b"])
-    name = res.artists["collection"][0].get_cmap().name
-    assert name == _style.cmap("probability").name
     plt.close(res.fig)

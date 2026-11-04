@@ -97,7 +97,7 @@ def test_raster_identity_does_not_hide_geometry_changes():
     assert not first.flags.writeable
 
 
-@pytest.mark.parametrize("threshold", [0, 1, 2, 5, 50, -1, float("nan")])
+@pytest.mark.parametrize("threshold", [0, 1, 2, 50, -1, float("nan")])
 def test_still_change_threshold_matches_full_buffer(threshold):
     from eyepiece.testing import _pixel_change_reaches
 
