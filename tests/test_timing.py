@@ -217,11 +217,8 @@ def test_findings_use_known_kinds_and_are_sorted_with_untimed_findings_last():
     ]
 
 
-def test_assert_timing_returns_an_empty_list_when_clean():
-    assert ept.assert_timing(_narration(_line("steady", 159))) == []
-
-
 def test_assert_timing_reports_every_fault_and_keeps_the_list():
+    assert ept.assert_timing(_narration(_line("steady", 159))) == []
     narration = _narration(_line("quick", 170, pad_after_s=3.0))
     with pytest.raises(ept.TimingError, match="quick") as err:
         ept.assert_timing(narration)
@@ -333,17 +330,11 @@ def test_a_contradiction_only_needs_the_absolute_ink_floor(readout):
     assert faults[0].start_s == pytest.approx(1.5, abs=0.1)
 
 
-def test_readouts_require_a_pose_callable(readout):
+def test_readout_bindings_require_a_pose_callable_and_a_known_number_word(readout):
     with pytest.raises(ValueError, match="at"):
         ept.timing_faults(_number_narration(), readouts={("measured", 4): readout})
-
-
-def test_a_readout_word_must_start_a_number(readout):
     with pytest.raises(ValueError, match=r"measured.*1.*not a number"):
         _number_faults(readout, lambda t: None, word_key=("measured", 1))
-
-
-def test_a_readout_line_must_exist(readout):
     with pytest.raises(KeyError):
         _number_faults(readout, lambda t: None, word_key=("unknown", 4))
 
@@ -440,23 +431,10 @@ def test_blank_text_before_landing_is_only_late(readout):
 
 
 @pytest.mark.parametrize("delay, late", [(0.08, False), (0.15, True)])
-def test_a_plan_allows_one_frame_for_the_number_to_land(readout, delay, late):
-    timeline = ep.Timeline(narration=_number_narration())
-    timeline.line("measured")
-    timeline.hold(2.0)
-    plan = timeline.at_fps(10)
-    start = plan.narration.beat("measured").words[4].start_s
-    faults = _number_faults(
-        readout,
-        lambda t: readout.set_text("" if t < start + delay else "8 epochs"),
-        narration=plan.narration,
-        plan=plan,
-    )
-    assert [f.kind for f in faults] == (["number-late"] if late else [])
-
-
-@pytest.mark.parametrize("delay, late", [(0.08, False), (0.15, True)])
-def test_the_plan_frame_floor_is_independent_of_scan_fps(readout, delay, late):
+@pytest.mark.parametrize("scan_fps", [None, 4])
+def test_the_plan_frame_floor_is_independent_of_scan_fps(
+    readout, delay, late, scan_fps
+):
     timeline = ep.Timeline(narration=_number_narration())
     timeline.line("measured")
     timeline.hold(2.0)
@@ -467,10 +445,10 @@ def test_the_plan_frame_floor_is_independent_of_scan_fps(readout, delay, late):
         lambda t: readout.set_text("8 epochs" if t >= start + delay else ""),
         narration=plan.narration,
         plan=plan,
-        fps=4,
+        **({} if scan_fps is None else {"fps": scan_fps}),
     )
     assert [f.kind for f in faults] == (["number-late"] if late else [])
-    if late:
+    if late and scan_fps == 4:
         assert faults[0].end_s == start + 0.25
 
 
@@ -655,8 +633,7 @@ def test_overlapping_words_keep_the_latest_end_when_splitting_speech():
     assert "3.2 s of speech (overlap)" in faults[0].message
 
 
-@pytest.mark.parametrize("rgba", [False, True])
-@pytest.mark.parametrize("floating", [False, True])
+@pytest.mark.parametrize("rgba, floating", [(False, True), (True, False), (True, True)])
 @pytest.mark.parametrize("changes", [False, True])
 def test_float_and_rgba_frames_match_uint8_rgb(rgba, floating, changes):
     def source(t):

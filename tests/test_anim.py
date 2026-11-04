@@ -68,22 +68,15 @@ def test_record_multi_sink_one_pass(tmp_path):
     plt.close(fig)
 
 
-def test_record_creates_missing_parent_directories(tmp_path):
-    fig, _ = _fig_line()
-    out = tmp_path / "runs" / "today" / "a.gif"
-    with record(fig, out, fps=5) as rec:
-        rec.hold(2)
-    assert out.stat().st_size > 0
-    plt.close(fig)
-
-
 def test_record_hold_repeats_frames(tmp_path):
     fig, line = _fig_line()
-    with record(fig, tmp_path / "h.html", fps=5) as rec:
+    gif = tmp_path / "runs" / "today" / "h.gif"
+    with record(fig, gif, tmp_path / "h.html", fps=5) as rec:
         line.set_data([0, 1], [0, 0])
         rec.hold(4)
     html = (tmp_path / "h.html").read_text()
     assert html.count("data:image/png") == 4
+    assert gif.stat().st_size > 0
     plt.close(fig)
 
 
@@ -94,20 +87,11 @@ def test_animate_does_not_clear(tmp_path):
     def draw(fig_, k):
         line.set_data([0, k], [0, 0])
 
-    animate(fig, draw, 3, fps=5).save(tmp_path / "n.gif")
-    assert len(fig.axes) == n_axes_before
-    assert len(fig.axes[0].lines) == 1
-    plt.close(fig)
-
-
-def test_animate_returns_public_animation_type(tmp_path):
-    fig, line = _fig_line()
-
-    def draw(fig_, k):
-        line.set_data([0, k], [0, 0])
-
     anim = animate(fig, draw, 3, fps=5)
     assert isinstance(anim, eyepiece.Animation)
+    anim.save(tmp_path / "n.gif")
+    assert len(fig.axes) == n_axes_before
+    assert len(fig.axes[0].lines) == 1
     plt.close(fig)
 
 
@@ -252,11 +236,13 @@ def test_record_scopes_its_rcparam_overrides(tmp_path, caplog):
     plt.close(fig)
 
 
-def test_record_freezes_layout_engine_after_first_frame(tmp_path):
+def test_record_freezes_layout_then_restores_engine_and_canvas(tmp_path):
     fig, ax = plt.subplots(layout="constrained")
     ax.plot([], [])
     original_engine = fig.get_layout_engine()
+    original_canvas = fig.canvas
     with record(fig, tmp_path / "a.gif", fps=5) as rec:
+        assert fig.canvas is not original_canvas
         rec.frame()
         frozen_engine = fig.get_layout_engine()
         # frame 1 forced a real solve, then locked it: the engine object
@@ -264,6 +250,8 @@ def test_record_freezes_layout_engine_after_first_frame(tmp_path):
         assert frozen_engine is not original_engine
         rec.frame()
         assert fig.get_layout_engine() is frozen_engine
+    assert fig.get_layout_engine() is original_engine
+    assert fig.canvas is original_canvas
     plt.close(fig)
 
 
@@ -353,36 +341,31 @@ def test_record_freezes_the_settled_layout_not_the_first_solve(tmp_path):
     plt.close(fig)
 
 
-def test_record_restores_layout_engine_after_normal_exit(tmp_path):
-    fig, ax = plt.subplots(layout="constrained")
+@pytest.mark.parametrize("layout", [None, "constrained"])
+def test_record_restores_engine_and_canvas_after_exception(tmp_path, layout):
+    fig, ax = plt.subplots(layout=layout)
     ax.plot([], [])
     original_engine = fig.get_layout_engine()
-    with record(fig, tmp_path / "a.gif", fps=5) as rec:
-        rec.hold(2)
-        assert fig.get_layout_engine() is not original_engine
-    assert fig.get_layout_engine() is original_engine
-    plt.close(fig)
-
-
-def test_record_restores_layout_engine_after_exception(tmp_path):
-    fig, ax = plt.subplots(layout="constrained")
-    ax.plot([], [])
-    original_engine = fig.get_layout_engine()
+    original_canvas = fig.canvas
     with pytest.raises(ValueError, match="boom"):
         with record(fig, tmp_path / "a.gif", fps=5) as rec:
             rec.frame()
             raise ValueError("boom")
     assert fig.get_layout_engine() is original_engine
+    assert fig.canvas is original_canvas
     plt.close(fig)
 
 
 def test_record_with_no_layout_engine_records_without_error(tmp_path):
     fig, _ = _fig_line()
     assert fig.get_layout_engine() is None
+    original_canvas = fig.canvas
     with record(fig, tmp_path / "a.gif", fps=5) as rec:
+        assert fig.canvas is not original_canvas
         rec.hold(2)
         assert fig.get_layout_engine() is None
     assert fig.get_layout_engine() is None
+    assert fig.canvas is original_canvas
     assert (tmp_path / "a.gif").stat().st_size > 0
     plt.close(fig)
 
@@ -446,27 +429,6 @@ def test_record_ignores_a_backend_that_snaps_the_figure_size(tmp_path):
         rec.hold(2)
         assert rec.writers[0].frame_size == (1494, 624)
     assert (tmp_path / "s.mp4").stat().st_size > 0
-    plt.close(fig)
-
-
-def test_record_restores_the_original_canvas(tmp_path):
-    fig, _ = _fig_line()
-    original = fig.canvas
-    with record(fig, tmp_path / "a.gif", fps=5) as rec:
-        rec.hold(2)
-        assert fig.canvas is not original
-    assert fig.canvas is original
-    plt.close(fig)
-
-
-def test_record_restores_the_original_canvas_after_an_exception(tmp_path):
-    fig, _ = _fig_line()
-    original = fig.canvas
-    with pytest.raises(ValueError, match="boom"):
-        with record(fig, tmp_path / "a.gif", fps=5) as rec:
-            rec.frame()
-            raise ValueError("boom")
-    assert fig.canvas is original
     plt.close(fig)
 
 
@@ -943,20 +905,6 @@ def test_still_is_pixel_identical_to_the_encoded_frame(tmp_path):
     plt.close(fig)
 
 
-def test_a_still_at_an_exact_half_frame_rounds_up_like_every_other_time(tmp_path):
-    fig, line = _stills_figure()
-    still = tmp_path / "half.png"
-    # 0.125 s at 4 fps is frame 0.5: it rounds up to frame 1, not to even (0)
-    with record(fig, tmp_path / "m.html", fps=4, dpi=60, stills={still: 0.125}) as rec:
-        for k in range(3):
-            line.set_ydata([0, k + 1])
-            rec.frame()
-    frames = _html_frames(tmp_path / "m.html")
-    assert np.array_equal(_png(still), frames[1])
-    assert not np.array_equal(frames[0], frames[1])
-    plt.close(fig)
-
-
 def test_record_stills_round_half_frames_up_through_the_whole_path(tmp_path):
     fig, line = _stills_figure()
     # At 4 fps these times are 0.5, 1.5 and 14.5 frames, all exact in binary.
@@ -966,6 +914,7 @@ def test_record_stills_round_half_frames_up_through_the_whole_path(tmp_path):
             line.set_ydata([0, (k % 5) + 1 + 0.01 * k])
             rec.frame()
     frames = _html_frames(tmp_path / "m.html")
+    assert not np.array_equal(frames[0], frames[1])
     for (path, _), want in zip(stills.items(), (1, 2, 15), strict=True):
         assert np.array_equal(_png(path), frames[want]), path.name
     plt.close(fig)

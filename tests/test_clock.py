@@ -214,11 +214,8 @@ def test_spans_json_defaults_to_every_span_rounded_to_milliseconds(spans_json_pl
     }
     assert plan.spans_json() == expected
     assert plan.spans_json(holds=True) == expected
-
-
-def test_spans_json_holds_is_keyword_only(spans_json_plan):
     with pytest.raises(TypeError):
-        spans_json_plan.spans_json(False)
+        plan.spans_json(False)
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +241,11 @@ def test_timeline_spans_lists_declared_records_in_declaration_order():
     spans = tl.spans
     assert isinstance(spans, MappingProxyType)
     assert list(spans) == ["later", "earlier"]
+    with pytest.raises(TypeError):
+        spans["later"] = later
+    with pytest.raises(TypeError):
+        del spans["later"]
+    assert spans["later"] == later
     for handle in (later, earlier):
         record = spans[handle.name]
         for actual, expected in (
@@ -263,17 +265,6 @@ def test_timeline_spans_reflects_spans_declared_after_the_view_was_taken():
     second = tl.hold(0.2, name="second")
     assert list(spans) == ["first", "second"]
     assert spans["second"] == second
-
-
-def test_timeline_spans_rejects_item_assignment_and_deletion():
-    tl = ep.Timeline()
-    span = tl.hold(0.1, name="stay")
-    spans = tl.spans
-    with pytest.raises(TypeError):
-        spans["stay"] = span
-    with pytest.raises(TypeError):
-        del spans["stay"]
-    assert spans["stay"] == span
 
 
 def test_timeline_spans_reflects_a_silent_captions_automatic_leave():
@@ -1100,25 +1091,17 @@ def _field_plan():
     return tl.at_fps(10)
 
 
-def test_value_returns_the_frame_fields():
+def test_value_returns_frame_fields_without_reading_knobs_and_rejects_unknown_names():
     plan = _field_plan()
+    before = plan.unused_knobs()
+    for name in ("t", "index", "section"):
+        plan.value(0, name)
+    assert plan.unused_knobs() == before == (("a",), ())
     for k in (0, 3, plan.n_frames - 1):
         assert plan.value(k, "t") == k / plan.fps == plan.frames[k]["t"]
         assert plan.value(k, "index") == k
         assert plan.value(k, "section") == plan.frames[k]["section"] == "intro"
     with pytest.raises(IndexError):
         plan.value(plan.n_frames, "t")
-
-
-def test_reading_frame_fields_leaves_unused_knobs_unchanged():
-    plan = _field_plan()
-    before = plan.unused_knobs()
-    for name in ("t", "index", "section"):
-        plan.value(0, name)
-    assert plan.unused_knobs() == before == (("a",), ())
-
-
-def test_value_still_rejects_unknown_names():
-    plan = _field_plan()
     with pytest.raises(KeyError, match="no knob named 'tt'"):
         plan.value(0, "tt")

@@ -137,19 +137,13 @@ def test_chapters_jump_to_their_cue_and_transcript_follows_the_line():
     assert re.findall(r'data-sample="(\d+)"', silent) == ["0", "1", "2"]
 
 
-def test_the_slider_is_labelled_with_the_knob():
-    plan = silent_plan()
-    page = scrub(plan, title="A page title", unit="m")
-    tag = re.search(r'<input[^>]*type="range"[^>]*>', page).group(0)
-    assert 'aria-label="u (m)"' in tag
-    assert "A page title" not in tag
-
-
-def test_one_range_input_steps_over_the_samples():
-    page = scrub(silent_plan())
+def test_one_labelled_range_input_steps_over_the_samples():
+    page = scrub(silent_plan(), title="A page title", unit="m")
     inputs = re.findall(r"<input[^>]*>", page)
     assert len(inputs) == 1
     tag = inputs[0]
+    assert 'aria-label="u (m)"' in tag
+    assert "A page title" not in tag
     assert 'type="range"' in tag
     assert 'min="0"' in tag and 'max="2"' in tag and 'step="1"' in tag
 
@@ -178,9 +172,14 @@ def test_the_page_needs_no_network():
         assert value.startswith(("data:", "#"))
 
 
-def test_two_renders_are_byte_identical():
+def test_two_renders_are_byte_identical_and_the_path_receives_the_same_page(tmp_path):
     plan = silent_plan()
-    assert scrub(plan) == scrub(plan)
+    page = scrub(plan)
+    assert page == scrub(plan)
+    path = tmp_path / "page.html"
+    written = scrub(plan, path=path)
+    assert path.read_text() == written
+    assert written == page
 
 
 def test_rest_frame_is_the_still_record_writes(tmp_path):
@@ -198,12 +197,6 @@ def test_rest_frame_is_the_still_record_writes(tmp_path):
     # The visible image before any script runs is the rest state.
     first = re.search(r"<img[^>]*src=\"data:image/png;base64,([^\"]+)\"", page)
     assert base64.b64decode(first.group(1)) == still.read_bytes()
-
-
-def test_the_path_receives_the_same_page(tmp_path):
-    path = tmp_path / "page.html"
-    page = scrub(silent_plan(), path=path)
-    assert path.read_text() == page
 
 
 def test_bad_arguments_are_refused():

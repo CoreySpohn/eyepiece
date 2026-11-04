@@ -23,17 +23,6 @@ def _grid(ny=3, nx=4):
 # quad_image
 
 
-def test_quad_image_draws_one_quad_per_pixel():
-    values, corners = _grid()
-    res = ep.quad_image(values, corners)
-    coll = res.artists["collection"]
-    assert isinstance(coll, PolyCollection)
-    assert len(coll.get_paths()) == 12
-    assert np.allclose(coll.get_array(), values.ravel())
-    assert res.ax.get_xlim() == pytest.approx((0.0, 4.0), abs=0.5)
-    plt.close(res.fig)
-
-
 def test_quad_image_default_norm_spans_the_finite_values():
     values, corners = _grid()
     values[0, 0] = np.nan
@@ -57,6 +46,13 @@ def test_quad_image_keep_selects_pixels_and_accepts_a_norm():
 
 def test_quad_image_update_moves_and_recolors_the_same_artist():
     values, corners = _grid()
+    res = ep.quad_image(values, corners)
+    coll = res.artists["collection"]
+    assert isinstance(coll, PolyCollection)
+    assert len(coll.get_paths()) == 12
+    assert np.allclose(coll.get_array(), values.ravel())
+    assert res.ax.get_xlim() == pytest.approx((0.0, 4.0), abs=0.5)
+    plt.close(res.fig)
     res = ep.quad_image(values, corners, collection_kw={"linewidths": 0.0})
     coll = res.artists["collection"]
     xlim = res.ax.get_xlim()
@@ -120,12 +116,6 @@ def test_brush_starts_hidden_and_shows_the_masked_items_over_a_veil():
         assert len(overlay.get_paths()) == int(mask.sum())
         assert np.allclose(overlay.get_paths()[0].vertices[0], q[mask][0, 0])
     assert overlays[0].zorder > veils[0].zorder
-    plt.close(fig)
-
-
-def test_brush_follows_moving_quads_and_clears():
-    fig, axes, quads, values = _two_panels()
-    res = ep.brush(axes, quads, values)
     mask = np.zeros(values.size, bool)
     mask[3] = True
     moved = [q + 1.0 for q in quads]

@@ -30,17 +30,12 @@ def test_overview_box_draws_the_view_and_moves_with_update():
 
 
 def test_overview_box_creates_its_own_figure_and_routes_box_kw():
-    res = ep.overview_box((0.0, 0.0, 1.0), box_kw={"lw": 3.0, "ls": "--"})
+    with matplotlib.rc_context({"text.color": "#123456"}):
+        res = ep.overview_box((0.0, 0.0, 1.0), box_kw={"lw": 3.0, "ls": "--"})
+    assert res.artists["ellipse"].get_edgecolor() == pytest.approx(to_rgba("#123456"))
     assert res.fig.get_layout_engine() is not None
     assert res.artists["ellipse"].get_linewidth() == pytest.approx(3.0)
     assert res.artists["ellipse"].get_fill() is False
-    plt.close(res.fig)
-
-
-def test_overview_box_defaults_to_the_text_color():
-    with matplotlib.rc_context({"text.color": "#123456"}):
-        res = ep.overview_box((0.0, 0.0, 1.0))
-    assert res.artists["ellipse"].get_edgecolor() == pytest.approx(to_rgba("#123456"))
     plt.close(res.fig)
 
 
@@ -188,13 +183,18 @@ def test_spotlight_rejects_overlapping_or_inverted_rects():
     plt.close(fig)
 
 
-def test_spotlight_dims_outside_the_hole_in_a_render():
+def _spotlit_panel():
     fig, ax = plt.subplots(figsize=(4, 2))
     fig.set_facecolor("black")
     ax.set_position([0, 0, 1, 1])
     ax.imshow(np.ones((2, 2)), cmap="gray", vmin=0, vmax=1, aspect="auto")
     ax.set_axis_off()
     ep.spotlight(fig, [(0.0, 0.0, 2.0, 2.0)])
+    return fig, ax
+
+
+def test_spotlight_dims_outside_the_hole_in_a_render():
+    fig, _ = _spotlit_panel()
     frame = ep.PageCamera(fig, (200, 100)).render((2.0, 1.0, 4.0))
     lit, dim = frame[50, 50, 0], frame[50, 150, 0]
     assert lit > 200 > dim
@@ -290,12 +290,7 @@ def test_overview_box_stays_out_of_the_data_limits():
 
 
 def test_spotlight_holes_stay_put_in_offset_views():
-    fig, ax = plt.subplots(figsize=(4, 2))
-    fig.set_facecolor("black")
-    ax.set_position([0, 0, 1, 1])
-    ax.imshow(np.ones((2, 2)), cmap="gray", vmin=0, vmax=1, aspect="auto")
-    ax.set_axis_off()
-    ep.spotlight(fig, [(0.0, 0.0, 2.0, 2.0)])
+    fig, _ = _spotlit_panel()
     with ep.PageCamera(fig, (100, 100)) as cam:
         right = cam.render((3.0, 1.0, 2.0))  # the veiled half, alone
         left = cam.render((1.0, 1.0, 2.0))  # the hole, alone

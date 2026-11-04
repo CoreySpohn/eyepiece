@@ -40,19 +40,6 @@ def _decoded_frames(path):
     return frames
 
 
-def test_animate_returns_the_public_animation_type(image_sequence):
-    import eyepiece
-    import eyepiece.mpl as mpl
-
-    animation = mpl.animate(image_sequence(), run_time=1.0, fps=4)
-    assert isinstance(animation, eyepiece.Animation)
-    assert animation.n_frames == 4
-    assert animation.fps == 4
-    assert isinstance(animation.result, mpl.MplResult)
-    assert animation.result.fig is animation.fig
-    assert "image" in animation.result.parts
-
-
 @pytest.mark.parametrize(
     ("fps", "expected"),
     [
@@ -63,10 +50,17 @@ def test_animate_returns_the_public_animation_type(image_sequence):
 def test_frames_follow_the_schedule_not_the_input_count(
     image_sequence, drawn_means, tmp_path, fps, expected
 ):
+    import eyepiece
     import eyepiece.mpl as mpl
 
     sequence = image_sequence()
     animation = mpl.animate(sequence, run_time=1.0, fps=fps)
+    assert isinstance(animation, eyepiece.Animation)
+    assert animation.n_frames == fps
+    assert animation.fps == fps
+    assert isinstance(animation.result, mpl.MplResult)
+    assert animation.result.fig is animation.fig
+    assert "image" in animation.result.parts
     animation.save(tmp_path / "clip.gif")
     assert drawn_means == expected
     total_ms = sum(duration for _, duration in _decoded_frames(tmp_path / "clip.gif"))

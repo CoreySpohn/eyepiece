@@ -31,21 +31,15 @@ def _rot(a):
     return np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
 
 
-def test_warp_is_exported_and_returns_a_result():
-    _fig, ax = _axes()
-    (line,) = ax.plot([0, 1], [0, 1])
-    move = ep.warp(line, np.eye(2))
-    assert isinstance(move, ep.PlotResult)
-    assert set(move.artists) <= ep.ARTIST_KEYS
-    assert move.artists["line"] == [line]
-
-
 def test_matrix_endpoints_are_exact():
     _fig, ax = _axes()
     pts = _ring()
     (line,) = ax.plot(pts[:, 0], pts[:, 1])
     m = np.array([[1.0, 0.7], [-0.2, 0.5]])
     move = ep.warp(line, m)
+    assert isinstance(move, ep.PlotResult)
+    assert set(move.artists) <= ep.ARTIST_KEYS
+    assert move.artists["line"] == [line]
     move.update(0.0)
     assert np.array_equal(_xy(line), pts)
     move.update(1.0)
