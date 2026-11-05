@@ -13,22 +13,26 @@ SPEC.loader.exec_module(SUMMARY)
 
 
 @pytest.mark.parametrize(
-    ("seconds", "budget", "skip", "options", "expected"),
+    ("wall", "seconds", "budget", "skip", "options", "expected"),
     [
-        (2, 0, "", [], 0),
-        (2, 2, "", [], 0),
-        (2, 1, "", [], 1),
-        (2, 0, "<skipped />", [], 1),
-        (2, 0, "<skipped />", ["--allow-skips"], 0),
-        (2, 0, '<skipped type="pytest.xfail" />', [], 0),
+        (2, 2, 0, "", [], 0),
+        (2, 2, 2, "", [], 0),
+        (2, 2, 1, "", [], 1),
+        # The budget reads the suite's wall time, not the summed test time.
+        (1, 2, 1.5, "", [], 0),
+        (2, 1, 1.5, "", [], 1),
+        (2, 2, 0, "<skipped />", [], 1),
+        (2, 2, 0, "<skipped />", ["--allow-skips"], 0),
+        (2, 2, 0, '<skipped type="pytest.xfail" />', [], 0),
     ],
 )
 def test_summary_budget_and_skip_policy(
-    tmp_path, monkeypatch, capsys, seconds, budget, skip, options, expected
+    tmp_path, monkeypatch, capsys, wall, seconds, budget, skip, options, expected
 ):
     junit = tmp_path / "junit.xml"
     junit.write_text(
-        '<testsuites><testsuite><testcase classname="example" name="test_one" '
+        f'<testsuites><testsuite time="{wall}">'
+        '<testcase classname="example" name="test_one" '
         f'time="{seconds}">{skip}</testcase></testsuite></testsuites>'
     )
     monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
@@ -41,6 +45,7 @@ def test_summary_budget_and_skip_policy(
     output = capsys.readouterr().out
     assert "tests: 1" in output
     assert "example::test_one" in output
+    assert f"wall time: {wall:.1f} s" in output
     assert f"summed test time: {seconds:.1f} s" in output
 
 
