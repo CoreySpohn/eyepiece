@@ -79,7 +79,9 @@ the beat's start to its end, titled by the line key unless `titles` maps the
 key to a title. An empty title is refused.
 
 ```python
-ep.narration.write_chapters(narration, "out/chapters.vtt", titles={"open": "The problem"})
+ep.narration.write_chapters(
+    narration, "out/chapters.vtt", titles={"open": "The problem"}
+)
 ```
 
 `ep.narration.write_captions(..., chapters=True)` writes the same file beside the captions.

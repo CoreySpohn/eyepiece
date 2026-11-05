@@ -25,7 +25,9 @@ import eyepiece as ep
 
 SCRIPT = ep.narration.Script(
     (
-        ep.narration.Line("open", "The coronagraph blocks the {indicate:star}starlight."),
+        ep.narration.Line(
+            "open", "The coronagraph blocks the {indicate:star}starlight."
+        ),
         ep.narration.Line(
             "leak",
             "What leaks through is {indicate:speckle}speckle, and the "

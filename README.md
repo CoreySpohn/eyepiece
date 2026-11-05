@@ -210,7 +210,9 @@ contact sheet at the cues and events that matter.
 ```python
 import eyepiece as ep
 
-result = ep.plot.imshow_log(psf, extent=ep.plot.extent_lod_from_pixels(psf.shape[0], 0.5))
+result = ep.plot.imshow_log(
+    psf, extent=ep.plot.extent_lod_from_pixels(psf.shape[0], 0.5)
+)
 ep.plot.label_lod(result.ax)
 ep.render.save_fig(result.fig, "psf")
 ```
@@ -266,7 +268,9 @@ def draw(k):
 
 
 ep.testing.assert_clip(fig, draw, plan, moves={curve: "draw"})
-with ep.render.record(fig, "clip.mp4", fps=plan.fps, plan=plan, stills={"clip.png": "draw"}) as rec:
+with ep.render.record(
+    fig, "clip.mp4", fps=plan.fps, plan=plan, stills={"clip.png": "draw"}
+) as rec:
     for k in range(plan.n_frames):
         draw(k)
         rec.frame()

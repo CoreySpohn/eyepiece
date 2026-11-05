@@ -189,7 +189,9 @@ than executed, and without `hwoutils` installed it raises an `ImportError`
 naming the extra.
 
 ```python
-result = ep.plot.plot_radial_image(image, PIXSCALE_LOD, log=True, label="azimuthal mean")
+result = ep.plot.plot_radial_image(
+    image, PIXSCALE_LOD, log=True, label="azimuthal mean"
+)
 ```
 
 Unlike `plot_radial`, this function is told its units, since the pixel scale
@@ -214,7 +216,7 @@ fig, ax = plt.subplots()
 ax.set(xlim=(0, 1), ylim=(0, 1))
 labels = []
 for name, y in [("a", 0.50), ("b", 0.51), ("c", 0.52)]:
-    line, = ax.plot([0, 0.8], [0.2, y])
+    (line,) = ax.plot([0, 0.8], [0.2, y])
     labels.append(ax.text(0.8, y, name, color=line.get_color(), va="center"))
 ep.plot.spread_labels(labels, min_gap=3)
 ```

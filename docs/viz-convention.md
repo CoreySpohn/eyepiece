@@ -240,7 +240,9 @@ def prepare_psf_cube(cube_or_thing, *, times_s, pixscale_lod, bounds=None):
     image = ep.prepared.ImageView(
         "psf",
         cube[0],
-        ep.prepared.AxisSpec("x (lambda/D)", "y (lambda/D)", (-half, half), (-half, half)),
+        ep.prepared.AxisSpec(
+            "x (lambda/D)", "y (lambda/D)", (-half, half), (-half, half)
+        ),
         ep.prepared.Scale("log", vmin, vmax, floor=vmin),
         quantity="intensity",
     )

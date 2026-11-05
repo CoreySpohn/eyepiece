@@ -80,7 +80,9 @@ mode's savefig policy.
 ```python
 import eyepiece as ep
 
-result = ep.plot.imshow_log(psf, extent=ep.plot.extent_lod_from_pixels(psf.shape[0], 0.25))
+result = ep.plot.imshow_log(
+    psf, extent=ep.plot.extent_lod_from_pixels(psf.shape[0], 0.25)
+)
 ep.plot.label_lod(result.ax)
 ep.render.save_fig(result.fig, "psf")
 ```

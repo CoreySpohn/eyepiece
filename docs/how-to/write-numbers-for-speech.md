@@ -83,8 +83,11 @@ label = ax.text(0.5, 0.5, screen)
 line = ep.narration.Line("value", "The value is " + spoken + ".")
 narration = ep.narration.Narration.estimated(ep.narration.Script((line,)))
 faults = ep.testing.timing_faults(
-    narration, at=lambda t: None, readouts={("value", 3): label},
-    ceiling=200, short_ceiling=200,
+    narration,
+    at=lambda t: None,
+    readouts={("value", 3): label},
+    ceiling=200,
+    short_ceiling=200,
 )
 assert faults == []
 ```
