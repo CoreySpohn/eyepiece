@@ -25,7 +25,6 @@ video = ["imageio-ffmpeg>=0.6"]
 docs = ["sphinx>=8.0.2", "myst-nb>=1.2", "sphinx-book-theme>=1.1.4", "sphinx-autoapi>=3.3", "sphinx_autodoc_typehints>=2.4", "ipython>=8.18", "imageio-ffmpeg>=0.6", "colorspacious>=1.1.2", "physicaloptix>=2.3", "orbix>=2.0"]
 test = [
     "pytest>=8.0",
-    "pytest-cov>=6.0",
     "pytest-xdist>=2.5",
     "pytest-testmon>=2.1.1",
     "pytest-timeout>=1.3.1",
