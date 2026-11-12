@@ -45,8 +45,10 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/.venv" >> "$GITHUB_ENV"
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
           uv pip install --python .venv/bin/python -e ".[test,hwo,manim]" "orbix>=2.0"
+          # Repeat the package spec so the upgrade keeps the extras' caps (manim 0.21
+          # needs Pillow below 13); otherwise it lifts Pillow to a release manim rejects.
           uv pip install --python .venv/bin/python --upgrade --prerelease=allow \
-            jax jaxlib numpy scipy astropy matplotlib
+            -e ".[test,hwo,manim]" jax jaxlib numpy scipy astropy matplotlib
           # Nightly-only index verified against the JAX installation docs:
           # https://docs.jax.dev/en/latest/installation.html#jax-nightly-installation
           uv pip install --python .venv/bin/python --upgrade --prerelease=allow \
