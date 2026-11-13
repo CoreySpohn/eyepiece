@@ -506,22 +506,22 @@ def at_epoch(elements):
     """Sky positions (RA, Dec offsets in mas) at EPOCH, one row per orbit."""
     orbits = KeplerianOrbit(*elements.T, np.full(len(elements), T0))
     ra, dec = orbits.position_arcsec(
-        t_jd=jnp.array([EPOCH]), Ms_kg=MS_KG, dist_pc=DIST_PC
+        time_jd=jnp.array([EPOCH]), Ms_kg=MS_KG, dist_pc=DIST_PC
     )
     return 1e3 * np.column_stack([ra[:, 0], dec[:, 0]])
 
 
-def one_orbit(elements, t_jd):
+def one_orbit(elements, time_jd):
     orbit = KeplerianOrbit(*elements, T0)
-    ra, dec = orbit.position_arcsec(t_jd=t_jd, Ms_kg=MS_KG, dist_pc=DIST_PC)
+    ra, dec = orbit.position_arcsec(time_jd=time_jd, Ms_kg=MS_KG, dist_pc=DIST_PC)
     return 1e3 * ra[0], 1e3 * dec[0]
 
 
 def sky_orbits(elements):
     """Each orbit over one of its own periods from EPOCH, shaped (n, 181, 2)."""
     period = period_n(mean_motion(jnp.asarray(elements[:, 0]), G * MS_KG))
-    t_jd = EPOCH + period[:, None] * jnp.linspace(0.0, 1.0, 181)
-    ra, dec = jax.vmap(one_orbit)(jnp.asarray(elements), t_jd)
+    time_jd = EPOCH + period[:, None] * jnp.linspace(0.0, 1.0, 181)
+    ra, dec = jax.vmap(one_orbit)(jnp.asarray(elements), time_jd)
     return np.stack([np.asarray(ra), np.asarray(dec)], axis=-1)
 
 
