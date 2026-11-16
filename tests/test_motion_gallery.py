@@ -107,7 +107,7 @@ def orbit_gallery_data():
     pytest.importorskip("orbix")
     jax = pytest.importorskip("jax")
     ns = {"np": np, "plt": plt, "ep": ep, "jax": jax, "jnp": jax.numpy}
-    exec(_gallery_cell("motion-clock", "KeplerianOrbit"), ns)
+    exec(_gallery_cell("motion-clock", "FrameOrbit.from_classical"), ns)
     return ns
 
 

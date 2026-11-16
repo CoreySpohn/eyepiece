@@ -457,37 +457,34 @@ correlated elements and a non-Gaussian posterior; the mark shows whatever
 draws it is given, and the fraction it ends on depends entirely on the
 invented spreads, so it is no forecast for any real planet. Offsets are in
 mas because the star's distance turns AU into angle (1 AU at 10 pc is 100
-mas). Every orbit, the draws, the nominal orbit and the reference, is computed with orbix's `KeplerianOrbit`, vmapped over the draws. Draws
+mas). Every orbit, the draws, the nominal orbit and the reference, is computed
+with orbix's `FrameOrbit.from_classical`, batched over the draws. Draws
 with an eccentricity outside [0, 1) are left out: none of the 40 in the
 clip, 2 of the 20,000 in the reference.
 
-The figure follows orbix's sky convention, which is not the astrometric one.
-An astrometric fit measures the node angle from north through east, and its
-Thiele-Innes projection gives the planet's offsets north (Dec) and east (RA).
-For the same elements, the coordinate orbix's `position_arcsec` returns as RA
-is that projection's Dec, and the one it returns as Dec is its RA: orbix's
-(RA, Dec) is the astrometric (Dec, RA). That is a reflection about the
-diagonal, not a rotation, so the drawn orbit's orientation and its sense of
-motion both differ from those of the orbit a published fit describes, and
-elements taken from such a fit need converting before they are drawn this
-way. The tally does not depend on it: a reflection keeps every distance, so
-the fraction of draws within 30 mas is the same in either convention. RA
-increases to the left, as orbix's sky plots draw it.
+The figure follows orbix's (east, north, away) frame. The node angle is
+measured from north through east, and the ascending node moves away from the
+observer. `offset_arcsec` returns east (RA offset including cos Dec) and
+north (Dec offset), in that order. RA increases to the left, as orbix's sky
+plots draw it.
 
 ```{code-cell} python
 from hwoutils.constants import G, Msun2kg
+from hwoutils.epoch import Epoch
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 from orbix.equations.orbit import mean_motion, period_n
-from orbix.orbit import KeplerianOrbit
+from orbix.system import FrameOrbit, Grid, offset_arcsec
 
-jax.config.update("jax_enable_x64", True)  # Julian dates need double precision
+jax.config.update("jax_enable_x64", True)
 DEG = np.pi / 180.0
 # The toy fit: a (AU), e, W, i, w and M0 (radians) at T0, and their spreads.
 MEAN = np.array([1.2, 0.15, 40 * DEG, 55 * DEG, 110 * DEG, 200 * DEG])
 SIGMA = np.array([0.04, 0.04, 4 * DEG, 4 * DEG, 12 * DEG, 10 * DEG])
-MS_KG, DIST_PC, T0 = Msun2kg, 10.0, 2461000.0
-EPOCH = T0 + 365.25  # t, the epoch asked about: one year after T0
+MU, DIST_PC = G * Msun2kg, 10.0
+T0 = Epoch(2461000.0)
+EPOCH_D = T0.days(2461365.25)  # t, one year after T0, in days from T0
+SOLVER = Grid()
 # Seed 2: of seeds 0 to 11, the first whose final fraction is within one draw
 # of the 20,000-draw answer and whose interval holds it at every draw (the
 # rule was set after seeing all twelve runs). It takes the first such seed,
@@ -502,27 +499,28 @@ def sample(n, seed):
     return elements[(elements[:, 1] >= 0.0) & (elements[:, 1] < 1.0)]
 
 
-def at_epoch(elements):
-    """Sky positions (RA, Dec offsets in mas) at EPOCH, one row per orbit."""
-    orbits = KeplerianOrbit(*elements.T, np.full(len(elements), T0))
-    ra, dec = orbits.position_arcsec(
-        time_jd=jnp.array([EPOCH]), Ms_kg=MS_KG, dist_pc=DIST_PC
+def make_orbits(elements):
+    """Build a batch from rows of (a, e, W, i, w, M0) at day zero."""
+    a, e, node, inc, peri, mean = jnp.moveaxis(jnp.asarray(elements), -1, 0)
+    return FrameOrbit.from_classical(
+        a_AU=a, e=e, W_rad=node, i_rad=inc, w_rad=peri, M0_rad=mean,
+        mu_AU3_per_d2=MU, epoch_d=0.0,
     )
-    return 1e3 * np.column_stack([ra[:, 0], dec[:, 0]])
 
 
-def one_orbit(elements, time_jd):
-    orbit = KeplerianOrbit(*elements, T0)
-    ra, dec = orbit.position_arcsec(time_jd=time_jd, Ms_kg=MS_KG, dist_pc=DIST_PC)
-    return 1e3 * ra[0], 1e3 * dec[0]
+def at_epoch(elements):
+    """Sky positions (RA, Dec offsets in mas) at EPOCH_D, one row per orbit."""
+    position_AU, _ = make_orbits(elements).at(EPOCH_D, solver=SOLVER)
+    return 1e3 * np.column_stack(offset_arcsec(position_AU, DIST_PC))
 
 
 def sky_orbits(elements):
-    """Each orbit over one of its own periods from EPOCH, shaped (n, 181, 2)."""
-    period = period_n(mean_motion(jnp.asarray(elements[:, 0]), G * MS_KG))
-    time_jd = EPOCH + period[:, None] * jnp.linspace(0.0, 1.0, 181)
-    ra, dec = jax.vmap(one_orbit)(jnp.asarray(elements), time_jd)
-    return np.stack([np.asarray(ra), np.asarray(dec)], axis=-1)
+    """Each orbit over one of its own periods from EPOCH_D, shaped (n, 181, 2)."""
+    period = period_n(mean_motion(jnp.asarray(elements[:, 0]), MU))
+    time_d = EPOCH_D + period[:, None] * jnp.linspace(0.0, 1.0, 181)
+    position_AU, _ = make_orbits(elements[:, None, :]).at_each(time_d, solver=SOLVER)
+    ra, dec = offset_arcsec(position_AU, DIST_PC)
+    return 1e3 * np.stack([np.asarray(ra), np.asarray(dec)], axis=-1)
 
 
 nominal = at_epoch(MEAN[None])[0]
