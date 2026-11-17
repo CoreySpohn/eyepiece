@@ -34,6 +34,8 @@ pytest_plugins = []
 try:
     if importlib.util.find_spec("hwoutils.testbudget") is not None:
         pytest_plugins.append("hwoutils.testbudget.plugin")
+    if importlib.util.find_spec("hwoutils.internal_refs") is not None:
+        pytest_plugins.append("hwoutils.internal_refs")
 except ModuleNotFoundError as err:
     if err.name != "hwoutils":
         raise

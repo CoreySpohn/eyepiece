@@ -172,19 +172,3 @@ def test_exports_survive_every_submodule_import():
         check=True,
     )
     assert result.stdout.strip() == ""
-
-
-def test_public_files_have_no_internal_references():
-    root = SRC.parent.parent
-    files = subprocess.check_output(
-        ["git", "ls-files", "-z", "src", "tests", "docs", "README.md"],
-        cwd=root,
-        text=True,
-    ).split("\0")
-    result = subprocess.run(
-        [sys.executable, str(root / "tools/check_internal_refs.py")]
-        + [str(root / name) for name in files if name and (root / name).exists()],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stdout
