@@ -136,7 +136,7 @@ class ClipSpec:
 
     Venue budgets apply only to silent variants; speech determines narrated
     length. Each render starts from fresh default style state, then applies
-    the variant mode and venue rc. Parent toggles such as ep.use_video are not
+    the variant mode and venue rc. Parent toggles such as ep.style.use_video are not
     inherited. For render_frames, pass style changes through setup and rc so
     both the in-process and spawned paths receive them explicitly.
 

@@ -16,7 +16,7 @@ import eyepiece as ep
     ],
 )
 def test_excluded_run_midpoints(orient, log, x, expected):
-    result = ep.shade_intervals(
+    result = ep.plot.shade_intervals(
         x, ~np.array([True, False, False, True]), orient=orient, log=log
     )
     assert isinstance(result, ep.PlotResult)
@@ -36,7 +36,7 @@ def test_excluded_run_midpoints(orient, log, x, expected):
 def test_infinite_intervals_clip_to_handed_limits(orient):
     fig, ax = plt.subplots()
     ax.set(xlim=(2, 8), ylim=(2, 8))
-    result = ep.shade_intervals(
+    result = ep.plot.shade_intervals(
         intervals=[[-np.inf, 4], [6, np.inf]],
         ax=ax,
         orient=orient,
@@ -61,16 +61,16 @@ def test_run_endpoints_empty_and_singleton():
         ([0, 2, 4], [-1, 3], [2, 2]),
     ):
         mask = [True, *[False] * (len(x) - 2), True]
-        result = ep.shade_intervals(x, mask)
+        result = ep.plot.shade_intervals(x, mask)
         patches = result.artists["fill"]
         np.testing.assert_allclose([p.get_x() for p in patches], starts)
         np.testing.assert_allclose([p.get_width() for p in patches], widths)
         plt.close(result.fig)
     for x, mask in [([], []), ([1], [False])]:
-        result = ep.shade_intervals(x, mask)
+        result = ep.plot.shade_intervals(x, mask)
         assert not result.artists["fill"]
         plt.close(result.fig)
-    result = ep.shade_intervals([1], [True], log=True)
+    result = ep.plot.shade_intervals([1], [True], log=True)
     patch = result.artists["fill"][0]
     np.testing.assert_allclose(
         [patch.get_x(), patch.get_width()], [10**-0.5, 10**0.5 - 10**-0.5]
@@ -81,7 +81,7 @@ def test_run_endpoints_empty_and_singleton():
 @pytest.mark.parametrize("orient", ["h", "v"])
 @pytest.mark.parametrize("where,edge", [("start", 0), ("end", 1)])
 def test_reference_axis_transform(orient, where, edge):
-    result = ep.ref_line(
+    result = ep.plot.ref_line(
         None,
         3,
         "limit",
@@ -112,7 +112,7 @@ def test_reference_axis_transform(orient, where, edge):
 @pytest.mark.parametrize("axis", ["x", "y"])
 @pytest.mark.parametrize("break_mark", [False, True])
 def test_floor_tick_and_break(axis, break_mark):
-    result = ep.log_zero_floor(
+    result = ep.plot.log_zero_floor(
         None, 1e-4, axis=axis, break_mark=break_mark, mark_kw={"lw": 3}
     )
     ax = result.ax
@@ -137,9 +137,9 @@ def test_floor_tick_and_break(axis, break_mark):
 @pytest.mark.parametrize(
     "draw",
     [
-        lambda ax: ep.shade_intervals([0, 1], [False, True], ax=ax),
-        lambda ax: ep.ref_line(ax, 1, "reference"),
-        lambda ax: ep.log_zero_floor(ax, 1e-3),
+        lambda ax: ep.plot.shade_intervals([0, 1], [False, True], ax=ax),
+        lambda ax: ep.plot.ref_line(ax, 1, "reference"),
+        lambda ax: ep.plot.log_zero_floor(ax, 1e-3),
     ],
 )
 def test_marks_preserve_caller_geometry(draw):
@@ -147,7 +147,7 @@ def test_marks_preserve_caller_geometry(draw):
     positions = [ax.get_position(original=True).bounds for ax in axes]
     result = draw(axes[0])
     assert result.ax is axes[0]
-    assert result.artists.keys() <= ep.ARTIST_KEYS
+    assert result.artists.keys() <= ep.plot.ARTIST_KEYS
     assert fig.get_layout_engine() is None
     assert [ax.get_position(original=True).bounds for ax in axes] == positions
     assert axes[0].get_shared_x_axes().get_siblings(axes[0]) == [axes[0]]
@@ -158,26 +158,26 @@ def test_marks_preserve_caller_geometry(draw):
 @pytest.mark.parametrize("floor", [0, -1, np.inf, np.nan])
 def test_invalid_floor(floor):
     with pytest.raises(ValueError, match="finite and positive"):
-        ep.log_zero_floor(None, floor)
+        ep.plot.log_zero_floor(None, floor)
 
 
 def test_invalid_spans():
     with pytest.raises(ValueError, match="positive"):
-        ep.shade_intervals([0, 1], [True, False], log=True)
+        ep.plot.shade_intervals([0, 1], [True, False], log=True)
     with pytest.raises(ValueError, match=r"expected.*received"):
-        ep.shade_intervals([1, 2], [True])
+        ep.plot.shade_intervals([1, 2], [True])
     with pytest.raises(ValueError, match="either"):
-        ep.shade_intervals([1], [True], intervals=[[0, 2]])
+        ep.plot.shade_intervals([1], [True], intervals=[[0, 2]])
 
 
 def test_passthrough_aliases_override_defaults():
     from matplotlib.colors import to_rgba
 
-    result = ep.shade_intervals([0, 1], [False, True], fill_kw={"fc": "red"})
+    result = ep.plot.shade_intervals([0, 1], [False, True], fill_kw={"fc": "red"})
     np.testing.assert_allclose(
         result.artists["fill"][0].get_facecolor(), to_rgba("red")
     )
-    line = ep.ref_line(
+    line = ep.plot.ref_line(
         result.ax,
         1,
         "limit",
@@ -186,7 +186,7 @@ def test_passthrough_aliases_override_defaults():
     )
     assert line.artists["line"].get_linestyle() == ":"
     assert line.artists["text"].get_ha() == "right"
-    mark = ep.log_zero_floor(result.ax, 0.01, mark_kw={"linewidth": 5})
+    mark = ep.plot.log_zero_floor(result.ax, 0.01, mark_kw={"linewidth": 5})
     assert all(stroke.get_linewidth() == 5 for stroke in mark.artists["lines"])
     plt.close(result.fig)
 
@@ -194,7 +194,7 @@ def test_passthrough_aliases_override_defaults():
 @pytest.mark.parametrize("axis", ["x", "y"])
 def test_log_zero_floor_before_data_leaves_far_end_free(axis):
     fig, ax = plt.subplots()
-    ep.log_zero_floor(ax, 1e-4, axis=axis)
+    ep.plot.log_zero_floor(ax, 1e-4, axis=axis)
     data = ([1e-4, 1e4], [1.0, 2.0]) if axis == "x" else ([1.0, 2.0], [1e-4, 1e4])
     ax.plot(*data)
     limits = ax.get_xlim() if axis == "x" else ax.get_ylim()

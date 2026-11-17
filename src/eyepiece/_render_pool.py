@@ -736,7 +736,7 @@ def render_frames(
     the sink dpi. Each later draw runs at the figure dpi; capture uses savefig
     at the sink dpi, matching record's default H.264 writer.
     A fresh worker starts from default style state. Parent toggles such as
-    ep.use_video are not inherited, including with workers=1. Pass style
+    ep.style.use_video are not inherited, including with workers=1. Pass style
     changes through setup and rc to apply them identically in both paths.
     The in-process path restores rcParams, hwostyle globals, and the video
     style switch when it exits, including after a setup or build failure.

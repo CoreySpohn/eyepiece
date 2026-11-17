@@ -18,17 +18,21 @@ def _scene():
     ax.set_axis_off()
     th = np.linspace(0.0, 2.0 * np.pi, 241)
     (ring,) = ax.plot(np.cos(th), np.sin(th), color="black", lw=LW)
-    count = ep.readout(
-        ep.Anchor.from_data(ax, (2.0, 1.0)), 123456, fmt=",d", digits=7, fontsize=14
+    count = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (2.0, 1.0)),
+        123456,
+        fmt=",d",
+        digits=7,
+        fontsize=14,
     )
-    rule = ep.ruler(ax, (0.0, 0.0), (-1.0, 0.0), "r = 1.00", head_scale=0)
-    end = ep.Anchor.from_data(ax, (1.0, 0.0))
+    rule = ep.plot.ruler(ax, (0.0, 0.0), (-1.0, 0.0), "r = 1.00", head_scale=0)
+    end = ep.motion.Anchor.from_data(ax, (1.0, 0.0))
     fig.canvas.draw()
     return fig, ring, count, rule, end
 
 
 def _land(ring, count, rule, end):
-    return ep.click(ring, dot=end, readout=count, ruler=rule)
+    return ep.motion.click(ring, dot=end, readout=count, ruler=rule)
 
 
 def test_the_beat_is_0_6_s_and_a_1_5_s_stillness_follows_at_any_tempo():
@@ -137,8 +141,8 @@ def test_click_clip_has_no_motion_fault():
 def test_click_validation():
     _, ring, *_ = _scene()
     with pytest.raises(ValueError, match="geometry"):
-        ep.click([])
+        ep.motion.click([])
     with pytest.raises(TypeError, match="line or a patch"):
-        ep.click(ring.axes.text(0, 0, "x"))
+        ep.motion.click(ring.axes.text(0, 0, "x"))
     with pytest.raises(ValueError, match="swell"):
-        ep.click(ring, swell=0.9)
+        ep.motion.click(ring, swell=0.9)

@@ -40,9 +40,9 @@ def busy_clip():
             )
     fig.canvas.draw()
     fig.set_layout_engine("none")
-    ring = ep.circumscribe(markers[0], shape="ellipse", pad_pt=5)
-    caption = ep.words(
-        ep.Anchor.from_data(axes[1, 0], (-0.9, -2.0)),
+    ring = ep.motion.circumscribe(markers[0], shape="ellipse", pad_pt=5)
+    caption = ep.motion.words(
+        ep.motion.Anchor.from_data(axes[1, 0], (-0.9, -2.0)),
         "The moving world carries the measured velocity around its orbit",
         fontsize=12,
     )

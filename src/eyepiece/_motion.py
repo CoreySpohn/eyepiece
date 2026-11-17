@@ -562,8 +562,8 @@ def pulse_shape(u, *, rise=0.35, hold=0.3, fall=0.35, ease=DEFAULT_EASE):
 
     Example::
 
-        strength = ep.pulse_shape(0.5)
-        held = ep.pulse_shape(0.4, rise=1, hold=2, fall=1)
+        strength = ep.clock.pulse_shape(0.5)
+        held = ep.clock.pulse_shape(0.4, rise=1, hold=2, fall=1)
     """
     u, rise, hold, fall = map(float, (u, rise, hold, fall))
     total = rise + hold + fall

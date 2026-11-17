@@ -22,7 +22,7 @@ def _labels(ax):
     plain = ax.text(0.1, 0.8, "plain", color="C0", fontsize=14)
     note = ax.annotate("note", (0.6, 0.65), xytext=(6, 6), textcoords="offset points",
                        color="C0", fontsize=14)  # fmt: skip
-    call = ep.callout(mark, "callout", side="above", color="C0").artists["text"]
+    call = ep.motion.callout(mark, "callout", side="above", color="C0").artists["text"]
     return mark, {"plain": plain, "note": note, "call": call}
 
 
@@ -39,7 +39,7 @@ def test_drift_is_straight_up_within_ten_pixels_and_lands_exactly(which):
     text = labels[which]
     x_rest, y_rest = _y(fig, text)
     still = _pixels(fig)
-    stage = ep.Stage({"label": text})
+    stage = ep.motion.Stage({"label": text})
     xs, ys = [], []
     for u in np.linspace(0.0, 1.0, 31):
         stage.weigh({"label": u}, ease="smooth", lift_pt=6.0)  # 10 px at 120 dpi
@@ -57,7 +57,7 @@ def test_drift_is_straight_up_within_ten_pixels_and_lands_exactly(which):
 def test_bound_is_ten_pixels_at_the_figure_dpi():
     _, ax = _board(dpi=144)
     _, labels = _labels(ax)
-    stage = ep.Stage({"label": labels["plain"]})
+    stage = ep.motion.Stage({"label": labels["plain"]})
     stage.weigh({"label": 0.0}, lift_pt=5.0)  # exactly 10 px
     with pytest.raises(ValueError, match="at most 10 px"):
         stage.weigh({"label": 0.0}, lift_pt=5.1)
@@ -66,7 +66,7 @@ def test_bound_is_ten_pixels_at_the_figure_dpi():
 def test_a_data_mark_never_drifts():
     _, ax = _board()
     mark, labels = _labels(ax)
-    stage = ep.Stage({"mark": mark, "both": [labels["plain"], mark]})
+    stage = ep.motion.Stage({"mark": mark, "both": [labels["plain"], mark]})
     for group in ("mark", "both"):
         with pytest.raises(ValueError, match="labels and callouts only"):
             stage.weigh({group: 0.5}, lift_pt=4.0)
@@ -76,7 +76,7 @@ def test_a_data_mark_never_drifts():
 def test_annotation_outside_offset_coordinates_raises():
     _, ax = _board()
     note = ax.annotate("note", (0.5, 0.3), xytext=(0.6, 0.4), textcoords="data")
-    stage = ep.Stage({"note": note})
+    stage = ep.motion.Stage({"note": note})
     with pytest.raises(ValueError, match="offset points"):
         stage.weigh({"note": 0.5}, lift_pt=4.0)
 
@@ -85,7 +85,7 @@ def test_weigh_without_lift_and_rest_put_labels_back():
     fig, ax = _board()
     _, labels = _labels(ax)
     still = _pixels(fig)
-    stage = ep.Stage({"labels": list(labels.values())})
+    stage = ep.motion.Stage({"labels": list(labels.values())})
     stage.weigh({"labels": 0.4}, lift_pt=5.0)
     stage.weigh({"labels": 1.0})
     np.testing.assert_array_equal(_pixels(fig), still)
@@ -101,7 +101,7 @@ def test_weigh_without_lift_and_rest_put_labels_back():
 def test_contract_declares_lifted_labels_as_moving_and_clip_is_clean():
     fig, ax = _board(dpi=120)
     mark, labels = _labels(ax)
-    stage = ep.Stage({"mark": mark, "labels": list(labels.values())})
+    stage = ep.motion.Stage({"mark": mark, "labels": list(labels.values())})
 
     def at(u):
         stage.weigh({"labels": u}, ease="smooth", lift_pt=6.0)

@@ -9,10 +9,10 @@ key, never by position, so the key ``"planet"`` is the same planet whatever
 else a set lists.
 
 A motif never stores a hex value. Its color resolves at call time through
-`eyepiece.role`, so a mode switch is seen, and a saved figure state keeps the
+`eyepiece.style.role`, so a mode switch is seen, and a saved figure state keeps the
 motif key and not a color that would go stale. `MotifSet.default()` reads the
 default table from `hwostyle.motifs`; an older hwostyle without it gets a
-smaller stand-in table, as `eyepiece.role` does for a missing role.
+smaller stand-in table, as `eyepiece.style.role` does for a missing role.
 
 A set describes the vocabulary a figure or clip draws with, so check the
 subset it uses (`MotifSet.only`) with `eyepiece.testing.motif_faults`, not the
@@ -23,13 +23,12 @@ Example::
 
     import eyepiece as ep
 
-    motifs = ep.MotifSet.default()
+    motifs = ep.motifs.MotifSet.default()
     ax.plot(x, y, **motifs["model"].line_kw())
     ax.plot(x, y0, **motifs["truth"].line_kw())
 """
 
 import dataclasses
-import warnings
 from collections.abc import Mapping
 
 import hwostyle
@@ -328,26 +327,6 @@ def _label_in(role, mark, mode):
         return to_hex(ink(role))
     except KeyError:
         return mark
-
-
-def resolve_role(role, mode=None):
-    """Deprecated: use `eyepiece.role`, which takes a rank and ``mode=`` too.
-
-    Args:
-        role: A hwostyle color role (``"star"``, ``"model"``) or a neutral rank
-            (``"hardware"``, ``"text"``).
-        mode: A hwostyle mode name, or None for the active mode.
-
-    Returns:
-        A hex string, the same as ``eyepiece.role(role, mode=mode)``.
-    """
-    warnings.warn(
-        "eyepiece.motifs.resolve_role is deprecated; use "
-        "eyepiece.role(name, mode=...), which resolves neutral ranks too",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _style.role(role, mode=mode)
 
 
 def is_hue_role(role):

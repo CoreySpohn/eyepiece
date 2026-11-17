@@ -30,9 +30,11 @@ def spread_labels(labels, *, min_gap=2.0):
 
     Example::
 
-        labels = [ax.text(0.9, y, name, va="center")
-                  for y, name in [(0.5, "a"), (0.51, "b"), (0.52, "c")]]
-        ep.spread_labels(labels, min_gap=3)
+        labels = [
+            ax.text(0.9, y, name, va="center")
+            for y, name in [(0.5, "a"), (0.51, "b"), (0.52, "c")]
+        ]
+        ep.plot.spread_labels(labels, min_gap=3)
     """
     labels = list(labels)
     gap = float(min_gap)

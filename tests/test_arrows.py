@@ -52,7 +52,7 @@ def _tangent_error(result, ax, center, radius, angle, clockwise):
 @pytest.mark.parametrize("end", [30.0, 95.0, 170.0, 250.0, 340.0, -45.0, -200.0])
 def test_arc_head_stays_tangent_through_a_sweep(end):
     fig, ax = _axes()
-    arc = ep.angle_arc((0.2, -0.1), 0.0, 20.0, 1.2, ax=ax)
+    arc = ep.motion.angle_arc((0.2, -0.1), 0.0, 20.0, 1.2, ax=ax)
     clockwise = end < 0.0
     for u in (1.0, 0.8, 0.5, 0.3):
         arc.update(u, end_angle=end)
@@ -63,7 +63,7 @@ def test_arc_head_stays_tangent_through_a_sweep(end):
 
 def test_arc_head_is_tangent_at_the_start_end_too():
     fig, ax = _axes()
-    arc = ep.angle_arc((0.0, 0.0), 20.0, 150.0, 1.0, ax=ax, head="start")
+    arc = ep.motion.angle_arc((0.0, 0.0), 20.0, 150.0, 1.0, ax=ax, head="start")
     fig.canvas.draw()
     patch = arc.artists["arrow"]
     paths, _ = patch._get_path_in_displaycoord()
@@ -78,11 +78,11 @@ def test_arc_head_is_tangent_at_the_start_end_too():
 
 def test_arc_has_two_heads_when_asked():
     fig, ax = _axes()
-    arc = ep.angle_arc((0.0, 0.0), 0.0, 120.0, 1.0, ax=ax, head="both")
+    arc = ep.motion.angle_arc((0.0, 0.0), 0.0, 120.0, 1.0, ax=ax, head="both")
     fig.canvas.draw()
     _, fillable = arc.artists["arrow"]._get_path_in_displaycoord()
     assert sum(1 for f in fillable if f) == 2
-    plain = ep.angle_arc((0.0, 0.0), 0.0, 120.0, 1.0, ax=ax, head="none")
+    plain = ep.motion.angle_arc((0.0, 0.0), 0.0, 120.0, 1.0, ax=ax, head="none")
     fig.canvas.draw()
     _, fillable = plain.artists["arrow"]._get_path_in_displaycoord()
     assert not np.any(fillable)
@@ -90,7 +90,7 @@ def test_arc_has_two_heads_when_asked():
 
 def test_arc_sweeps_on_the_same_artists_and_keeps_the_limits():
     fig, ax = _axes()
-    arc = ep.angle_arc((0.0, 0.0), 0.0, 90.0, 1.0, ax=ax, label=r"$\theta$")
+    arc = ep.motion.angle_arc((0.0, 0.0), 0.0, 90.0, 1.0, ax=ax, label=r"$\theta$")
     patch, text = arc.artists["arrow"], arc.artists["text"]
     children = list(ax.get_children())
     limits = (ax.get_xlim(), ax.get_ylim())
@@ -105,7 +105,7 @@ def test_arc_sweeps_on_the_same_artists_and_keeps_the_limits():
 def test_arc_rest_state_is_pixel_exact():
     fig, ax = _axes()
     bare = _pixels(fig)
-    arc = ep.angle_arc((0.0, 0.0), 0.0, 75.0, 1.0, ax=ax, label="a")
+    arc = ep.motion.angle_arc((0.0, 0.0), 0.0, 75.0, 1.0, ax=ax, label="a")
     rest = _pixels(fig)
     for u in (0.0, 0.4, 0.9):
         arc.update(u, end_angle=75.0 + 50.0 * u, level=0.5)
@@ -114,7 +114,7 @@ def test_arc_rest_state_is_pixel_exact():
     assert np.array_equal(_pixels(fig), rest)
     arc.artists["arrow"].remove()
     arc.artists["text"].remove()
-    fresh = ep.angle_arc((0.0, 0.0), 0.0, 75.0, 1.0, ax=ax, label="a")
+    fresh = ep.motion.angle_arc((0.0, 0.0), 0.0, 75.0, 1.0, ax=ax, label="a")
     fresh.update(0.0)
     assert np.array_equal(_pixels(fig), bare)
     assert not fresh.artists["text"].get_visible()
@@ -122,7 +122,7 @@ def test_arc_rest_state_is_pixel_exact():
 
 def test_arc_label_sits_at_the_midpoint_on_a_backing_box():
     _, ax = _axes()
-    arc = ep.angle_arc((0.5, 0.0), 10.0, 70.0, 1.0, ax=ax, label="x")
+    arc = ep.motion.angle_arc((0.5, 0.0), 10.0, 70.0, 1.0, ax=ax, label="x")
     text = arc.artists["text"]
     mid = math.radians(40.0)
     expected = (0.5 + math.cos(mid), math.sin(mid))
@@ -131,7 +131,9 @@ def test_arc_label_sits_at_the_midpoint_on_a_backing_box():
     arc.update(0.5)
     half = math.radians(25.0)
     assert text.xy == pytest.approx((0.5 + math.cos(half), math.sin(half)))
-    out = ep.angle_arc((0.0, 0.0), 0.0, 90.0, 1.0, ax=ax, label="y", label_scale=1.5)
+    out = ep.motion.angle_arc(
+        (0.0, 0.0), 0.0, 90.0, 1.0, ax=ax, label="y", label_scale=1.5
+    )
     assert out.artists["text"].xy == pytest.approx(
         (1.5 * math.cos(math.radians(45.0)), 1.5 * math.sin(math.radians(45.0)))
     )
@@ -139,7 +141,7 @@ def test_arc_label_sits_at_the_midpoint_on_a_backing_box():
 
 def test_arc_clockwise_goes_the_short_way():
     _, ax = _axes()
-    short = ep.angle_arc((0.0, 0.0), 0.0, -10.0, 1.0, ax=ax)
+    short = ep.motion.angle_arc((0.0, 0.0), 0.0, -10.0, 1.0, ax=ax)
     patch = short.artists["arrow"]
     verts = patch._path_original.vertices
     assert verts[:, 1].max() <= 1e-9
@@ -151,19 +153,19 @@ def test_arc_clockwise_goes_the_short_way():
 def test_arc_rejects_bad_input():
     _, ax = _axes()
     with pytest.raises(ValueError, match="head"):
-        ep.angle_arc((0, 0), 0, 10, 1.0, ax=ax, head="middle")
+        ep.motion.angle_arc((0, 0), 0, 10, 1.0, ax=ax, head="middle")
     with pytest.raises(ValueError, match="positive"):
-        ep.angle_arc((0, 0), 0, 10, 0.0, ax=ax)
+        ep.motion.angle_arc((0, 0), 0, 10, 0.0, ax=ax)
     with pytest.raises(ValueError, match="360"):
-        ep.angle_arc((0, 0), 0, 400, 1.0, ax=ax)
+        ep.motion.angle_arc((0, 0), 0, 400, 1.0, ax=ax)
     with pytest.raises(ValueError, match="finite"):
-        ep.angle_arc((0, 0), 0, float("nan"), 1.0, ax=ax)
+        ep.motion.angle_arc((0, 0), 0, float("nan"), 1.0, ax=ax)
 
 
 def test_tiny_arc_draws_nothing_instead_of_raising():
     fig, ax = _axes()
     bare = _pixels(fig)
-    arc = ep.angle_arc((0.0, 0.0), 0.0, 1e-9, 1.0, ax=ax)
+    arc = ep.motion.angle_arc((0.0, 0.0), 0.0, 1e-9, 1.0, ax=ax)
     assert np.array_equal(_pixels(fig), bare)
     arc.update(1.0, end_angle=0.0)
     assert np.array_equal(_pixels(fig), bare)
@@ -176,7 +178,7 @@ def test_tiny_arc_draws_nothing_instead_of_raising():
 def test_arrow_updates_reuse_the_artists(kind):
     fig, ax = _axes()
     bare = _pixels(fig)
-    result = ep.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax, kind=kind, label="d")
+    result = ep.motion.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax, kind=kind, label="d")
     patch, text = result.artists["arrow"], result.artists["text"]
     children = list(ax.get_children())
     limits = (ax.get_xlim(), ax.get_ylim())
@@ -194,18 +196,18 @@ def test_arrow_updates_reuse_the_artists(kind):
     assert np.array_equal(_pixels(fig), rest)
     patch.remove()
     text.remove()
-    fresh = ep.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax, kind=kind, label="d")
+    fresh = ep.motion.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax, kind=kind, label="d")
     fresh.update(0.0)
     assert np.array_equal(_pixels(fig), bare)
 
 
 def test_vector_grows_from_the_tail_and_two_headed_kinds_from_the_middle():
     _, ax = _axes()
-    vector = ep.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax)
+    vector = ep.motion.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax)
     vector.update(0.5)
     a, b = vector.artists["arrow"]._ends
     assert a == pytest.approx((-1.0, 0.0)) and b == pytest.approx((0.0, 0.0))
-    gap = ep.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, kind="dimension")
+    gap = ep.motion.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, kind="dimension")
     gap.update(0.5)
     a, b = gap.artists["arrow"]._ends
     assert a == pytest.approx((-0.5, 0.0)) and b == pytest.approx((0.5, 0.0))
@@ -215,7 +217,7 @@ def test_double_and_dimension_have_two_heads_and_vector_one():
     fig, ax = _axes()
     counts = {}
     for kind in ("vector", "double", "dimension"):
-        result = ep.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, kind=kind)
+        result = ep.motion.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, kind=kind)
         fig.canvas.draw()
         _, fillable = result.artists["arrow"]._get_path_in_displaycoord()
         counts[kind] = int(np.sum(fillable)) if kind != "dimension" else None
@@ -224,19 +226,19 @@ def test_double_and_dimension_have_two_heads_and_vector_one():
 
 def test_dimension_label_sits_on_the_line_in_a_backing_box():
     _, ax = _axes()
-    gap = ep.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, kind="dimension", label="d")
+    gap = ep.motion.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, kind="dimension", label="d")
     text = gap.artists["text"]
     assert text.get_bbox_patch() is not None
     assert text.xy == pytest.approx((0.0, 0.0))
     assert text.xyann == pytest.approx((0.0, 0.0))
-    side = ep.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, label="v")
+    side = ep.motion.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, label="v")
     assert side.artists["text"].get_bbox_patch() is None
     assert side.artists["text"].xyann[1] > 0.0
 
 
 def test_a_moved_arrow_moves_its_label():
     _, ax = _axes()
-    result = ep.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, label="v")
+    result = ep.motion.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, label="v")
     result.update(tail=(0.0, 1.0), head=(2.0, 1.0))
     assert result.artists["text"].xy == pytest.approx((1.0, 1.0))
     result.update()
@@ -245,7 +247,7 @@ def test_a_moved_arrow_moves_its_label():
 
 def test_level_dims_and_restores_the_alpha():
     _, ax = _axes()
-    result = ep.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, label="v")
+    result = ep.motion.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, label="v")
     patch = result.artists["arrow"]
     result.update(level=0.5)
     assert patch.get_alpha() == pytest.approx(0.5)
@@ -258,19 +260,21 @@ def test_level_dims_and_restores_the_alpha():
 def test_arrow_rejects_bad_input():
     _, ax = _axes()
     with pytest.raises(ValueError, match="kind"):
-        ep.arrow((0, 0), (1, 1), ax=ax, kind="curly")
+        ep.motion.arrow((0, 0), (1, 1), ax=ax, kind="curly")
     with pytest.raises(ValueError, match="finite"):
-        ep.arrow((0, 0), (float("inf"), 1), ax=ax)
+        ep.motion.arrow((0, 0), (float("inf"), 1), ax=ax)
     with pytest.raises(ValueError, match="pair"):
-        ep.arrow((0, 0, 0), (1, 1), ax=ax)
+        ep.motion.arrow((0, 0, 0), (1, 1), ax=ax)
 
 
 def test_a_stage_can_hold_the_arrow_and_the_arc():
     fig, ax = _axes()
-    arrow = ep.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, label="v")
-    arc = ep.angle_arc((0.0, 0.0), 0.0, 60.0, 1.0, ax=ax, label="a")
+    arrow = ep.motion.arrow((-1.0, 0.0), (1.0, 0.0), ax=ax, label="v")
+    arc = ep.motion.angle_arc((0.0, 0.0), 0.0, 60.0, 1.0, ax=ax, label="a")
     rest = _pixels(fig)
-    stage = ep.Stage({"a": [*arrow.artists.values()], "b": [*arc.artists.values()]})
+    stage = ep.motion.Stage(
+        {"a": [*arrow.artists.values()], "b": [*arc.artists.values()]}
+    )
     stage.set(shown=["a"], dimmed=["b"])
     assert not np.array_equal(_pixels(fig), rest)
     stage.rest()
@@ -289,7 +293,7 @@ def _tips(result):
 def test_compass_puts_east_left_of_north_for_the_sky(angle):
     _, ax = _axes()
     center = np.array([0.1, -0.2])
-    result = ep.compass(center, 0.8, ax=ax, east="left", angle=angle)
+    result = ep.motion.compass(center, 0.8, ax=ax, east="left", angle=angle)
     north, east = _tips(result)
     origin = ax.transData.transform(center)
     shown_n, shown_e = (ax.transData.transform(p) - origin for p in (north, east))
@@ -304,8 +308,8 @@ def test_compass_puts_east_left_of_north_for_the_sky(angle):
 def test_compass_east_right_is_the_mirror(angle):
     _, ax = _axes()
     center = np.array([0.0, 0.0])
-    sky = ep.compass(center, 0.8, ax=ax, east="left", angle=angle)
-    chart = ep.compass(center, 0.8, ax=ax, east="right", angle=angle)
+    sky = ep.motion.compass(center, 0.8, ax=ax, east="left", angle=angle)
+    chart = ep.motion.compass(center, 0.8, ax=ax, east="right", angle=angle)
     (n1, e1), (n2, e2) = _tips(sky), _tips(chart)
     assert n1 == pytest.approx(n2)
     assert e1 == pytest.approx(-e2)
@@ -316,7 +320,7 @@ def test_compass_east_right_is_the_mirror(angle):
 
 def test_compass_north_up_east_left_at_zero_angle():
     _, ax = _axes()
-    result = ep.compass((0.0, 0.0), 1.0, ax=ax, east="left")
+    result = ep.motion.compass((0.0, 0.0), 1.0, ax=ax, east="left")
     north, east = _tips(result)
     assert north == pytest.approx((0.0, 1.0)) and east == pytest.approx((-1.0, 0.0))
 
@@ -324,16 +328,16 @@ def test_compass_north_up_east_left_at_zero_angle():
 def test_compass_has_no_default_for_east():
     _, ax = _axes()
     with pytest.raises(TypeError, match="east"):
-        ep.compass((0.0, 0.0), 1.0, ax=ax)
+        ep.motion.compass((0.0, 0.0), 1.0, ax=ax)
     with pytest.raises(ValueError, match="east"):
-        ep.compass((0.0, 0.0), 1.0, ax=ax, east="up")
+        ep.motion.compass((0.0, 0.0), 1.0, ax=ax, east="up")
     with pytest.raises(ValueError, match="length"):
-        ep.compass((0.0, 0.0), 0.0, ax=ax, east="left")
+        ep.motion.compass((0.0, 0.0), 0.0, ax=ax, east="left")
 
 
 def test_compass_turns_on_the_same_artists_and_rests_pixel_exact():
     fig, ax = _axes()
-    result = ep.compass((0.0, 0.0), 0.8, ax=ax, east="left")
+    result = ep.motion.compass((0.0, 0.0), 0.8, ax=ax, east="left")
     arrows, texts = list(result.artists["arrow"]), list(result.artists["text"])
     children = list(ax.get_children())
     rest = _pixels(fig)
@@ -350,10 +354,10 @@ def test_compass_turns_on_the_same_artists_and_rests_pixel_exact():
 def test_compass_is_absent_at_u_zero_and_can_drop_its_letters():
     fig, ax = _axes()
     bare = _pixels(fig)
-    result = ep.compass((0.0, 0.0), 0.8, ax=ax, east="right", labels=None)
+    result = ep.motion.compass((0.0, 0.0), 0.8, ax=ax, east="right", labels=None)
     assert "text" not in result.artists
     result.update(0.0)
     assert np.array_equal(_pixels(fig), bare)
-    named = ep.compass((0.0, 0.0), 0.8, ax=ax, east="right", labels=("N", "E"))
+    named = ep.motion.compass((0.0, 0.0), 0.8, ax=ax, east="right", labels=("N", "E"))
     named.update(0.0)
     assert np.array_equal(_pixels(fig), bare)

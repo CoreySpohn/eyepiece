@@ -36,7 +36,6 @@ def read_pixels(path):
 def test_public_still_exports():
     for name in ("render_poster", "render_still", "same_picture"):
         assert name in ep.render.__all__
-        assert getattr(ep, name) is getattr(render, name)
 
 
 def test_poster_matches_raster_and_decoded_video(tmp_path):
@@ -45,7 +44,7 @@ def test_poster_matches_raster_and_decoded_video(tmp_path):
     rc = {"axes.labelpad": 6}
     path = tmp_path / "nested" / "poster.png"
     assert (
-        ep.render_poster(
+        ep.render.render_poster(
             build_poster_clip, frames, 2, path, dpi=100, setup=setup_style, rc=rc
         )
         == path
@@ -79,7 +78,7 @@ def test_poster_matches_raster_and_decoded_video(tmp_path):
     # Without the frame-zero freeze the wider label moves the axes.
     assert not np.array_equal(expected, reference(2))
     before = path.read_bytes()
-    ep.render_poster(
+    ep.render.render_poster(
         build_poster_clip, frames, 2, path, dpi=100, setup=setup_style, rc=rc
     )
     assert path.read_bytes() == before
@@ -88,7 +87,7 @@ def test_poster_matches_raster_and_decoded_video(tmp_path):
     video = tmp_path / "clip.mp4"
     # Lossless encoding isolates yuv420p conversion from lossy text-edge error.
     chunks = tmp_path / "chunks"
-    result = ep.render_frames(
+    result = ep.render.render_frames(
         build_poster_clip,
         frames,
         video,
@@ -138,7 +137,7 @@ def test_poster_matches_raster_and_decoded_video(tmp_path):
 def test_poster_frame_sources_and_fresh_interpreter(tmp_path):
     path = tmp_path / "poster.png"
     rc = {"axes.labelpad": 6}
-    ep.render_poster(
+    ep.render.render_poster(
         build_poster_clip,
         [0.0, 0.5, 1.0],
         1,
@@ -148,7 +147,7 @@ def test_poster_frame_sources_and_fresh_interpreter(tmp_path):
         rc=rc,
     )
     mapped = tmp_path / "mapped.png"
-    ep.render_poster(
+    ep.render.render_poster(
         build_poster_clip,
         3,
         1,
@@ -160,9 +159,9 @@ def test_poster_frame_sources_and_fresh_interpreter(tmp_path):
     )
     assert mapped.read_bytes() == path.read_bytes()
     integer = tmp_path / "integer.png"
-    ep.render_poster(build_poster_clip, 2, 1, integer, dpi=100)
+    ep.render.render_poster(build_poster_clip, 2, 1, integer, dpi=100)
     explicit = tmp_path / "explicit.png"
-    ep.render_poster(build_poster_clip, [0, 1], 1, explicit, dpi=100)
+    ep.render.render_poster(build_poster_clip, [0, 1], 1, explicit, dpi=100)
     assert integer.read_bytes() == explicit.read_bytes()
     fresh = tmp_path / "fresh.png"
     code = """
@@ -171,7 +170,7 @@ import matplotlib
 matplotlib.use("Agg")
 import eyepiece as ep
 from test_render_helpers import build_poster_clip, poster_frame_at, setup_style
-ep.render_poster(build_poster_clip, 3, 1, sys.argv[1], dpi=100,
+ep.render.render_poster(build_poster_clip, 3, 1, sys.argv[1], dpi=100,
     frame_at=poster_frame_at, setup=setup_style, rc={'axes.labelpad': 6})
 """
     subprocess.run(
@@ -191,12 +190,14 @@ def test_poster_rejects_out_of_range_index_before_build(tmp_path, index):
         pytest.fail("invalid requests must not build a figure")
 
     with pytest.raises(IndexError):
-        ep.render_poster(unexpected_build, 3, index, tmp_path / "poster.png", dpi=100)
+        ep.render.render_poster(
+            unexpected_build, 3, index, tmp_path / "poster.png", dpi=100
+        )
 
 
 def test_poster_rejects_suffix_before_build(tmp_path):
     with pytest.raises(ValueError, match="png"):
-        ep.render_poster(None, 3, 1, tmp_path / "poster.pdf", dpi=100)
+        ep.render.render_poster(None, 3, 1, tmp_path / "poster.pdf", dpi=100)
 
 
 def test_poster_failed_write_preserves_target_and_removes_partial(
@@ -211,7 +212,7 @@ def test_poster_failed_write_preserves_target_and_removes_partial(
 
     monkeypatch.setattr(Image.Image, "save", failed_save)
     with pytest.raises(OSError, match="write failed"):
-        ep.render_poster(build_poster_clip, 3, 1, path, dpi=100)
+        ep.render.render_poster(build_poster_clip, 3, 1, path, dpi=100)
     assert path.read_bytes() == b"previous poster"
     assert list(tmp_path.iterdir()) == [path]
 
@@ -222,7 +223,7 @@ def test_figure_and_parent_rc_restored(tmp_path, kind, failure):
     from eyepiece import _style
 
     hwostyle.use("dark")
-    ep.use_video(True)
+    ep.style.use_video(True)
     parent = plt.figure()
     matplotlib.rcParams.update({"font.size": 19, "axes.facecolor": "red"})
     before = dict(matplotlib.rcParams)
@@ -242,7 +243,7 @@ def test_figure_and_parent_rc_restored(tmp_path, kind, failure):
 
     def setup():
         hwostyle.use("light")
-        ep.use_video(False)
+        ep.style.use_video(False)
         matplotlib.rcParams["font.size"] = 9
         matplotlib.rcParams["axes.facecolor"] = "blue"
         if failure == "setup":
@@ -275,16 +276,18 @@ def test_figure_and_parent_rc_restored(tmp_path, kind, failure):
         if kind == "poster":
 
             def save():
-                ep.render_poster(build, 2, 1, tmp_path / "out.png", dpi=100, **kwargs)
+                ep.render.render_poster(
+                    build, 2, 1, tmp_path / "out.png", dpi=100, **kwargs
+                )
         elif kind == "still":
             kwargs["metadata"] = {"unsupported": "value"} if failure == "save" else None
 
             def save():
-                ep.render_still(build, tmp_path / "out.svg", **kwargs)
+                ep.render.render_still(build, tmp_path / "out.svg", **kwargs)
         else:
 
             def save():
-                ep.render_frames(
+                ep.render.render_frames(
                     build,
                     2,
                     tmp_path / "out.mp4",
@@ -334,7 +337,7 @@ import matplotlib.pyplot as plt
 import eyepiece as ep
 from test_render_helpers import build_still, setup_style
 path = Path(sys.argv[1])
-assert ep.render_still(build_still, path, dpi=100, setup=setup_style,
+assert ep.render.render_still(build_still, path, dpi=100, setup=setup_style,
     rc={"savefig.bbox": None, "font.size": 7},
     metadata={"Title": "A deterministic still"}) == path
 if path.suffix in (".pdf", ".svg"):
@@ -370,7 +373,7 @@ if path.suffix in (".pdf", ".svg"):
             != other.with_stem("other-timestamped").read_bytes()
         )
         higher_dpi = path.with_stem("higher-dpi")
-        ep.render_still(
+        ep.render.render_still(
             build_still,
             higher_dpi,
             dpi=200,
@@ -388,19 +391,19 @@ def test_same_picture_tolerance_and_bottom_band(tmp_path):
     changed = pixels.copy()
     changed[1, 1, 0] += 2
     Image.fromarray(changed).save(b)
-    assert ep.same_picture(a, b)
-    assert ep.same_picture(a, b, tol=2)
-    assert not ep.same_picture(a, b, tol=1)
+    assert ep.testing.same_picture(a, b)
+    assert ep.testing.same_picture(a, b, tol=2)
+    assert not ep.testing.same_picture(a, b, tol=1)
     changed[1, 1, 0] += 1
     Image.fromarray(changed).save(b)
-    assert not ep.same_picture(a, b, tol=2)
+    assert not ep.testing.same_picture(a, b, tol=2)
     changed[1, 1, 0] = 100
     changed[-2:, :, :3] = 255
     Image.fromarray(changed).save(b)
-    assert ep.same_picture(a, b, tol=0, ignore_bottom_px=2)
-    assert not ep.same_picture(a, b, tol=0, ignore_bottom_px=1)
+    assert ep.testing.same_picture(a, b, tol=0, ignore_bottom_px=2)
+    assert not ep.testing.same_picture(a, b, tol=0, ignore_bottom_px=1)
     Image.fromarray(pixels[:4]).save(b)
-    assert not ep.same_picture(a, b)
+    assert not ep.testing.same_picture(a, b)
 
 
 def test_same_picture_alpha_and_implicit_opaque_channel(tmp_path):
@@ -411,19 +414,19 @@ def test_same_picture_alpha_and_implicit_opaque_channel(tmp_path):
     changed = pixels.copy()
     changed[:, :, 3] = 0
     Image.fromarray(changed).save(b)
-    assert not ep.same_picture(a, b)
+    assert not ep.testing.same_picture(a, b)
     changed[:, :, 3] = 253
     Image.fromarray(changed).save(b)
-    assert ep.same_picture(a, b, tol=2)
-    assert not ep.same_picture(a, b, tol=1)
+    assert ep.testing.same_picture(a, b, tol=2)
+    assert not ep.testing.same_picture(a, b, tol=1)
     Image.fromarray(pixels[:, :, :3]).save(a)
     Image.fromarray(pixels).save(b)
-    assert ep.same_picture(a, b, tol=0)
-    assert ep.same_picture(b, a, tol=0)
+    assert ep.testing.same_picture(a, b, tol=0)
+    assert ep.testing.same_picture(b, a, tol=0)
     changed[:, :, 3] = 0
     Image.fromarray(changed).save(b)
-    assert not ep.same_picture(a, b)
-    assert not ep.same_picture(b, a)
+    assert not ep.testing.same_picture(a, b)
+    assert not ep.testing.same_picture(b, a)
 
 
 @pytest.mark.parametrize(
@@ -439,7 +442,7 @@ def test_same_picture_rejects_invalid_comparison(tmp_path, kwargs):
     path = tmp_path / "image.png"
     Image.fromarray(np.zeros((5, 6, 3), dtype=np.uint8)).save(path)
     with pytest.raises(ValueError):
-        ep.same_picture(path, path, **kwargs)
+        ep.testing.same_picture(path, path, **kwargs)
 
 
 def test_variant_posters_manifest_skip_and_index_key(tmp_path):
@@ -456,7 +459,9 @@ def test_variant_posters_manifest_skip_and_index_key(tmp_path):
     out = tmp_path / "out"
     manifest = render.Manifest(out / "manifest.json")
     requested = render.variants(("doc",), narrated=("doc",))
-    first = ep.render_variants(spec, requested, out, manifest=manifest, workers=1)
+    first = ep.render.render_variants(
+        spec, requested, out, manifest=manifest, workers=1
+    )
     for result in first:
         expected = [f"marker-{result.variant.name}.mp4"]
         if not result.variant.narrated:
@@ -478,12 +483,16 @@ def test_variant_posters_manifest_skip_and_index_key(tmp_path):
             for item in manifest.entry("marker", result.variant.name)["outputs"]
         ] == expected
     assert len(list(out.glob("*-poster.png"))) == 2
-    second = ep.render_variants(spec, requested, out, manifest=manifest, workers=1)
+    second = ep.render.render_variants(
+        spec, requested, out, manifest=manifest, workers=1
+    )
     assert not any(result.rendered for result in second)
     (out / first[0].outputs[1]).unlink()
-    third = ep.render_variants(spec, requested, out, manifest=manifest, workers=1)
+    third = ep.render.render_variants(
+        spec, requested, out, manifest=manifest, workers=1
+    )
     assert [result.rendered for result in third] == [True, False, False, False]
-    changed = ep.render_variants(
+    changed = ep.render.render_variants(
         replace(spec, poster=2), requested, out, manifest=manifest, workers=1
     )
     assert all(new.key != old.key for new, old in zip(changed, first, strict=True))
@@ -500,7 +509,7 @@ def test_variant_poster_validation_precedes_any_build(tmp_path, poster):
         poster=poster,
     )
     with pytest.raises(ValueError, match="poster"):
-        ep.render_variants(
+        ep.render.render_variants(
             spec,
             render.variants(("doc",)),
             tmp_path,
@@ -511,7 +520,7 @@ def test_variant_poster_validation_precedes_any_build(tmp_path, poster):
 
 
 def test_still_savefig_kwargs_preserve_exact_pixel_size(tmp_path):
-    path = ep.render_still(
+    path = ep.render.render_still(
         build_still,
         tmp_path / "fixed.png",
         dpi=100,

@@ -10,9 +10,8 @@ holds recurring styles, ``prepared`` holds scene records, and ``mpl`` and
 
 The root keeps ten stable shortcuts: ``Timeline``, ``Plan``, ``Tempo``,
 ``PlotResult``, ``MosaicResult``, ``MotionContract``, ``animate``, ``record``,
-``save_fig``, and ``__version__``. Every former root path still resolves
-silently in 0.16; star imports and discovery favor the small root and task
-namespaces. Existing deprecated aliases keep their warnings.
+``save_fig``, and ``__version__``. All other public names live in the task
+namespaces.
 
 Example::
 
@@ -37,7 +36,6 @@ only the standard library and NumPy. Drawing helpers, including
 
 import importlib
 import importlib.util
-import warnings
 
 from eyepiece._version import __version__
 
@@ -234,21 +232,6 @@ _LAZY_EXPORTS = {
     name: target for name, target in _EXPORT_TARGETS.items() if name in __all__
 }
 
-# Silent compatibility in 0.16. A later release will make these root paths
-# warn once at the caller, then remove them after a migration release.
-_LEGACY_ROOT = {
-    name: target for name, target in _EXPORT_TARGETS.items() if name not in __all__
-}
-
-
-# Deprecated name -> the public name that replaces it. Each resolves to the
-# replacement with a DeprecationWarning, is left out of __all__ and is never
-# cached, so every access warns.
-_DEPRECATED = {
-    "spans": "shade_intervals",
-    "radial_profile_plot": "plot_radial_image",
-}
-
 
 def _lazy_lookup(name, exports, namespace):
     """Resolve and cache a facade export without importing its peers."""
@@ -270,20 +253,9 @@ def __getattr__(name):
     ``eyepiece.mpl``) imports and returns that submodule, as plain attribute
     access did before the package loaded lazily. Only the requested
     submodule loads, so ``import eyepiece.prepared`` stays free of pyplot.
-    A deprecated name warns and returns its replacement.
     """
-    if name in _DEPRECATED:
-        new = _DEPRECATED[name]
-        warnings.warn(
-            f"eyepiece.{name} is deprecated; use eyepiece.{new}",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return __getattr__(new)
     if name in _LAZY_EXPORTS:
         return _lazy_lookup(name, _LAZY_EXPORTS, globals())
-    if name in _LEGACY_ROOT:
-        return _lazy_lookup(name, _LEGACY_ROOT, globals())
     if not name.startswith("__") and importlib.util.find_spec(f"{__name__}.{name}"):
         return importlib.import_module(f"{__name__}.{name}")
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

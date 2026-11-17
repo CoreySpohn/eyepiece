@@ -316,7 +316,7 @@ def test_unsupported_objects_raise_without_repr(field):
 def test_no_implicit_output_path_or_stamp_input(tmp_path, monkeypatch):
     original = content_key(script="clip", settings={"dpi": 100})
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(ep, "stamp", Unsupported())
+    monkeypatch.setattr(ep.render, "stamp", Unsupported())
     monkeypatch.setenv("SOURCE_DATE_EPOCH", "123")
     assert content_key(script="clip", settings={"dpi": 100}) == original
     assert (

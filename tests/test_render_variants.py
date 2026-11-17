@@ -23,7 +23,6 @@ from test_render_helpers import decode_variant_video as decode
 
 import eyepiece as ep
 import eyepiece._render_variants as variant_driver
-import eyepiece.render as render
 from eyepiece._ffmpeg import resolve_ffmpeg
 from eyepiece.render import (
     ClipSpec,
@@ -61,7 +60,6 @@ def test_public_types_defaults_and_fixed_order(clip):
         "VariantResult",
         "render_variants",
     ):
-        assert getattr(ep, name) is getattr(render, name)
         assert name in ep.render.__all__
     assert Variant("doc", "light").name == "doc-light"
     assert Variant("doc", "light", True).name == "doc-light-narrated"
@@ -355,9 +353,9 @@ def test_spawned_builder_venue_rc_and_frame_source(clip, tmp_path, monkeypatch):
     pids = (tmp_path / "builds" / "doc-light").read_text().splitlines()
     assert len(set(pids)) == 2
     assert str(os.getpid()) not in pids
-    assert first.frames == len(spec.frames) + ep.frame_count(
+    assert first.frames == len(spec.frames) + ep.clock.frame_count(
         spec.hold_s[0], 12
-    ) + ep.frame_count(spec.hold_s[1], 12)
+    ) + ep.clock.frame_count(spec.hold_s[1], 12)
     pixels = decode(out / first.outputs[0])
     assert pixels.shape[0] == first.frames
     assert pixels[..., 0].mean() > pixels[..., 1].mean() + 100
@@ -478,7 +476,7 @@ def test_in_process_variants_restore_style_before_return(clip, tmp_path):
     from eyepiece import _style
 
     hwostyle.use("dark", palette_family="biosignature")
-    ep.use_video(True)
+    ep.style.use_video(True)
     matplotlib.rcParams["font.size"] = 17
     saved_rc = dict(matplotlib.rcParams)
     names = (
@@ -513,7 +511,7 @@ def test_worker_and_parent_style_match_despite_parent_toggles(
         variant_driver, "render_frames", partial(original, chunk_frames=3)
     )
     hwostyle.use("paper")
-    ep.use_video(not explicit_setup)
+    ep.style.use_video(not explicit_setup)
     saved_rc = dict(matplotlib.rcParams)
     before_mode = hwostyle.current_mode()
     spec = replace(clip, build=build_style_variant)
@@ -652,7 +650,7 @@ def test_stamp_changes_require_explicit_key_input(clip, tmp_path, monkeypatch):
     manifest = Manifest(tmp_path / "manifest.json")
     requested = [Variant("doc", "light")]
     first = render_variants(clip, requested, tmp_path, manifest=manifest, workers=1)[0]
-    monkeypatch.setattr(ep, "stamp", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ep.render, "stamp", lambda *args, **kwargs: None)
     second = render_variants(clip, requested, tmp_path, manifest=manifest, workers=1)[0]
     assert not second.rendered and second.key == first.key
     explicit = render_variants(

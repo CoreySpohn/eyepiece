@@ -3,7 +3,7 @@
 `render` turns a prepared view tree (`eyepiece.prepared`) into Matplotlib
 artists and returns an `MplResult` whose `.parts` exposes every artist by
 the element ID it was drawn from; `animate` plays a prepared `Sequence`
-through the existing multi-sink `eyepiece.Animation`, one output frame per
+through the existing multi-sink `eyepiece.render.Animation`, one output frame per
 entry of the sequence's shared output schedule.
 
 The renderer computes no science. Image colors come from
@@ -52,7 +52,7 @@ from eyepiece._prepared_render import (
     topology,
     visible_xy,
 )
-from eyepiece.anim import animate as legacy_animate
+from eyepiece.anim import animate as animate_figure
 from eyepiece.prepared import (
     ImageView,
     Path,
@@ -290,7 +290,7 @@ def render(view, *, ax=None, axes=None, cast=None, profile=None):
 
 
 def animate(sequence, *, run_time, fps=30, ax=None, axes=None, cast=None, profile=None):
-    """Play a prepared `Sequence` through the multi-sink `eyepiece.Animation`.
+    """Play a prepared `Sequence` through the multi-sink `eyepiece.render.Animation`.
 
     `eyepiece.animate` takes a figure and a draw callable instead of a
     sequence; this function builds both from the sequence and calls it.
@@ -315,7 +315,7 @@ def animate(sequence, *, run_time, fps=30, ax=None, axes=None, cast=None, profil
         profile: As for `render`; snapshotted once when None.
 
     Returns:
-        An `eyepiece.Animation`; nothing is encoded until `.save`,
+        An `eyepiece.render.Animation`; nothing is encoded until `.save`,
         `.jshtml`, or `.video` is called. Its `.result` is the `MplResult`
         every frame updates, so a caller reaches the artists through
         `.result.parts` (to hide, restyle, or annotate one) before encoding.
@@ -326,7 +326,7 @@ def animate(sequence, *, run_time, fps=30, ax=None, axes=None, cast=None, profil
     def draw(_fig, index):
         result.update(sequence.at(float(output_times[index])).view)
 
-    animation = legacy_animate(result.fig, draw, len(output_times), fps=fps)
+    animation = animate_figure(result.fig, draw, len(output_times), fps=fps)
     animation.result = result
     return animation
 

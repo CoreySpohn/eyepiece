@@ -17,7 +17,7 @@ MODES = ("dark", "light", "paper")
 def table_set():
     """The default set built from the hwostyle table; skipped when it is absent."""
     pytest.importorskip("hwostyle.motifs")
-    return ep.MotifSet.default()
+    return ep.motifs.MotifSet.default()
 
 
 @pytest.fixture(params=["table", "fallback"])
@@ -27,11 +27,11 @@ def default_set(request, monkeypatch):
         pytest.importorskip("hwostyle.motifs")
     else:
         monkeypatch.setattr(motif_module, "_hwostyle_table", lambda: None)
-    return ep.MotifSet.default()
+    return ep.motifs.MotifSet.default()
 
 
 def _m(key, role, **kw):
-    return ep.Motif(key, key, role, **kw)
+    return ep.motifs.Motif(key, key, role, **kw)
 
 
 def test_a_motif_stores_a_role_and_resolves_the_color_when_asked():
@@ -42,7 +42,7 @@ def test_a_motif_stores_a_role_and_resolves_the_color_when_asked():
     for mode in MODES:
         hwostyle.use(mode)
         colors.append(star.color)
-        assert star.color == ep.role("star")
+        assert star.color == ep.style.role("star")
         assert star.resolve(mode) == star.color
     assert len(set(colors)) == 3
 
@@ -97,15 +97,15 @@ def test_motif_kwargs_carry_the_key_as_gid(helper):
 
 
 def test_meaning_keys_maps_each_motif_key_to_itself():
-    motifs = ep.MotifSet([_m("a", "star"), _m("b", "planet")])
+    motifs = ep.motifs.MotifSet([_m("a", "star"), _m("b", "planet")])
     assert motifs.meaning_keys() == {"a": "a", "b": "b"}
     assert motifs.only("b").meaning_keys() == {"b": "b"}
-    assert ep.MotifSet([]).meaning_keys() == {}
+    assert ep.motifs.MotifSet([]).meaning_keys() == {}
 
 
 def test_meaning_keys_finds_a_same_hue_pair_drawn_with_motif_kwargs():
     hwostyle.use("dark")
-    motifs = ep.MotifSet([_m("a", "planet"), _m("b", "planet")])
+    motifs = ep.motifs.MotifSet([_m("a", "planet"), _m("b", "planet")])
     fig, ax = plt.subplots(figsize=(4, 3), dpi=80)
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
@@ -121,7 +121,7 @@ def test_meaning_keys_finds_a_same_hue_pair_drawn_with_motif_kwargs():
 
 def test_meaning_keys_passes_distinct_hues_drawn_with_motif_kwargs():
     hwostyle.use("dark")
-    motifs = ep.MotifSet([_m("a", "planet"), _m("b", "star")])
+    motifs = ep.motifs.MotifSet([_m("a", "planet"), _m("b", "star")])
     fig, ax = plt.subplots(figsize=(4, 3), dpi=80)
     ax.set_xlim(0, 10)
     ax.set_ylim(0, 10)
@@ -137,17 +137,17 @@ def test_the_fill_is_stronger_on_a_dark_page():
 
 
 def test_a_set_is_keyed_by_name_and_reports_the_options():
-    motifs = ep.MotifSet([_m("a", "star"), _m("b", "planet")])
+    motifs = ep.motifs.MotifSet([_m("a", "star"), _m("b", "planet")])
     assert list(motifs) == ["a", "b"]
     assert motifs["b"].role == "planet"
     with pytest.raises(KeyError, match="Available"):
         motifs["c"]
     with pytest.raises(ValueError, match="duplicate"):
-        ep.MotifSet([_m("a", "star"), _m("a", "planet")])
+        ep.motifs.MotifSet([_m("a", "star"), _m("a", "planet")])
 
 
 def test_only_derive_and_add_return_new_sets():
-    motifs = ep.MotifSet([_m("a", "star"), _m("b", "planet")])
+    motifs = ep.motifs.MotifSet([_m("a", "star"), _m("b", "planet")])
     assert list(motifs.only("b")) == ["b"]
     assert list(motifs) == ["a", "b"]
     assert motifs.derive("a", marker="*")["a"].marker == "*"
@@ -194,8 +194,8 @@ def test_stage_dim_resolves_by_mode_and_an_explicit_value_wins():
         hwostyle.use(mode)
         fig, ax = plt.subplots()
         (line,) = ax.plot([0, 1], [0, 1])
-        assert ep.Stage({"a": [line]}).dim == expected
-        assert ep.Stage({"a": [line]}, dim=0.2).dim == 0.2
+        assert ep.motion.Stage({"a": [line]}).dim == expected
+        assert ep.motion.Stage({"a": [line]}, dim=0.2).dim == 0.2
         plt.close(fig)
 
 
@@ -204,7 +204,7 @@ def test_stage_dim_resolves_by_mode_and_an_explicit_value_wins():
 
 def test_two_motifs_with_one_color_and_one_signature_are_a_fault():
     hwostyle.use("light")
-    pair = ep.MotifSet([_m("a", "model"), _m("b", "model")])
+    pair = ep.motifs.MotifSet([_m("a", "model"), _m("b", "model")])
     (fault,) = [f for f in ept.motif_faults(pair) if f.kind == "signature"]
     assert fault.keys == ("a", "b")
     with pytest.raises(ept.MotifError, match="signature"):
@@ -228,31 +228,31 @@ def test_the_hue_budget_needs_a_second_channel_past_four():
         _m("c", "model", marker="x"),
         _m("d", "disk", hatch="//"),
     ]
-    five = ep.MotifSet([*base, _m("e", "alert")])
+    five = ep.motifs.MotifSet([*base, _m("e", "alert")])
     kinds = [f.kind for f in ept.motif_faults(five)]
     assert "budget" in kinds
-    with_channel = ep.MotifSet([*base, _m("e", "alert", marker="X")])
+    with_channel = ep.motifs.MotifSet([*base, _m("e", "alert", marker="X")])
     assert "budget" not in [f.kind for f in ept.motif_faults(with_channel)]
-    assert "budget" not in [f.kind for f in ept.motif_faults(ep.MotifSet(base))]
+    assert "budget" not in [f.kind for f in ept.motif_faults(ep.motifs.MotifSet(base))]
 
 
 def test_a_seventh_hue_is_always_a_fault():
     hwostyle.use("dark")
     roles = ["star", "planet", "model", "disk", "alert", "posterior", "positive"]
-    seven = ep.MotifSet([_m(r, r, marker="o", hatch="/") for r in roles])
+    seven = ep.motifs.MotifSet([_m(r, r, marker="o", hatch="/") for r in roles])
     msgs = [f.detail for f in ept.motif_faults(seven) if f.kind == "budget"]
     assert any("never use more than six" in m for m in msgs)
 
 
 def test_confusable_hues_are_a_fault_unless_a_second_channel_separates_them():
-    plain = ep.MotifSet([_m("a", "alert"), _m("r", "reference")])
+    plain = ep.motifs.MotifSet([_m("a", "alert"), _m("r", "reference")])
     (fault,) = [f for f in ept.motif_faults(plain, mode="dark") if f.kind == "cvd"]
     assert fault.severity == "fault"
     assert 5.0 < fault.de < 10.0
-    marked = ep.MotifSet([_m("a", "alert"), _m("r", "reference", marker="o")])
+    marked = ep.motifs.MotifSet([_m("a", "alert"), _m("r", "reference", marker="o")])
     (soft,) = [f for f in ept.motif_faults(marked, mode="dark") if f.kind == "cvd"]
     assert soft.severity == "warning"
-    far = ep.MotifSet([_m("s", "star"), _m("p", "planet")])
+    far = ep.motifs.MotifSet([_m("s", "star"), _m("p", "planet")])
     assert "cvd" not in [f.kind for f in ept.motif_faults(far, mode="dark")]
 
 
@@ -261,7 +261,7 @@ def test_confusable_hues_are_a_fault_unless_a_second_channel_separates_them():
     [("dark", "warning", 13.72), ("light", "fault", 6.68), ("paper", "fault", 3.45)],
 )
 def test_faint_fills_can_collide_when_the_solid_colors_pass(mode, severity, distance):
-    pair = ep.MotifSet(
+    pair = ep.motifs.MotifSet(
         [_m("s", "star", fill_alpha=0.1), _m("p", "planet", fill_alpha=0.1)]
     )
     assert "cvd-fill" not in [f.kind for f in ept.motif_faults(pair, mode=mode)]
@@ -277,7 +277,7 @@ def test_faint_fills_can_collide_when_the_solid_colors_pass(mode, severity, dist
 
 
 def test_fill_check_uses_each_motifs_mode_opacity_and_skips_absent_fills():
-    pair = ep.MotifSet(
+    pair = ep.motifs.MotifSet(
         [
             _m("s", "star", fill_alpha=0.1, fill_alpha_dark=1.0),
             _m("p", "planet", fill_alpha=0.2, fill_alpha_dark=1.0),
@@ -295,7 +295,7 @@ def test_fill_check_uses_each_motifs_mode_opacity_and_skips_absent_fills():
 
 
 def test_fill_check_uses_the_solid_thresholds_and_second_channel_severity():
-    pair = ep.MotifSet(
+    pair = ep.motifs.MotifSet(
         [_m("a", "alert", fill_alpha=1.0), _m("r", "reference", fill_alpha=1.0)]
     )
     for motifs, severity in (
@@ -314,7 +314,7 @@ def test_fill_check_uses_the_solid_thresholds_and_second_channel_severity():
 
 
 def test_neutral_fills_are_checked_and_a_second_channel_cannot_hide_a_collision():
-    pair = ep.MotifSet(
+    pair = ep.motifs.MotifSet(
         [_m("a", "truth", fill_alpha=0.1), _m("b", "truth", fill_alpha=0.1, hatch="/")]
     )
     (fill,) = [
@@ -332,28 +332,30 @@ def test_dark_star_and_zodi_stay_apart_under_every_vision_type(table_set):
 
 
 def test_margins_report_the_dimmed_minimum_at_the_mode_level():
-    motifs = ep.MotifSet([_m("a", "star"), _m("b", "planet"), _m("c", "model")])
+    motifs = ep.motifs.MotifSet([_m("a", "star"), _m("b", "planet"), _m("c", "model")])
     dark = ept.motif_margins(motifs, mode="dark")
     light = ept.motif_margins(motifs, mode="light")
     assert dark["dim"] == 0.35
     assert light["dim"] == 0.5
     assert dark["hues"] == 3
     assert dark["dim_min_de"] < dark["min_de"]
-    assert ept.motif_margins(ep.MotifSet([_m("a", "star")]))["min_de"] is None
+    assert ept.motif_margins(ep.motifs.MotifSet([_m("a", "star")]))["min_de"] is None
 
 
 def test_the_cue_must_be_a_form_in_the_text_color():
     hwostyle.use("light")
-    good = ep.MotifSet([_m("cue", "text", linewidth=2.0, fill_alpha=0.25)])
+    good = ep.motifs.MotifSet([_m("cue", "text", linewidth=2.0, fill_alpha=0.25)])
     assert ept.motif_faults(good, mode="light") == []
-    hue = ep.MotifSet([_m("cue", "model", fill_alpha=0.25)])
+    hue = ep.motifs.MotifSet([_m("cue", "model", fill_alpha=0.25)])
     assert "cue" in [f.kind for f in ept.motif_faults(hue, mode="light")]
-    marker = ep.MotifSet([_m("cue", "text", marker="o")])
+    marker = ep.motifs.MotifSet([_m("cue", "text", marker="o")])
     assert any("never a marker" in f.detail for f in ept.motif_faults(marker))
 
 
 def test_a_motif_in_the_cue_color_is_flagged():
-    clash = ep.MotifSet([_m("cue", "text"), _m("label", "text", fontstyle="italic")])
+    clash = ep.motifs.MotifSet(
+        [_m("cue", "text"), _m("label", "text", fontstyle="italic")]
+    )
     found = [f for f in ept.motif_faults(clash, mode="light") if f.kind == "cue"]
     assert [f.keys for f in found] == [("cue", "label")]
 
@@ -370,7 +372,7 @@ def test_four_core_hues_pass_in_every_mode(table_set):
 
 def test_a_sharing_pair_fires_by_role_when_a_custom_motif_takes_the_role():
     """Local zodi with any motif whose role is reference is declared never-together."""
-    motifs = ep.MotifSet(
+    motifs = ep.motifs.MotifSet(
         [_m("local_zodi", "zodi", hatch=".."), _m("curve", "reference")],
         sharing=[("local_zodi", "reference")],
     )
@@ -378,14 +380,14 @@ def test_a_sharing_pair_fires_by_role_when_a_custom_motif_takes_the_role():
         f for f in ept.motif_faults(motifs, mode="light") if f.kind == "sharing"
     ]
     assert fault.keys == ("local_zodi", "curve")
-    alone = ep.MotifSet(
+    alone = ep.motifs.MotifSet(
         [_m("local_zodi", "zodi", hatch="..")], sharing=[("local_zodi", "reference")]
     )
     assert "sharing" not in [f.kind for f in ept.motif_faults(alone, mode="light")]
 
 
 def test_an_image_role_exclusion_fires_for_motifs_keyed_by_the_role_names():
-    motifs = ep.MotifSet(
+    motifs = ep.motifs.MotifSet(
         [_m("pupil", "hardware", marker="o"), _m("probability", "posterior")],
         exclusions=[("pupil", "probability")],
     )
@@ -405,12 +407,12 @@ def _cvd(motifs, mode):
 def test_below_the_hard_floor_a_second_channel_does_not_soften_the_finding():
     """Spectral star against planet is 4.5 apart: a fault even with a marker."""
     hwostyle.use("dark", palette_family="spectral")
-    marked = ep.MotifSet([_m("s", "star", marker="o"), _m("p", "planet")])
+    marked = ep.motifs.MotifSet([_m("s", "star", marker="o"), _m("p", "planet")])
     (fault,) = _cvd(marked, None)
     assert fault.de < 5.0
     assert fault.severity == "fault"
     # above the floor the same marker softens it (dark alert against reference)
-    above = ep.MotifSet([_m("a", "alert", marker="o"), _m("r", "reference")])
+    above = ep.motifs.MotifSet([_m("a", "alert", marker="o"), _m("r", "reference")])
     (soft,) = _cvd(above, "dark")
     assert 5.0 < soft.de < 10.0
     assert soft.severity == "warning"
@@ -418,27 +420,27 @@ def test_below_the_hard_floor_a_second_channel_does_not_soften_the_finding():
 
 def test_a_pair_that_is_close_only_under_tritanomaly_is_found():
     """Dark model against the verdict orange: 9.6 under tritanomaly, 40+ otherwise."""
-    pair = ep.MotifSet([_m("m", "model"), _m("n", "negative")])
+    pair = ep.motifs.MotifSet([_m("m", "model"), _m("n", "negative")])
     (fault,) = _cvd(pair, "dark")
     assert fault.severity == "fault"
     assert fault.de == pytest.approx(9.6, abs=0.2)
     # a pair far apart under tritanomaly too is left alone
-    far = ep.MotifSet([_m("s", "star"), _m("p", "planet")])
+    far = ep.motifs.MotifSet([_m("s", "star"), _m("p", "planet")])
     assert _cvd(far, "dark") == []
 
 
 def test_a_pair_between_ten_and_twenty_apart_only_under_tritanomaly_warns():
     """Paper disk against alert: 11.8 under tritanomaly, 20 or more otherwise."""
-    pair = ep.MotifSet([_m("d", "disk"), _m("a", "alert")])
+    pair = ep.motifs.MotifSet([_m("d", "disk"), _m("a", "alert")])
     (warn,) = _cvd(pair, "paper")
     assert warn.severity == "warning"
     assert 10.0 < warn.de < 20.0
 
 
 def test_a_declared_never_together_pair_is_skipped_by_the_distance_check():
-    motifs = ep.MotifSet([_m("a", "alert"), _m("r", "reference")])
+    motifs = ep.motifs.MotifSet([_m("a", "alert"), _m("r", "reference")])
     assert _cvd(motifs, "dark")
-    declared = ep.MotifSet(
+    declared = ep.motifs.MotifSet(
         [_m("a", "alert"), _m("r", "reference")], sharing=[("a", "r")]
     )
     assert _cvd(declared, "dark") == []
@@ -447,7 +449,7 @@ def test_a_declared_never_together_pair_is_skipped_by_the_distance_check():
 
 def test_dimming_blends_toward_the_background_and_never_away():
     """At full contrast the dimmed distance is the plain one; at none it collapses."""
-    motifs = ep.MotifSet([_m("a", "star"), _m("b", "planet")])
+    motifs = ep.motifs.MotifSet([_m("a", "star"), _m("b", "planet")])
     for mode in ("dark", "light"):
         full = ept.motif_margins(motifs, mode=mode, dim=1.0)
         assert full["dim_min_de"] == pytest.approx(full["min_de"], abs=0.5)
@@ -458,11 +460,11 @@ def test_dimming_blends_toward_the_background_and_never_away():
 
 
 def test_a_pair_that_collides_once_dimmed_gets_an_advisory_and_a_far_pair_does_not():
-    close = ep.MotifSet([_m("d", "disk", hatch="///"), _m("m", "model")])
+    close = ep.motifs.MotifSet([_m("d", "disk", hatch="///"), _m("m", "model")])
     (note,) = [f for f in ept.motif_faults(close, mode="dark") if f.kind == "dimmed"]
     assert note.severity == "advisory"
     assert note.de < 10.0
-    far = ep.MotifSet([_m("s", "star"), _m("p", "planet")])
+    far = ep.motifs.MotifSet([_m("s", "star"), _m("p", "planet")])
     assert "dimmed" not in [f.kind for f in ept.motif_faults(far, mode="dark", dim=1.0)]
     ept.assert_motifs(close, mode="dark")  # advisory findings never raise
 
@@ -474,11 +476,11 @@ def test_truth_is_a_gray_and_does_not_spend_a_hue():
         _m("c", "model", marker="x"),
         _m("d", "disk", hatch="//"),
     ]
-    with_truth = ep.MotifSet([*four, _m("t", "truth", linestyle="--")])
+    with_truth = ep.motifs.MotifSet([*four, _m("t", "truth", linestyle="--")])
     assert not with_truth["t"].is_hue
     assert ept.motif_margins(with_truth, mode="dark")["hues"] == 4
     assert "budget" not in [f.kind for f in ept.motif_faults(with_truth, mode="dark")]
-    with_hue = ep.MotifSet([*four, _m("t", "posterior")])
+    with_hue = ep.motifs.MotifSet([*four, _m("t", "posterior")])
     assert with_hue["t"].is_hue
     assert "budget" in [f.kind for f in ept.motif_faults(with_hue, mode="dark")]
 
@@ -495,7 +497,7 @@ def test_a_non_solid_line_style_counts_as_a_second_channel():
 
 
 def test_derive_on_an_unknown_key_raises():
-    motifs = ep.MotifSet([_m("a", "star")])
+    motifs = ep.motifs.MotifSet([_m("a", "star")])
     with pytest.raises(KeyError, match="No motif"):
         motifs.derive("b", marker="o")
 
@@ -518,8 +520,8 @@ def test_the_dim_level_falls_back_when_hwostyle_has_no_motifs(monkeypatch):
 
 def test_the_stand_in_table_matches_the_hwostyle_table_row_for_row():
     table = pytest.importorskip("hwostyle.motifs")
-    standin = [ep.Motif(**r) for r in motif_module._FALLBACK_ROWS]
-    real = ep.MotifSet.default()
+    standin = [ep.motifs.Motif(**r) for r in motif_module._FALLBACK_ROWS]
+    real = ep.motifs.MotifSet.default()
     assert [m.key for m in standin] == list(real)
     for mine in standin:
         assert mine == real[mine.key], mine.key
@@ -535,7 +537,7 @@ def test_the_stand_in_table_matches_the_hwostyle_table_row_for_row():
 def test_step_list_finished_steps_use_the_mode_dim_level():
     for mode, level in (("dark", 0.35), ("light", 0.5)):
         hwostyle.use(mode)
-        res = ep.step_list(["one", "two"], current=1)
+        res = ep.plot.step_list(["one", "two"], current=1)
         faint = res.artists["text"][0].get_color()
         assert tuple(faint) == pytest.approx(ep._style.neutral(level), abs=1e-6)
         plt.close("all")
@@ -557,7 +559,7 @@ def test_a_label_reads_the_ink_where_hwostyle_has_one_and_the_mark_elsewhere(
 
 def test_a_label_falls_back_to_the_mark_without_a_table(monkeypatch):
     monkeypatch.setattr(motif_module, "_hwostyle_table", lambda: None)
-    zodi = ep.MotifSet.default()["local_zodi"]
+    zodi = ep.motifs.MotifSet.default()["local_zodi"]
     hwostyle.use("dark")
     assert zodi.label_color == "zodi"
     assert zodi.label in (zodi.color, "#15903e")

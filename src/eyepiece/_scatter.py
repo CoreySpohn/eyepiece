@@ -45,7 +45,8 @@ def scatter_values(
     Example::
 
         import eyepiece as ep
-        result = ep.scatter_values([0, 1], [1, 2], [0.2, 0.8], cmap="probability")
+
+        result = ep.plot.scatter_values([0, 1], [1, 2], [0.2, 0.8], cmap="probability")
     """
     x, y, values = (np.asarray(v) for v in (x, y, values))
     if x.ndim != 1 or y.shape != x.shape or values.shape != x.shape:

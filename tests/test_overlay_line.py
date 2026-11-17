@@ -16,9 +16,9 @@ def test_light_dash_over_a_solid_dark_underlay_in_either_mode(mode):
     hwostyle.use(mode)
     fig, ax = plt.subplots()
     ax.imshow(np.random.default_rng(0).random((8, 8)), extent=(-4, 4, -4, 4))
-    res = ep.overlay_line(ax, [-3.0, 3.0], [-1.0, 1.0], label="cut")
+    res = ep.plot.overlay_line(ax, [-3.0, 3.0], [-1.0, 1.0], label="cut")
     assert set(res.artists) == {"lines", "text"}
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     under, dash = res.artists["lines"]
     assert isinstance(dash, Line2D) and isinstance(under, Line2D)
     np.testing.assert_allclose(dash.get_xydata(), [(-3, -1), (3, 1)])
@@ -41,7 +41,7 @@ def test_a_path_beyond_the_view_leaves_the_limits_alone():
     fig, ax = plt.subplots()
     ax.imshow(np.ones((4, 4)), extent=(-1, 1, -1, 1))
     limits = ax.get_xlim(), ax.get_ylim()
-    ep.overlay_line(ax, [-5.0, 5.0], [0.0, 3.0])
+    ep.plot.overlay_line(ax, [-5.0, 5.0], [0.0, 3.0])
     fig.canvas.draw()
     assert (ax.get_xlim(), ax.get_ylim()) == limits
     plt.close(fig)
@@ -50,22 +50,24 @@ def test_a_path_beyond_the_view_leaves_the_limits_alone():
 def test_label_sits_at_a_fraction_of_the_path_length():
     fig, ax = plt.subplots()
     # An L: 3 units right, then 1 up, so three quarters of the way is the corner.
-    res = ep.overlay_line(
+    res = ep.plot.overlay_line(
         ax, [0.0, 3.0, 3.0], [0.0, 0.0, 1.0], label="L", label_at=0.75
     )
     assert res.artists["text"].get_position() == pytest.approx((3.0, 0.0))
-    res_end = ep.overlay_line(ax, [0.0, 2.0], [0.0, 2.0], label="end", label_at=1.0)
+    res_end = ep.plot.overlay_line(
+        ax, [0.0, 2.0], [0.0, 2.0], label="end", label_at=1.0
+    )
     assert res_end.artists["text"].get_position() == pytest.approx((2.0, 2.0))
     plt.close(fig)
 
 
 def test_underlay_off_or_colored_and_overrides_reach_each_line():
     fig, ax = plt.subplots()
-    res = ep.overlay_line(ax, [0, 1], [0, 1], underlay=False, ls=":")
+    res = ep.plot.overlay_line(ax, [0, 1], [0, 1], underlay=False, ls=":")
     (dash,) = res.artists["lines"]
     assert dash.get_linestyle() == ":"
     assert "text" not in res.artists
-    res = ep.overlay_line(
+    res = ep.plot.overlay_line(
         ax,
         [0, 1],
         [0, 1],
@@ -84,7 +86,7 @@ def test_underlay_off_or_colored_and_overrides_reach_each_line():
 
 def test_update_moves_lines_and_label_without_new_artists():
     fig, ax = plt.subplots()
-    res = ep.overlay_line(ax, [0, 2], [0, 0], label="cut", label_at=1.0)
+    res = ep.plot.overlay_line(ax, [0, 2], [0, 0], label="cut", label_at=1.0)
     n_children = len(ax.get_children())
     phi = np.linspace(0.0, np.pi / 2, 30)
     res.update(np.cos(phi), np.sin(phi))
@@ -95,5 +97,5 @@ def test_update_moves_lines_and_label_without_new_artists():
     with pytest.raises(ValueError, match="matching"):
         res.update([0, 1], [0])
     with pytest.raises(ValueError, match="matching"):
-        ep.overlay_line(ax, [0, 1, 2], [0, 1])
+        ep.plot.overlay_line(ax, [0, 1, 2], [0, 1])
     plt.close(fig)

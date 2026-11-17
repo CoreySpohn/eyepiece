@@ -67,7 +67,7 @@ def test_profile_arguments_follow_the_profile_and_its_overrides():
     assert args[args.index("-colorspace") + 1] == "bt709"
     assert "+faststart" in args
     assert args[args.index("-pix_fmt") + 1] == "yuv420p"
-    assert ep.ENCODER_PROFILE is ENCODER_PROFILE
+    assert ep.render.ENCODER_PROFILE is ENCODER_PROFILE
     mine = encoder_args(60, {"crf": 23, "tune": None, "colorspace": None})
     assert mine[mine.index("-crf") + 1] == "23"
     assert mine[mine.index("-g") + 1] == "120"
@@ -84,7 +84,7 @@ def test_yuv444p_is_an_opt_in_pixel_format_for_both_writers(tmp_path):
         ("full", {"pix_fmt": "yuv444p"}, "yuv444p"),
     ):
         raw = tmp_path / f"raw-{name}.mp4"
-        with ep.RawSink(raw, size, fps=30, encoder=encoder) as sink:
+        with ep.render.RawSink(raw, size, fps=30, encoder=encoder) as sink:
             for frame in _flat_frames(3, size):
                 sink.write(frame)
         fig, _ax = plt.subplots(figsize=(0.64, 0.48))
@@ -101,7 +101,7 @@ def test_yuv444p_is_an_opt_in_pixel_format_for_both_writers(tmp_path):
 def test_raw_sink_tags_bt709_and_a_flat_patch_decodes_to_its_rgb(tmp_path):
     size = (64, 48)
     path = tmp_path / "flat.mp4"
-    with ep.RawSink(path, size, fps=30) as sink:
+    with ep.render.RawSink(path, size, fps=30) as sink:
         for frame in _flat_frames(6, size):
             sink.write(frame)
     line = _info(path)
@@ -176,7 +176,7 @@ def _gray(fig):
 def test_a_warped_rectangle_moves_a_tenth_of_a_pixel_per_frame_without_snapping():
     fig, _ax, box = _box_scene()
     shift = 3.0  # data units are pixels here
-    move = ep.warp(box, lambda p: p + np.array([shift, 0.0]))
+    move = ep.motion.warp(box, lambda p: p + np.array([shift, 0.0]))
     steps = 30
     frames = []
     for k in range(1, steps):
@@ -240,8 +240,8 @@ def test_record_leaves_the_callers_snapping_as_it_was(tmp_path):
 
 
 def test_video_rc_gives_lines_butt_caps_and_round_joins(tmp_path):
-    assert ep.VIDEO_RC["lines.solid_capstyle"] == "butt"
-    assert ep.VIDEO_RC["lines.solid_joinstyle"] == "round"
+    assert ep.style.VIDEO_RC["lines.solid_capstyle"] == "butt"
+    assert ep.style.VIDEO_RC["lines.solid_joinstyle"] == "round"
     fig, ax = plt.subplots(figsize=(1, 1))
     before = plt.rcParams["lines.solid_capstyle"]
     with ep.record(fig, fps=10, stills={tmp_path / "s.png": 0}) as rec:
@@ -256,7 +256,7 @@ def test_video_rc_gives_lines_butt_caps_and_round_joins(tmp_path):
 def test_talk_rc_sizes_type_and_stroke_from_the_frame_height():
     import matplotlib
 
-    rc = ep.talk_rc()  # 1080 px at the talk preset's 120 dpi
+    rc = ep.style.talk_rc()  # 1080 px at the talk preset's 120 dpi
     assert rc["font.size"] == pytest.approx(35.0, abs=0.1)
     assert rc["axes.titlesize"] == pytest.approx(37.6, abs=0.1)
     assert rc["axes.labelsize"] == pytest.approx(25.3, abs=0.1)
@@ -265,12 +265,12 @@ def test_talk_rc_sizes_type_and_stroke_from_the_frame_height():
     assert rc["axes.linewidth"] == pytest.approx(1.94, abs=0.01)
     assert rc["xtick.major.size"] == 0.0
     assert rc["lines.solid_capstyle"] == "butt"
-    small = ep.talk_rc(720, dpi=100)
+    small = ep.style.talk_rc(720, dpi=100)
     assert small["font.size"] == pytest.approx(28.0, abs=0.1)
     assert small["lines.linewidth"] == pytest.approx(2.59, abs=0.01)
     # one em of body text is 5.4 percent of the frame, at any frame size
     for height, dpi in ((1080, 120), (720, 100)):
-        with matplotlib.rc_context(ep.talk_rc(height, dpi=dpi)):
+        with matplotlib.rc_context(ep.style.talk_rc(height, dpi=dpi)):
             fig = plt.figure(figsize=(height * 16 / 9 / dpi, height / dpi), dpi=dpi)
             text = fig.text(0.5, 0.5, "x")
             em_px = text.get_fontsize() * dpi / 72.0
@@ -282,8 +282,8 @@ def test_talk_rc_sizes_type_and_stroke_from_the_frame_height():
 
 def test_unsnapped_lets_a_slow_mark_glide_outside_a_recording():
     fig, line, dot = _vline_scene()
-    assert ep.unsnapped([line, dot]) == [line, dot]
-    assert ep.unsnapped(line) is line
+    assert ep.style.unsnapped([line, dot]) == [line, dot]
+    assert ep.style.unsnapped(line) is line
     frames = []
     for k in range(12):
         line.set_xdata([40.0 + k / 10] * 2)
@@ -295,7 +295,7 @@ def test_unsnapped_lets_a_slow_mark_glide_outside_a_recording():
 
 def test_the_rest_state_after_a_warp_is_pixel_exact_against_the_snapped_still():
     fig, _ax, box = _box_scene()
-    move = ep.warp(box, lambda p: p + np.array([3.0, 0.0]))
+    move = ep.motion.warp(box, lambda p: p + np.array([3.0, 0.0]))
     assert box.get_snap() is None
     move.update(0.4)
     assert box.get_snap() is False
@@ -314,7 +314,7 @@ def test_the_rest_state_after_a_warp_is_pixel_exact_against_the_snapped_still():
 def test_a_snap_setting_the_caller_chose_comes_back_at_rest():
     fig, _ax, box = _box_scene()
     box.set_snap(True)
-    move = ep.warp(box, np.array([[1.0, 0.2], [0.0, 1.0]]))
+    move = ep.motion.warp(box, np.array([[1.0, 0.2], [0.0, 1.0]]))
     move.update(0.5)
     assert box.get_snap() is False
     move.update(1.0)
@@ -327,9 +327,9 @@ def test_arrow_moves_unsnap_only_between_their_ends(name):
     fig, ax = plt.subplots()
     ax.set(xlim=(-2, 2), ylim=(-2, 2))
     if name == "arrow":
-        result = ep.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax)
+        result = ep.motion.arrow((-1.0, 0.0), (1.0, 0.5), ax=ax)
     else:
-        result = ep.angle_arc((0.0, 0.0), 0.0, 90.0, 1.0, ax=ax)
+        result = ep.motion.angle_arc((0.0, 0.0), 0.0, 90.0, 1.0, ax=ax)
     patch = result.artists["arrow"]
     for u, expected in ((0.0, None), (0.5, False), (1.0, None)):
         result.update(u)
@@ -340,7 +340,7 @@ def test_arrow_moves_unsnap_only_between_their_ends(name):
 def test_compass_moves_unsnap_both_arms():
     fig, ax = plt.subplots()
     ax.set(xlim=(-2, 2), ylim=(-2, 2))
-    result = ep.compass((0.0, 0.0), 1.0, ax=ax, east="right")
+    result = ep.motion.compass((0.0, 0.0), 1.0, ax=ax, east="right")
     arms = result.artists["arrow"]
     result.update(0.5)
     assert [a.get_snap() for a in arms] == [False, False]
@@ -354,18 +354,19 @@ def test_ghosts_of_the_travelling_moves_are_never_snapped():
     ax.set(xlim=(0, 2), ylim=(0, 2))
     (line,) = ax.plot([0.2, 0.8], [0.5, 0.5], lw=3)
     other = ax.plot([1.5], [1.5], "o")[0]
-    fly = ep.flight(line, ep.Anchor.from_artist(other), fig=fig)
+    fly = ep.motion.flight(line, ep.motion.Anchor.from_artist(other), fig=fig)
     assert fly.artists["line"].get_snap() is False
     cells = np.array([[[0.2, 1.0], [0.6, 1.0]], [[0.7, 1.0], [0.9, 1.0]]])
-    gather = ep.collapse(
+    gather = ep.motion.collapse(
         ax, cells, [1.0, 2.0],
-        ep.Anchor.from_data(ax, (0.2, 1.8)), ep.Anchor.from_data(ax, (1.0, 1.8)),
+        ep.motion.Anchor.from_data(ax, (0.2, 1.8)),
+        ep.motion.Anchor.from_data(ax, (1.0, 1.8)),
         fig=fig, colors=["C0", "C1"],
     )  # fmt: skip
     assert gather.artists["line"].get_snap() is False
     theta = np.linspace(0, 2 * np.pi, 40)
     ring = np.column_stack([np.cos(theta), np.cos(theta) * 0 + np.sin(theta)]) * 0.3
-    morph = ep.morph(ring + 1.0, ring + 0.5, ax=ax, closed=True)
+    morph = ep.motion.morph(ring + 1.0, ring + 0.5, ax=ax, closed=True)
     assert morph.artists["fill"].get_snap() is False
     plt.close(fig)
 
@@ -422,7 +423,7 @@ def test_the_phase_ring_has_no_dark_stripe_at_its_segment_joints():
 
 
 def test_the_phasor_ring_uses_the_same_seamless_stroke():
-    result = ep.phasor([1.0], ring=True)
+    result = ep.plot.phasor([1.0], ring=True)
     try:
         ring = result.artists["collection"]
         assert ring.get_capstyle() == "round" and ring.get_joinstyle() == "round"
@@ -436,7 +437,7 @@ def test_a_caller_owned_pixel_format_turns_the_color_conversion_off(tmp_path):
     size = (32, 32)
     path = tmp_path / "rgb.mp4"
     lossless = ["-vcodec", "libx264rgb", "-crf", "0", "-pix_fmt", "rgb24"]
-    with ep.RawSink(path, size, fps=5, extra_ffmpeg_args=lossless) as sink:
+    with ep.render.RawSink(path, size, fps=5, extra_ffmpeg_args=lossless) as sink:
         for frame in _flat_frames(3, size):
             sink.write(frame)
     assert "bt709" not in _info(path)
@@ -450,7 +451,7 @@ def test_mux_keeps_the_picture_tags_and_the_audio_arguments_together(tmp_path):
 
     size = (64, 48)
     video = tmp_path / "v.mp4"
-    with ep.RawSink(video, size, fps=30, encoder={"colorspace": None}) as sink:
+    with ep.render.RawSink(video, size, fps=30, encoder={"colorspace": None}) as sink:
         for frame in _flat_frames(30, size):
             sink.write(frame)
     assert "bt709" not in _info(video)

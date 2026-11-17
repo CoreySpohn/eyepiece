@@ -15,7 +15,7 @@ def test_a_circle_larger_than_the_view_leaves_the_limits_alone():
     fig, ax = plt.subplots()
     ax.imshow(np.ones((4, 4)), extent=(-1, 1, -1, 1))
     limits = ax.get_xlim(), ax.get_ylim()
-    ep.overlay_circle(ax, (0.0, 0.0), 5.0)
+    ep.plot.overlay_circle(ax, (0.0, 0.0), 5.0)
     fig.canvas.draw()
     assert (ax.get_xlim(), ax.get_ylim()) == limits
     plt.close(fig)
@@ -23,7 +23,7 @@ def test_a_circle_larger_than_the_view_leaves_the_limits_alone():
 
 def test_overrides_reach_the_dash_and_the_underlay_follows_its_width():
     fig, ax = plt.subplots()
-    res = ep.overlay_circle(
+    res = ep.plot.overlay_circle(
         ax, (0, 0), 1.0, color="red", circle_kw={"lw": 2.0, "gid": "aperture"}
     )
     under, dash = res.artists["ellipse"]
@@ -35,12 +35,14 @@ def test_overrides_reach_the_dash_and_the_underlay_follows_its_width():
 
 def test_underlay_can_be_colored_or_omitted():
     fig, ax = plt.subplots()
-    colored = ep.overlay_circle(ax, (0, 0), 1.0, underlay="blue")
+    colored = ep.plot.overlay_circle(ax, (0, 0), 1.0, underlay="blue")
     assert to_rgb(colored.artists["ellipse"][0].get_edgecolor()) == to_rgb("blue")
-    bare = ep.overlay_circle(ax, (0, 0), 1.0, underlay=False)
+    bare = ep.plot.overlay_circle(ax, (0, 0), 1.0, underlay=False)
     assert len(bare.artists["ellipse"]) == 1
-    assert set(bare.artists) <= ep.ARTIST_KEYS
-    res = ep.overlay_circle(ax, (0, 0), 1.0, underlay=False, underlay_kw={"lw": 9.0})
+    assert set(bare.artists) <= ep.plot.ARTIST_KEYS
+    res = ep.plot.overlay_circle(
+        ax, (0, 0), 1.0, underlay=False, underlay_kw={"lw": 9.0}
+    )
     (dash,) = res.artists["ellipse"]
     assert dash.get_linewidth() == pytest.approx(1.0)
     plt.close(fig)
@@ -48,7 +50,7 @@ def test_underlay_can_be_colored_or_omitted():
 
 def test_underlay_kw_sets_the_underlay_width_and_tags_it():
     fig, ax = plt.subplots()
-    res = ep.overlay_circle(
+    res = ep.plot.overlay_circle(
         ax,
         (0, 0),
         1.0,
@@ -69,7 +71,7 @@ def test_underlay_kw_sets_the_underlay_width_and_tags_it():
 def test_nonpositive_radius_raises(radius):
     fig, ax = plt.subplots()
     with pytest.raises(ValueError, match="radius"):
-        ep.overlay_circle(ax, (0, 0), radius)
+        ep.plot.overlay_circle(ax, (0, 0), radius)
     plt.close(fig)
 
 
@@ -80,7 +82,7 @@ def test_default_circles_are_pinned(mode):
     fig, ax = plt.subplots()
     ax.imshow(np.ones((4, 4)), extent=(-2, 2, -2, 2))
     n_children = len(ax.get_children())
-    res = ep.overlay_circle(ax, (0.5, -0.25), 1.5)
+    res = ep.plot.overlay_circle(ax, (0.5, -0.25), 1.5)
     assert set(res.artists) == {"ellipse"}
     assert len(ax.get_children()) == n_children + 2
     under, dash = res.artists["ellipse"]
@@ -111,13 +113,13 @@ def test_default_circles_are_pinned(mode):
 
 def test_ls_draws_a_solid_light_line_over_a_solid_underlay():
     fig, ax = plt.subplots()
-    res = ep.overlay_circle(ax, (0, 0), 1.0, ls="-")
+    res = ep.plot.overlay_circle(ax, (0, 0), 1.0, ls="-")
     under, dash = res.artists["ellipse"]
     assert dash.get_linestyle() in ("-", "solid")
     assert under.get_linestyle() in ("-", "solid")
     assert _lum(dash.get_edgecolor()) > _lum(under.get_edgecolor())
     # circle_kw is applied last, so its line style still wins.
-    res = ep.overlay_circle(ax, (0, 0), 1.0, ls="-", circle_kw={"ls": ":"})
+    res = ep.plot.overlay_circle(ax, (0, 0), 1.0, ls="-", circle_kw={"ls": ":"})
     assert res.artists["ellipse"][-1].get_linestyle() == ":"
     plt.close(fig)
 
@@ -127,9 +129,9 @@ def test_label_sits_on_the_circle_on_a_backing_box(mode):
     hwostyle.use(mode)
     fig, ax = plt.subplots()
     ax.imshow(np.ones((4, 4)), extent=(-2, 2, -2, 2))
-    res = ep.overlay_circle(ax, (0.5, 0.0), 1.0, label="stop", label_angle=90.0)
+    res = ep.plot.overlay_circle(ax, (0.5, 0.0), 1.0, label="stop", label_angle=90.0)
     assert set(res.artists) == {"ellipse", "text"}
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     text = res.artists["text"]
     assert text.get_text() == "stop"
     np.testing.assert_allclose(text.xy, (0.5, 1.0), atol=1e-12)
@@ -154,7 +156,7 @@ def test_label_sits_on_the_circle_on_a_backing_box(mode):
 )
 def test_label_grows_away_from_the_center(angle, ha, va):
     fig, ax = plt.subplots()
-    res = ep.overlay_circle(ax, (0, 0), 1.0, label="x", label_angle=angle)
+    res = ep.plot.overlay_circle(ax, (0, 0), 1.0, label="x", label_angle=angle)
     text = res.artists["text"]
     assert (text.get_ha(), text.get_va()) == (ha, va)
     plt.close(fig)
@@ -162,12 +164,12 @@ def test_label_grows_away_from_the_center(angle, ha, va):
 
 def test_text_kw_reaches_the_label_and_adds_nothing_without_a_label():
     fig, ax = plt.subplots()
-    res = ep.overlay_circle(
+    res = ep.plot.overlay_circle(
         ax, (0, 0), 1.0, label="rim", text_kw={"color": "red", "bbox": None}
     )
     text = res.artists["text"]
     assert to_rgb(text.get_color()) == to_rgb("red")
     assert text.get_bbox_patch() is None
-    bare = ep.overlay_circle(ax, (0, 0), 1.0, text_kw={"color": "red"})
+    bare = ep.plot.overlay_circle(ax, (0, 0), 1.0, text_kw={"color": "red"})
     assert "text" not in bare.artists
     plt.close(fig)

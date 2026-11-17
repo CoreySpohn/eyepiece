@@ -492,7 +492,7 @@ def test_finding_labels_number_staged_and_plain_leaves_together():
     staged = Rectangle((0.5, 0.5), 0.2, 0.2, transform=fig.transFigure)
     fig.add_artist(plain)
     fig.add_artist(staged)
-    ep.Stage({"a": staged})
+    ep.motion.Stage({"a": staged})
     assert _STAGE_BASES[type(staged)] is Rectangle
     assert type(staged).__name__ == "Rectangle"
     trace = _Trace([0.0])

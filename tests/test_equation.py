@@ -23,19 +23,19 @@ def _stage(size=(8.0, 3.0), dpi=100):
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set(xlim=(0, 1), ylim=(0, 1))
     ax.axis("off")
-    return fig, ax, ep.Anchor.from_data(ax, (0.5, 0.45))
+    return fig, ax, ep.motion.Anchor.from_data(ax, (0.5, 0.45))
 
 
 def _pair(tex_a, tex_b, **kw):
     fig, _ax, at = _stage()
-    a = ep.equation(at, tex_a, fontsize=40, **kw)
-    b = ep.equation(at, tex_b, fontsize=40, **kw)
+    a = ep.motion.equation(at, tex_a, fontsize=40, **kw)
+    b = ep.motion.equation(at, tex_b, fontsize=40, **kw)
     return fig, a, b
 
 
 def _alone(tex):
     fig, _ax, at = _stage()
-    ep.equation(at, tex, fontsize=40)
+    ep.motion.equation(at, tex, fontsize=40)
     return _pixels(fig)
 
 
@@ -61,8 +61,8 @@ def _geometry(result, renderer):
 def test_exports_and_no_shadowing_module():
     import eyepiece._equation as mod
 
-    assert ep.equation is mod.equation
-    assert ep.transform is mod.transform
+    assert ep.motion.equation is mod.equation
+    assert ep.motion.transform is mod.transform
 
 
 def test_glyph_tuple_format_is_pinned():
@@ -73,11 +73,11 @@ def test_glyph_tuple_format_is_pinned():
     fails here first, with a clear cause.
     """
     _fig, _ax, at = _stage()
-    eq = ep.equation(at, r"$\frac{a}{b}=x^2$", fontsize=30)
+    eq = ep.motion.equation(at, r"$\frac{a}{b}=x^2$", fontsize=30)
     glyphs = eq.artists["glyphs"]
     assert len(glyphs) == 6  # a, b, =, x, 2 and the bar
     assert list(eq.artists["terms"]) == ["all"]
-    eq = ep.equation(at, r"$a+b$", fontsize=30)
+    eq = ep.motion.equation(at, r"$a+b$", fontsize=30)
     assert list(eq.artists["terms"]) == ["all"]
     assert len(eq.artists["glyphs"]) == 3
 
@@ -88,7 +88,7 @@ def test_tags_change_nothing_about_where_glyphs_sit():
     )
     assert np.array_equal(_alone(BAYES_A), _alone(plain))
     fig, _ax, at = _stage()
-    eq = ep.equation(at, BAYES_A, fontsize=40)
+    eq = ep.motion.equation(at, BAYES_A, fontsize=40)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     lhs, num, den = (
@@ -113,24 +113,24 @@ def test_a_layout_shift_raises(monkeypatch):
     monkeypatch.setattr(mod, "_parse", shifted)
     _fig, _ax, at = _stage()
     with pytest.raises(ValueError, match="changed the layout"):
-        ep.equation(at, r"$a+{{t:b}}+c$", fontsize=30)
+        ep.motion.equation(at, r"$a+{{t:b}}+c$", fontsize=30)
 
 
 def test_escaped_braces_and_bad_markers_raise():
     _fig, _ax, at = _stage()
     with pytest.raises(ValueError, match="escaped braces"):
-        ep.equation(at, r"$\{{{t:a}}\}$", fontsize=30)
+        ep.motion.equation(at, r"$\{{{t:a}}\}$", fontsize=30)
     with pytest.raises(ValueError, match="unclosed"):
-        ep.equation(at, r"${{t:a$", fontsize=30)
+        ep.motion.equation(at, r"${{t:a$", fontsize=30)
     with pytest.raises(ValueError, match="unique"):
-        ep.equation(at, r"${{t:a}}+{{t:b}}$", fontsize=30)
+        ep.motion.equation(at, r"${{t:a}}+{{t:b}}$", fontsize=30)
     with pytest.raises(ValueError, match="one math span"):
-        ep.equation(at, r"$a$ and $b$", fontsize=30)
+        ep.motion.equation(at, r"$a$ and $b$", fontsize=30)
 
 
 def test_unknown_term_raises_key_error_listing_the_tags():
     _fig, _ax, at = _stage()
-    eq = ep.equation(at, BAYES_A, fontsize=30)
+    eq = ep.motion.equation(at, BAYES_A, fontsize=30)
     with pytest.raises(KeyError, match=r"lhs.*num.*den"):
         eq.term("nope")
     assert eq.term("num") is eq.artists["terms"]["num"]
@@ -138,22 +138,22 @@ def test_unknown_term_raises_key_error_listing_the_tags():
 
 def test_term_is_an_anchor_target_with_a_box_inside_the_equation():
     fig, _ax, at = _stage()
-    eq = ep.equation(at, BAYES_A, fontsize=40)
+    eq = ep.motion.equation(at, BAYES_A, fontsize=40)
     fig.canvas.draw()
     whole = eq.term("lhs").get_window_extent(), eq.term("den").get_window_extent()
     assert whole[0].x1 < whole[1].x1
-    point = ep.Anchor.from_artist(eq.term("num")).display()
+    point = ep.motion.Anchor.from_artist(eq.term("num")).display()
     assert whole[0].x1 < point[0]
-    ep.circumscribe(eq.term("num")).update(0.4)
-    ep.indicate(eq.term("num")).update(0.5)
+    ep.motion.circumscribe(eq.term("num")).update(0.4)
+    ep.motion.indicate(eq.term("num")).update(0.5)
     fig.canvas.draw()
 
 
 def test_stage_dims_a_term_through_its_glyphs():
     fig, _ax, at = _stage()
     fig.set_facecolor("white")
-    eq = ep.equation(at, BAYES_A, fontsize=40, colors={"num": "C1"})
-    stage = ep.Stage({"num": eq.term("num")}, dim=0.2)
+    eq = ep.motion.equation(at, BAYES_A, fontsize=40, colors={"num": "C1"})
+    stage = ep.motion.Stage({"num": eq.term("num")}, dim=0.2)
     before = _pixels(fig)
     stage.set(shown=[], dimmed=["num"])
     assert not np.array_equal(before, _pixels(fig))
@@ -163,7 +163,7 @@ def test_stage_dims_a_term_through_its_glyphs():
 
 def test_equation_writes_on_and_rests_whole():
     fig, _ax, at = _stage()
-    eq = ep.equation(at, BAYES_A, fontsize=40)
+    eq = ep.motion.equation(at, BAYES_A, fontsize=40)
     whole = _pixels(fig)
     eq.update(0.0)
     assert not any(g.get_visible() for g in eq.artists["glyphs"])
@@ -176,7 +176,7 @@ def test_equation_writes_on_and_rests_whole():
 
 def test_equation_level_is_opacity_only():
     fig, _ax, at = _stage()
-    eq = ep.equation(at, BAYES_A, fontsize=40)
+    eq = ep.motion.equation(at, BAYES_A, fontsize=40)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     full = _geometry(eq, renderer)
@@ -188,7 +188,7 @@ def test_equation_level_is_opacity_only():
 
 def test_transform_rest_is_b_and_ends_equal_each_equation_alone():
     fig, a, b = _pair(BAYES_A, BAYES_B)
-    move = ep.transform(a, b, align=None)
+    move = ep.motion.transform(a, b, align=None)
     rest = _pixels(fig)
     move.update(0.0)
     assert np.array_equal(_pixels(fig), _alone(BAYES_A))
@@ -205,7 +205,7 @@ def test_every_glyph_is_accounted_for_exactly_once(recwarn):
     The counts pin both mathtext layout and matching rules.
     """
     _fig, a, b = _pair(BAYES_A, BAYES_B)
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
     assert not [w for w in recwarn if issubclass(w.category, UserWarning)]
     ia = [i for i, _ in move.pairs] + list(move.gone)
     ib = [j for _, j in move.pairs] + list(move.new)
@@ -216,7 +216,7 @@ def test_every_glyph_is_accounted_for_exactly_once(recwarn):
 
 def test_matched_glyphs_move_monotonically_and_unmatched_never_move():
     fig, a, b = _pair(PYTH_A, PYTH_B)
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
@@ -247,7 +247,7 @@ def test_a_tagged_glyph_never_pairs_outside_its_tag():
         r"${{x:a}}+a$",
         r"$a+{{x:a}}$",
     )
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
@@ -258,10 +258,10 @@ def test_a_tagged_glyph_never_pairs_outside_its_tag():
 
 def test_key_map_pairs_two_named_tags():
     fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{r:y}}+{{s:x}}$")
-    none = ep.transform(a, b)
+    none = ep.motion.transform(a, b)
     assert len(none.pairs) == 3  # tags that share nothing pair by order
     _fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{r:y}}+{{s:x}}$")
-    mapped = ep.transform(a, b, key_map={"p": "s", "q": "r"})
+    mapped = ep.motion.transform(a, b, key_map={"p": "s", "q": "r"})
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
@@ -271,12 +271,12 @@ def test_key_map_pairs_two_named_tags():
     }
     assert {("p", "s"), ("q", "r")} <= named
     with pytest.raises(KeyError, match="terms are"):
-        ep.transform(a, b, key_map={"zz": "s"})
+        ep.motion.transform(a, b, key_map={"zz": "s"})
 
 
 def test_transform_level_changes_alpha_only():
     fig, a, b = _pair(BAYES_A, BAYES_B, colors={"num": "C1"})
-    move = ep.transform(a, b, arc=0.2)
+    move = ep.motion.transform(a, b, arc=0.2)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     glyphs = move.artists["glyphs"]
@@ -295,7 +295,7 @@ def test_transform_level_changes_alpha_only():
 def test_a_fraction_bar_changes_length_through_the_morph_sampling():
     """The bar stretches while its ends stay square, never slanted."""
     fig, a, b = _pair(r"$\frac{a}{b}$", r"$\frac{a+c}{b+d}$")
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
 
     def bar_width(result):
         fig.canvas.draw()
@@ -325,16 +325,16 @@ def test_a_fraction_bar_changes_length_through_the_morph_sampling():
 def test_transform_checks_its_arguments():
     _fig, a, b = _pair(PYTH_A, PYTH_B)
     with pytest.raises(TypeError):
-        ep.transform(a, "b")
+        ep.motion.transform(a, "b")
     with pytest.raises(ValueError, match="stagger"):
-        ep.transform(a, b, stagger=0.0)
+        ep.motion.transform(a, b, stagger=0.0)
     with pytest.raises(ValueError, match="fade"):
-        ep.transform(a, b, fade=1.5)
+        ep.motion.transform(a, b, fade=1.5)
 
 
 def test_clip_frames_are_readable():
     fig, a, b = _pair(PYTH_A, PYTH_B)
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
     move.update(0.0)
     ept.assert_readable(fig)
     move.update(1.0)
@@ -343,7 +343,7 @@ def test_clip_frames_are_readable():
 
 def test_a_tag_keeps_a_group_together_where_order_would_not():
     fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
@@ -357,7 +357,7 @@ def test_a_tag_keeps_a_group_together_where_order_would_not():
 
 def test_tagged_into_untagged_pairs_by_glyph_order():
     _fig, a, b = _pair(r"${{t:a^2}}+b^2=c^2$", PYTH_B)
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
     assert len(move.pairs) >= 6
     for i, j in move.pairs:
@@ -367,7 +367,7 @@ def test_tagged_into_untagged_pairs_by_glyph_order():
 def test_a_tag_with_a_lost_partner_warns():
     _fig, a, b = _pair(r"${{t:a}}+{{u:b}}$", r"${{t:b}}+{{v:a}}$")
     with pytest.warns(UserWarning, match="has no partner") as caught:
-        ep.transform(a, b)
+        ep.motion.transform(a, b)
     assert len(caught) == 2
     assert any("tag 'u'" in str(item.message) for item in caught)
     assert any("tag 'v'" in str(item.message) for item in caught)
@@ -376,7 +376,7 @@ def test_a_tag_with_a_lost_partner_warns():
 def test_update_order_and_interleaved_levels_do_not_change_pixels():
     us = [0.0, 0.1, 0.35, 0.5, 0.72, 0.9, 1.0]
     fig, a, b = _pair(BAYES_A, BAYES_B)
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
     inorder = {}
     for u in us:
         move.update(u)
@@ -392,9 +392,9 @@ def test_update_order_and_interleaved_levels_do_not_change_pixels():
 def test_set_dpi_round_trip_and_native_200_dpi_agree():
     def build(dpi):
         fig, _ax, at = _stage(dpi=dpi)
-        a = ep.equation(at, BAYES_A, fontsize=40)
-        b = ep.equation(at, BAYES_B, fontsize=40)
-        return fig, ep.transform(a, b)
+        a = ep.motion.equation(at, BAYES_A, fontsize=40)
+        b = ep.motion.equation(at, BAYES_B, fontsize=40)
+        return fig, ep.motion.transform(a, b)
 
     fig, move = build(100)
     move.update(0.5)
@@ -413,9 +413,9 @@ def test_savefig_at_200_dpi_matches_a_native_200_dpi_build():
 
     def build(dpi):
         fig, _ax, at = _stage(dpi=dpi)
-        a = ep.equation(at, BAYES_A, fontsize=40)
-        b = ep.equation(at, BAYES_B, fontsize=40)
-        move = ep.transform(a, b)
+        a = ep.motion.equation(at, BAYES_A, fontsize=40)
+        b = ep.motion.equation(at, BAYES_B, fontsize=40)
+        move = ep.motion.transform(a, b)
         move.update(0.5)
         return fig
 
@@ -432,7 +432,7 @@ def test_savefig_at_200_dpi_matches_a_native_200_dpi_build():
 
 def _aligned_pair(**kwargs):
     fig, a, b = _pair(BAYES_A, BAYES_B)
-    return fig, a, b, ep.transform(a, b, **kwargs)
+    return fig, a, b, ep.motion.transform(a, b, **kwargs)
 
 
 def test_aligned_end_states_are_each_equation_as_placed():
@@ -473,12 +473,12 @@ def test_align_names_a_tag_or_none_and_checks_it():
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
-    move = ep.transform(a, b, align="q")
+    move = ep.motion.transform(a, b, align="q")
     (i, j) = next(p for p in move.pairs if _term_of(a, ga[p[0]], renderer) == "q")
     assert np.allclose(_center(ga[i], renderer), _center(gb[j], renderer), atol=1e-6)
     with pytest.raises(KeyError, match="align"):
-        ep.transform(a, b, align="zz")
-    none = ep.transform(a, b, align=None)
+        ep.motion.transform(a, b, align="zz")
+    none = ep.motion.transform(a, b, align=None)
     assert none.pairs
 
 
@@ -499,7 +499,7 @@ def test_a_word_moves_rigidly():
 
 def test_a_group_that_does_not_travel_does_not_rise():
     fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
-    move = ep.transform(a, b, arc=0.5)
+    move = ep.motion.transform(a, b, arc=0.5)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ga = a.artists["glyphs"]
@@ -584,7 +584,7 @@ def _group_box(glyphs, renderer):
 
 def test_arc_direction_follows_travel_direction():
     fig, a, b = _pair(r"${{p:x}}+{{q:y}}$", r"${{q:y}}+{{p:x}}$")
-    move = ep.transform(a, b, stagger=1.0, arc=0.5, align=None)
+    move = ep.motion.transform(a, b, stagger=1.0, arc=0.5, align=None)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
@@ -603,7 +603,7 @@ def test_arc_direction_follows_travel_direction():
 
 def test_swapping_glyphs_never_overlap():
     fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
-    move = ep.transform(a, b, stagger=0.7, arc=0.7)
+    move = ep.motion.transform(a, b, stagger=0.7, arc=0.7)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
@@ -626,7 +626,7 @@ def test_swapping_glyphs_never_overlap():
 
 def test_auto_align_keeps_the_shared_shift_still_without_a_tag():
     fig, a, b = _pair(r"$a^2+{{b:b^2}}=c^2$", r"$a^2=c^2-{{b:b^2}}$")
-    move = ep.transform(a, b)
+    move = ep.motion.transform(a, b)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ga, gb = a.artists["glyphs"], b.artists["glyphs"]
@@ -647,12 +647,12 @@ def _left_anchored_bayes(replace="fade"):
     board = fig.add_axes([0, 0, 1, 1])
     board.set(xlim=(0, 1), ylim=(0, 1))
     board.axis("off")
-    left = ep.Anchor.from_data(board, (0.06, 0.5))
+    left = ep.motion.Anchor.from_data(board, (0.06, 0.5))
     colors = {"lhs": "C0", "num": "C1", "den": "C3", "res": "C2"}
-    a = ep.equation(left, BAYES_A, fontsize=34, colors=colors, ha="left")
-    b = ep.equation(left, BAYES_B, fontsize=34, colors=colors, ha="left")
+    a = ep.motion.equation(left, BAYES_A, fontsize=34, colors=colors, ha="left")
+    b = ep.motion.equation(left, BAYES_B, fontsize=34, colors=colors, ha="left")
     options = {} if replace is None else {"replace": replace}
-    return fig, ep.transform(a, b, stagger=0.55, **options)
+    return fig, ep.motion.transform(a, b, stagger=0.55, **options)
 
 
 @pytest.mark.parametrize("replace", ["fade", "morph"])
@@ -720,13 +720,13 @@ def _all_vertices(move, renderer):
 def test_replace_must_be_fade_or_morph():
     _fig, a, b = _pair(BAYES_A, BAYES_B)
     with pytest.raises(ValueError, match="replace"):
-        ep.transform(a, b, replace="dissolve")
+        ep.motion.transform(a, b, replace="dissolve")
 
 
 def test_morph_and_fade_pair_the_same_glyphs():
     _fig, a, b = _pair(BAYES_A, BAYES_B)
-    fade = ep.transform(a, b, replace="fade")
-    morph = ep.transform(a, b, replace="morph")
+    fade = ep.motion.transform(a, b, replace="fade")
+    morph = ep.motion.transform(a, b, replace="morph")
     assert (fade.pairs, fade.gone, fade.new, fade.replaced) == (
         morph.pairs,
         morph.gone,
@@ -739,7 +739,7 @@ def test_morph_rest_states_are_each_equation_as_drawn():
     fig, a, b = _pair(BAYES_A, BAYES_B)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    move = ep.transform(a, b, replace="morph")
+    move = ep.motion.transform(a, b, replace="morph")
     move.update(0.0)
     assert np.array_equal(_pixels(fig), _alone(BAYES_A))
     move.update(1.0)
@@ -769,7 +769,7 @@ def test_morph_rest_states_are_each_equation_as_drawn():
 def test_morph_changes_shape_where_fade_only_moves_a_box():
     """A replaced term's outlines are not scaled copies of the old ones mid-move."""
     fig, a, b = _pair(BAYES_A, BAYES_B)
-    morph = ep.transform(a, b, replace="morph")
+    morph = ep.motion.transform(a, b, replace="morph")
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     ia, ib = next(
@@ -803,7 +803,7 @@ def test_morph_degenerate_pairs_stay_finite_and_rest_exactly(tex_a, tex_b):
     fig, a, b = _pair(tex_a, tex_b)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    move = ep.transform(a, b, replace="morph", align=None)
+    move = ep.motion.transform(a, b, replace="morph", align=None)
     assert move.replaced
     for u in np.linspace(0.0, 1.0, 21):
         move.update(float(u))
@@ -825,7 +825,7 @@ def test_morph_carrier_reaches_the_target_outline_as_the_move_ends():
     fig, a, b = _pair(r"${{t:0}}$", r"${{t:1}}$")
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    move = ep.transform(a, b, replace="morph", align=None, stagger=1.0)
+    move = ep.motion.transform(a, b, replace="morph", align=None, stagger=1.0)
     (glyph,) = [g for g in a.artists["glyphs"]]
     target = b.artists["glyphs"][0]
     move.update(1.0)
@@ -843,7 +843,7 @@ def test_morph_is_a_move_of_the_motion_part_of_the_beat():
     fig, a, b = _pair(BAYES_A, BAYES_B)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    move = ep.transform(a, b, replace="morph")
+    move = ep.motion.transform(a, b, replace="morph")
     gb = b.artists["glyphs"]
     res = [j for j in move.new if _term_of(b, gb[j], renderer) == "res"]
     for u in (0.1, 0.3, 0.5, 0.59):
@@ -864,7 +864,7 @@ def test_morph_is_a_move_of_the_motion_part_of_the_beat():
 def test_curved_glyphs_do_not_pop_when_a_move_starts_or_ends(replace):
     """A curved glyph rasterizes alike at rest and in motion: no antialiasing step."""
     fig, a, b = _pair(r"${{t:a}}$", r"${{t:g}}$")
-    move = ep.transform(a, b, replace=replace, align=None, stagger=1.0)
+    move = ep.motion.transform(a, b, replace=replace, align=None, stagger=1.0)
     move.update(0.0)
     start = _pixels(fig).astype(int)
     move.update(1.0)
@@ -874,7 +874,7 @@ def test_curved_glyphs_do_not_pop_when_a_move_starts_or_ends(replace):
         assert np.abs(_pixels(fig).astype(int) - rest).max() < 25, (replace, u)
     for tex in ("a", r"\mathrm{Pr}(E|H)", "0.24"):
         fig, a, b = _pair(f"${{{{t:{tex}}}}}$", r"${{t:x^2}}$")
-        move = ep.transform(a, b, replace=replace, align=None, stagger=1.0)
+        move = ep.motion.transform(a, b, replace=replace, align=None, stagger=1.0)
         move.update(0.0)
         rest = _pixels(fig).astype(int)
         move.update(1e-9)

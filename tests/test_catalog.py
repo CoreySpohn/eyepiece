@@ -3,7 +3,6 @@
 import importlib
 import inspect
 import re
-import warnings
 from pathlib import Path
 
 import pytest
@@ -30,17 +29,6 @@ NAMESPACES = (
 # the catalog lists every public name; add an entry here, not a silent skip.
 NOT_CATALOGED = {}
 
-# Deprecated aliases, as the catalog writes them, and their replacements. The
-# task tables must use the replacement; the "Deprecated names" table lists both.
-DEPRECATED = {
-    "testing.Span": "testing.Window",
-    "spans": "plot.shade_intervals",
-    "radial_profile_plot": "plot.plot_radial_image",
-    "motifs.resolve_role": "style.role",
-    "tl.pulse": "tl.indicate",
-    "tl.ring": "tl.circumscribe",
-}
-
 # Prefixes the catalog uses, as its introduction states them.
 PREFIXES = {
     "ep": "eyepiece",
@@ -56,7 +44,11 @@ CANONICAL_ALIASES = {
     "render.same_picture": "testing.same_picture",
     "testing.caption_line": "narration.caption_line",
 }
-INSTANCES = {"tl": eyepiece.Timeline, "plan": eyepiece.Plan, "stage": eyepiece.Stage}
+INSTANCES = {
+    "tl": eyepiece.Timeline,
+    "plan": eyepiece.Plan,
+    "stage": eyepiece.motion.Stage,
+}
 NAME = re.compile(r"[A-Za-z_][\w.]*")
 
 
@@ -116,9 +108,7 @@ def _resolve(dotted):
     elif head in PREFIXES:
         obj = _module(PREFIXES[head])
     else:
-        assert head in eyepiece.__all__ or dotted in DEPRECATED, (
-            f"{head!r} needs its canonical task namespace"
-        )
+        assert head in eyepiece.__all__, f"{head!r} needs its canonical task namespace"
         obj = getattr(eyepiece, head)
     for part in rest:
         if hasattr(obj, part):
@@ -159,7 +149,6 @@ def test_catalog_names_resolve(span):
     match = NAME.match(span)
     assert match, f"Use column entry is not a name: {span!r}"
     name = match.group(0).rstrip(".")
-    assert name not in DEPRECATED, f"{span!r}: use {DEPRECATED.get(name)}"
     head, *rest = name.split(".")
     if head == "ep":
         assert rest, span
@@ -183,20 +172,6 @@ def test_catalog_names_resolve(span):
         return
     for keyword in re.findall(r"(\w+)=", call.split(")")[0]):
         assert keyword in params, f"{span!r}: no parameter {keyword!r}"
-
-
-@pytest.mark.parametrize(("old", "new"), DEPRECATED.items())
-def test_deprecated_aliases_listed_and_still_resolve(old, new):
-    text = CATALOG.read_text()
-    section = text[text.index("## Deprecated names") :]
-    row = next(line for line in section.splitlines() if f"`{old}(" in line)
-    assert f"`{new}(" in row, f"{old} row does not name {new}"
-    # Some aliases warn on access and some on call; tests/test_deprecated_names.py
-    # pins the warnings. Here the alias must still resolve beside its replacement.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        assert _resolve(old) is not None
-    assert _resolve(new) is not None
 
 
 def test_package_docstring_names_the_public_submodules():

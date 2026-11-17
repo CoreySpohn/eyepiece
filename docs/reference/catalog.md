@@ -14,15 +14,12 @@ for readability: `plot.` means `eyepiece.plot`, `clock.` means
 `eyepiece.narration.synth`. `tl` is a `clock.Timeline`, `plan` is its
 `clock.Plan`, and `stage` is a `motion.Stage`.
 
-## Legacy root paths
+## Root shortcuts
 
-In 0.16, every former root path still works silently and returns the same
-object. New examples use the task namespaces. Root star imports expose only
-`Timeline`, `Plan`, `Tempo`, `PlotResult`, `MosaicResult`, `MotionContract`,
-`animate`, `record`, `save_fig`, and `__version__`; these stable shortcuts may
-also appear bare in the tables. Existing deprecated aliases keep warning.
-The older render check paths and `testing.caption_line` remain compatible;
-their canonical homes below are `testing` and `narration`, respectively.
+The root exports `Timeline`, `Plan`, `Tempo`, `PlotResult`, `MosaicResult`,
+`MotionContract`, `animate`, `record`, `save_fig`, and `__version__`. These
+shortcuts may appear bare in the tables. Other public names use their task
+namespace. Render checks are in `testing`; caption helpers are in `narration`.
 
 ## 1. Put the clip on one clock
 
@@ -308,22 +305,3 @@ names are the records those calls return and the constants they read.
 | size text for a venue | `testing.VENUES`, `testing.VENUE_FPS` | Smallest readable text size in output pixels per venue; the rate a clip is sampled at when `times` is a `testing.Window` | API reference |
 | catch a scale or connector problem | `render.ScaleDriftError`, `testing.AttentionFault` | Raised by `record(on_rescale="raise")`; raised by `testing.audit` when a strict leader or link breaks a rule | `render.ScaleDriftError` in [clock](../explanation/clock.md) (prose), `testing.AttentionFault` in [attention-moves](../reference/attention-moves.md) (prose) |
 | check the installed version | `__version__` | The package version, available only at `ep.__version__` | API reference |
-
-## Deprecated names
-
-These names still work for one minor release and warn with a `DeprecationWarning` that names the
-replacement. They are out of every `__all__`, and they go away in the next minor release.
-
-| Deprecated | Use instead | Note |
-|---|---|---|
-| `testing.Span(start, stop)` | `testing.Window(start, stop)` | The same check window, renamed apart from the timeline record `clock.Span` |
-| `radial_profile_plot(image, pixscale_lod)` | `plot.plot_radial_image(image, pixscale_lod)` | The same image-to-profile computation and plotting; [profiles](../gallery/profiles.md) |
-| `spans(x, mask)` | `plot.shade_intervals(x, mask)` | The same function and signature |
-| `motifs.resolve_role(role, mode)` | `style.role(name, mode=)` | `style.role` also takes the neutral ranks |
-| `tl.pulse(target)` | `tl.indicate(target)` | The verb is named for the move it places; its knob is `indicate.<target>` |
-| `tl.ring(target)` | `tl.circumscribe(target)` | The same, with the knob `circumscribe.<target>` |
-| `tl.span(..., kind="pulse")`, `kind="ring"` | `kind="indicate"`, `kind="circumscribe"` | Span kinds follow the verbs |
-| `render.PRESETS["talk_60"]` | `render.PRESETS["talk"]` | The same fps and dpi pair |
-
-`motion.brush(dim=)` is a deprecated spelling of `motion.brush(veil_alpha=)`, with the same
-opacity value. `motion.Stage(dim=)` continues to mean contrast retained.

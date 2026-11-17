@@ -61,7 +61,7 @@ def test_clean_figure_passes():
 
 def test_text_and_a_backing_box_overlap():
     fig = _figure()
-    fig.text(0.1, 0.5, "a boxed label", fontsize=14, bbox=ep.backing())
+    fig.text(0.1, 0.5, "a boxed label", fontsize=14, bbox=ep.style.backing())
     fig.text(0.1, 0.5, "another", fontsize=14, va="top")
     fig.canvas.draw()
     box = fig.texts[0].get_bbox_patch().get_window_extent()
@@ -126,7 +126,7 @@ def test_text_on_marks_other_color_or_backed_passes():
         ha="center",
         va="center",
         fontsize=16,
-        bbox=ep.backing(alpha=1.0),
+        bbox=ep.style.backing(alpha=1.0),
     )
     assert ept.readability_faults(fig, kinds=("on-marks",)) == []
 
@@ -174,7 +174,7 @@ def test_leaders_are_left_to_audit():
     ax = fig.add_axes([0.1, 0.1, 0.8, 0.8])
     ax.plot([0, 1], [0, 1], color="C0")
     note = ax.text(0.2, 0.8, "note", color="C0", fontsize=14)
-    ep.leader(note, ep.Anchor.from_data(ax, (0.8, 0.8)), strict=False)
+    ep.motion.leader(note, ep.motion.Anchor.from_data(ax, (0.8, 0.8)), strict=False)
     assert ept.readability_faults(fig, kinds=("on-marks",)) == []
 
 
@@ -345,7 +345,7 @@ def test_halo_lint_names_the_text_and_ignores_backing_boxes():
         gid="subject-label",
         path_effects=[patheffects.withStroke(linewidth=3, foreground="white")],
     )
-    fig.text(0.1, 0.4, "boxed label", bbox=ep.backing())
+    fig.text(0.1, 0.4, "boxed label", bbox=ep.style.backing())
     faults = ept.halo_faults(fig)
     assert len(faults) == 1
     assert faults[0].artist is halo

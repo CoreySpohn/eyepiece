@@ -17,9 +17,9 @@ def test_keys_tones_and_placement_in_either_mode(mode):
     hwostyle.use(mode)
     fig, ax = plt.subplots()
     ax.imshow(np.random.default_rng(0).random((8, 8)), extent=(-4, 4, -4, 4))
-    res = ep.ruler(ax, (-2.0, -3.0), (2.0, -3.0), "4 units")
+    res = ep.plot.ruler(ax, (-2.0, -3.0), (2.0, -3.0), "4 units")
     assert set(res.artists) == {"arrow", "lines", "text"}
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     arrow = res.artists["arrow"]
     (under,) = res.artists["lines"]
     text = res.artists["text"]
@@ -48,7 +48,7 @@ def test_the_ruler_leaves_the_limits_alone():
     fig, ax = plt.subplots()
     ax.imshow(np.ones((4, 4)), extent=(-1, 1, -1, 1))
     limits = ax.get_xlim(), ax.get_ylim()
-    ep.ruler(ax, (-5.0, 0.0), (5.0, 3.0), "far")
+    ep.plot.ruler(ax, (-5.0, 0.0), (5.0, 3.0), "far")
     fig.canvas.draw()
     assert (ax.get_xlim(), ax.get_ylim()) == limits
     plt.close(fig)
@@ -65,7 +65,7 @@ def test_the_ruler_leaves_the_limits_alone():
 )
 def test_side_places_the_label(side, ha, va, sign):
     fig, ax = plt.subplots()
-    res = ep.ruler(ax, (0, 0), (0, 1), "h", side=side, offset_pt=5.0)
+    res = ep.plot.ruler(ax, (0, 0), (0, 1), "h", side=side, offset_pt=5.0)
     text = res.artists["text"]
     assert (text.get_ha(), text.get_va()) == (ha, va)
     # The gap is measured to the backing box's edge, not to the glyphs.
@@ -78,7 +78,7 @@ def test_side_places_the_label(side, ha, va, sign):
 def test_the_backing_box_keeps_its_gap_from_the_arrow(fontsize):
     fig, ax = plt.subplots(dpi=100)
     ax.set(xlim=(-1, 1), ylim=(-1, 1))
-    res = ep.ruler(
+    res = ep.plot.ruler(
         ax,
         (-0.5, 0.0),
         (0.5, 0.0),
@@ -97,16 +97,16 @@ def test_the_backing_box_keeps_its_gap_from_the_arrow(fontsize):
 def test_unknown_side_raises():
     fig, ax = plt.subplots()
     with pytest.raises(ValueError, match="side"):
-        ep.ruler(ax, (0, 0), (1, 0), "x", side="top")
+        ep.plot.ruler(ax, (0, 0), (1, 0), "x", side="top")
     plt.close(fig)
 
 
 def test_no_backing_and_no_text_on_a_plain_plot():
     fig, ax = plt.subplots()
-    res = ep.ruler(ax, (0, 0), (1, 0), backing=False, color="0.6")
+    res = ep.plot.ruler(ax, (0, 0), (1, 0), backing=False, color="0.6")
     assert set(res.artists) == {"arrow"}
     assert to_rgb(res.artists["arrow"].get_edgecolor()) == to_rgb("0.6")
-    labeled = ep.ruler(ax, (0, 0), (1, 0), "bare", backing=False)
+    labeled = ep.plot.ruler(ax, (0, 0), (1, 0), "bare", backing=False)
     assert labeled.artists["text"].get_bbox_patch() is None
     plt.close(fig)
 
@@ -115,7 +115,7 @@ def test_heads_scale_with_the_marker_size_and_fit_a_short_ruler():
     fig, ax = plt.subplots(figsize=(4, 4), dpi=100)
     ax.set(xlim=(0, 100), ylim=(0, 100))
     with plt.rc_context({"lines.markersize": 8.0}):
-        res = ep.ruler(ax, (10, 50), (90, 50))
+        res = ep.plot.ruler(ax, (10, 50), (90, 50))
     arrow = res.artists["arrow"]
     assert arrow.get_mutation_scale() == pytest.approx(HEAD_PER_MARKER * 8.0)
     # A ruler shorter than its two heads caps each head at half its length.
@@ -127,7 +127,7 @@ def test_heads_scale_with_the_marker_size_and_fit_a_short_ruler():
 
 def test_update_moves_the_same_artists_and_keeps_styles():
     fig, ax = plt.subplots()
-    res = ep.ruler(ax, (0, 0), (1, 0), "1", arrow_kw={"color": "red", "lw": 2.0})
+    res = ep.plot.ruler(ax, (0, 0), (1, 0), "1", arrow_kw={"color": "red", "lw": 2.0})
     n_children = len(ax.get_children())
     arrow, (under,), text = (res.artists[k] for k in ("arrow", "lines", "text"))
     res.update(p1=(3.0, 0.0), text="3")
@@ -146,7 +146,7 @@ def test_update_moves_the_same_artists_and_keeps_styles():
 
 def test_a_zero_length_ruler_draws_only_its_label_without_warning(recwarn):
     fig, ax = plt.subplots()
-    res = ep.ruler(ax, (1, 1), (1, 1), "0")
+    res = ep.plot.ruler(ax, (1, 1), (1, 1), "0")
     fig.canvas.draw()
     res.update(p1=(2, 1))
     fig.canvas.draw()
@@ -159,7 +159,7 @@ def test_a_zero_length_ruler_draws_only_its_label_without_warning(recwarn):
 
 def test_update_cannot_add_a_label():
     fig, ax = plt.subplots()
-    res = ep.ruler(ax, (0, 0), (1, 0))
+    res = ep.plot.ruler(ax, (0, 0), (1, 0))
     with pytest.raises(ValueError, match="without a label"):
         res.update(text="late")
     plt.close(fig)
@@ -167,7 +167,7 @@ def test_update_cannot_add_a_label():
 
 def test_routed_kwargs_reach_their_artists():
     fig, ax = plt.subplots()
-    res = ep.ruler(
+    res = ep.plot.ruler(
         ax,
         (0, 0),
         (1, 0),

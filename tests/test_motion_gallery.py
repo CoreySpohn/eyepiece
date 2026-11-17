@@ -27,7 +27,7 @@ def test_collapse_copy_is_continuous(draw_notebook_figures):
     ept.assert_motion(
         ns["fig"], lambda t: ns["gather"].update(1, carry=t / 2), ept.Window(0, 2)
     )
-    without_landing = ep.collapse(
+    without_landing = ep.motion.collapse(
         ns["left"],
         ns["cells"],
         ns["row"],
@@ -47,7 +47,7 @@ def test_morph_ghost_fades_continuously_at_both_ends():
     phi = np.linspace(0, 2 * np.pi, 160, endpoint=False)
     ring = np.c_[np.cos(phi), np.sin(phi)]
     box = np.array([[0.9, 0.9], [-0.9, 0.9], [-0.9, -0.9], [0.9, -0.9]])
-    move = ep.morph(
+    move = ep.motion.morph(
         ring,
         box[::-1],
         ax=ax,
@@ -62,7 +62,7 @@ def test_follow_zoom_halos_fade_continuously():
     fig, ax = plt.subplots(figsize=(4, 3), dpi=80)
     ax.imshow(np.zeros((20, 20)), extent=(-6, 6, -4, 4), vmin=-1, vmax=1)
     ax.set(xlim=(-6, 6), ylim=(-4, 4), xticks=[], yticks=[])
-    move = ep.follow_zoom(ax, (-2, -1), size=0.36)
+    move = ep.motion.follow_zoom(ax, (-2, -1), size=0.36)
     ept.assert_motion(fig, lambda t: move.update(t / 2), ept.Window(0, 2))
 
 
@@ -80,7 +80,7 @@ def test_gallery_quad_image_unroll_settles_continuously():
     # A corner at the origin approached along the negative x axis keeps pi.
     x[x == 0] = -0.0
     corners = np.stack([x, y], axis=-1)
-    quads = ep.pixel_quads(corners)
+    quads = ep.motion.pixel_quads(corners)
     centers = quads.mean(axis=1)
     center_angle = np.arctan2(centers[:, 1], centers[:, 0])[:, None]
     qt = center_angle + np.angle(
@@ -95,7 +95,7 @@ def test_gallery_quad_image_unroll_settles_continuously():
     )
     fig, ax = plt.subplots(figsize=(4, 3), dpi=80)
     ax.set(xlim=(-14, 14), ylim=(-14, 14), xticks=[], yticks=[])
-    move = ep.quad_image(np.arange(4).reshape(2, 2), corners, ax=ax)
+    move = ep.motion.quad_image(np.arange(4).reshape(2, 2), corners, ax=ax)
     ept.assert_motion(
         fig, lambda t: move.update(quads=ns["unroll"](t / 2)), ept.Window(0, 2)
     )

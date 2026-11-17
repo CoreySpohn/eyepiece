@@ -76,7 +76,6 @@ import math
 import numbers
 import os
 import re
-import warnings
 from contextlib import closing, contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -1169,7 +1168,7 @@ class HaloError(AssertionError):
 def halo_faults(fig) -> list[HaloFault]:
     """List visible text artists drawn with a stroked halo.
 
-    Labels use a backing box, as `eyepiece.backing` and `eyepiece.callout`
+    Labels use a backing box, as `eyepiece.style.backing` and `eyepiece.motion.callout`
     do. A `matplotlib.patheffects.withStroke` on text breaks that convention,
     including when the same text also has a box. Halos on lines and other
     marks are outside this check. Hidden, blank and transparent texts are
@@ -1329,7 +1328,7 @@ _KINK_FLOOR_PX = 4.0
 class Window(NamedTuple):
     """A stretch of clip time to check at every frame.
 
-    A window is what a check samples, not a timeline span: `eyepiece.Span`
+    A window is what a check samples, not a timeline span: `eyepiece.clock.Span`
     is the record a `eyepiece.Timeline` verb returns. `check_clip` takes a
     plan span by name where it would take a window.
 
@@ -1567,7 +1566,7 @@ def grounding_faults(
     if it has an axes, and has effective ink opacity at least 0.05.
 
     Text-colored terms and neutral tones, the ramp from the axes background to
-    the text color that `ep.neutral` draws, are never colored. A color within
+    the text color that `ep.style.neutral` draws, are never colored. A color within
     `tol` per channel of the nearest point on that ramp, or whose channel
     spread is at most `tol`, is neutral; other colors are colored.
 
@@ -1709,7 +1708,7 @@ def assert_grounded(equations, **kwargs) -> list:
     Apply the rules of `grounding_faults`: a term is shown when any glyph is
     visible with effective opacity at least 0.05; its first glyph decides
     its color. Text-colored terms and neutral tones, the ramp from the axes
-    background to the text color that `ep.neutral` draws, are never colored.
+    background to the text color that `ep.style.neutral` draws, are never colored.
     Neutral tones include colors within `tol` per channel of the ramp and
     grays whose channel spread is at most `tol`.
 
@@ -4596,7 +4595,7 @@ def check_clip(
         venue: Readability venue, a key of `VENUES`.
         keys: Meaning gid-prefix mapping. An explicit mapping, even an empty
             one, overrides `motifs`. With neither, meaning checks are skipped.
-        motifs: A `eyepiece.MotifSet` supplying `meaning_keys()`.
+        motifs: A `eyepiece.motifs.MotifSet` supplying `meaning_keys()`.
         moves: Mapping from artists to plan span names or `Window`
             values, or an iterable of declarations accepted by `motion_faults`.
             A declaration dict's ``span`` may also be a plan span name.
@@ -4794,22 +4793,12 @@ _LAZY_EXPORTS = {
     "frame_faults": ("eyepiece._render_pool", "frame_faults"),
     "same_picture": ("eyepiece._render_poster", "same_picture"),
 }
-_DEPRECATED = {"Span": "Window"}
 
 
 def __getattr__(name):
-    """Load shared render checks or resolve a deprecated name."""
+    """Load shared render checks."""
     if name in _LAZY_EXPORTS:
         return _lazy_lookup(name, _LAZY_EXPORTS, globals())
-    if name in _DEPRECATED:
-        new = _DEPRECATED[name]
-        warnings.warn(
-            f"eyepiece.testing.{name} is deprecated; use eyepiece.testing.{new}, "
-            "the same class under a name that does not clash with eyepiece.Span",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return globals()[new]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

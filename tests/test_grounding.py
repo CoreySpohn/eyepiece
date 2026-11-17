@@ -26,7 +26,7 @@ def board():
 
 
 def _equation(ax):
-    return ep.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30)
+    return ep.motion.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30)
 
 
 def _assert_rgb(glyphs, color):
@@ -175,7 +175,7 @@ def test_bind_unknown_motif_uses_the_motifset_error(board):
 
 def test_bind_leaves_unbound_terms_and_untagged_glyphs_unchanged(board):
     _, ax = board
-    eq = ep.equation(
+    eq = ep.motion.equation(
         ax,
         r"${{sigma:\sigma_x}}+{{other:y}}=0$",
         fontsize=30,
@@ -198,7 +198,7 @@ def test_bind_leaves_unbound_terms_and_untagged_glyphs_unchanged(board):
 
 def test_linked_accepts_names_terms_and_marks_and_returns_fresh_lists(board):
     _, ax = board
-    eq = ep.equation(ax, r"${{sigma:\sigma}}+{{other:y}}$", fontsize=30)
+    eq = ep.motion.equation(ax, r"${{sigma:\sigma}}+{{other:y}}$", fontsize=30)
     (mark,) = ax.plot([0, 1], [0.2, 0.3], color="C2")
     term = eq.bind("sigma", mark)
     for target in ("sigma", term, mark):
@@ -242,7 +242,7 @@ def test_indicate_cues_the_bound_term_and_mark_and_restores_them_exactly(board):
     eq.bind("sigma", mark)
     rest_width = mark.get_linewidth()
     rest_colors = [g.get_facecolor() for g in eq.artists["glyphs"]]
-    pulse = ep.indicate(eq.linked("sigma"))
+    pulse = ep.motion.indicate(eq.linked("sigma"))
 
     pulse.update(0.5)
     assert mark.get_linewidth() > rest_width
@@ -257,7 +257,7 @@ def test_indicate_cues_the_bound_term_and_mark_and_restores_them_exactly(board):
 
 def test_bindings_hold_named_records_in_bind_order(board):
     _, ax = board
-    eq = ep.equation(ax, r"${{sigma:\sigma}}+{{other:y}}$", fontsize=30)
+    eq = ep.motion.equation(ax, r"${{sigma:\sigma}}+{{other:y}}$", fontsize=30)
     (mark,) = ax.plot([0, 1], [0.2, 0.3], color="C2")
     motif = MotifSet.default()["planet"]
     other = eq.bind("other", Artist(), motif=motif)
@@ -301,7 +301,9 @@ def test_write_reveal_keeps_the_bound_color(board, with_motif):
 
 def test_grounding_reports_shown_unbound_colored_terms(board):
     _, ax = board
-    eq = ep.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors={"sigma": "C1"})
+    eq = ep.motion.equation(
+        ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors={"sigma": "C1"}
+    )
     eq.update(1)
 
     faults = ept.grounding_faults(eq)
@@ -321,9 +323,9 @@ def test_grounding_allows_unbound_neutral_and_text_ink(board, color):
         colors = (
             {}
             if color is None
-            else {"sigma": ep.neutral(0.8) if color == "neutral" else "#a020c0"}
+            else {"sigma": ep.style.neutral(0.8) if color == "neutral" else "#a020c0"}
         )
-        eq = ep.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors=colors)
+        eq = ep.motion.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors=colors)
         eq.update(1)
         assert ept.grounding_faults(eq) == []
 
@@ -334,9 +336,9 @@ def test_grounding_allows_rounded_neutral_with_tinted_text(board):
     hwostyle.use("dark", palette_family="cyberpunk")
     # Some hwostyle versions use white text, so make the tint explicit.
     plt.rcParams["text.color"] = "#b0d0f0"
-    neutral = to_hex(ep.neutral(0.6))
+    neutral = to_hex(ep.style.neutral(0.6))
     assert max(to_rgb(neutral)) - min(to_rgb(neutral)) > 0.08
-    eq = ep.equation(
+    eq = ep.motion.equation(
         ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors={"sigma": neutral}
     )
     eq.update(1)
@@ -374,7 +376,9 @@ def test_grounding_requires_a_shown_bound_mark(board, hidden):
 @pytest.mark.parametrize("hidden", ["visible", "alpha", "face", "combined"])
 def test_grounding_checks_only_shown_glyphs(board, hidden):
     _, ax = board
-    eq = ep.equation(ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors={"sigma": "C1"})
+    eq = ep.motion.equation(
+        ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors={"sigma": "C1"}
+    )
     eq.update(1)
     for glyph in eq.artists["glyphs"]:
         if hidden == "visible":
@@ -535,7 +539,7 @@ def test_grounding_requires_at_and_times_together(board, kwargs):
 
 def test_assert_grounded_returns_clean_list_or_reports_every_fault(board):
     _, ax = board
-    eq = ep.equation(
+    eq = ep.motion.equation(
         ax,
         r"${{sigma:\sigma}}+{{other:y}}$",
         fontsize=30,
@@ -555,14 +559,14 @@ def test_assert_grounded_returns_clean_list_or_reports_every_fault(board):
 
 def test_grounding_deduplicates_per_equation_term_and_kind(board):
     _, ax = board
-    eq = ep.equation(
+    eq = ep.motion.equation(
         ax,
         r"${{sigma:\sigma}}+{{other:y}}$",
         fontsize=30,
         colors={"sigma": "C1", "other": "C2"},
     )
     eq.update(1)
-    second = ep.equation(
+    second = ep.motion.equation(
         ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors={"sigma": "C1"}
     )
     second.update(1)
@@ -583,7 +587,7 @@ def test_grounding_deduplicates_per_equation_term_and_kind(board):
 
 def test_grounding_sorts_findings_by_time_then_term(board):
     _, ax = board
-    eq = ep.equation(
+    eq = ep.motion.equation(
         ax,
         r"${{alpha:a}}+{{zeta:z}}$",
         fontsize=30,
@@ -601,7 +605,7 @@ def test_grounding_sorts_findings_by_time_then_term(board):
 
 def test_grounding_tolerance_applies_to_gray_and_color_comparisons(board):
     _, ax = board
-    eq = ep.equation(
+    eq = ep.motion.equation(
         ax, r"${{sigma:\sigma_x}}$", fontsize=30, colors={"sigma": (0.4, 0.45, 0.4)}
     )
     eq.update(1)

@@ -47,7 +47,7 @@ def test_progress_is_zero_before_eased_inside_and_exactly_one_from_the_end():
     plan = tl.at_fps(10)
     s = plan.spans["go"]
     assert plan.progress(s.k0 - 1, "go") == 0.0
-    assert plan.progress(s.k0, "go") == pytest.approx(ep.ease(0.1, "smoothstep"))
+    assert plan.progress(s.k0, "go") == pytest.approx(ep.clock.ease(0.1, "smoothstep"))
     assert plan.progress(s.k0, "go", eased=False) == pytest.approx(0.1)
     assert plan.progress(s.k1 - 1, "go") == 1.0
     assert plan.progress(s.k1, "go") == 1.0
@@ -94,7 +94,7 @@ def test_the_frames_of_a_plan_are_fresh_dicts_with_the_frame_fields():
 def test_a_still_in_seconds_rounds_half_up_not_to_even(fps):
     for k in range(6):
         t = (k + 0.5) / fps
-        assert anim._still_frame(t, None, fps) == ep.frame_count(t, fps) == k + 1
+        assert anim._still_frame(t, None, fps) == ep.clock.frame_count(t, fps) == k + 1
 
 
 def test_a_still_by_span_name_is_the_frame_of_the_matching_event():
@@ -227,16 +227,16 @@ def test_times_are_exact_sums_not_accumulated_floats():
     for _ in range(10):
         tl.hold(0.1)
     assert tl.now == 1.0
-    t = ep.Time(0.1) + 0.2 + 0.3
+    t = ep.clock.Time(0.1) + 0.2 + 0.3
     assert t == math.fsum([0.1, 0.2, 0.3])
-    assert isinstance(t, ep.Time) and isinstance(0.5 + t, ep.Time)
-    assert isinstance(t - 0.1, ep.Time) and isinstance(1.0 - t, ep.Time)
-    assert ep.Time(1.0) - 0.25 == 0.75 and 1.0 - ep.Time(0.25) == 0.75
+    assert isinstance(t, ep.clock.Time) and isinstance(0.5 + t, ep.clock.Time)
+    assert isinstance(t - 0.1, ep.clock.Time) and isinstance(1.0 - t, ep.clock.Time)
+    assert ep.clock.Time(1.0) - 0.25 == 0.75 and 1.0 - ep.clock.Time(0.25) == 0.75
 
 
 def test_timeline_spans_lists_declared_records_in_declaration_order():
     tl = ep.Timeline()
-    later = tl.move("later", 0.2, at=ep.Time(0.1) + 0.2)
+    later = tl.move("later", 0.2, at=ep.clock.Time(0.1) + 0.2)
     earlier = tl.move("earlier", 0.1, at=0.0)
     spans = tl.spans
     assert isinstance(spans, MappingProxyType)
@@ -252,7 +252,7 @@ def test_timeline_spans_lists_declared_records_in_declaration_order():
             (record.start, handle.start),
             (record.end, handle.end),
         ):
-            assert isinstance(actual, ep.Time)
+            assert isinstance(actual, ep.clock.Time)
             assert actual == expected
             assert actual.exact == expected.exact
         assert record.k0 is None and record.k1 is None
@@ -276,7 +276,9 @@ def test_timeline_spans_reflects_a_silent_captions_automatic_leave():
     assert list(spans) == ["label", "label.leave"]
     leave = spans["label.leave"]
     assert leave.kind == "leave"
-    assert isinstance(leave.start, ep.Time) and isinstance(leave.end, ep.Time)
+    assert isinstance(leave.start, ep.clock.Time) and isinstance(
+        leave.end, ep.clock.Time
+    )
     assert leave.start.exact == (cap.end + TEMPO.read_s("two words")).exact
     assert leave.k0 is None and leave.k1 is None
 
@@ -650,13 +652,13 @@ def test_a_caption_leaving_before_it_is_read_is_a_fault():
     [
         ((2, 3, 1), Fraction(3)),
         ((Fraction(2, 3), 0.5, Fraction(1, 3)), Fraction(2, 3)),
-        ((0.5, ep.Time(Fraction(5, 7))), Fraction(5, 7)),
+        ((0.5, ep.clock.Time(Fraction(5, 7))), Fraction(5, 7)),
     ],
 )
 def test_wait_until_advances_to_the_latest_time_and_returns_an_exact_time(times, want):
     tl = ep.Timeline(tempo=ep.Tempo(factor=2.0))
     result = tl.wait_until(*times)
-    assert isinstance(result, ep.Time)
+    assert isinstance(result, ep.clock.Time)
     assert result.exact == tl.now.exact == want
 
 
@@ -729,7 +731,7 @@ def test_a_trailing_wait_sets_the_clip_length_without_adding_a_span_or_knob():
     tl.wait_until(2.0)
     tl.wait_until(2.25)
     plan = tl.at_fps(30)
-    assert plan.n_frames == ep.frame_count(2.25, 30)
+    assert plan.n_frames == ep.clock.frame_count(2.25, 30)
     assert tuple(plan.spans) == ("still",)
     assert plan.knobs == ("x",)
     assert plan.value(plan.n_frames - 1, "x") == 7.0
@@ -740,7 +742,7 @@ def test_a_wait_shorter_than_a_frame_builds_strict_without_a_collapsed_fault():
     tl.hold(1.0)
     tl.wait_until(1.001)
     plan = tl.at_fps(30)
-    assert plan.n_frames == ep.frame_count(1.001, 30)
+    assert plan.n_frames == ep.clock.frame_count(1.001, 30)
     assert "collapsed" not in _codes(plan)
 
 
@@ -877,7 +879,7 @@ def test_a_silent_caption_leaves_once_read_and_its_section_waits_for_it():
     assert plan.spans["c"].read_s == pytest.approx(read)
     assert plan.value(plan.spans["c"].k1 - 1, "caption.c") == 1.0
     assert plan.value(plan.n_frames - 1, "caption.c") == 0.0
-    assert plan.n_frames == ep.frame_count(leave.end_s, 30)
+    assert plan.n_frames == ep.clock.frame_count(leave.end_s, 30)
 
 
 def test_a_caption_waits_for_the_motion_of_its_section_before_it_leaves():
@@ -965,7 +967,9 @@ def test_property_sequential_spans_tile_and_total_the_rounded_sum(durations, fps
     assert spans[0].k0 == 0
     for a, b in itertools.pairwise(spans):
         assert b.k0 == a.k1
-    assert spans[-1].k1 == plan.n_frames == ep.frame_count(math.fsum(durations), fps)
+    assert (
+        spans[-1].k1 == plan.n_frames == ep.clock.frame_count(math.fsum(durations), fps)
+    )
 
 
 @given(st.lists(_seconds, min_size=1, max_size=6), _fps)
@@ -1010,8 +1014,8 @@ def test_property_two_writers_raise_if_and_only_if_their_frames_intersect(
     tl.move("b", d2, to={"x": 2.0}, at=b0)
 
     def frames(start, dur):
-        k0 = ep.frame_count(start, fps)
-        return k0, max(k0 + 1, ep.frame_count(start + dur, fps))
+        k0 = ep.clock.frame_count(start, fps)
+        return k0, max(k0 + 1, ep.clock.frame_count(start + dur, fps))
 
     (a_0, a_1), (b_0, b_1) = frames(a0, d1), frames(b0, d2)
     if a_0 < b_1 and b_0 < a_1:

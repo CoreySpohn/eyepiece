@@ -517,8 +517,8 @@ def flight(
             without a marker (its shape and style), a `Patch` (its shape and
             style) or a `Text` (string, font, color, box). None copies the
             source anchor's artist.
-        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
-            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.clock.ease, kind="back_out",
             strength=0.2)``, applied to `u` along the
             path.
         fade: Fraction of the flight, at its end, over which `crossfade`
@@ -540,18 +540,23 @@ def flight(
 
     Example::
 
-        top_dot, = top.plot([0.35], [2.41], "o")
-        carry = ep.flight(top_dot, ep.Anchor.from_data(bottom, (0.25, 2.41)),
-                          fig=fig, arc=0.15)
+        (top_dot,) = top.plot([0.35], [2.41], "o")
+        carry = ep.motion.flight(
+            top_dot, ep.motion.Anchor.from_data(bottom, (0.25, 2.41)), fig=fig, arc=0.15
+        )
         for u in np.linspace(0.0, 1.0, 30):
             carry.update(u)
             rec.frame()
 
     A segment turned a quarter turn onto another axis::
 
-        stub, = star_panel.plot([x0, x1], [y0, y1], lw=3)
-        carry = ep.flight(stub, ep.Anchor.from_data(velocity_panel, (0.0, 1.2)),
-                          fig=fig, turn_deg=90.0)
+        (stub,) = star_panel.plot([x0, x1], [y0, y1], lw=3)
+        carry = ep.motion.flight(
+            stub,
+            ep.motion.Anchor.from_data(velocity_panel, (0.0, 1.2)),
+            fig=fig,
+            turn_deg=90.0,
+        )
     """
     source = _as_anchor(source, "source")
     destination = _as_anchor(destination, "destination")
@@ -1019,7 +1024,7 @@ def leader(text, target, *, color=None, lw=None, avoid=None, strict=True, line_k
     Example::
 
         note = ax.text(0.8, 0.9, "first null", transform=ax.transAxes)
-        res = ep.leader(note, ep.Anchor.from_data(ax, (1.22, 0.0)))
+        res = ep.motion.leader(note, ep.motion.Anchor.from_data(ax, (1.22, 0.0)))
         res.update(0.5)  # halfway grown
     """
     if not isinstance(text, Text):
@@ -1083,8 +1088,8 @@ def audit(fig, *, raise_on_fault=True):
 
     Example::
 
-        res = ep.leader(note, ep.Anchor.from_data(ax, (1.22, 0.0)))
-        ep.audit(fig)  # raises AttentionFault if the leader crosses data
+        res = ep.motion.leader(note, ep.motion.Anchor.from_data(ax, (1.22, 0.0)))
+        ep.testing.audit(fig)  # raises AttentionFault if the leader crosses data
     """
     root = fig.get_figure(root=True) or fig
     renderer = _renderer(root)
@@ -1336,7 +1341,7 @@ def callout(
             from the geometry when the callout is made (lay the figure out
             first, or name the side).
         leader: Draw a leader when the caption does not touch its subject.
-        box: The caption's ``bbox``. None uses `eyepiece.backing`, read
+        box: The caption's ``bbox``. None uses `eyepiece.style.backing`, read
             now; False draws no box.
         at: Optional `Anchor` for the caption itself; `side` then sets its
             alignment, and "auto" means "right".
@@ -1369,7 +1374,7 @@ def callout(
     Example::
 
         (dot,) = ax.plot([0.35], [2.41], "o")
-        res = ep.callout(dot, "the height at y", side="right")
+        res = ep.motion.callout(dot, "the height at y", side="right")
         res.update(0.0)  # hidden until its beat
     """
     target = _as_anchor(target, "target")
@@ -1844,7 +1849,7 @@ class Stage:
 
     Example::
 
-        stage = ep.Stage({"scenery": [ax_left], "row": [row_line]})
+        stage = ep.motion.Stage({"scenery": [ax_left], "row": [row_line]})
         stage.set(shown=["row"], dimmed=["scenery"])
         stage.rest()  # the still
     """
@@ -1961,14 +1966,14 @@ class Stage:
         Args:
             levels: Mapping of group name to a presence in [0, 1], or to a
                 ``(presence, contrast)`` pair.
-            ease: An easing kind for `eyepiece.ease`, or a callable from progress
-                to eased progress such as ``functools.partial(ep.ease,
+            ease: An easing kind for `eyepiece.clock.ease`, or a callable from progress
+                to eased progress such as ``functools.partial(ep.clock.ease,
                 kind="back_out", strength=0.2)``, or None for the levels
                 as given. It shapes presence only, so a caller that ramps a
                 presence linearly in time gets a fade that starts and stops
                 gently, and presence 0 and 1 stay where they are. Contrast is
                 always taken as given: a caller that ramps a contrast applies
-                `eyepiece.ease` to its own progress. Pass the uneased
+                `eyepiece.clock.ease` to its own progress. Pass the uneased
                 progress, never a value `weigh` or `ease` has already shaped,
                 or the curve is applied twice.
             lift_pt: How far below its place, in points, a label starts its
@@ -2039,8 +2044,8 @@ class Stage:
             u: Progress from `start` to the state, from 0 to 1; values
                 outside are clipped. At 1 (the default) the stage is exactly
                 in the state.
-            ease: An easing kind for `eyepiece.ease`, or a callable from progress
-                to eased progress such as ``functools.partial(ep.ease,
+            ease: An easing kind for `eyepiece.clock.ease`, or a callable from progress
+                to eased progress such as ``functools.partial(ep.clock.ease,
                 kind="back_out", strength=0.2)``, applied to `u`.
 
         Returns:
@@ -2354,7 +2359,7 @@ def build_axes(
 
     Example::
 
-        build = ep.build_axes(ax, axis="x")
+        build = ep.motion.build_axes(ax, axis="x")
         for u in np.linspace(0.0, 1.0, 24):
             build.update(u)
             rec.frame()
@@ -2473,8 +2478,8 @@ def collapse(
         to: Optional ``(start, end)`` pair of anchors the bar is carried to.
         width_pt: Line width of the segments in points. None uses twice
             ``rcParams["lines.linewidth"]``.
-        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
-            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.clock.ease, kind="back_out",
             strength=0.2)``.
         zorder: Drawing order of the copy among the figure's children.
 
@@ -2489,11 +2494,18 @@ def collapse(
     Example::
 
         cells = np.stack([np.c_[edges[:-1], [r] * n], np.c_[edges[1:], [r] * n]], 1)
-        sums = ep.collapse(left, cells, row, ep.Anchor.from_data(left, (0.1, r)),
-                           ep.Anchor.from_data(left, (0.1 + total, r)), fig=fig,
-                           colors=cmap(norm(row)), color=pink,
-                           to=(ep.Anchor.from_data(right, (0, r)), tip))
-        sums.update(0.5)            # halfway gathered
+        sums = ep.motion.collapse(
+            left,
+            cells,
+            row,
+            ep.motion.Anchor.from_data(left, (0.1, r)),
+            ep.motion.Anchor.from_data(left, (0.1 + total, r)),
+            fig=fig,
+            colors=cmap(norm(row)),
+            color=pink,
+            to=(ep.motion.Anchor.from_data(right, (0, r)), tip),
+        )
+        sums.update(0.5)  # halfway gathered
         sums.update(1.0, carry=0.5)  # the bar halfway to the other panel
     """
     segments = np.asarray(segments, dtype=float)
@@ -2764,7 +2776,7 @@ def indicate(artists, *, scale=1.15, strength=0.6, shape="sine"):
 
     Example::
 
-        pulse = ep.indicate([curve, note])
+        pulse = ep.motion.indicate([curve, note])
         for u in np.linspace(0.0, 1.0, 20):
             pulse.update(u)
             rec.frame()
@@ -2890,7 +2902,7 @@ def draw_on(lines, *, ease="linear") -> PlotResult:
 
     Args:
         lines: One `Line2D` or an iterable of lines attached to axes.
-        ease: An easing kind for `eyepiece.ease`, or a callable mapping
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable mapping
             progress to eased progress. The path fraction is clipped to
             [0, 1]; monotone easing gives a monotone reveal.
 
@@ -3144,7 +3156,7 @@ def head_draw(
 
     Args:
         lines: One `Line2D` or an iterable of lines attached to axes.
-        ease: An easing kind for `eyepiece.ease`, or a callable mapping
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable mapping
             progress to eased progress. The default is the library's
             reveal ease.
         lag: Fraction of a line's window before the next line starts, in
@@ -3177,7 +3189,7 @@ def head_draw(
 
     Example::
 
-        reveal = ep.head_draw([ring, curve], lag=0.4, behind={ring: halo})
+        reveal = ep.motion.head_draw([ring, curve], lag=0.4, behind={ring: halo})
         for u in np.linspace(0.0, 1.0, 84):
             reveal.update(u)
             rec.frame()
@@ -3423,8 +3435,8 @@ def circumscribe(
         lw: Line width in points. None uses ``rcParams["lines.linewidth"]``.
         draw: Fraction of the progress spent drawing the outline on, in
             (0, 1); the rest fades it.
-        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
-            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.clock.ease, kind="back_out",
             strength=0.2)``, applied to the draw-on and
             to the fade.
         zorder: Drawing order among the figure's children.
@@ -3446,7 +3458,7 @@ def circumscribe(
 
     Example::
 
-        ring = ep.circumscribe(ep.Anchor.from_artist(label), pad_pt=6)
+        ring = ep.motion.circumscribe(ep.motion.Anchor.from_artist(label), pad_pt=6)
         for u in np.linspace(0.0, 1.0, 24):
             ring.update(u)
             rec.frame()
@@ -3567,7 +3579,7 @@ def underline(
     Example::
 
         label = ax.text(0.2, 0.5, "the prior")
-        mark = ep.underline(label)
+        mark = ep.motion.underline(label)
         mark.update(0.5)
     """
     if not isinstance(text_artist, Text):
@@ -3932,8 +3944,8 @@ def morph(
         n: Points per subpath after resampling, at least 3.
         align: Whether closed pairs search the start point and direction.
             False pairs the resampled points as drawn.
-        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
-            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.clock.ease, kind="back_out",
             strength=0.2)``, applied to the progress.
         a_kw: Overrides for the style of the first path: any of
             ``edgecolor``, ``facecolor``, ``linewidth`` and ``alpha``.
@@ -3956,9 +3968,9 @@ def morph(
 
     Example::
 
-        ring, = ax.plot(np.cos(t), np.sin(t))
+        (ring,) = ax.plot(np.cos(t), np.sin(t))
         box = ax.add_patch(PathPatch(square_path, fc="none"))
-        step = ep.morph(ring, box)
+        step = ep.motion.morph(ring, box)
         for u in np.linspace(0.0, 1.0, 30):
             step.update(u)
             rec.frame()
@@ -4386,7 +4398,7 @@ def write(
             once and 1 one after another. None uses ``min(4 / n, 0.2)`` for
             `n` glyphs, which keeps about six glyphs in flux.
         lw: Pen width in points. None uses a thin pen of 0.75 pt.
-        ease: An easing kind for `eyepiece.ease` for the beat as a whole.
+        ease: An easing kind for `eyepiece.clock.ease` for the beat as a whole.
             Inside each glyph's window progress is linear.
         zorder: Drawing order of the ghost among the figure's children.
 
@@ -4408,7 +4420,7 @@ def write(
     Example::
 
         title = ax.text(0.5, 0.5, r"$E = mc^2$", fontsize=24, ha="center")
-        step = ep.write(title)
+        step = ep.motion.write(title)
         for u in np.linspace(0.0, 1.0, 36):
             step.update(u)
             rec.frame()
@@ -4599,10 +4611,11 @@ def term_row(
 
     Example::
 
-        row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.9)),
-                          ["$\chi^2$", "=", "0.0"])
+        row = ep.motion.term_row(
+            ep.motion.Anchor.from_data(ax, (0.1, 0.9)), ["$\chi^2$", "=", "0.0"]
+        )
         row.artists["text"][2].set_text("2.41")  # a term is rewritten
-        ep.Anchor.from_artist(row.artists["text"][0])  # a term is an anchor
+        ep.motion.Anchor.from_artist(row.artists["text"][0])  # a term is an anchor
     """
     at = _as_anchor(at, "at")
     if ha not in ("left", "center", "right"):
@@ -4932,7 +4945,7 @@ def readout(
         signed: Whether to reserve room for a sign. None reserves it for a
             sign flag in `fmt` and once a negative value is given; False
             declines, and a negative value then raises.
-        ease: The easing kind of `eyepiece.ease` for ``update(u)``. An
+        ease: The easing kind of `eyepiece.clock.ease` for ``update(u)``. An
             ease that leaves [0, 1] (an overshoot) is clamped here, so a
             count never passes its target and never goes back.
         color: Text color. None uses ``rcParams["text.color"]``.
@@ -4958,8 +4971,9 @@ def readout(
 
     Example::
 
-        rd = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.9)), 0.0,
-                        prefix="t = ", unit="h")
+        rd = ep.motion.readout(
+            ep.motion.Anchor.from_data(ax, (0.1, 0.9)), 0.0, prefix="t = ", unit="h"
+        )
         rd.set(3.2)
         rd.update(0.5)  # t = 1.6 h
     """
@@ -5073,7 +5087,7 @@ def ruler_readout(
         readout: A `readout` to show the value at the head, or None.
         value: Callable ``value(x, y)`` from the head's data point to the
             counter's value. None shows ``y``.
-        ruler: An `eyepiece.ruler` result whose far end follows the head, or
+        ruler: An `eyepiece.plot.ruler` result whose far end follows the head, or
             None. Its near end stays where it was drawn.
         ruler_to: Callable ``ruler_to(x, y)`` from the head's data point to
             the ruler's far end in the ruler's axes. Required with `ruler`.
@@ -5093,12 +5107,17 @@ def ruler_readout(
 
     Example::
 
-        curve_head = ep.head_draw(curve)
-        count = ep.readout(ep.Anchor.from_data(ax_c, (0.05, 0.9)), 0, fmt=",d")
-        rule = ep.ruler(ax_img, (0, 0), (0, 0), "r = 0.00", head_scale=0)
-        knob = ep.ruler_readout(
-            curve_head, readout=count, value=lambda r, n: n,
-            ruler=rule, ruler_to=lambda r, n: (-r, 0.0),
+        curve_head = ep.motion.head_draw(curve)
+        count = ep.motion.readout(
+            ep.motion.Anchor.from_data(ax_c, (0.05, 0.9)), 0, fmt=",d"
+        )
+        rule = ep.plot.ruler(ax_img, (0, 0), (0, 0), "r = 0.00", head_scale=0)
+        knob = ep.motion.ruler_readout(
+            curve_head,
+            readout=count,
+            value=lambda r, n: n,
+            ruler=rule,
+            ruler_to=lambda r, n: (-r, 0.0),
             ruler_text=lambda r, n: f"r = {r:.2f}",
         )
         knob.update(0.5)
@@ -5249,8 +5268,9 @@ def click(lines, *, dot=None, readout=None, ruler=None, swell=_CLICK_SWELL,
 
     Example::
 
-        landed = ep.click(ring, dot=ep.Anchor.from_data(ax, end), readout=count,
-                          ruler=rule)
+        landed = ep.motion.click(
+            ring, dot=ep.motion.Anchor.from_data(ax, end), readout=count, ruler=rule
+        )
         tl.click("ring")  # 0.6 s on knob "click.ring", then a 1.5 s hold
         ...
         landed.update(plan.value(k, "click.ring"))
@@ -5549,7 +5569,7 @@ def words(
             the baseline's left end, center, or right end, by `ha`.
         string: The line, on one line (no newline).
         by: What ``update`` reveals by: ``"word"`` or ``"letter"``.
-        ease: An easing kind for `eyepiece.ease`, or a callable taking the
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable taking the
             clipped progress, shaping how each word fades in by word. Only
             its input is clipped; an overshoot is clamped to [0, 1] where it
             becomes opacity, and the end states are exact. A reveal by
@@ -5583,10 +5603,13 @@ def words(
 
     Example::
 
-        line = ep.words(ep.Anchor.from_data(ax, (0.1, 0.5)),
-                        "the prior times the likelihood", colors={1: "C0", 4: "C1"})
+        line = ep.motion.words(
+            ep.motion.Anchor.from_data(ax, (0.1, 0.5)),
+            "the prior times the likelihood",
+            colors={1: "C0", 4: "C1"},
+        )
         line.reveal(0.5, by="letter")
-        ep.Anchor.from_artist(line.artists["text"][1], loc="bottom")  # a word
+        ep.motion.Anchor.from_artist(line.artists["text"][1], loc="bottom")  # a word
     """
     at = _as_anchor(at, "at")
     if ha not in ("left", "center", "right"):
@@ -5873,8 +5896,8 @@ def link(
             except the anchored artists, spines, and the axes backgrounds.
         strict: Whether `audit` raises for the link when it breaks a rule;
             False leaves the faults for the caller to read.
-        ease: An easing kind for `eyepiece.ease`, or a callable from progress to
-            eased progress such as ``functools.partial(ep.ease, kind="back_out",
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable from progress to
+            eased progress such as ``functools.partial(ep.clock.ease, kind="back_out",
             strength=0.2)``, applied to `u`.
         zorder: Drawing order among the figure's children.
         line_kw: Extra kwargs for the `Line2D`, applied last.
@@ -5891,10 +5914,12 @@ def link(
 
     Example::
 
-        res = ep.link(ep.Anchor.from_data(image_panel, (12, 30)),
-                      ep.Anchor.from_data(phasor_panel, (0.0, 0.0)))
+        res = ep.motion.link(
+            ep.motion.Anchor.from_data(image_panel, (12, 30)),
+            ep.motion.Anchor.from_data(phasor_panel, (0.0, 0.0)),
+        )
         res.update(0.5)  # halfway there
-        ep.audit(fig)
+        ep.testing.audit(fig)
     """
     source = _as_anchor(source, "source")
     target = _as_anchor(target, "target")

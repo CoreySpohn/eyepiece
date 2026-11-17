@@ -112,8 +112,9 @@ def to_scrubber(
 
     Example::
 
-        page = ep.to_scrubber(fig, draw, plan, "u", [0.0, 0.25, 0.5, 0.75, 1.0],
-                              "sweep.html", dpi=80)
+        page = ep.render.to_scrubber(
+            fig, draw, plan, "u", [0.0, 0.25, 0.5, 0.75, 1.0], "sweep.html", dpi=80
+        )
 
     Args:
         fig: The Figure that `draw` updates.

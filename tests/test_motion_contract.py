@@ -26,59 +26,59 @@ def _board():
 
 
 def _transform(ax):
-    at = ep.Anchor.from_data(ax, (0.15, 0.5))
-    a = ep.equation(
+    at = ep.motion.Anchor.from_data(ax, (0.15, 0.5))
+    a = ep.motion.equation(
         at, r"${{lhs:ab}}=\frac{{num:xy}}{{den:z}}$", fontsize=23, ha="left"
     )
-    b = ep.equation(
-        ep.Anchor.from_data(ax, (0.18, 0.52)),
+    b = ep.motion.equation(
+        ep.motion.Anchor.from_data(ax, (0.18, 0.52)),
         r"${{lhs:ab}}=\frac{{num:xy}}{{den:zz}}+1$",
         fontsize=23,
         ha="left",
     )
-    return ep.transform(a, b, align=None), a, b
+    return ep.motion.transform(a, b, align=None), a, b
 
 
 def _clip(name):
     fig, ax = _board()
 
     def anchor(xy):
-        return ep.Anchor.from_data(ax, xy)
+        return ep.motion.Anchor.from_data(ax, xy)
 
     if name == "write":
-        result = ep.write(ax.text(0.3, 0.5, "motion", fontsize=22))
+        result = ep.motion.write(ax.text(0.3, 0.5, "motion", fontsize=22))
     elif name == "draw_on":
         (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
-        result = ep.draw_on(line)
+        result = ep.motion.draw_on(line)
     elif name == "head_draw":
         (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
-        result = ep.head_draw(line)
+        result = ep.motion.head_draw(line)
     elif name == "ruler_readout":
         (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
-        result = ep.ruler_readout(
-            ep.head_draw(line),
-            readout=ep.readout(anchor((0.1, 0.9)), 0.0, fmt=".2f"),
-            ruler=ep.ruler(ax, (0.1, 0.1), (0.1, 0.1), "x", head_scale=0),
+        result = ep.motion.ruler_readout(
+            ep.motion.head_draw(line),
+            readout=ep.motion.readout(anchor((0.1, 0.9)), 0.0, fmt=".2f"),
+            ruler=ep.plot.ruler(ax, (0.1, 0.1), (0.1, 0.1), "x", head_scale=0),
             ruler_to=lambda x, y: (x, 0.1),
         )
     elif name == "click":
         (line,) = ax.plot([0.2, 0.5, 0.8], [0.3, 0.5, 0.6])
-        result = ep.click(
+        result = ep.motion.click(
             line,
             dot=anchor((0.8, 0.6)),
-            readout=ep.readout(anchor((0.1, 0.9)), 0.42, fmt=".2f"),
-            ruler=ep.ruler(ax, (0.1, 0.1), (0.6, 0.1), "x", head_scale=0),
+            readout=ep.motion.readout(anchor((0.1, 0.9)), 0.42, fmt=".2f"),
+            ruler=ep.plot.ruler(ax, (0.1, 0.1), (0.6, 0.1), "x", head_scale=0),
         )
     elif name == "morph":
         (a,) = ax.plot([0.2, 0.4, 0.5], [0.3, 0.6, 0.3])
         (b,) = ax.plot([0.3, 0.5, 0.7], [0.3, 0.7, 0.3])
-        result = ep.morph(a, b)
+        result = ep.motion.morph(a, b)
     elif name == "flight":
         (dot,) = ax.plot([0.2], [0.4], "o")
-        result = ep.flight(dot, anchor((0.7, 0.6)), fig=fig)
+        result = ep.motion.flight(dot, anchor((0.7, 0.6)), fig=fig)
     elif name == "collapse":
         segments = np.array([[[0.2, 0.4], [0.3, 0.4]], [[0.5, 0.6], [0.7, 0.6]]])
-        result = ep.collapse(
+        result = ep.motion.collapse(
             ax,
             segments,
             [1, 2],
@@ -116,18 +116,18 @@ def _clip(name):
         return fig, result, at
     elif name == "warp":
         (line,) = ax.plot([0.2, 0.4], [0.3, 0.6])
-        result = ep.warp(line, [[1, 0.2], [0, 1]])
+        result = ep.motion.warp(line, [[1, 0.2], [0, 1]])
     elif name == "arrow":
-        result = ep.arrow((0.2, 0.3), (0.7, 0.6), ax=ax, label="v")
+        result = ep.motion.arrow((0.2, 0.3), (0.7, 0.6), ax=ax, label="v")
     elif name == "angle_arc":
-        result = ep.angle_arc(
+        result = ep.motion.angle_arc(
             (0.4, 0.4), 0, 90, 0.25, ax=ax, label="a", label_scale=1.3
         )
     elif name == "compass":
-        result = ep.compass((0.5, 0.3), 0.3, ax=ax, east="left")
+        result = ep.motion.compass((0.5, 0.3), 0.3, ax=ax, east="left")
     elif name == "follow_zoom":
         ax.plot([0.2, 0.4, 0.6], [0.2, 0.4, 0.3])
-        result = ep.follow_zoom(
+        result = ep.motion.follow_zoom(
             ax,
             lambda t: (0.25 + 0.06 * t, 0.25 + 0.03 * t),
             size=0.3,
@@ -135,13 +135,13 @@ def _clip(name):
         )
         return fig, result, lambda t: result.update(t / 2, time=t)
     elif name == "words":
-        result = ep.words(anchor((0.15, 0.5)), "one small move", fontsize=16)
+        result = ep.motion.words(anchor((0.15, 0.5)), "one small move", fontsize=16)
     elif name == "readout":
-        result = ep.readout(anchor((0.2, 0.5)), 0.0, prefix="t = ", unit="s")
+        result = ep.motion.readout(anchor((0.2, 0.5)), 0.0, prefix="t = ", unit="s")
         result.set(3.2)
     elif name == "Stage":
         (line,) = ax.plot([0.2, 0.7], [0.3, 0.6])
-        result = ep.Stage({"line": line})
+        result = ep.motion.Stage({"line": line})
         return fig, result, lambda t: result.set(shown=[], u=t / 2)
     else:
         result, _, _ = _transform(ax)
@@ -268,10 +268,10 @@ def test_motion_contract_is_frozen_defaults_and_moves_alias():
 
 def test_transform_does_not_promise_rigidity_when_matched_spacing_changes():
     fig, ax = _board()
-    at = ep.Anchor.from_data(ax, (0.3, 0.5))
-    a = ep.equation(at, r"${{word:ab}}$", fontsize=24)
-    b = ep.equation(at, r"${{word:a+b}}$", fontsize=24)
-    move = ep.transform(a, b)
+    at = ep.motion.Anchor.from_data(ax, (0.3, 0.5))
+    a = ep.motion.equation(at, r"${{word:ab}}$", fontsize=24)
+    b = ep.motion.equation(at, r"${{word:a+b}}$", fontsize=24)
+    move = ep.motion.transform(a, b)
     word = set(a.term("word")._pieces)
     for group in move.contract.groups:
         members = group["artists"] if isinstance(group, dict) else group
@@ -294,7 +294,7 @@ def test_stage_of_an_axes_declares_drawn_members(image):
         if image
         else None
     )
-    stage = ep.Stage({"panel": ax})
+    stage = ep.motion.Stage({"panel": ax})
     if raster is not None:
         assert raster in stage.contract.rest
     assert line in stage.contract.rest
@@ -311,7 +311,7 @@ def test_stage_of_an_axes_declares_drawn_members(image):
 def test_stage_accepts_per_point_opacity_without_changing_it():
     _, ax = _board()
     points = ax.scatter([0.2, 0.4], [0.3, 0.6], alpha=np.array([0.4, 0.9]))
-    stage = ep.Stage({"points": points})
+    stage = ep.motion.Stage({"points": points})
     assert points in stage.contract.rest
     stage.rest()
     np.testing.assert_array_equal(points.get_alpha(), [0.4, 0.9])
@@ -319,7 +319,7 @@ def test_stage_accepts_per_point_opacity_without_changing_it():
 
 def test_words_contract_covers_both_public_reveal_modes():
     fig, ax = _board()
-    result = ep.words(ep.Anchor.from_data(ax, (0.2, 0.5)), "many letters")
+    result = ep.motion.words(ep.motion.Anchor.from_data(ax, (0.2, 0.5)), "many letters")
     assert (
         ept.motion_faults(
             fig,
@@ -350,10 +350,12 @@ def test_flight_contract_resolves_drawn_leaves_and_excludes_prototypes():
     from matplotlib.lines import Line2D
 
     fig, ax = _board()
-    start = ep.Anchor.from_data(ax, (0.2, 0.3))
-    eq = ep.equation(ep.Anchor.from_data(ax, (0.6, 0.5)), r"${{x:ab}}$", fontsize=24)
+    start = ep.motion.Anchor.from_data(ax, (0.2, 0.3))
+    eq = ep.motion.equation(
+        ep.motion.Anchor.from_data(ax, (0.6, 0.5)), r"${{x:ab}}$", fontsize=24
+    )
     prototype = Line2D([0], [0], marker="o")
-    move = ep.flight(start, eq.term("x"), fig=fig, mark=prototype)
+    move = ep.motion.flight(start, eq.term("x"), fig=fig, mark=prototype)
     assert prototype not in set(_members(move.contract))
     assert eq.term("x") not in set(_members(move.contract))
     assert {pair[1] for pair in move.contract.may_overlap} == set(eq.term("x")._pieces)
@@ -404,12 +406,14 @@ def test_a_glyph_pulled_out_of_a_rigid_group_is_reported_as_a_tear():
 
 def test_a_rule_inside_a_replaced_term_is_not_declared_rectilinear():
     _fig, ax = _board()
-    at = ep.Anchor.from_data(ax, (0.15, 0.5))
-    a = ep.equation(at, r"${{t:xy}}=\frac{{n:p}}{{d:q}}$", fontsize=23, ha="left")
-    b = ep.equation(
+    at = ep.motion.Anchor.from_data(ax, (0.15, 0.5))
+    a = ep.motion.equation(
+        at, r"${{t:xy}}=\frac{{n:p}}{{d:q}}$", fontsize=23, ha="left"
+    )
+    b = ep.motion.equation(
         at, r"${{t:\frac{r}{s}}}=\frac{{n:p}}{{d:q}}$", fontsize=23, ha="left"
     )
-    move = ep.transform(a, b, align=None)
+    move = ep.motion.transform(a, b, align=None)
     rules_b = [g for g in b.artists["glyphs"] if g.piece.is_rule]
     term = set(b.term("t")._pieces)
     inside = [g for g in rules_b if g in term]

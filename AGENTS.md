@@ -26,9 +26,9 @@ the same objects lazily through the package lookup mechanism.
 
 The root exports only `Timeline`, `Plan`, `Tempo`, `PlotResult`, `MosaicResult`,
 `MotionContract`, `animate`, `record`, `save_fig`, and `__version__` through
-`__all__`. Root discovery also lists the task namespaces. Every former root
-path still works silently in 0.16 through `_LEGACY_ROOT`; do not warn on these
-paths yet. The 0.16 deprecated aliases keep their existing warnings.
+`__all__`. Root discovery also lists the task namespaces. Other public
+names are accessed through their task namespace. Removed names do not resolve
+or issue deprecation warnings.
 
 Keep namespace imports lazy. In particular, importing `ep.clock` or
 `ep.narration` must not import Matplotlib. Do not add a module whose name
@@ -61,10 +61,9 @@ Use one canonical namespaced path per name in the catalog; stable root
 shortcuts may appear bare.
 Update the catalog's "Shown in" link when adding or moving an example.
 tests/test_catalog.py must pass after API or catalog edits.
-Keep a deprecated alias for a renamed or removed public name for one minor release.
-Aliases warn once at the caller with DeprecationWarning and name the replacement.
-Keep deprecated aliases out of __all__ and list them in the deprecated catalog table.
-Follow tests/test_deprecated_names.py for warning location and compatibility checks.
+Use the current canonical name and update every caller when an API changes.
+Do not add compatibility aliases or deprecation warnings for removed names.
+Keep the catalog and namespace discovery tests aligned with the public API.
 
 ## Motion contract
 

@@ -96,7 +96,7 @@ def arrivals(rate, exposure, *, seed) -> Arrivals:
     Example::
 
         clock = np.geomspace(1.0, 1e5, 30)
-        photons = ep.arrivals(star + 1e-8 * planet, clock, seed=7)
+        photons = ep.motion.arrivals(star + 1e-8 * planet, clock, seed=7)
         photons.counts[-1]  # the image at 1e5 s
     """
     rate = np.asarray(rate, dtype=float)
@@ -279,7 +279,9 @@ def photons(
     Example::
 
         clock = np.geomspace(1.0, 1e5, 25)
-        mark = ep.photons(ep.arrivals(rate, clock, seed=7), ax=ax, cmap="magma")
+        mark = ep.motion.photons(
+            ep.motion.arrivals(rate, clock, seed=7), ax=ax, cmap="magma"
+        )
         for u in np.linspace(0.0, 1.0, 300):
             mark.update(u)
             rec.frame()
@@ -460,10 +462,12 @@ def aperture_counts(mark, aperture, *, leak, sample=None) -> ApertureCounts:
 
     Example::
 
-        mark = ep.photons(ep.arrivals(leak + planet, clock, seed=7), ax=ax)
+        mark = ep.motion.photons(
+            ep.motion.arrivals(leak + planet, clock, seed=7), ax=ax
+        )
         ring = np.hypot(xx - 3.5, yy - 1.5) <= 1.0
         mark.update(u)
-        read = ep.aperture_counts(mark, ring, leak=leak)
+        read = ep.motion.aperture_counts(mark, ring, leak=leak)
         label.set_text(f"S/N = {read.snr:.1f}")
     """
     channel = getattr(mark, "arrivals", None)

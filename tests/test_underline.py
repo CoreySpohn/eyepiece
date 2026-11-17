@@ -18,13 +18,13 @@ def test_underline_rest_peak_and_following_text(mode, word):
     fig, ax = plt.subplots(figsize=(5, 3), dpi=80)
     ax.set_axis_off()
     if word:
-        target = ep.words(ep.Anchor.from_data(ax, (0.2, 0.5)), "one word").artists[
-            "text"
-        ][1]
+        target = ep.motion.words(
+            ep.motion.Anchor.from_data(ax, (0.2, 0.5)), "one word"
+        ).artists["text"][1]
     else:
         target = ax.text(0.2, 0.5, "one word", va="baseline", fontsize=20)
     still = _pixels(fig)
-    move = ep.underline(target)
+    move = ep.motion.underline(target)
     np.testing.assert_array_equal(_pixels(fig), still)
     for u in [0, 0.5, 1, 0.5, 0]:
         move.update(u)
@@ -52,7 +52,7 @@ def test_underline_rest_peak_and_following_text(mode, word):
 def test_underline_scales_with_font_and_accepts_ease_and_color():
     fig, ax = plt.subplots()
     target = ax.text(0.3, 0.5, "baseline", va="baseline", fontsize=20)
-    move = ep.underline(target, color="C1", ease="linear")
+    move = ep.motion.underline(target, color="C1", ease="linear")
     move.update(0.2)
     fig.canvas.draw()
     line = move.artists["line"]
@@ -74,7 +74,7 @@ def test_underline_motion_contract_and_timeline():
     fig, ax = plt.subplots(figsize=(5, 3), dpi=80)
     ax.set_axis_off()
     target = ax.text(0.3, 0.5, "baseline", fontsize=20)
-    move = ep.underline(target)
+    move = ep.motion.underline(target)
     assert isinstance(move.contract, ep.MotionContract)
     assert (
         ept.motion_faults(
@@ -94,7 +94,7 @@ def test_underline_motion_contract_and_timeline():
 def test_default_underline_color_follows_text_between_draws():
     fig, ax = plt.subplots()
     target = ax.text(0.2, 0.5, "color", color="red")
-    mark = ep.underline(target)
+    mark = ep.motion.underline(target)
     mark.update(0.5)
     fig.canvas.draw()
     target.set_color("blue")
@@ -106,7 +106,7 @@ def test_default_underline_color_follows_text_between_draws():
 def test_transparent_underline_color_leaves_no_pixels(override):
     fig, ax = plt.subplots()
     target = ax.text(0.2, 0.5, "transparent", color=(0, 0, 0, 0))
-    mark = ep.underline(target, color=(0, 0, 0, 0) if override else None)
+    mark = ep.motion.underline(target, color=(0, 0, 0, 0) if override else None)
     still = _pixels(fig)
     mark.update(0.5)
     np.testing.assert_array_equal(_pixels(fig), still)
@@ -117,8 +117,8 @@ def test_transparent_underline_color_leaves_no_pixels(override):
 def test_underline_follows_stage_hidden_text_between_draws(color, alpha):
     fig, ax = plt.subplots()
     target = ax.text(0.2, 0.5, "staged", alpha=alpha)
-    stage = ep.Stage({"label": target})
-    mark = ep.underline(target, color=color)
+    stage = ep.motion.Stage({"label": target})
+    mark = ep.motion.underline(target, color=color)
     mark.update(0.5)
     shown = _pixels(fig)
     stage.set(shown=[])
@@ -143,7 +143,7 @@ def test_underline_multiplies_animation_and_effective_opacity(
     target = ax.text(
         0.2, 0.5, "opacity", fontsize=40, color=(0, 0, 0, 0.4), alpha=alpha
     )
-    mark = ep.underline(target, color=color, linewidth=0.2, ease="linear")
+    mark = ep.motion.underline(target, color=color, linewidth=0.2, ease="linear")
     mark.update(u)
     pixels = _pixels(fig)
     line = mark.artists["line"]
@@ -182,7 +182,7 @@ def test_underline_tracks_subpixel_vertical_motion_without_pixel_jumps():
         color="black",
         transform=IdentityTransform(),
     )
-    move = ep.underline(target)
+    move = ep.motion.underline(target)
     move.update(0.5)
 
     def center():

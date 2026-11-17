@@ -36,7 +36,7 @@ def _hop(n=12, **kw):
     draws = _draws(n)
     hits = draws[:, 0, 0] > 1.0
     fig, ax, panel = _board()
-    mark = ep.hop(draws, ax=ax, tally=hits, tally_ax=panel, ref=0.5, **kw)
+    mark = ep.plot.hop(draws, ax=ax, tally=hits, tally_ax=panel, ref=0.5, **kw)
     return fig, mark, draws, hits
 
 
@@ -69,27 +69,27 @@ def test_each_draw_gets_an_equal_window_at_the_declared_rate():
 def test_rate_outside_the_band_raises(rate):
     _, ax, _ = _board(tally=False)
     with pytest.raises(ValueError, match="rate"):
-        ep.hop(_draws(), ax=ax, rate=rate)
+        ep.plot.hop(_draws(), ax=ax, rate=rate)
 
 
 @pytest.mark.parametrize("rate", [1.0, 2.5, 6.5, 7.5])
 def test_rate_outside_the_readable_band_warns(rate):
     _, ax, _ = _board(tally=False)
     with pytest.warns(UserWarning, match="separate draws"):
-        ep.hop(_draws(), ax=ax, rate=rate)
+        ep.plot.hop(_draws(), ax=ax, rate=rate)
 
 
 @pytest.mark.parametrize("rate", [3.0, 4.0, 6.0])
 def test_rate_inside_the_readable_band_is_quiet(rate, recwarn):
     _, ax, _ = _board(tally=False)
-    ep.hop(_draws(), ax=ax, rate=rate)
+    ep.plot.hop(_draws(), ax=ax, rate=rate)
     assert not [w for w in recwarn if issubclass(w.category, UserWarning)]
 
 
 def test_ghosts_are_bounded_and_dim_with_age():
     _, ax, _ = _board(tally=False)
     draws = _draws(n=10)
-    mark = ep.hop(draws, ax=ax, ghosts=3, ghost_alpha=0.6)
+    mark = ep.plot.hop(draws, ax=ax, ghosts=3, ghost_alpha=0.6)
     pool = mark.artists["lines"]
     assert len(pool) == 3
     mark.update(0.15)  # draw 2: one ghost, draw 1
@@ -128,7 +128,7 @@ def test_fraction_tally_is_a_wilson_interval_that_converges():
     hits = rng.random(n) < 0.3
     draws = rng.standard_normal((n, 2))
     _, ax, panel = _board()
-    mark = ep.hop(draws, ax=ax, tally=hits, tally_ax=panel, level=0.95)
+    mark = ep.plot.hop(draws, ax=ax, tally=hits, tally_ax=panel, level=0.95)
     k = 50
     p = hits[:k].mean()
     z = 1.959963984540054
@@ -154,7 +154,7 @@ def test_fraction_tally_is_a_wilson_interval_that_converges():
 def test_mean_tally_has_no_interval_at_one_draw():
     values = np.array([1.0, 3.0, 2.0, 2.0])
     _, ax, panel = _board()
-    mark = ep.hop(np.zeros((4, 2)) + np.arange(4)[:, None], ax=ax, tally=values,
+    mark = ep.plot.hop(np.zeros((4, 2)) + np.arange(4)[:, None], ax=ax, tally=values,
                   tally_ax=panel, kind="mean")  # fmt: skip
     mark.update(0.0)
     assert not mark.tally_artists["lines"][0].get_visible()
@@ -207,7 +207,7 @@ def test_points_draw_as_markers_and_limits_hold_every_draw():
     rng = np.random.default_rng(0)
     pts = rng.standard_normal((20, 2))
     _, ax, _ = _board(tally=False)
-    mark = ep.hop(pts, ax=ax)
+    mark = ep.plot.hop(pts, ax=ax)
     assert mark.artists["line"].get_marker() == "o"
     assert mark.artists["line"].get_linestyle() == "None"
     x0, x1 = ax.get_xlim()
@@ -222,29 +222,29 @@ def test_points_draw_as_markers_and_limits_hold_every_draw():
 def test_rejects_bad_inputs():
     _, ax, panel = _board()
     with pytest.raises(ValueError, match="shaped"):
-        ep.hop(np.zeros((3, 4, 3)), ax=ax)
+        ep.plot.hop(np.zeros((3, 4, 3)), ax=ax)
     with pytest.raises(ValueError, match="finite"):
-        ep.hop(np.full((3, 2), np.nan), ax=ax)
+        ep.plot.hop(np.full((3, 2), np.nan), ax=ax)
     with pytest.raises(ValueError, match="ghosts"):
-        ep.hop(_draws(), ax=ax, ghosts=-1)
+        ep.plot.hop(_draws(), ax=ax, ghosts=-1)
     with pytest.raises(ValueError, match="ghost_alpha"):
-        ep.hop(_draws(), ax=ax, ghost_alpha=0.0)
+        ep.plot.hop(_draws(), ax=ax, ghost_alpha=0.0)
     with pytest.raises(ValueError, match="kind"):
-        ep.hop(_draws(), ax=ax, kind="median")
+        ep.plot.hop(_draws(), ax=ax, kind="median")
     with pytest.raises(ValueError, match="tally_ax"):
-        ep.hop(_draws(), ax=ax, tally=np.ones(12))
+        ep.plot.hop(_draws(), ax=ax, tally=np.ones(12))
     with pytest.raises(ValueError, match="12 draws"):
-        ep.hop(_draws(), ax=ax, tally=np.ones(5), tally_ax=panel)
+        ep.plot.hop(_draws(), ax=ax, tally=np.ones(5), tally_ax=panel)
     with pytest.raises(ValueError, match="True or False"):
-        ep.hop(_draws(), ax=ax, tally=np.full(12, 0.5), tally_ax=panel)
+        ep.plot.hop(_draws(), ax=ax, tally=np.full(12, 0.5), tally_ax=panel)
     with pytest.raises(ValueError, match="level"):
-        ep.hop(_draws(), ax=ax, level=1.0)
+        ep.plot.hop(_draws(), ax=ax, level=1.0)
 
 
 def test_tally_panel_starts_at_zero_and_takes_extra_kwargs():
     draws = _draws(n=12)
     _, ax, panel = _board()
-    mark = ep.hop(
+    mark = ep.plot.hop(
         draws,
         ax=ax,
         tally=draws[:, 0, 0] > 1.0,
@@ -270,7 +270,7 @@ def test_tally_points_clear_the_panel_edges_at_any_width(width):
     fig = plt.figure(figsize=(6.0, 3.0), dpi=200)
     ax = fig.add_axes([0.05, 0.1, 0.4, 0.8])
     panel = fig.add_axes([0.55, 0.3, width, 0.3])
-    mark = ep.hop(rng.standard_normal((n, 2)), ax=ax, tally=hits, tally_ax=panel)
+    mark = ep.plot.hop(rng.standard_normal((n, 2)), ax=ax, tally=hits, tally_ax=panel)
     fig.canvas.draw()
     box = panel.bbox
     for u in (0.0, 1.0):

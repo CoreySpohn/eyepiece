@@ -88,7 +88,7 @@ def test_animate_does_not_clear(tmp_path):
         line.set_data([0, k], [0, 0])
 
     anim = animate(fig, draw, 3, fps=5)
-    assert isinstance(anim, eyepiece.Animation)
+    assert isinstance(anim, eyepiece.render.Animation)
     anim.save(tmp_path / "n.gif")
     assert len(fig.axes) == n_axes_before
     assert len(fig.axes[0].lines) == 1
@@ -142,7 +142,6 @@ def test_jshtml_returns_html_and_closes_nothing_extra():
 def test_presets_are_the_measured_values():
     assert PRESETS == {
         "talk": {"fps": 60, "dpi": 120},
-        "talk_60": {"fps": 60, "dpi": 120},
         "gif": {"fps": 8, "dpi": 85},
         "jshtml": {"fps": 14, "dpi": 100},
         "docs": {"fps": 30, "dpi": 100},
@@ -752,7 +751,7 @@ def _ramp_frames(n, size):
 def test_raw_sink_writes_every_frame_at_its_size(tmp_path):
     size = (64, 48)
     path = tmp_path / "sub" / "raw.mp4"
-    with eyepiece.RawSink(path, size, fps=10) as sink:
+    with eyepiece.render.RawSink(path, size, fps=10) as sink:
         for frame in _ramp_frames(7, size):
             sink.write(frame)
     decoded = _decode(path, size)
@@ -765,7 +764,7 @@ def test_raw_sink_accepts_rgb_and_is_byte_exact(tmp_path):
     size = (32, 32)
     paths = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
     for path in paths:
-        with eyepiece.RawSink(path, size, fps=5) as sink:
+        with eyepiece.render.RawSink(path, size, fps=5) as sink:
             for frame in _ramp_frames(4, size):
                 sink.write(frame[..., :3])
     assert paths[0].read_bytes() == paths[1].read_bytes()
@@ -774,21 +773,21 @@ def test_raw_sink_accepts_rgb_and_is_byte_exact(tmp_path):
 @pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
 def test_raw_sink_rejects_a_frame_of_the_wrong_size(tmp_path):
     with pytest.raises(ValueError, match="32x32"):
-        with eyepiece.RawSink(tmp_path / "x.mp4", (32, 32), fps=5) as sink:
+        with eyepiece.render.RawSink(tmp_path / "x.mp4", (32, 32), fps=5) as sink:
             sink.write(np.zeros((16, 32, 4), np.uint8))
 
 
 def test_raw_sink_rejects_odd_or_bad_sizes(tmp_path):
     with pytest.raises(ValueError, match="even"):
-        eyepiece.RawSink(tmp_path / "x.mp4", (33, 32), fps=5)
+        eyepiece.render.RawSink(tmp_path / "x.mp4", (33, 32), fps=5)
     with pytest.raises(ValueError, match="mp4"):
-        eyepiece.RawSink(tmp_path / "x.gif", (32, 32), fps=5)
+        eyepiece.render.RawSink(tmp_path / "x.gif", (32, 32), fps=5)
 
 
 @pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
 def test_raw_sink_with_no_frames_raises(tmp_path):
     with pytest.raises(RuntimeError, match="no frames"):
-        with eyepiece.RawSink(tmp_path / "x.mp4", (32, 32), fps=5):
+        with eyepiece.render.RawSink(tmp_path / "x.mp4", (32, 32), fps=5):
             pass
 
 
@@ -799,7 +798,7 @@ def test_raw_sink_survives_a_chatty_ffmpeg(tmp_path):
     frame[..., 3] = 255
     with warnings.catch_warnings():
         warnings.simplefilter("error", ResourceWarning)
-        with eyepiece.RawSink(
+        with eyepiece.render.RawSink(
             tmp_path / "chatty.mp4",
             size,
             fps=25,
@@ -813,12 +812,12 @@ def test_raw_sink_survives_a_chatty_ffmpeg(tmp_path):
 @pytest.mark.skipif(not HAS_FFMPEG, reason="needs ffmpeg")
 def test_raw_sink_keeps_an_existing_file_when_the_body_raises(tmp_path):
     path = tmp_path / "keep.mp4"
-    with eyepiece.RawSink(path, (32, 32), fps=5) as sink:
+    with eyepiece.render.RawSink(path, (32, 32), fps=5) as sink:
         for frame in _ramp_frames(3, (32, 32)):
             sink.write(frame)
     good = path.read_bytes()
     with pytest.raises(ValueError, match="boom"):
-        with eyepiece.RawSink(path, (32, 32), fps=5) as sink:
+        with eyepiece.render.RawSink(path, (32, 32), fps=5) as sink:
             sink.write(_ramp_frames(1, (32, 32))[0])
             raise ValueError("boom")
     assert path.read_bytes() == good
@@ -852,7 +851,7 @@ def test_on_rescale_raise_deletes_every_partial_output(tmp_path):
     (line,) = ax.plot([0, 1], [0, 5.3])
     outs = [tmp_path / "d.gif", tmp_path / "d.html"]
     still = tmp_path / "d.png"
-    with pytest.raises(eyepiece.ScaleDriftError, match="data scales changed"):
+    with pytest.raises(eyepiece.render.ScaleDriftError, match="data scales changed"):
         with record(fig, *outs, fps=5, on_rescale="raise", stills={still: 0.0}) as rec:
             _drifting(fig, ax, line, rec)
     assert not any(p.exists() for p in [*outs, still])
@@ -1107,7 +1106,7 @@ def test_animation_save_and_jshtml_pass_stills_and_on_rescale_through(tmp_path):
         ax2.autoscale_view()
 
     bad = animate(fig2, drift, [5.3, 1.1, 0.6], fps=4)
-    with pytest.raises(eyepiece.ScaleDriftError):
+    with pytest.raises(eyepiece.render.ScaleDriftError):
         bad.save(tmp_path / "bad.gif", on_rescale="raise")
     assert not (tmp_path / "bad.gif").exists()
     plt.close(fig2)

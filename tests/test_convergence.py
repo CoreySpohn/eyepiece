@@ -20,9 +20,11 @@ def _looks(n=50):
 @pytest.mark.parametrize("mode", ["light", "dark"])
 def test_keys_and_tones_in_either_mode(mode):
     hwostyle.use(mode)
-    res = ep.convergence(_looks(), refs=[1.0, 0.5], ref_labels=["a", "b"], band=0.1)
+    res = ep.plot.convergence(
+        _looks(), refs=[1.0, 0.5], ref_labels=["a", "b"], band=0.1
+    )
     assert set(res.artists) == {"scatter", "line", "lines", "fill", "text"}
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     assert isinstance(res.artists["scatter"], PathCollection)
     assert isinstance(res.artists["line"], Line2D)
     assert all(isinstance(r, Rectangle) for r in res.artists["fill"])
@@ -50,7 +52,7 @@ def test_keys_and_tones_in_either_mode(mode):
 )
 def test_the_line_is_the_running_statistic(running, expected):
     values = _looks(20)
-    res = ep.convergence(values, running=running)
+    res = ep.plot.convergence(values, running=running)
     line = res.artists["line"]
     np.testing.assert_allclose(line.get_xdata(), np.arange(1, 21))
     np.testing.assert_allclose(line.get_ydata(), expected(values))
@@ -59,7 +61,7 @@ def test_the_line_is_the_running_statistic(running, expected):
 
 def test_update_reveals_the_first_k_without_new_artists_or_new_limits():
     values = _looks(40)
-    res = ep.convergence(values, refs=1.0, ref_labels="expected", band=0.2)
+    res = ep.plot.convergence(values, refs=1.0, ref_labels="expected", band=0.2)
     ax = res.ax
     res.fig.canvas.draw()
     limits = ax.get_xlim(), ax.get_ylim()
@@ -77,11 +79,11 @@ def test_update_reveals_the_first_k_without_new_artists_or_new_limits():
 
 def test_limits_cover_the_full_data_and_leave_room_for_labels():
     values = np.array([3.0, -1.0, 2.0, 0.0])
-    res = ep.convergence(values, refs=[5.0], ref_labels=["top"], band=0.5)
+    res = ep.plot.convergence(values, refs=[5.0], ref_labels=["top"], band=0.5)
     (x0, x1), (y0, y1) = res.ax.get_xlim(), res.ax.get_ylim()
     assert x0 < 1.0 and x1 >= 4.0 + 0.2 * 3.0
     assert y0 < -1.0 and y1 > 5.5
-    bare = ep.convergence(values, refs=[5.0])
+    bare = ep.plot.convergence(values, refs=[5.0])
     assert bare.ax.get_xlim()[1] < 4.0 + 0.2 * 3.0
     plt.close("all")
 
@@ -90,7 +92,7 @@ def test_limits_cover_the_full_data_and_leave_room_for_labels():
     ("side", "va", "sign"), [("above", "bottom", 1), ("below", "top", -1)]
 )
 def test_labels_sit_at_the_right_edge_beside_their_line(side, va, sign):
-    res = ep.convergence(_looks(), refs=[1.0], ref_labels=["one"], label_side=side)
+    res = ep.plot.convergence(_looks(), refs=[1.0], ref_labels=["one"], label_side=side)
     (text,) = res.artists["text"]
     assert text.xy == (1.0, 1.0)
     assert (text.get_ha(), text.get_va()) == ("right", va)
@@ -105,7 +107,7 @@ def test_labels_sit_at_the_right_edge_beside_their_line(side, va, sign):
 
 def test_update_replaces_values_and_moves_references():
     values = _looks(10)
-    res = ep.convergence(
+    res = ep.plot.convergence(
         values, refs=[1.0, 2.0], ref_labels=[None, "two"], band=[0.1, None]
     )
     assert len(res.artists["text"]) == 1
@@ -129,10 +131,10 @@ def test_update_replaces_values_and_moves_references():
 
 def test_two_calls_share_one_panel():
     fig, ax = plt.subplots()
-    ep.convergence(
+    ep.plot.convergence(
         np.linspace(0, 1, 30), ax=ax, refs=[1.0], running=None, show_samples=False
     )
-    ep.convergence(
+    ep.plot.convergence(
         np.linspace(-2, 0, 30), ax=ax, refs=[-2.0], running=None, show_samples=False
     )
     y0, y1 = ax.get_ylim()
@@ -141,7 +143,7 @@ def test_two_calls_share_one_panel():
 
 
 def test_options_and_routed_kwargs():
-    res = ep.convergence(
+    res = ep.plot.convergence(
         _looks(),
         x=np.arange(50) * 0.5,
         refs=[1.0],
@@ -182,18 +184,20 @@ def test_options_and_routed_kwargs():
 )
 def test_bad_arguments_raise(kwargs, match):
     with pytest.raises(ValueError, match=match):
-        ep.convergence(**{"values": _looks(10), **kwargs})
+        ep.plot.convergence(**{"values": _looks(10), **kwargs})
     plt.close("all")
 
 
 def test_reference_styles_may_mix_names_and_dash_patterns():
-    res = ep.convergence(_looks(), refs=[1.0, 0.5], ref_linestyles=["--", (0, (3, 2))])
+    res = ep.plot.convergence(
+        _looks(), refs=[1.0, 0.5], ref_linestyles=["--", (0, (3, 2))]
+    )
     first, second = res.artists["lines"]
     assert first.get_linestyle() == "--"
     assert second.get_linestyle() == "--"
     assert second._unscaled_dash_pattern == (0, (3, 2))
-    single = ep.convergence(_looks(), refs=[1.0, 0.5], ref_linestyles=(0, (3, 2)))
+    single = ep.plot.convergence(_looks(), refs=[1.0, 0.5], ref_linestyles=(0, (3, 2)))
     assert len(single.artists["lines"]) == 2
-    bands = ep.convergence(_looks(), refs=[1.0, 0.5], band=np.float64(0.1))
+    bands = ep.plot.convergence(_looks(), refs=[1.0, 0.5], band=np.float64(0.1))
     assert len(bands.artists["fill"]) == 2
     plt.close("all")

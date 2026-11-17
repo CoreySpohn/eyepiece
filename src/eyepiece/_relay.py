@@ -32,8 +32,8 @@ def carried_tag(
 
     Example::
 
-        tag = ep.carried_tag(ax, "(from clip 1)")
-        stage = ep.Stage({"panel": ax})
+        tag = ep.motion.carried_tag(ax, "(from clip 1)")
+        stage = ep.motion.Stage({"panel": ax})
     """
     if corner not in ("upper left", "upper right"):
         raise ValueError("carried_tag corner is 'upper left' or 'upper right'")

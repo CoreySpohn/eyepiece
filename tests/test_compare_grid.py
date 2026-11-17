@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pytest
 
-from eyepiece import compare_grid
+from eyepiece.plot import compare_grid
 
 
 def _ramp(scale):

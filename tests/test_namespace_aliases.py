@@ -11,7 +11,7 @@ import pytest
 @pytest.mark.parametrize(
     ("namespace", "canonical", "names"),
     [
-        ("eyepiece.style", "eyepiece", ("role", "neutral", "backing")),
+        ("eyepiece.style", "eyepiece._style", ("role", "neutral", "backing")),
         (
             "eyepiece.testing",
             "eyepiece.render",

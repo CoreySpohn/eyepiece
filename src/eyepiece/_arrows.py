@@ -178,7 +178,9 @@ def arrow(
 
     Example::
 
-        gap = ep.arrow((0.0, 0.0), (2.0, 0.0), ax=ax, kind="dimension", label="d")
+        gap = ep.motion.arrow(
+            (0.0, 0.0), (2.0, 0.0), ax=ax, kind="dimension", label="d"
+        )
         for u in np.linspace(0.0, 1.0, 20):
             gap.update(u)
             rec.frame()
@@ -396,8 +398,8 @@ def angle_arc(
 
     Example::
 
-        turn = ep.angle_arc((0, 0), 0.0, 40.0, 1.0, ax=ax, label=r"$\theta$")
-        for u in ep.ease(np.linspace(0.0, 1.0, 20), "smoothstep"):
+        turn = ep.motion.angle_arc((0, 0), 0.0, 40.0, 1.0, ax=ax, label=r"$\theta$")
+        for u in ep.clock.ease(np.linspace(0.0, 1.0, 20), "smoothstep"):
             turn.update(u)
             rec.frame()
         turn.update(end_angle=70.0)  # the angle opens further

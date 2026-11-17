@@ -324,7 +324,7 @@ def test_cue_frames_are_the_rounded_cue_times_and_within_a_frame_of_the_floor(
     for event, cue in zip(
         cues, sorted(bayes.cues(), key=lambda c: c.at_s), strict=True
     ):
-        assert event.frame == ep.frame_count(cue.at_s, fps)
+        assert event.frame == ep.clock.frame_count(cue.at_s, fps)
         floor = int(np.floor(cue.at_s * fps + 1e-9))
         assert event.frame - floor in (0, 1)
         assert event.before == max(event.frame - 1, 0)
@@ -342,7 +342,7 @@ def test_every_value_a_draw_function_reads_is_within_a_frame_of_the_continuous_o
         for k in range(plan.n_frames):
             lo = np.clip((k / fps - s.start_s) / (s.end_s - s.start_s), 0.0, 1.0)
             hi = np.clip(((k + 2) / fps - s.start_s) / (s.end_s - s.start_s), 0.0, 1.0)
-            lo, hi = ep.ease(lo, s.ease), ep.ease(hi, s.ease)
+            lo, hi = ep.clock.ease(lo, s.ease), ep.clock.ease(hi, s.ease)
             got = plan.progress(k, name)
             assert lo - 0.05 <= got <= hi + 0.05, (name, k)
 
@@ -356,7 +356,7 @@ def test_the_narrated_clip_builds_strict_with_only_infos(bayes):
 def test_one_function_builds_the_silent_clip_too():
     plan = bayes_clock().at_fps(30)
     assert plan.narration is None
-    assert plan.n_frames == ep.frame_count(
+    assert plan.n_frames == ep.clock.frame_count(
         max(s.end_s for s in plan.spans.values() if s.extends), 30
     )
     skipped = [f for f in plan.faults if f.code == "skipped"]
@@ -545,7 +545,7 @@ def test_a_motion_longer_than_its_line_pushes_the_next_line_and_its_cues(tmp_pat
     assert leak.start_s == pytest.approx(4.6)
     shift = 4.6 - 2.1
     assert plan.spans["circumscribe.planet"].start_s == pytest.approx(4.3 + shift)
-    assert plan.n_frames == ep.frame_count(leak.end_s, 30)
+    assert plan.n_frames == ep.clock.frame_count(leak.end_s, 30)
     solved = tl.narration
     assert solved is not small and small.beat("leak").start_s == 2.1
     for line in SMALL.lines:

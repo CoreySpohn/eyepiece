@@ -21,9 +21,9 @@ def _wave(n=60):
 def test_keys_and_fill_colors_in_either_mode(mode):
     hwostyle.use(mode)
     t, v = _wave()
-    res = ep.signed_trace(v, x=t, level=1.0, level_label="static")
+    res = ep.plot.signed_trace(v, x=t, level=1.0, level_label="static")
     assert set(res.artists) == {"line", "fill", "lines", "text"}
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     assert isinstance(res.artists["line"], Line2D)
     above, below = res.artists["fill"]
     assert isinstance(above, PolyCollection) and isinstance(below, PolyCollection)
@@ -40,7 +40,7 @@ def test_keys_and_fill_colors_in_either_mode(mode):
 
 def test_fills_stay_on_their_side_of_the_level():
     t, v = _wave(200)
-    res = ep.signed_trace(v, x=t, level=1.0)
+    res = ep.plot.signed_trace(v, x=t, level=1.0)
     above, below = res.artists["fill"]
     up = np.concatenate([p.vertices for p in above.get_paths()])
     down = np.concatenate([p.vertices for p in below.get_paths()])
@@ -51,7 +51,7 @@ def test_fills_stay_on_their_side_of_the_level():
 
 def test_update_reveals_the_first_k_and_replaces_the_fills_in_place():
     t, v = _wave()
-    res = ep.signed_trace(v, x=t, level=1.0)
+    res = ep.plot.signed_trace(v, x=t, level=1.0)
     ax = res.ax
     fills = res.artists["fill"]
     res.fig.canvas.draw()
@@ -70,9 +70,9 @@ def test_update_reveals_the_first_k_and_replaces_the_fills_in_place():
 
 def test_partial_update_matches_a_fresh_draw_of_the_prefix():
     t, v = _wave()
-    res = ep.signed_trace(v, x=t, level=1.0)
+    res = ep.plot.signed_trace(v, x=t, level=1.0)
     res.update(25)
-    fresh = ep.signed_trace(v[:25], x=t[:25], level=1.0)
+    fresh = ep.plot.signed_trace(v[:25], x=t[:25], level=1.0)
     for a, b in zip(res.artists["fill"], fresh.artists["fill"], strict=True):
         pa = np.concatenate([p.vertices for p in a.get_paths()])
         pb = np.concatenate([p.vertices for p in b.get_paths()])
@@ -83,7 +83,7 @@ def test_partial_update_matches_a_fresh_draw_of_the_prefix():
 
 def test_limits_cover_the_trace_and_the_level():
     v = np.array([0.2, 0.4, 0.3])
-    res = ep.signed_trace(v, level=1.0)
+    res = ep.plot.signed_trace(v, level=1.0)
     assert res.ax.get_xlim() == (0.0, 2.0)
     lo, hi = res.ax.get_ylim()
     assert lo < 0.2 and hi > 1.0
@@ -92,7 +92,7 @@ def test_limits_cover_the_trace_and_the_level():
 
 def test_values_update_and_overrides():
     t, v = _wave()
-    res = ep.signed_trace(
+    res = ep.plot.signed_trace(
         v,
         x=t,
         level=1.0,
@@ -116,7 +116,7 @@ def test_values_update_and_overrides():
 
 def test_bad_inputs_raise():
     with pytest.raises(ValueError, match="at least one"):
-        ep.signed_trace([])
+        ep.plot.signed_trace([])
     with pytest.raises(ValueError, match="entries for"):
-        ep.signed_trace([1.0, 2.0], x=[0.0])
+        ep.plot.signed_trace([1.0, 2.0], x=[0.0])
     plt.close("all")

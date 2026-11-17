@@ -49,7 +49,7 @@ def test_frames_follow_the_schedule_not_the_input_count(
 
     sequence = image_sequence()
     animation = mpl.animate(sequence, run_time=1.0, fps=fps)
-    assert isinstance(animation, eyepiece.Animation)
+    assert isinstance(animation, eyepiece.render.Animation)
     assert animation.n_frames == fps
     assert animation.fps == fps
     assert isinstance(animation.result, mpl.MplResult)

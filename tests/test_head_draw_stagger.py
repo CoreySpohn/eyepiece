@@ -20,33 +20,33 @@ def _fractions(move, u):
 
 def test_offsets_start_each_line_at_its_own_place_in_the_beat():
     _, lines = _lines()
-    move = ep.head_draw(lines, lag=[0.0, 0.5, 2.0], ease="linear")
+    move = ep.motion.head_draw(lines, lag=[0.0, 0.5, 2.0], ease="linear")
     # span = 1 / (1 + 2): the lines start at 0, 1/6 and 2/3 of the beat.
     assert _fractions(move, 0.25) == pytest.approx([0.75, 0.25, 0.0])
     assert _fractions(move, 5 / 6) == pytest.approx([1.0, 1.0, 0.5])
-    b = ep.head_draw(lines, lag=[10.0, 10.5, 12.0], ease="linear")
+    b = ep.motion.head_draw(lines, lag=[10.0, 10.5, 12.0], ease="linear")
     for u in np.linspace(0.0, 1.0, 9):
         assert _fractions(b, u) == pytest.approx(_fractions(move, u))
 
 
 def test_offsets_that_equal_the_scalar_lag_draw_the_same():
     _, lines = _lines()
-    scalar = ep.head_draw(lines, lag=0.4, ease="linear")
-    listed = ep.head_draw(lines, lag=[0.0, 0.4, 0.8], ease="linear")
+    scalar = ep.motion.head_draw(lines, lag=0.4, ease="linear")
+    listed = ep.motion.head_draw(lines, lag=[0.0, 0.4, 0.8], ease="linear")
     for u in np.linspace(0.0, 1.0, 11):
         assert _fractions(listed, u) == pytest.approx(_fractions(scalar, u))
 
 
 def test_offsets_follow_the_lines_not_their_order():
     _, lines = _lines()
-    move = ep.head_draw(lines, lag=[2.0, 0.0, 1.0], ease="linear")
+    move = ep.motion.head_draw(lines, lag=[2.0, 0.0, 1.0], ease="linear")
     # span = 1/3; the middle line goes first, the first one last.
     assert _fractions(move, 0.2) == pytest.approx([0.0, 0.6, 0.0])
 
 
 def test_equal_offsets_draw_together():
     _, lines = _lines()
-    move = ep.head_draw(lines, lag=[3.0, 3.0, 3.0], ease="linear")
+    move = ep.motion.head_draw(lines, lag=[3.0, 3.0, 3.0], ease="linear")
     assert _fractions(move, 0.4) == pytest.approx([0.4, 0.4, 0.4])
 
 
@@ -54,4 +54,4 @@ def test_equal_offsets_draw_together():
 def test_bad_offsets_raise(bad):
     _, lines = _lines()
     with pytest.raises(ValueError, match="lag"):
-        ep.head_draw(lines, lag=bad)
+        ep.motion.head_draw(lines, lag=bad)

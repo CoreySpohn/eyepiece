@@ -37,10 +37,10 @@ def test_factor_scales_every_duration():
 
 
 def test_a_symbol_in_math_reads_as_two_words():
-    assert ep.reading_words("true q") == 2
-    assert ep.reading_words(r"true $q$") == 3
-    assert ep.reading_words(r"$\lambda \mid D$") == 4
-    assert ep.reading_words(r"$x \pm 0.5$") == 4
+    assert ep.clock.reading_words("true q") == 2
+    assert ep.clock.reading_words(r"true $q$") == 3
+    assert ep.clock.reading_words(r"$\lambda \mid D$") == 4
+    assert ep.clock.reading_words(r"$x \pm 0.5$") == 4
     tempo = ep.Tempo()
     assert tempo.read_s(r"$q$") == pytest.approx(tempo.read_s("two words"))
 
@@ -66,5 +66,7 @@ def test_seconds_rejects_negative():
 
 def test_caption_pieces_read_as_their_text():
     pieces = ["add up ", ("the row", "tab:red"), (" of cells", None, "bold")]
-    assert ep.reading_words(pieces) == ep.reading_words("add up the row of cells")
+    assert ep.clock.reading_words(pieces) == ep.clock.reading_words(
+        "add up the row of cells"
+    )
     assert ep.Tempo().read_s(pieces) == ep.Tempo().read_s("add up the row of cells")

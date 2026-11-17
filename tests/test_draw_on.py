@@ -32,7 +32,7 @@ def test_draw_on_rest_is_pixel_identical_with_markers_and_dashes(many, alpha):
     items = [line, other] if many else line
     original = line.get_data()
     without = _pixels(fig)
-    move = ep.draw_on(items)
+    move = ep.motion.draw_on(items)
     assert isinstance(move, ep.PlotResult)
     np.testing.assert_array_equal(_pixels(fig), without)
     for u in (0.0, 0.4, 0.9, 0.2):
@@ -48,7 +48,7 @@ def test_draw_on_rest_is_pixel_identical_with_markers_and_dashes(many, alpha):
 def test_draw_on_zero_has_no_ink_in_axes_even_with_markers():
     fig, ax = _board()
     lines = ax.plot([0.1, 0.9], [[0.2, 0.7], [0.4, 0.6]], "o--")
-    move = ep.draw_on(lines)
+    move = ep.motion.draw_on(lines)
     assert _ink(fig, ax) > 0
     move.update(0.0)
     assert _ink(fig, ax) == 0
@@ -58,7 +58,7 @@ def test_draw_on_ink_grows_monotonically():
     fig, ax = _board()
     x = np.linspace(0.1, 0.9, 200)
     (line,) = ax.plot(x, 0.5 + 0.25 * np.sin(2 * np.pi * x), color="black", lw=2)
-    move = ep.draw_on(line)
+    move = ep.motion.draw_on(line)
     counts = []
     for u in np.linspace(0, 1, 11):
         move.update(u)
@@ -71,7 +71,7 @@ def test_draw_on_clip_has_no_jump_or_spike():
     fig, ax = _board()
     x = np.linspace(0.1, 0.9, 101)
     (line,) = ax.plot(x, 0.25 + 0.5 * x, lw=2)
-    move = ep.draw_on(line)
+    move = ep.motion.draw_on(line)
     frames = np.linspace(0.0, 1.0, 31)
     assert (
         ept.motion_faults(
@@ -88,7 +88,7 @@ def test_draw_on_clip_has_no_jump_or_spike():
 def test_draw_on_reads_new_data_between_frames_and_at_draw_time():
     fig, ax = _board()
     (line,) = ax.plot([0.1, 0.9], [0.2, 0.2], color="black")
-    move = ep.draw_on(line)
+    move = ep.motion.draw_on(line)
     move.update(0.5)
     _pixels(fig)
     old = _pixels(fig)
@@ -115,7 +115,7 @@ def test_draw_on_log_axis_cuts_equal_display_arc_length_after_layout_changes():
     ax.set(xscale="log", xlim=(1, 1000))
     xy = np.array([[2, 0.2], [8, 0.75], [500, 0.4]])
     (line,) = ax.plot(*xy.T)
-    move = ep.draw_on(line)
+    move = ep.motion.draw_on(line)
     # Resolve the transform at draw time, after both update and a resize.
     move.update(0.4)
     fig.set_size_inches(6, 2)
@@ -148,8 +148,8 @@ def test_draw_on_log_axis_cuts_equal_display_arc_length_after_layout_changes():
 def test_draw_on_easing_and_level_are_independent(easing):
     fig, ax = _board()
     (line,) = ax.plot([0.1, 0.9], [0.4, 0.4], alpha=0.6)
-    move = ep.draw_on(line, ease=easing)
-    fraction = ep.ease(0.3, easing) if isinstance(easing, str) else easing(0.3)
+    move = ep.motion.draw_on(line, ease=easing)
+    fraction = ep.clock.ease(0.3, easing) if isinstance(easing, str) else easing(0.3)
     move.update(0.3)
     _pixels(fig)
     copy = move.contract.moves[0]
@@ -170,7 +170,7 @@ def test_draw_on_nan_gaps_do_not_add_length_or_connect_runs():
     fig, ax = _board()
     xy = np.array([[0.1, 0.2], [0.3, 0.2], [np.nan, np.nan], [0.6, 0.8], [0.8, 0.8]])
     (line,) = ax.plot(*xy.T)
-    move = ep.draw_on(line)
+    move = ep.motion.draw_on(line)
     move.update(0.75)
     _pixels(fig)
     copy = move.contract.moves[0]
@@ -185,7 +185,7 @@ def test_draw_on_empty_and_single_point_paths(xy):
     fig, ax = _board()
     (line,) = ax.plot(*xy.T, marker="o")
     without = _pixels(fig)
-    move = ep.draw_on(line)
+    move = ep.motion.draw_on(line)
     for u in (0.0, 0.5, 1.0):
         move.update(u)
         pixels = _pixels(fig)
@@ -199,11 +199,11 @@ def test_draw_on_rejects_invalid_lines_without_changing_valid_ones():
     _, ax = _board()
     (line,) = ax.plot([0, 1], [0, 1])
     with pytest.raises(ValueError, match="at least one"):
-        ep.draw_on([])
+        ep.motion.draw_on([])
     with pytest.raises(TypeError, match="Line2D"):
-        ep.draw_on([line, ax.patch])
+        ep.motion.draw_on([line, ax.patch])
     assert len(ax.lines) == 1
     assert line.get_visible()
     (step,) = ax.plot([0, 1, 2], [0, 1, 0], drawstyle="steps-mid")
     with pytest.raises(ValueError, match="stepped"):
-        ep.draw_on(step)
+        ep.motion.draw_on(step)

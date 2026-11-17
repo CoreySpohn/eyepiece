@@ -261,10 +261,10 @@ class SourceCast:
     (a dark-mode snapshot, a light-mode one, a future palette) without
     rebuilding it.
 
-    `eyepiece.SourceStyles` is the Matplotlib-side counterpart: it resolves
+    `eyepiece.style.SourceStyles` is the Matplotlib-side counterpart: it resolves
     each name's color when it is built, for the primitives that draw
     straight onto an Axes. Use a cast with the prepared-view renderers
-    (`eyepiece.mpl`, `eyepiece.manim`), and `eyepiece.MotifSet` when an
+    (`eyepiece.mpl`, `eyepiece.manim`), and `eyepiece.motifs.MotifSet` when an
     object should keep its look by key rather than by list position.
 
     Args:

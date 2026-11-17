@@ -21,10 +21,10 @@ def _scene(*, final=False):
     r = np.linspace(0.0, 1.0, 181)
     (curve,) = ax_c.plot(r, N_TOTAL * (1 - np.exp(-3 * r**2)), color="C0", lw=2)
     end = curve.get_xydata()[-1]
-    at = ep.Anchor.from_data(ax_c, (0.0, 1.0 * N_TOTAL))
+    at = ep.motion.Anchor.from_data(ax_c, (0.0, 1.0 * N_TOTAL))
     start = round(end[1]) if final else 0
-    count = ep.readout(at, start, fmt=",d", digits=len(f"{N_TOTAL:,d}") - 2)
-    rule = ep.ruler(
+    count = ep.motion.readout(at, start, fmt=",d", digits=len(f"{N_TOTAL:,d}") - 2)
+    rule = ep.plot.ruler(
         ax_p,
         (0.0, 0.0),
         (-end[0], 0.0) if final else (0.0, 0.0),
@@ -35,8 +35,8 @@ def _scene(*, final=False):
 
 
 def _bind(curve, count, rule, **kw):
-    head = ep.head_draw(curve, **kw)
-    knob = ep.ruler_readout(
+    head = ep.motion.head_draw(curve, **kw)
+    knob = ep.motion.ruler_readout(
         head,
         readout=count,
         value=lambda r, n: n,
@@ -115,8 +115,8 @@ def test_clip_has_no_motion_fault():
 
 def test_needs_a_target_and_a_ruler_end():
     _, _, curve, _, rule = _scene()
-    head = ep.head_draw(curve)
+    head = ep.motion.head_draw(curve)
     with pytest.raises(ValueError, match="readout, a ruler"):
-        ep.ruler_readout(head)
+        ep.motion.ruler_readout(head)
     with pytest.raises(ValueError, match="ruler_to"):
-        ep.ruler_readout(head, ruler=rule)
+        ep.motion.ruler_readout(head, ruler=rule)

@@ -30,7 +30,8 @@ def test_every_namespace_export_keeps_its_original_identity(namespace):
             assert name in dir(module)
             value = getattr(module, name)
             if name in OLD_ROOT:
-                assert value is getattr(ep, name)
+                owner, attr = ep._EXPORT_TARGETS[name]
+                assert value is getattr(importlib.import_module(owner), attr)
             elif namespace == "narration" and name == "caption_line":
                 assert value is ep.testing.caption_line
             else:
@@ -422,19 +423,13 @@ def test_sample_source_is_namespace_only():
         _ = ep.sample_source
 
 
-def test_root_discovery_stays_small_after_legacy_access():
+def test_root_discovery_stays_small():
+    """Exact API-set equality; removed root names must raise AttributeError."""
     assert set(ep.__all__) == SHORTCUTS
-    assert len(ep.__all__) == len(SHORTCUTS)
     assert set(dir(ep)) == SHORTCUTS | TASK_MODULES
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always", DeprecationWarning)
-        for name in OLD_ROOT:
-            value = getattr(ep, name)
-            imported = {}
-            exec(f"from eyepiece import {name}", imported)
-            assert imported[name] is value, name
-    assert not [w for w in caught if w.category is DeprecationWarning]
-    assert set(dir(ep)) == SHORTCUTS | TASK_MODULES
+    for name in set(OLD_ROOT) - SHORTCUTS:
+        with pytest.raises(AttributeError, match=name):
+            getattr(ep, name)
 
 
 def test_star_import_exposes_only_stable_shortcuts():
@@ -474,7 +469,7 @@ def test_fault_has_testing_home_and_silent_clock_alias():
         from eyepiece.clock import Fault as clock_fault
         from eyepiece.testing import Fault as testing_fault
 
-        assert ep.Fault is clock_fault is testing_fault is Fault
+        assert ep.testing.Fault is clock_fault is testing_fault is Fault
     assert not caught
 
 
@@ -488,5 +483,5 @@ def test_blend_has_style_home_and_silent_motion_alias():
         from eyepiece.motion import blend as motion_blend
         from eyepiece.style import blend as style_blend
 
-        assert ep.blend is motion_blend is style_blend is blend
+        assert ep.style.blend is motion_blend is style_blend is blend
     assert not caught

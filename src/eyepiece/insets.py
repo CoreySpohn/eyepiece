@@ -183,7 +183,7 @@ def curve_insets(
         theta = np.linspace(0.0, 3.0, 400)
         ax.plot(theta, np.sinc(theta) ** 2)
         ax.set_ylim(-0.05, 1.9)
-        res = ep.curve_insets(ax, theta, np.sinc(theta) ** 2, [0.0, 0.5, 1.0])
+        res = ep.plot.curve_insets(ax, theta, np.sinc(theta) ** 2, [0.0, 0.5, 1.0])
         for inset in res.insets:
             inset.set_axis_off()
     """

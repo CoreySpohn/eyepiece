@@ -796,8 +796,7 @@ def show_field(
 
     The four panels are laid out as::
 
-        [[ Real,      Imaginary ],
-         [ Amplitude, Phase     ]]
+        [[Real, Imaginary], [Amplitude, Phase]]
 
     The Real, Imaginary, and Amplitude panels are each auto-decade-scaled
     to their own peak (see `_decade_panel`), so a field with tiny values --
@@ -1177,10 +1176,11 @@ def overlay_circle(
 
     Example::
 
-        result = ep.imshow_log(psf, extent=extent)
-        ep.overlay_circle(result.ax, (3.0, 0.0), 0.7)
-        ep.overlay_circle(result.ax, (0.0, 0.0), 0.5, ls="-", label="rim",
-                          label_angle=40.0)
+        result = ep.plot.imshow_log(psf, extent=extent)
+        ep.plot.overlay_circle(result.ax, (3.0, 0.0), 0.7)
+        ep.plot.overlay_circle(
+            result.ax, (0.0, 0.0), 0.5, ls="-", label="rim", label_angle=40.0
+        )
     """
     radius = float(radius)
     if not radius > 0.0:
@@ -1320,8 +1320,8 @@ def ruler(
 
     Example::
 
-        image = ep.imshow_log(psf, extent=extent)
-        ep.ruler(image.ax, (-1.22, -3.0), (1.22, -3.0), "2.44 lambda/D")
+        image = ep.plot.imshow_log(psf, extent=extent)
+        ep.plot.ruler(image.ax, (-1.22, -3.0), (1.22, -3.0), "2.44 lambda/D")
     """
     if side not in _RULER_SIDES:
         raise ValueError(f"unknown ruler side: {side!r}; known: {list(_RULER_SIDES)}")
@@ -1472,8 +1472,8 @@ def kymograph(
 
     Example::
 
-        res = ep.kymograph(cuts, x_lod, t_hours, vmin=1e-9, vmax=1e-6)
-        ep.overlay_line(res.ax, [r_planet, r_planet], [t_hours[0], t_hours[-1]])
+        res = ep.plot.kymograph(cuts, x_lod, t_hours, vmin=1e-9, vmax=1e-6)
+        ep.plot.overlay_line(res.ax, [r_planet, r_planet], [t_hours[0], t_hours[-1]])
     """
     return imshow_log(
         values,
@@ -1576,11 +1576,12 @@ def overlay_line(
 
     Example::
 
-        res = ep.imshow_log(image, extent=extent)
-        ep.overlay_line(res.ax, [-6.0, 6.0], [-2.0, 2.0], label="cut",
-                        label_at=1.0)
+        res = ep.plot.imshow_log(image, extent=extent)
+        ep.plot.overlay_line(
+            res.ax, [-6.0, 6.0], [-2.0, 2.0], label="cut", label_at=1.0
+        )
         phi = np.linspace(0.0, np.pi / 2, 90)
-        ep.overlay_line(res.ax, 4.0 * np.cos(phi), 4.0 * np.sin(phi), ls=":")
+        ep.plot.overlay_line(res.ax, 4.0 * np.cos(phi), 4.0 * np.sin(phi), ls=":")
     """
     xs, ys = _path(x, y)
     light, dark = _light_and_dark()
@@ -1689,7 +1690,7 @@ def bracket(
 
     Example::
 
-        ep.bracket(ax, 0.9, 17.0, 2.75, "upstream of the mask", depth=0.25)
+        ep.plot.bracket(ax, 0.9, 17.0, 2.75, "upstream of the mask", depth=0.25)
     """
     if side not in _BRACKET_SIDES:
         raise ValueError(

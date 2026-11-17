@@ -83,7 +83,8 @@ def interval_points(
     Example::
 
         import eyepiece as ep
-        result = ep.interval_points([0, 1], [0, 2], hi=[0.4, 2.5])
+
+        result = ep.plot.interval_points([0, 1], [0, 2], hi=[0.4, 2.5])
     """
     x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
     if x.ndim != 1 or y.shape != x.shape:
@@ -608,7 +609,7 @@ def convergence(
 
         rng = np.random.default_rng(0)
         looks = rng.exponential(1.0, 200)
-        res = ep.convergence(looks, refs=[1.0], ref_labels=["expected"], band=0.1)
+        res = ep.plot.convergence(looks, refs=[1.0], ref_labels=["expected"], band=0.1)
         for k in range(1, 201):
             res.update(k)
     """
@@ -875,8 +876,9 @@ def signed_trace(
 
     Example::
 
-        res = ep.signed_trace(brightness, x=t_hours, level=static,
-                              show_level=True, level_label="static")
+        res = ep.plot.signed_trace(
+            brightness, x=t_hours, level=static, show_level=True, level_label="static"
+        )
         for k in range(1, len(t_hours) + 1):
             res.update(k)
     """
@@ -1061,9 +1063,13 @@ def hist_fill(
     Example::
 
         looks = np.random.default_rng(0).exponential(1.0, 400)
-        res = ep.hist_fill(looks, np.arange(0.0, 6.01, 0.25),
-                           law=lambda x: np.exp(-x), law_label="exponential",
-                           rug=12)
+        res = ep.plot.hist_fill(
+            looks,
+            np.arange(0.0, 6.01, 0.25),
+            law=lambda x: np.exp(-x),
+            law_label="exponential",
+            rug=12,
+        )
         for k in range(1, 401):
             res.update(k, rug_alpha=max(0.0, 1.0 - k / 40))
     """

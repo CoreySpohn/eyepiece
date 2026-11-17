@@ -356,7 +356,7 @@ def _stage_figure(dim):
     fig, ax = _axes()
     a = _line(ax, 3, CYAN, "a")
     b = _line(ax, 6, YELLOW, "b")
-    stage = ep.Stage({"a": a, "b": b}, dim=dim)
+    stage = ep.motion.Stage({"a": a, "b": b}, dim=dim)
     return fig, stage
 
 

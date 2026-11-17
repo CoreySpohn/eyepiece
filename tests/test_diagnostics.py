@@ -11,7 +11,7 @@ import eyepiece as ep
 
 @pytest.mark.parametrize("scale", ["linear", "log"])
 def test_calibration_identity_shared_limits_and_intervals(scale):
-    result = ep.calibration(
+    result = ep.plot.calibration(
         [0.1, 0.3, 0.8],
         [0.2, 0.35, 0.9],
         lo=[0.15, 0.25, 0.7],
@@ -38,7 +38,9 @@ def test_floor_maps_only_zeros_in_points_and_intervals():
     stated = np.array([0, 0.1, 0.5])
     realized = np.array([0.2, 0, 0.7])
     lo = np.array([0.1, 0, 0.4])
-    result = ep.calibration(stated, realized, lo=lo, hi=[0.3, 0.02, 0.8], floor=1e-4)
+    result = ep.plot.calibration(
+        stated, realized, lo=lo, hi=[0.3, 0.02, 0.8], floor=1e-4
+    )
     np.testing.assert_allclose(
         result.artists["scatter"].get_offsets(), [[1e-4, 0.2], [0.1, 1e-4], [0.5, 0.7]]
     )
@@ -56,7 +58,7 @@ def test_floor_maps_only_zeros_in_points_and_intervals():
 
 def test_hollow_mask_linear_zero_and_passthroughs():
     point_kw = {"s": 64, "alpha": 0.6, "color": "red"}
-    result = ep.calibration(
+    result = ep.plot.calibration(
         [0, 0.4, 1],
         [0.1, 0, 0.9],
         scale="linear",
@@ -80,7 +82,7 @@ def test_hollow_mask_linear_zero_and_passthroughs():
 def test_absolute_tolerance_band_and_identity_disabled():
     fig, ax = plt.subplots()
     ax.set(xlim=(0, 1), ylim=(0, 1))
-    result = ep.calibration(
+    result = ep.plot.calibration(
         [0.2, 0.8], [0.3, 0.7], ax=ax, scale="linear", tolerance=0.1, identity=False
     )
     assert "line" not in result.artists
@@ -96,7 +98,8 @@ def test_strip_jitter_reproducible_and_rng_is_local():
     state = np.random.get_state()
     groups = [np.arange(7), np.arange(5)]
     results = [
-        ep.strip(groups, seed=seed, width=0.4, positions=[2, 5]) for seed in [7, 7, 8]
+        ep.plot.strip(groups, seed=seed, width=0.4, positions=[2, 5])
+        for seed in [7, 7, 8]
     ]
     for a, b, other, pos, values in zip(
         *(r.artists["scatter"] for r in results), [2, 5], groups, strict=True
@@ -113,7 +116,7 @@ def test_strip_jitter_reproducible_and_rng_is_local():
 
 
 def test_strip_cap_includes_equality_and_positive_infinity():
-    result = ep.strip(
+    result = ep.plot.strip(
         {"a": [0.2, 1, 2, np.inf, np.nan], "b": [0.4]},
         capped=1,
         positions=[3, 8],
@@ -140,8 +143,8 @@ def test_strip_cap_includes_equality_and_positive_infinity():
 @pytest.mark.parametrize(
     "draw",
     [
-        lambda ax: ep.calibration([0.2, 0.4], [0.3, 0.5], ax=ax, scale="linear"),
-        lambda ax: ep.strip([[0.2, 0.3], [0.4]], ax=ax, labels=["a", "b"]),
+        lambda ax: ep.plot.calibration([0.2, 0.4], [0.3, 0.5], ax=ax, scale="linear"),
+        lambda ax: ep.plot.strip([[0.2, 0.3], [0.4]], ax=ax, labels=["a", "b"]),
     ],
 )
 def test_diagnostics_caller_contract(draw):
@@ -150,7 +153,7 @@ def test_diagnostics_caller_contract(draw):
     result = draw(axes[0])
     assert isinstance(result, ep.PlotResult)
     assert result.ax is axes[0]
-    assert result.artists.keys() <= ep.ARTIST_KEYS
+    assert result.artists.keys() <= ep.plot.ARTIST_KEYS
     assert fig.get_layout_engine() is None
     assert [ax.get_position(original=True).bounds for ax in axes] == positions
     assert axes[0].get_shared_x_axes().get_siblings(axes[0]) == [axes[0]]
@@ -170,38 +173,38 @@ def test_diagnostics_caller_contract(draw):
 )
 def test_calibration_invalid_arguments(kw, match):
     with pytest.raises(ValueError, match=match):
-        ep.calibration([0], [0.2], **kw)
+        ep.plot.calibration([0], [0.2], **kw)
 
 
 def test_strip_empty_groups_and_invalid_positions():
-    result = ep.strip([[], []])
+    result = ep.plot.strip([[], []])
     assert all(len(s.get_offsets()) == 0 for s in result.artists["scatter"])
     plt.close(result.fig)
     with pytest.raises(ValueError, match=r"expected.*received"):
-        ep.strip([[1], [2]], positions=[0])
+        ep.plot.strip([[1], [2]], positions=[0])
 
 
 def test_second_calibration_call_keeps_all_data_visible():
     fig, ax = plt.subplots()
-    ep.calibration([0.1, 0.5], [0.1, 0.5], scale="linear", ax=ax)
-    ep.calibration([0.1, 0.9], [0.1, 0.9], scale="linear", ax=ax)
+    ep.plot.calibration([0.1, 0.5], [0.1, 0.5], scale="linear", ax=ax)
+    ep.plot.calibration([0.1, 0.9], [0.1, 0.9], scale="linear", ax=ax)
     for limits in (ax.get_xlim(), ax.get_ylim()):
         assert limits[0] <= 0.1 and limits[1] >= 0.9
     plt.close(fig)
 
 
 def test_calibration_lim_pins_shared_limits():
-    result = ep.calibration([0.2, 0.4], [0.3, 0.5], scale="linear", lim=(0, 1))
+    result = ep.plot.calibration([0.2, 0.4], [0.3, 0.5], scale="linear", lim=(0, 1))
     assert result.ax.get_xlim() == (0, 1)
     assert result.ax.get_ylim() == (0, 1)
     plt.close(result.fig)
     with pytest.raises(ValueError, match="lim"):
-        ep.calibration([1.0], [1.0], lim=(0, 1))
+        ep.plot.calibration([1.0], [1.0], lim=(0, 1))
 
 
 def test_log_tolerance_band_is_x_plus_minus_t():
     t = 0.05
-    result = ep.calibration(
+    result = ep.plot.calibration(
         [0.1, 1.0], [0.1, 1.0], tolerance=t, lim=(0.01, 10), scale="log"
     )
     verts = result.artists["fill"].get_paths()[0].vertices

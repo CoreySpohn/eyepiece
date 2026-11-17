@@ -26,10 +26,6 @@ def shade_intervals(
 ):
     """Shade masked runs or explicit intervals across a single Axes.
 
-    It was named ``spans`` before 0.16, a name that read like the timeline's
-    `Timeline.spans` and `Plan.spans`; ``eyepiece.spans`` still resolves to
-    this function with a `DeprecationWarning`.
-
     Args:
         x: Increasing one-dimensional sample positions. Unused in interval mode.
         mask: boolean, True marks samples to shade; shaped like x.
@@ -50,7 +46,8 @@ def shade_intervals(
     Example::
 
         import eyepiece as ep
-        result = ep.shade_intervals([0, 1, 2, 3], [False, True, True, False])
+
+        result = ep.plot.shade_intervals([0, 1, 2, 3], [False, True, True, False])
     """
     if orient not in ("v", "h"):
         raise ValueError('orient must be "v" or "h"')
@@ -147,7 +144,8 @@ def ref_line(
     Example::
 
         import eyepiece as ep
-        result = ep.ref_line(None, 1.0, "reference")
+
+        result = ep.plot.ref_line(None, 1.0, "reference")
     """
     if orient not in ("h", "v"):
         raise ValueError('orient must be "h" or "v"')
@@ -222,7 +220,8 @@ def log_zero_floor(ax, floor, *, axis="y", label="0", break_mark=True, mark_kw=N
     Example::
 
         import eyepiece as ep
-        result = ep.log_zero_floor(None, 1e-4)
+
+        result = ep.plot.log_zero_floor(None, 1e-4)
     """
     if axis not in ("x", "y"):
         raise ValueError('axis must be "x" or "y"')

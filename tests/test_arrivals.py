@@ -12,9 +12,9 @@ def _clock():
 
 def test_same_seed_replays_and_another_seed_differs():
     rate = np.full((40, 40), 2.0)
-    a = ep.arrivals(rate, _clock(), seed=7)
-    b = ep.arrivals(rate, _clock(), seed=7)
-    c = ep.arrivals(rate, _clock(), seed=8)
+    a = ep.motion.arrivals(rate, _clock(), seed=7)
+    b = ep.motion.arrivals(rate, _clock(), seed=7)
+    c = ep.motion.arrivals(rate, _clock(), seed=8)
     np.testing.assert_array_equal(a.counts, b.counts)
     assert not np.array_equal(a.counts, c.counts)
     assert a.seed == 7
@@ -24,7 +24,7 @@ def test_same_seed_replays_and_another_seed_differs():
 
 def test_counts_never_decrease_and_start_empty_at_zero_exposure():
     rate = np.random.default_rng(0).uniform(0.0, 50.0, (30, 30))
-    a = ep.arrivals(rate, _clock(), seed=3)
+    a = ep.motion.arrivals(rate, _clock(), seed=3)
     assert np.all(np.diff(a.counts, axis=0) >= 0)
     assert np.all(a.counts[0] == 0)
     np.testing.assert_array_equal(a.counts[3], a.counts[4])  # a held time
@@ -37,17 +37,17 @@ def test_counts_never_decrease_and_start_empty_at_zero_exposure():
 
 def test_final_frame_is_the_still_at_any_number_of_samples():
     rate = np.random.default_rng(1).uniform(0.0, 1e3, (16, 16))
-    still = ep.arrivals(rate, [100.0], seed=11).counts[-1]
+    still = ep.motion.arrivals(rate, [100.0], seed=11).counts[-1]
     for clock in (np.geomspace(1.0, 100.0, 7), np.geomspace(1e-3, 100.0, 61)):
         np.testing.assert_array_equal(
-            ep.arrivals(rate, clock, seed=11).counts[-1], still
+            ep.motion.arrivals(rate, clock, seed=11).counts[-1], still
         )
 
 
 @pytest.mark.parametrize("rate", [0.3, 3.0, 4e3])
 def test_counts_and_increments_are_poisson_with_mean_rate_times_exposure(rate):
     n_pix = 200 * 200
-    a = ep.arrivals(np.full((200, 200), rate), _clock(), seed=5)
+    a = ep.motion.arrivals(np.full((200, 200), rate), _clock(), seed=5)
     for k in range(1, a.n):
         dt = a.exposure[k] - a.exposure[k - 1]
         for got, lam in ((a.counts[k], rate * a.exposure[k]), (a.new(k), rate * dt)):
@@ -64,7 +64,7 @@ def test_counts_and_increments_are_poisson_with_mean_rate_times_exposure(rate):
 
 
 def test_increments_are_uncorrelated():
-    a = ep.arrivals(np.full((300, 300), 5.0), [1.0, 2.0, 3.0], seed=2)
+    a = ep.motion.arrivals(np.full((300, 300), 5.0), [1.0, 2.0, 3.0], seed=2)
     first, second = a.new(1).ravel(), a.new(2).ravel()
     r = np.corrcoef(first, second)[0, 1]
     assert abs(r) < 5.0 / np.sqrt(first.size)
@@ -72,7 +72,7 @@ def test_increments_are_uncorrelated():
 
 def test_large_rates_stay_exact_and_monotone():
     rate = np.array([[1e9, 1e3], [1e-2, 0.0]])
-    a = ep.arrivals(rate, np.geomspace(1.0, 1e5, 40), seed=9)
+    a = ep.motion.arrivals(rate, np.geomspace(1.0, 1e5, 40), seed=9)
     assert np.all(np.diff(a.counts, axis=0) >= 0)
     np.testing.assert_allclose(a.counts[-1, 0, 0], 1e14, rtol=1e-6)
     assert np.all(a.counts[:, 1, 1] == 0)
@@ -80,18 +80,18 @@ def test_large_rates_stay_exact_and_monotone():
 
 def test_rejects_bad_inputs():
     with pytest.raises(ValueError, match="rate"):
-        ep.arrivals([[-1.0]], [1.0], seed=0)
+        ep.motion.arrivals([[-1.0]], [1.0], seed=0)
     with pytest.raises(ValueError, match="rate"):
-        ep.arrivals([[np.nan]], [1.0], seed=0)
+        ep.motion.arrivals([[np.nan]], [1.0], seed=0)
     with pytest.raises(ValueError, match="non-decreasing"):
-        ep.arrivals([[1.0]], [2.0, 1.0], seed=0)
+        ep.motion.arrivals([[1.0]], [2.0, 1.0], seed=0)
     with pytest.raises(ValueError, match="1D"):
-        ep.arrivals([[1.0]], [], seed=0)
+        ep.motion.arrivals([[1.0]], [], seed=0)
     with pytest.raises(ValueError, match="non-negative"):
-        ep.arrivals([[1.0]], [-1.0, 1.0], seed=0)
+        ep.motion.arrivals([[1.0]], [-1.0, 1.0], seed=0)
     with pytest.raises(TypeError, match="seed"):
-        ep.arrivals([[1.0]], [1.0], seed=None)
+        ep.motion.arrivals([[1.0]], [1.0], seed=None)
     with pytest.raises(TypeError, match="seed"):
-        ep.arrivals([[1.0]], [1.0], seed=1.5)
+        ep.motion.arrivals([[1.0]], [1.0], seed=1.5)
     with pytest.raises(ValueError, match="seed"):
-        ep.arrivals([[1.0]], [1.0], seed=-1)
+        ep.motion.arrivals([[1.0]], [1.0], seed=-1)

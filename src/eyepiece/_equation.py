@@ -754,15 +754,19 @@ def equation(
 
     Example::
 
-        eq = ep.equation(ax, r"${{lhs:y=}}{{rhs:m x + b}}$", fontsize=40,
-                         colors={"lhs": "C0", "rhs": "C1"})
-        ep.indicate(eq.term("rhs"))  # a term is an artist
+        eq = ep.motion.equation(
+            ax,
+            r"${{lhs:y=}}{{rhs:m x + b}}$",
+            fontsize=40,
+            colors={"lhs": "C0", "rhs": "C1"},
+        )
+        ep.motion.indicate(eq.term("rhs"))  # a term is an artist
         eq.term("nope")  # KeyError naming the known terms
 
-        spread, = ax.plot([0.2, 0.8], [0.3, 0.3], color="C2")
-        eq = ep.equation(ax, r"${{sigma:\sigma}}$", fontsize=40)
+        (spread,) = ax.plot([0.2, 0.8], [0.3, 0.3], color="C2")
+        eq = ep.motion.equation(ax, r"${{sigma:\sigma}}$", fontsize=40)
         eq.bind("sigma", spread, motif="planet")
-        pulse = ep.indicate(eq.linked("sigma"))
+        pulse = ep.motion.indicate(eq.linked("sigma"))
     """
     if ha not in ("left", "center", "right"):
         raise ValueError(f"unknown ha: {ha!r}; known: ['left', 'center', 'right']")
@@ -1165,7 +1169,7 @@ def transform(
             more, in font sizes (a sine bump, up on the screen for a group
             moving right and down for one moving left); 0 moves along a
             straight line.
-        ease: An easing kind for `eyepiece.ease`, or a callable from progress
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable from progress
             to eased progress, applied to each group's progress.
         key_map: Mapping of a tag name of `eq_a` to a tag name of `eq_b` whose
             glyphs pair.
@@ -1202,9 +1206,9 @@ def transform(
 
     Example::
 
-        a = ep.equation(ax, r"${{l:a^2+b^2}}=c^2$", fontsize=48)
-        b = ep.equation(ax, r"${{l:a^2}}=c^2-b^2$", fontsize=48)
-        move = ep.transform(a, b)
+        a = ep.motion.equation(ax, r"${{l:a^2+b^2}}=c^2$", fontsize=48)
+        b = ep.motion.equation(ax, r"${{l:a^2}}=c^2-b^2$", fontsize=48)
+        move = ep.motion.transform(a, b)
         move.update(0.5)
     """
     for end in (eq_a, eq_b):

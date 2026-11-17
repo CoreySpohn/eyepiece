@@ -25,7 +25,7 @@ def test_three_close_curve_labels_spread_symmetrically_and_keep_order():
     ax.set(xlim=(0, 1), ylim=(0, 1))
     labels = _labels(ax, [0.5, 0.501, 0.502])
     before = _boxes(fig, labels)
-    result = ep.spread_labels(labels, min_gap=3)
+    result = ep.plot.spread_labels(labels, min_gap=3)
     after = _boxes(fig, labels)
     centers = [box.y0 + box.height / 2 for box in after]
     gap = fig.dpi * 3 / 72
@@ -36,7 +36,7 @@ def test_three_close_curve_labels_spread_symmetrically_and_keep_order():
     )
     assert [box.x0 for box in after] == [box.x0 for box in before]
     assert result.artists["text"] == labels
-    ep.spread_labels(labels, min_gap=3)
+    ep.plot.spread_labels(labels, min_gap=3)
     np.testing.assert_allclose(
         [label.get_position() for label in labels],
         [
@@ -53,7 +53,7 @@ def test_spread_respects_axes_bounds_with_unequal_heights_and_transforms(ys, sca
     ax.set(xlim=(0, 1), ylim=(0.01, 1), yscale=scale)
     labels = _labels(ax, ys)
     labels[1].set_fontsize(22)
-    ep.spread_labels(labels, min_gap=2)
+    ep.plot.spread_labels(labels, min_gap=2)
     after = sorted(_boxes(fig, labels), key=lambda box: box.y0)
     assert after[0].y0 >= ax.bbox.y0 - 1e-8
     assert after[-1].y1 <= ax.bbox.y1 + 1e-8
@@ -65,9 +65,9 @@ def test_separated_labels_do_not_move_and_impossible_fit_raises():
     ax.set(xlim=(0, 1), ylim=(0, 1))
     labels = _labels(ax, [0.3, 0.5, 0.7])
     before = [label.get_position() for label in labels]
-    ep.spread_labels(labels)
+    ep.plot.spread_labels(labels)
     np.testing.assert_allclose([label.get_position() for label in labels], before)
     for label in labels:
         label.set_fontsize(100)
     with pytest.raises(ValueError, match="fit"):
-        ep.spread_labels(labels)
+        ep.plot.spread_labels(labels)

@@ -121,10 +121,10 @@ def test_draw_failure_restores_knob_reads():
 
 def _motif_clip(*, same_hue):
     fig = plt.figure(figsize=(4, 2), dpi=100)
-    motifs = ep.MotifSet(
+    motifs = ep.motifs.MotifSet(
         [
-            ep.Motif("first", "first", "model"),
-            ep.Motif("second", "second", "model" if same_hue else "text"),
+            ep.motifs.Motif("first", "first", "model"),
+            ep.motifs.Motif("second", "second", "model" if same_hue else "text"),
         ]
     )
     for y, motif in zip((60, 130), motifs.values(), strict=True):
@@ -179,7 +179,9 @@ def test_review_checks_sample_cue_frames_and_motion_samples_every_frame(monkeypa
         original = getattr(ept, name)
 
         def spy(*args, _name=name, _original=original, **kwargs):
-            samples[_name] = [ep.frame_count(t, plan.fps) for t in kwargs["times"]]
+            samples[_name] = [
+                ep.clock.frame_count(t, plan.fps) for t in kwargs["times"]
+            ]
             return _original(*args, **kwargs)
 
         monkeypatch.setattr(ept, name, spy)
@@ -257,11 +259,13 @@ def test_public_names():
 
 def test_info_plan_findings_are_kept_but_do_not_fail_the_clip():
     fig, draw, plan, _ = _clip()
-    plan.faults = [ep.Fault("skipped", "info", "pulse 'x' is placed only by a cue")]
+    plan.faults = [
+        ep.testing.Fault("skipped", "info", "pulse 'x' is placed only by a cue")
+    ]
     report = ept.check_clip(fig, draw, plan)
     assert report.plan_faults == plan.faults
     assert report.ok
-    plan.faults = [ep.Fault("collapsed", "error", "span 'blink' is too short")]
+    plan.faults = [ep.testing.Fault("collapsed", "error", "span 'blink' is too short")]
     assert not ept.check_clip(fig, draw, plan).ok
 
 

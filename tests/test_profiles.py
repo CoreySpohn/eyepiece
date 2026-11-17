@@ -462,26 +462,3 @@ def test_plot_contrast_curve_shading_is_scale_free(scale):
     assert iwa_fill.get_x() <= left
     assert owa_fill.get_x() + owa_fill.get_width() >= right
     plt.close(fig)
-
-
-@pytest.mark.parametrize("namespace", ["eyepiece", "eyepiece.profiles"])
-def test_radial_profile_plot_alias_warns_once_at_caller_and_keeps_results(namespace):
-    import importlib
-
-    pytest.importorskip("hwoutils")
-    module = importlib.import_module(namespace)
-    img = _image()
-    kwargs = {"center": (3.0, 3.0), "nbins": 5, "color": "red", "log": True}
-    current = plot_radial_image(img, 1.0, **kwargs)
-    with pytest.warns(DeprecationWarning, match="plot_radial_image") as caught:
-        legacy = module.radial_profile_plot(img, 1.0, **kwargs)
-    assert len(caught) == 1
-    assert caught[0].filename == __file__
-    np.testing.assert_array_equal(
-        legacy.artists["line"].get_xydata(), current.artists["line"].get_xydata()
-    )
-    assert legacy.artists["line"].get_color() == current.artists["line"].get_color()
-    assert legacy.ax.get_yscale() == current.ax.get_yscale()
-    assert legacy.ax.get_xlabel() == current.ax.get_xlabel()
-    plt.close(current.fig)
-    plt.close(legacy.fig)

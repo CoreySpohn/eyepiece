@@ -40,7 +40,7 @@ def _bar(ax):
 def test_halo_ends_with_the_body_while_the_head_shows():
     fig, ax = _board()
     line, halo = _bar(ax)
-    move = ep.head_draw(line, behind={line: halo}, ease="linear")
+    move = ep.motion.head_draw(line, behind={line: halo}, ease="linear")
     for u in (0.2, 0.5, 0.8):
         move.update(u)
         assert _halo_right(fig) <= _tip_x(fig, move) + 0.5
@@ -51,8 +51,8 @@ def test_a_plain_draw_on_halo_leads_the_head():
     # runs to the tip and its cap shows ahead of the head.
     fig, ax = _board()
     line, halo = _bar(ax)
-    move = ep.head_draw(line, ease="linear")
-    under = ep.draw_on(halo, ease="linear")
+    move = ep.motion.head_draw(line, ease="linear")
+    under = ep.motion.draw_on(halo, ease="linear")
     move.update(0.5)
     under.update(0.5)
     assert _halo_right(fig) > _tip_x(fig, move) + 3.0
@@ -63,7 +63,7 @@ def test_halo_never_shows_more_past_the_tip_than_in_the_still():
     line, halo = _bar(ax)
     end = ax.transData.transform((0.9, 0.5))[0]
     still = _halo_right(fig) - end
-    move = ep.head_draw(line, behind=halo)
+    move = ep.motion.head_draw(line, behind=halo)
     for u in np.linspace(0.02, 0.99, 40):
         move.update(u)
         assert _halo_right(fig) - _tip_x(fig, move) <= still + 1.0
@@ -73,7 +73,7 @@ def test_rest_is_the_plain_still_and_start_has_no_ink():
     fig, ax = _board()
     line, halo = _bar(ax)
     without = _pixels(fig)
-    move = ep.head_draw(line, behind={line: [halo]})
+    move = ep.motion.head_draw(line, behind={line: [halo]})
     move.update(0.0)
     assert np.all(_pixels(fig) == 255)
     for u in (0.3, 0.97):
@@ -91,7 +91,7 @@ def test_ring_with_a_halo_has_no_motion_fault():
     (halo,) = ax.plot(x, y, color="white", lw=7, alpha=0.9, zorder=1.9)
     (ring,) = ax.plot(x, y, color="C0", lw=2, zorder=2)
     (curve,) = ax.plot([0.1, 0.5, 0.9], [0.1, 0.2, 0.15], color="C1", lw=2)
-    move = ep.head_draw([ring, curve], lag=0.4, behind={ring: halo})
+    move = ep.motion.head_draw([ring, curve], lag=0.4, behind={ring: halo})
     assert set(move.artists["behind"]) >= {halo}
     frames = np.linspace(0.0, 1.0, 61)
     assert ept.motion_faults(fig, move.update, frames, moves=[move]) == []
@@ -102,8 +102,8 @@ def test_behind_must_name_drawn_lines():
     line, halo = _bar(ax)
     (other,) = ax.plot([0, 1], [0, 0])
     with pytest.raises(ValueError, match="not drawn"):
-        ep.head_draw(line, behind={other: halo})
+        ep.motion.head_draw(line, behind={other: halo})
     with pytest.raises(ValueError, match="map"):
-        ep.head_draw([line, other], behind=halo)
+        ep.motion.head_draw([line, other], behind=halo)
     with pytest.raises(TypeError):
-        ep.head_draw(line, behind={line: ax.text(0, 0, "x")})
+        ep.motion.head_draw(line, behind={line: ax.text(0, 0, "x")})

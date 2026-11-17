@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 from test_render_helpers import build_tiny_clip
 
-import eyepiece as ep
 import eyepiece.render as render
 from eyepiece import _render_chunks as chunks
 from eyepiece import _render_pool as pool_driver
@@ -194,8 +193,6 @@ def test_facade_exports_exactly_the_public_names():
     assert set(render.__all__) == expected
     assert len(render.__all__) == len(expected)
     assert expected <= set(dir(render))
-    for name in render.__all__:
-        assert getattr(render, name) is getattr(ep, name)
 
 
 @pytest.mark.parametrize("name", sorted(PUBLIC_NAMES))

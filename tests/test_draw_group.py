@@ -18,7 +18,7 @@ def _run(n=6, glide=False):
     side.set_xlim(0, 1)
     side.set_ylim(0, 1)
     side.set_axis_off()
-    mark = ep.hop(draws, ax=ax, rate=4.0, ghosts=3)
+    mark = ep.plot.hop(draws, ax=ax, rate=4.0, ghosts=3)
     times = np.arange(round(mark.duration * 30) + 1) / 30.0
     cuts = [times[i] for i in mark.steps(times / mark.duration)]
     label = side.text(0.1, 0.5, "label", fontsize=12)

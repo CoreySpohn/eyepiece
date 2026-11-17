@@ -37,9 +37,12 @@ Example::
     import eyepiece.testing as ept
 
     faults = ept.meaning_faults(
-        fig, at=clip.pose, times=[0.0, 1.5, 3.0],
+        fig,
+        at=clip.pose,
+        times=[0.0, 1.5, 3.0],
         keys={"orbit": "planet", "badge": "library"},
-        sharing=[("disk", "prior")], cue_keys=["cue"],
+        sharing=[("disk", "prior")],
+        cue_keys=["cue"],
     )
     print(ept.meaning_report(faults))
 """

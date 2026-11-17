@@ -17,7 +17,7 @@ import eyepiece as ep
 def test_overview_box_draws_the_view_and_moves_with_update():
     fig, ax = plt.subplots()
     ax.imshow(np.zeros((8, 8)), extent=(-4, 4, -4, 4))
-    res = ep.overview_box((1.0, -1.0, 2.0), ax=ax, aspect=0.5)
+    res = ep.motion.overview_box((1.0, -1.0, 2.0), ax=ax, aspect=0.5)
     box = res.artists["ellipse"]
     assert isinstance(box, Rectangle)
     assert box.get_xy() == pytest.approx((0.0, -1.5))
@@ -31,7 +31,7 @@ def test_overview_box_draws_the_view_and_moves_with_update():
 
 def test_overview_box_creates_its_own_figure_and_routes_box_kw():
     with matplotlib.rc_context({"text.color": "#123456"}):
-        res = ep.overview_box((0.0, 0.0, 1.0), box_kw={"lw": 3.0, "ls": "--"})
+        res = ep.motion.overview_box((0.0, 0.0, 1.0), box_kw={"lw": 3.0, "ls": "--"})
     assert res.artists["ellipse"].get_edgecolor() == pytest.approx(to_rgba("#123456"))
     assert res.fig.get_layout_engine() is not None
     assert res.artists["ellipse"].get_linewidth() == pytest.approx(3.0)
@@ -55,7 +55,7 @@ def _composite(facecolor="white"):
 @pytest.mark.parametrize("overview", [False, True])
 def test_page_camera_renders_exactly_the_output_size(overview):
     fig, axes = _composite()
-    cam = ep.PageCamera(fig, (320, 180), overview=overview)
+    cam = ep.motion.PageCamera(fig, (320, 180), overview=overview)
     for view in (cam.page, cam.fit_axes(axes[1]), (7.5, 0.5, 2.0), (-1.0, 2.0, 3.0)):
         frame = cam.render(view)
         assert frame.shape == (180, 320, 4)
@@ -66,7 +66,7 @@ def test_page_camera_renders_exactly_the_output_size(overview):
 
 def test_page_camera_freezes_the_layout_and_release_restores_it():
     fig, _ = _composite()
-    cam = ep.PageCamera(fig, (320, 180))
+    cam = ep.motion.PageCamera(fig, (320, 180))
     assert isinstance(fig.get_layout_engine(), PlaceHolderLayoutEngine)
     cam.release()
     assert isinstance(fig.get_layout_engine(), ConstrainedLayoutEngine)
@@ -76,7 +76,7 @@ def test_page_camera_freezes_the_layout_and_release_restores_it():
 def test_page_camera_background_is_opaque_even_when_savefig_is_transparent():
     fig, _ = _composite("white")
     with matplotlib.rc_context({"savefig.transparent": True}):
-        frame = ep.PageCamera(fig, (320, 180)).render((0.2, 0.2, 0.4))
+        frame = ep.motion.PageCamera(fig, (320, 180)).render((0.2, 0.2, 0.4))
     assert frame[0, 0, 3] == 255
     assert tuple(frame[0, 0, :3]) == (255, 255, 255)
     plt.close(fig)
@@ -84,7 +84,7 @@ def test_page_camera_background_is_opaque_even_when_savefig_is_transparent():
 
 def test_overview_margin_is_the_facecolor_and_holds_the_page():
     fig, axes = _composite("#202020")
-    cam = ep.PageCamera(fig, (480, 270), overview=True)
+    cam = ep.motion.PageCamera(fig, (480, 270), overview=True)
     frame = cam.render(cam.fit_axes(axes[0]))
     margin = 480 // 6
     bottom_right = frame[-5, -5, :3]
@@ -96,12 +96,12 @@ def test_overview_margin_is_the_facecolor_and_holds_the_page():
 
 def test_fit_keeps_views_inside_the_page_and_matches_the_view_aspect():
     fig, _ = _composite()
-    cam = ep.PageCamera(fig, (320, 180))
+    cam = ep.motion.PageCamera(fig, (320, 180))
     cx, cy, w = cam.fit((0.0, 0.0, 1.0, 1.0), pad=0.0)
     h = w * 180 / 320
     assert cx - w / 2 >= -1e-9 and cy - h / 2 >= -1e-9
     assert cam.aspect == pytest.approx(180 / 320)
-    over = ep.PageCamera(fig, (320, 180), overview=True)
+    over = ep.motion.PageCamera(fig, (320, 180), overview=True)
     assert over.aspect == pytest.approx(180 / (320 - 320 // 6))
     plt.close(fig)
 
@@ -110,7 +110,7 @@ def test_page_camera_magnifies_crisply():
     fig, ax = plt.subplots(figsize=(4, 4))
     ax.imshow([[0.0, 1.0], [1.0, 0.0]], interpolation="nearest", cmap="gray")
     ax.set_axis_off()
-    cam = ep.PageCamera(fig, (200, 200))
+    cam = ep.motion.PageCamera(fig, (200, 200))
     frame = cam.render(cam.fit_axes(ax, pad=0.0)).astype(int)
     # A nearest-pixel checkerboard magnified stays two tones, no blur ramp.
     values = np.unique(frame[20:-20, 20:-20, 0])
@@ -121,14 +121,14 @@ def test_page_camera_magnifies_crisply():
 def test_page_camera_works_on_a_figure_pyplot_has_closed():
     fig, axes = _composite()
     plt.close(fig)  # what a notebook's inline backend does after each cell
-    cam = ep.PageCamera(fig, (160, 90))
+    cam = ep.motion.PageCamera(fig, (160, 90))
     assert cam.render(cam.fit_axes(axes[2])).shape == (90, 160, 4)
 
 
 def test_page_camera_rejects_bad_sizes():
     fig, _ = _composite()
     with pytest.raises(ValueError, match="size_px"):
-        ep.PageCamera(fig, (0, 100))
+        ep.motion.PageCamera(fig, (0, 100))
     plt.close(fig)
 
 
@@ -138,7 +138,7 @@ def test_page_camera_rejects_bad_sizes():
 
 def test_spotlight_cuts_one_hole_per_rect_in_figure_inches():
     fig, axes = _composite()
-    res = ep.spotlight(fig, [(0.5, 0.5, 2.0, 2.0), (3.0, 0.5, 4.0, 2.0)])
+    res = ep.motion.spotlight(fig, [(0.5, 0.5, 2.0, 2.0), (3.0, 0.5, 4.0, 2.0)])
     veil = res.artists["fill"]
     assert isinstance(veil, PathPatch)
     assert len(veil.get_path().vertices) == 5 * 3
@@ -152,13 +152,13 @@ def test_spotlight_cuts_one_hole_per_rect_in_figure_inches():
 def test_spotlight_needs_axes():
     fig = plt.figure()
     with pytest.raises(ValueError, match="axes"):
-        ep.spotlight(fig, [(0.0, 0.0, 1.0, 1.0)])
+        ep.motion.spotlight(fig, [(0.0, 0.0, 1.0, 1.0)])
     plt.close(fig)
 
 
 def test_spotlight_update_moves_holes_and_scales_strength():
     fig, _ = _composite()
-    res = ep.spotlight(fig, [(0.5, 0.5, 2.0, 2.0)], strength=0.0)
+    res = ep.motion.spotlight(fig, [(0.5, 0.5, 2.0, 2.0)], strength=0.0)
     veil = res.artists["fill"]
     assert veil.get_alpha() == pytest.approx(0.0)
     res.update(rects=[(1.0, 1.0, 3.0, 3.0)], strength=0.5)
@@ -173,10 +173,10 @@ def test_spotlight_update_moves_holes_and_scales_strength():
 def test_spotlight_rejects_overlapping_or_inverted_rects():
     fig, _ = _composite()
     with pytest.raises(ValueError, match="overlap"):
-        ep.spotlight(fig, [(0.0, 0.0, 2.0, 2.0), (1.0, 1.0, 3.0, 3.0)])
+        ep.motion.spotlight(fig, [(0.0, 0.0, 2.0, 2.0), (1.0, 1.0, 3.0, 3.0)])
     with pytest.raises(ValueError, match="x0 < x1"):
-        ep.spotlight(fig, [(2.0, 0.0, 1.0, 1.0)])
-    res = ep.spotlight(fig, [(0.0, 0.0, 1.0, 1.0)])
+        ep.motion.spotlight(fig, [(2.0, 0.0, 1.0, 1.0)])
+    res = ep.motion.spotlight(fig, [(0.0, 0.0, 1.0, 1.0)])
     with pytest.raises(ValueError, match="overlap"):
         res.update(rects=[(0.0, 0.0, 2.0, 2.0), (1.0, 1.0, 3.0, 3.0)])
     assert len(res.artists["fill"].get_path().vertices) == 10
@@ -189,13 +189,13 @@ def _spotlit_panel():
     ax.set_position([0, 0, 1, 1])
     ax.imshow(np.ones((2, 2)), cmap="gray", vmin=0, vmax=1, aspect="auto")
     ax.set_axis_off()
-    ep.spotlight(fig, [(0.0, 0.0, 2.0, 2.0)])
+    ep.motion.spotlight(fig, [(0.0, 0.0, 2.0, 2.0)])
     return fig, ax
 
 
 def test_spotlight_dims_outside_the_hole_in_a_render():
     fig, _ = _spotlit_panel()
-    frame = ep.PageCamera(fig, (200, 100)).render((2.0, 1.0, 4.0))
+    frame = ep.motion.PageCamera(fig, (200, 100)).render((2.0, 1.0, 4.0))
     lit, dim = frame[50, 50, 0], frame[50, 150, 0]
     assert lit > 200 > dim
     plt.close(fig)
@@ -209,18 +209,18 @@ def test_overview_thumbnail_of_a_wide_figure_on_a_small_frame_renders():
     fig, ax = plt.subplots(figsize=(12, 4))
     ax.plot([0, 1], [0, 1])
     ax.set_title("a title that FreeType must draw")
-    with ep.PageCamera(fig, (320, 180), overview=True) as cam:
+    with ep.motion.PageCamera(fig, (320, 180), overview=True) as cam:
         assert cam.render(cam.fit_axes(ax)).shape == (180, 320, 4)
     plt.close(fig)
 
 
 def test_a_view_too_wide_for_text_still_renders_by_downsampling():
     fig, _ = _composite()
-    with ep.PageCamera(fig, (100, 56)) as cam:
+    with ep.motion.PageCamera(fig, (100, 56)) as cam:
         assert cam.render((4.0, 2.0, 200.0)).shape == (56, 100, 4)
     big, ax = plt.subplots(figsize=(20, 5))
     ax.set_title("a title")
-    with ep.PageCamera(big, (160, 90)) as cam:
+    with ep.motion.PageCamera(big, (160, 90)) as cam:
         assert cam.render(cam.page).shape == (90, 160, 4)
     plt.close(fig)
     plt.close(big)
@@ -228,7 +228,7 @@ def test_a_view_too_wide_for_text_still_renders_by_downsampling():
 
 def test_positions_hold_across_renders_and_release_ends_the_camera():
     fig, axes = _composite()
-    with ep.PageCamera(fig, (320, 180)) as cam:
+    with ep.motion.PageCamera(fig, (320, 180)) as cam:
         before = [a.get_position().bounds for a in axes]
         cam.render(cam.page)
         cam.render(cam.fit_axes(axes[0]))  # a different dpi
@@ -241,14 +241,14 @@ def test_positions_hold_across_renders_and_release_ends_the_camera():
 
 def test_a_transparent_figure_still_gives_opaque_frames():
     fig, _ = _composite("none")
-    frame = ep.PageCamera(fig, (160, 90)).render((0.2, 0.2, 0.4))
+    frame = ep.motion.PageCamera(fig, (160, 90)).render((0.2, 0.2, 0.4))
     assert frame[0, 0, 3] == 255
     plt.close(fig)
 
 
 def test_refresh_redraws_the_cached_overview():
     fig, axes = _composite("#202020")
-    cam = ep.PageCamera(fig, (480, 270), overview=True)
+    cam = ep.motion.PageCamera(fig, (480, 270), overview=True)
     margin = slice(480 - 480 // 6, None)
     first = cam.render(cam.page)[:120, margin].copy()
     for a in axes:
@@ -274,7 +274,7 @@ def test_spotlight_keeps_pyplot_current_axes_and_tight_saves():
         return Image.open(buf).size
 
     before = tight_size()
-    ep.spotlight(fig, [(0.5, 0.5, 2.0, 2.0)])
+    ep.motion.spotlight(fig, [(0.5, 0.5, 2.0, 2.0)])
     assert plt.gca() is axes[1]
     assert tight_size() == before
     plt.close(fig)
@@ -283,7 +283,7 @@ def test_spotlight_keeps_pyplot_current_axes_and_tight_saves():
 def test_overview_box_stays_out_of_the_data_limits():
     fig, ax = plt.subplots()
     ax.imshow(np.zeros((8, 8)), extent=(-4, 4, -4, 4))
-    ep.overview_box((0.0, 0.0, 20.0), ax=ax)
+    ep.motion.overview_box((0.0, 0.0, 20.0), ax=ax)
     ax.autoscale_view()
     assert ax.get_xlim() == pytest.approx((-4.0, 4.0))
     plt.close(fig)
@@ -291,7 +291,7 @@ def test_overview_box_stays_out_of_the_data_limits():
 
 def test_spotlight_holes_stay_put_in_offset_views():
     fig, _ = _spotlit_panel()
-    with ep.PageCamera(fig, (100, 100)) as cam:
+    with ep.motion.PageCamera(fig, (100, 100)) as cam:
         right = cam.render((3.0, 1.0, 2.0))  # the veiled half, alone
         left = cam.render((1.0, 1.0, 2.0))  # the hole, alone
         straddle = cam.render((2.0, 1.0, 2.0))

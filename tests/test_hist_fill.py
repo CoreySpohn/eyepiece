@@ -22,11 +22,11 @@ def _looks(n=300):
 def test_keys_counts_and_tones_in_either_mode(mode):
     hwostyle.use(mode)
     looks = _looks()
-    res = ep.hist_fill(
+    res = ep.plot.hist_fill(
         looks, EDGES, law=lambda x: np.exp(-x), law_label="exponential", rug=10
     )
     assert set(res.artists) == {"hist", "line", "text", "scatter"}
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     assert isinstance(res.artists["hist"], BarContainer)
     assert isinstance(res.artists["line"], Line2D)
     assert isinstance(res.artists["scatter"], PathCollection)
@@ -52,7 +52,7 @@ def test_keys_counts_and_tones_in_either_mode(mode):
 
 def test_update_counts_the_first_k_without_new_artists_or_new_limits():
     looks = _looks()
-    res = ep.hist_fill(looks, EDGES, rug=5, ymax=120.0)
+    res = ep.plot.hist_fill(looks, EDGES, rug=5, ymax=120.0)
     ax = res.ax
     res.fig.canvas.draw()
     limits = ax.get_xlim(), ax.get_ylim()
@@ -71,7 +71,9 @@ def test_update_counts_the_first_k_without_new_artists_or_new_limits():
 
 
 def test_rug_alpha_and_show_law_persist_until_changed():
-    res = ep.hist_fill(_looks(), EDGES, law=lambda x: np.exp(-x), law_label="e", rug=4)
+    res = ep.plot.hist_fill(
+        _looks(), EDGES, law=lambda x: np.exp(-x), law_label="e", rug=4
+    )
     res.update(10, rug_alpha=0.25, show_law=False)
     assert res.artists["scatter"].get_alpha() == 0.25
     assert not res.artists["line"].get_visible()
@@ -86,10 +88,10 @@ def test_rug_alpha_and_show_law_persist_until_changed():
 
 def test_a_bin_count_spans_the_data_and_samples_outside_edges_are_dropped():
     values = np.array([0.0, 1.0, 2.0, 3.0, 4.0])
-    res = ep.hist_fill(values, 4)
+    res = ep.plot.hist_fill(values, 4)
     assert res.ax.get_xlim() == (0.0, 4.0)
     assert [b.get_height() for b in res.artists["hist"]] == [1, 1, 1, 2]
-    res = ep.hist_fill(np.array([-1.0, 0.5, 9.0]), [0.0, 1.0, 2.0])
+    res = ep.plot.hist_fill(np.array([-1.0, 0.5, 9.0]), [0.0, 1.0, 2.0])
     assert [b.get_height() for b in res.artists["hist"]] == [1, 0]
     plt.close("all")
 
@@ -104,5 +106,5 @@ def test_a_bin_count_spans_the_data_and_samples_outside_edges_are_dropped():
 )
 def test_bad_inputs_raise(args, kwargs, match):
     with pytest.raises(ValueError, match=match):
-        ep.hist_fill(*args, **kwargs)
+        ep.plot.hist_fill(*args, **kwargs)
     plt.close("all")

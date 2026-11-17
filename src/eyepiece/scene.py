@@ -423,7 +423,7 @@ def fading_track(
 
     Example::
 
-        res = ep.fading_track(np.empty((0, 2)), ax=ax, alpha_range=(0.15, 1.0))
+        res = ep.plot.fading_track(np.empty((0, 2)), ax=ax, alpha_range=(0.15, 1.0))
         for k in range(1, len(tips) + 1):
             res.update(tips[:k])
     """

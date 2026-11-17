@@ -159,7 +159,7 @@ def hop(
             under its line).
         text_kw: Extra kwargs for the tally text, applied last.
         counter_at: Where the draw counter (``draw 7 of 40``) is, an
-            `eyepiece.Anchor` (its baseline's left end); None puts it at the
+            `eyepiece.motion.Anchor` (its baseline's left end); None puts it at the
             upper left of `ax`.
         line_kw: Extra kwargs for the lead and the ghost lines, applied
             last.
@@ -196,7 +196,7 @@ def hop(
 
     Example::
 
-        mark = ep.hop(orbits, ax=sky, rate=4.0, tally=within, tally_ax=panel)
+        mark = ep.plot.hop(orbits, ax=sky, rate=4.0, tally=within, tally_ax=panel)
         plan = ep.FramePlan.from_duration(mark.duration + 1.0)
         for t in plan.times:
             mark.update(min(t / mark.duration, 1.0))

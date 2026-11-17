@@ -59,7 +59,7 @@ def test_worker_crash_reports_stderr_and_preserves_output(tmp_path, killed, exit
     path = tmp_path / "clip.mp4"
     path.write_bytes(b"previous output")
     with pytest.raises(RuntimeError, match=r"[Cc]hunk.*0.*2") as error:
-        ep.render_frames(
+        ep.render.render_frames(
             partial(build_crashing_clip, killed=killed, exitcode=exitcode),
             4,
             path,
@@ -91,7 +91,7 @@ def start_process(args, **kwargs):
         kwargs['pass_fds'] = (next(worker_fds),)
     return original_popen(args, **kwargs)
 render.subprocess.Popen = start_process
-ep.render_frames(partial(build_waiting_clip, folder=folder), 8,
+ep.render.render_frames(partial(build_waiting_clip, folder=folder), 8,
     folder.parent / 'clip.mp4', fps=12, dpi=100, workers=2,
     chunk_frames=2, key='killed', work_dir=folder, keep_chunks=True,
     setup=setup_style)
@@ -131,7 +131,7 @@ ep.render_frames(partial(build_waiting_clip, folder=folder), 8,
             time.sleep(0.02)
         assert path.read_bytes() == b"previous output"
         (folder / "continue").touch()
-        result = ep.render_frames(
+        result = ep.render.render_frames(
             partial(build_waiting_clip, folder=folder),
             8,
             tmp_path / "clip.mp4",
@@ -264,7 +264,7 @@ def test_unreadable_lock_blocks_when_fresh_and_is_reclaimed_when_old(tmp_path):
 def test_encoder_close_failure_cleans_up_and_preserves_output(tmp_path, monkeypatch):
     sinks = []
 
-    class FailedEncoderSink(ep.RawSink):
+    class FailedEncoderSink(ep.render.RawSink):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
             sinks.append(self)
@@ -280,7 +280,7 @@ def test_encoder_close_failure_cleans_up_and_preserves_output(tmp_path, monkeypa
     path.write_bytes(b"previous output")
     folder = tmp_path / "chunks"
     with pytest.raises(RuntimeError, match=r"ffmpeg.*no_such_render_option"):
-        ep.render_frames(
+        ep.render.render_frames(
             build_tiny_clip,
             1,
             path,
@@ -344,7 +344,7 @@ def test_workers_chunks_and_reference_are_byte_identical(tmp_path, hold):
         )
         for workers, chunk_frames in [(1, 12), (2, 6), (4, 7)]:
             path = tmp_path / f"pool-{workers}.mp4"
-            result = ep.render_frames(
+            result = ep.render.render_frames(
                 build_clip,
                 list(range(24)) if workers == 2 else 24,
                 path,
@@ -357,7 +357,7 @@ def test_workers_chunks_and_reference_are_byte_identical(tmp_path, hold):
                 setup=setup_style,
                 rc=rc,
             )
-            assert isinstance(result, ep.RenderResult)
+            assert isinstance(result, ep.render.RenderResult)
             assert result.path == path
             assert result.frames == 24 + sum(hold)
             assert result.chunks == (24 + chunk_frames - 1) // chunk_frames
@@ -387,14 +387,14 @@ def test_resume_failure_identity_and_corruption(tmp_path, existing):
         keep_chunks=True,
     )
     with pytest.raises((RuntimeError, OSError), match=r"12.*18"):
-        ep.render_frames(build, 24, path, **kwargs)
+        ep.render.render_frames(build, 24, path, **kwargs)
     if existing:
         assert path.read_bytes() == b"existing output"
     else:
         assert not path.exists()
     assert len(list(folder.glob("chunk-*.bin"))) == 3
     assert not list(tmp_path.glob(".*.partial.mp4"))
-    result = ep.render_frames(build, 24, path, **kwargs)
+    result = ep.render.render_frames(build, 24, path, **kwargs)
     assert result.resumed == 3
     expected = serial_reference(build_clip, list(range(24)), tmp_path / "ref.mp4")
     assert path.read_bytes() == expected
@@ -403,14 +403,14 @@ def test_resume_failure_identity_and_corruption(tmp_path, existing):
     damaged = bytearray(chunks[1].read_bytes())
     damaged[-1] ^= 1
     chunks[1].write_bytes(damaged)
-    assert ep.render_frames(build, 24, path, **kwargs).resumed == 3
+    assert ep.render.render_frames(build, 24, path, **kwargs).resumed == 3
     assert path.read_bytes() == expected
     kwargs["key"] = "second"
-    assert ep.render_frames(build, 24, path, **kwargs).resumed == 0
+    assert ep.render.render_frames(build, 24, path, **kwargs).resumed == 0
     kwargs["dpi"] = 110
-    assert ep.render_frames(build, 24, path, **kwargs).resumed == 0
+    assert ep.render.render_frames(build, 24, path, **kwargs).resumed == 0
     kwargs["keep_chunks"] = False
-    assert ep.render_frames(build, 24, path, **kwargs).resumed == 4
+    assert ep.render.render_frames(build, 24, path, **kwargs).resumed == 4
     assert not list(folder.glob("chunk-*.bin"))
     assert not list(folder.glob("*.part"))
     assert not list(tmp_path.glob(".*.partial.mp4"))
@@ -434,13 +434,19 @@ def test_frame_at_odd_size_and_untrusted_chunks(tmp_path):
         key="a",
         keep_chunks=True,
     )
-    ep.render_frames(build, 24, path, frame_at=frame_at, **kwargs)
+    ep.render.render_frames(build, 24, path, frame_at=frame_at, **kwargs)
     assert path.read_bytes() == expected
     kwargs["key"] = None
-    assert ep.render_frames(build, 24, path, frame_at=frame_at, **kwargs).resumed == 0
+    assert (
+        ep.render.render_frames(build, 24, path, frame_at=frame_at, **kwargs).resumed
+        == 0
+    )
     assert not list(folder.glob("chunk-*.bin"))
     kwargs.update(key="a", resume=False)
-    assert ep.render_frames(build, 24, path, frame_at=frame_at, **kwargs).resumed == 0
+    assert (
+        ep.render.render_frames(build, 24, path, frame_at=frame_at, **kwargs).resumed
+        == 0
+    )
     assert not list(folder.glob("chunk-*.bin"))
 
 
@@ -451,36 +457,39 @@ def test_folder_ownership_and_locks(tmp_path):
     foreign.write_text("owned by caller")
     kwargs = dict(fps=12, dpi=100, workers=1, work_dir=folder)
     with pytest.raises(RuntimeError, match=r"marker|own|empty"):
-        ep.render_frames(build_clip, 1, tmp_path / "clip.mp4", **kwargs)
+        ep.render.render_frames(build_clip, 1, tmp_path / "clip.mp4", **kwargs)
     foreign.unlink()
-    ep.render_frames(build_clip, 1, tmp_path / "clip.mp4", **kwargs)
+    ep.render.render_frames(build_clip, 1, tmp_path / "clip.mp4", **kwargs)
     # A builder observes the public work-folder lock during an active run.
-    ep.render_frames(
+    ep.render.render_frames(
         partial(build_clip, observe_dir=folder), 1, tmp_path / "clip.mp4", **kwargs
     )
     lock = folder / (folder / "lock-name.txt").read_text()
     lock.write_text(str(os.getpid()))
     with pytest.raises(RuntimeError, match=r"lock|running|use"):
-        ep.render_frames(build_clip, 1, tmp_path / "clip.mp4", **kwargs)
+        ep.render.render_frames(build_clip, 1, tmp_path / "clip.mp4", **kwargs)
     lock.write_text("999999999")
     foreign.write_text("keep me")
     (folder / "unrelated.partial").write_text("keep me too")
-    ep.render_frames(build_clip, 1, tmp_path / "clip.mp4", **kwargs)
+    ep.render.render_frames(build_clip, 1, tmp_path / "clip.mp4", **kwargs)
     assert foreign.read_text() == "keep me"
     assert (folder / "unrelated.partial").read_text() == "keep me too"
     assert not lock.exists()
 
 
 def test_purity_diagnostic():
-    assert ep.frame_faults(build_clip, 24, dpi=100, setup=setup_style) == []
-    ep.assert_frames_pure(build_clip, 24, dpi=100)
+    assert ep.testing.frame_faults(build_clip, 24, dpi=100, setup=setup_style) == []
+    ep.testing.assert_frames_pure(build_clip, 24, dpi=100)
     build = partial(build_clip, accumulating=True)
-    faults = ep.frame_faults(build, 24, dpi=100)
+    faults = ep.testing.frame_faults(build, 24, dpi=100)
     assert faults == [0, 7, 15, 23]
     with pytest.raises(AssertionError, match="frame") as error:
-        ep.assert_frames_pure(build, 24, dpi=100)
+        ep.testing.assert_frames_pure(build, 24, dpi=100)
     assert all(str(index) in str(error.value) for index in faults)
-    assert ep.frame_faults(build_clip, 24, dpi=100, frame_at=frame_at, sample=3) == []
+    assert (
+        ep.testing.frame_faults(build_clip, 24, dpi=100, frame_at=frame_at, sample=3)
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -499,7 +508,7 @@ def test_invalid_inputs(tmp_path, changes):
     )
     kwargs.update(changes)
     with pytest.raises(ValueError):
-        ep.render_frames(**kwargs)
+        ep.render.render_frames(**kwargs)
 
 
 def test_serial_resume_validation_and_failure(tmp_path):
@@ -517,13 +526,13 @@ def test_serial_resume_validation_and_failure(tmp_path):
         setup=setup_style,
     )
     with pytest.raises(OSError, match=r"12.*18"):
-        ep.render_frames(build, 24, path, **kwargs)
+        ep.render.render_frames(build, 24, path, **kwargs)
     assert not path.exists()
     assert len(list(folder.glob("chunk-*.bin"))) == 2
-    assert ep.render_frames(build, 24, path, **kwargs).resumed == 2
+    assert ep.render.render_frames(build, 24, path, **kwargs).resumed == 2
     expected = serial_reference(build_clip, list(range(24)), tmp_path / "ref.mp4")
     assert path.read_bytes() == expected
-    assert ep.render_frames(build, 24, path, **kwargs).resumed == 4
+    assert ep.render.render_frames(build, 24, path, **kwargs).resumed == 4
     chunks = sorted(folder.glob("chunk-*.bin"))
     # Both incomplete headers and incomplete payloads are untrusted.
     chunks[0].write_bytes(b"incomplete")
@@ -531,14 +540,14 @@ def test_serial_resume_validation_and_failure(tmp_path):
     damaged = bytearray(chunks[2].read_bytes())
     damaged[-1] ^= 1
     chunks[2].write_bytes(damaged)
-    assert ep.render_frames(build, 24, path, **kwargs).resumed == 1
+    assert ep.render.render_frames(build, 24, path, **kwargs).resumed == 1
     assert path.read_bytes() == expected
     for changes in ({"key": "b"}, {"dpi": 110}, {"fps": 15}, {"hold": (1, 2)}):
         kwargs.update(changes)
-        assert ep.render_frames(build, 24, path, **kwargs).resumed == 0
-    assert ep.render_frames(build, 23, path, **kwargs).resumed == 0
+        assert ep.render.render_frames(build, 24, path, **kwargs).resumed == 0
+    assert ep.render.render_frames(build, 23, path, **kwargs).resumed == 0
     kwargs["keep_chunks"] = False
-    assert ep.render_frames(build, 23, path, **kwargs).resumed == 4
+    assert ep.render.render_frames(build, 23, path, **kwargs).resumed == 4
     assert not list(folder.glob("chunk-*.bin"))
 
 
@@ -548,7 +557,7 @@ def test_unpassed_parent_rc_is_isolated_and_default_chunking(tmp_path):
     before_figures = plt.get_fignums()
     with matplotlib.rc_context({"font.size": 23, "axes.facecolor": "red"}):
         before = dict(matplotlib.rcParams)
-        result = ep.render_frames(
+        result = ep.render.render_frames(
             build_clip, 3, path, fps=12, dpi=100, setup=setup_style
         )
         assert dict(matplotlib.rcParams) == before
@@ -572,8 +581,8 @@ def test_previous_raster_schema_chunks_are_not_reused(tmp_path, monkeypatch):
     with monkeypatch.context() as patch:
         patch.setattr(chunk_protocol, "_SCHEMA", 1)
         patch.setattr(render, "_SCHEMA", 1)
-        ep.render_frames(build_clip, 3, path, **kwargs)
-    result = ep.render_frames(build_clip, 3, path, **kwargs)
+        ep.render.render_frames(build_clip, 3, path, **kwargs)
+    result = ep.render.render_frames(build_clip, 3, path, **kwargs)
     assert result.resumed == 0
 
 
@@ -608,7 +617,7 @@ def test_odd_layout_frames_match_record_bytes(tmp_path, workers):
         finally:
             plt.close(fig)
     path = tmp_path / "frames.mp4"
-    ep.render_frames(
+    ep.render.render_frames(
         build_record_clip,
         3,
         path,
@@ -621,7 +630,7 @@ def test_odd_layout_frames_match_record_bytes(tmp_path, workers):
     assert path.read_bytes() == reference.read_bytes()
     for index, still in enumerate(stills):
         poster = tmp_path / f"poster-{index}.png"
-        ep.render_poster(
+        ep.render.render_poster(
             build_record_clip, 3, index, poster, dpi=100, setup=setup_style
         )
         with Image.open(still) as expected, Image.open(poster) as actual:
@@ -637,7 +646,7 @@ def test_success_removes_worker_claims_and_preserves_unrelated_files(
     with _workspace(folder):
         unrelated = folder / "consumer.txt"
         unrelated.write_text("keep me")
-    ep.render_frames(
+    ep.render.render_frames(
         build_clip,
         3,
         tmp_path / "clip.mp4",

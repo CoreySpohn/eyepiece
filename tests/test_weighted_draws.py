@@ -28,7 +28,7 @@ def _by_input(mark, xy, values):
 
 def _mark(xy, w, **kw):
     _, ax = plt.subplots(figsize=(3, 3), dpi=100)
-    return ep.weighted_draws(xy, w, ax=ax, **kw)
+    return ep.plot.weighted_draws(xy, w, ax=ax, **kw)
 
 
 def test_area_is_proportional_to_weight():
@@ -112,11 +112,11 @@ def test_without_resample_update_holds_the_weights():
 def test_beat_is_continuous_with_no_jump():
     xy, w = _set(n=30)
     _, ax = plt.subplots(figsize=(3, 3), dpi=100)
-    mark = ep.weighted_draws(xy, w, ax=ax, resample=2)
+    mark = ep.plot.weighted_draws(xy, w, ax=ax, resample=2)
     times = np.arange(31) / 30.0
 
     def at(t):
-        mark.update(ep.ease(t))
+        mark.update(ep.clock.ease(t))
 
     faults = ept.motion_faults(ax.figure, at, times, moves=[mark])
     assert [f for f in faults if f.kind == "jump"] == []
@@ -126,17 +126,17 @@ def test_rejects_bad_inputs():
     _, ax = plt.subplots()
     xy, w = _set()
     with pytest.raises(ValueError, match="shaped"):
-        ep.weighted_draws(np.zeros((4, 3)), np.ones(4), ax=ax)
+        ep.plot.weighted_draws(np.zeros((4, 3)), np.ones(4), ax=ax)
     with pytest.raises(ValueError, match="weights for"):
-        ep.weighted_draws(xy, w[:5], ax=ax)
+        ep.plot.weighted_draws(xy, w[:5], ax=ax)
     with pytest.raises(ValueError, match="non-negative"):
-        ep.weighted_draws(xy, -w, ax=ax)
+        ep.plot.weighted_draws(xy, -w, ax=ax)
     with pytest.raises(ValueError, match="not all zero"):
-        ep.weighted_draws(xy, np.zeros_like(w), ax=ax)
+        ep.plot.weighted_draws(xy, np.zeros_like(w), ax=ax)
     with pytest.raises(ValueError, match="encode"):
-        ep.weighted_draws(xy, w, ax=ax, encode="size")
+        ep.plot.weighted_draws(xy, w, ax=ax, encode="size")
     with pytest.raises(ValueError, match="max_size"):
-        ep.weighted_draws(xy, w, ax=ax, max_size=0.0)
+        ep.plot.weighted_draws(xy, w, ax=ax, max_size=0.0)
 
 
 @pytest.mark.parametrize(

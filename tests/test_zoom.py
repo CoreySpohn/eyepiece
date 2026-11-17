@@ -37,7 +37,7 @@ def _center(inset):
 @pytest.mark.parametrize("t", [0.0, 0.2, 0.5, 0.9])
 def test_inset_limits_are_centered_on_the_target_at_several_times(t):
     fig, ax, _ = _panel()
-    res = ep.follow_zoom(ax, _track, loc="upper left")
+    res = ep.motion.follow_zoom(ax, _track, loc="upper left")
     res.update(1.0, time=t)
     fig.canvas.draw()
     cx, cy = _center(res.insets[0])
@@ -48,7 +48,7 @@ def test_inset_limits_are_centered_on_the_target_at_several_times(t):
 @pytest.mark.parametrize("zoom", [2.0, 4.0, 7.5])
 def test_the_zoom_factor_is_exact_on_both_axes(zoom, inverted):
     fig, ax, _ = _panel(inverted)
-    res = ep.follow_zoom(ax, _track, zoom=zoom, size=0.3)
+    res = ep.motion.follow_zoom(ax, _track, zoom=zoom, size=0.3)
     res.update(1.0, time=0.4)
     fig.canvas.draw()
     inset = res.insets[0]
@@ -63,7 +63,7 @@ def test_the_zoom_factor_is_exact_on_both_axes(zoom, inverted):
 
 def test_the_box_and_the_inset_limits_agree():
     fig, ax, _ = _panel()
-    res = ep.follow_zoom(ax, _track)
+    res = ep.motion.follow_zoom(ax, _track)
     for t in (0.1, 0.6):
         res.update(1.0, time=t)
         fig.canvas.draw()
@@ -79,7 +79,7 @@ def test_the_box_and_the_inset_limits_agree():
 def test_zero_is_the_figure_without_the_zoom_and_one_is_the_rest_state():
     plain = _pixels(_panel()[0])
     fig, ax, _ = _panel()
-    res = ep.follow_zoom(ax, _track)
+    res = ep.motion.follow_zoom(ax, _track)
     drawn = _pixels(fig)
     assert not np.array_equal(drawn, plain)
     res.update(0.0)
@@ -100,7 +100,7 @@ def test_drawing_hands_the_parents_artists_back_exactly():
         for a in ax.get_children()
         if isinstance(a, (Line2D, Patch, Collection, AxesImage))
     ]
-    res = ep.follow_zoom(ax, dot)
+    res = ep.motion.follow_zoom(ax, dot)
     res.update(0.5)
     fig.canvas.draw()
     for artist, tf, box, path, alpha in before:
@@ -112,7 +112,7 @@ def test_drawing_hands_the_parents_artists_back_exactly():
 
 def test_level_is_an_opacity_and_never_geometry():
     fig, ax, _ = _panel()
-    res = ep.follow_zoom(ax, _track)
+    res = ep.motion.follow_zoom(ax, _track)
     res.update(1.0, time=0.3)
     fig.canvas.draw()
     full = (
@@ -136,14 +136,14 @@ def test_level_is_an_opacity_and_never_geometry():
 
 def test_an_overshooting_ease_never_pushes_opacity_outside_zero_to_one():
     _, ax, _ = _panel()
-    res = ep.follow_zoom(ax, _track, ease=lambda r: 1.4 * r)
+    res = ep.motion.follow_zoom(ax, _track, ease=lambda r: 1.4 * r)
     res.update(0.9)
     assert res.artists["ellipse"].get_alpha() in (None, 1.0)
 
 
 def test_an_artist_target_is_followed_with_no_update_call():
     fig, ax, dot = _panel()
-    res = ep.follow_zoom(ax, dot, loc="lower left")
+    res = ep.motion.follow_zoom(ax, dot, loc="lower left")
     for x in (1.0, 3.5, 6.0):
         dot.set_data([x], [1.5])
         fig.canvas.draw()
@@ -152,7 +152,7 @@ def test_an_artist_target_is_followed_with_no_update_call():
 
 def test_an_anchor_target_survives_resizing():
     fig, ax, _ = _panel()
-    res = ep.follow_zoom(ax, ep.Anchor.from_data(ax, (5.0, 2.0)))
+    res = ep.motion.follow_zoom(ax, ep.motion.Anchor.from_data(ax, (5.0, 2.0)))
     fig.set_size_inches(8.0, 3.0)
     fig.canvas.draw()
     assert _center(res.insets[0]) == pytest.approx((5.0, 2.0), abs=1e-6)
@@ -160,14 +160,14 @@ def test_an_anchor_target_survives_resizing():
 
 def test_a_fixed_pair_is_a_target():
     fig, ax, _ = _panel()
-    res = ep.follow_zoom(ax, (4.0, 1.0))
+    res = ep.motion.follow_zoom(ax, (4.0, 1.0))
     fig.canvas.draw()
     assert _center(res.insets[0]) == pytest.approx((4.0, 1.0))
 
 
 def test_the_inset_shows_the_parents_marks_not_a_replot():
     fig, ax, dot = _panel()
-    res = ep.follow_zoom(ax, dot, zoom=6.0, size=0.4)
+    res = ep.motion.follow_zoom(ax, dot, zoom=6.0, size=0.4)
     inset = res.insets[0]
     assert not inset.lines and not inset.images
     dot.set_markersize(30)
@@ -181,25 +181,25 @@ def test_the_inset_shows_the_parents_marks_not_a_replot():
 
 def test_audit_passes_the_connectors_and_a_crossed_line_is_a_fault():
     fig, ax, dot = _panel()
-    res = ep.follow_zoom(ax, dot, loc="upper right")
+    res = ep.motion.follow_zoom(ax, dot, loc="upper right")
     dot.set_data([1.0], [1.0])
     fig.canvas.draw()
-    assert ep.audit(fig) == {}
+    assert ep.testing.audit(fig) == {}
     for line in res.artists["lines"]:
         assert line.faults() == []
     # Positive control: a data line laid across the connectors is named.
     ax.plot([0.0, 8.0], [2.4, 2.4], color="red", lw=2)
     ax.plot([6.0, 6.0], [0.0, 3.0], color="red", lw=2)
     fig.canvas.draw()
-    found = ep.audit(fig, raise_on_fault=False)
+    found = ep.testing.audit(fig, raise_on_fault=False)
     assert found and all("crosses data" in m for ms in found.values() for m in ms)
-    with pytest.raises(ep.AttentionFault):
-        ep.audit(fig)
+    with pytest.raises(ep.testing.AttentionFault):
+        ep.testing.audit(fig)
 
 
 def test_connectors_are_neutral_and_vanish_when_the_box_meets_the_inset():
     fig, ax, dot = _panel()
-    res = ep.follow_zoom(ax, dot, loc="upper right", size=0.4)
+    res = ep.motion.follow_zoom(ax, dot, loc="upper right", size=0.4)
     dot.set_data([7.0], [2.5])
     fig.canvas.draw()
     for line in res.artists["lines"]:
@@ -209,8 +209,8 @@ def test_connectors_are_neutral_and_vanish_when_the_box_meets_the_inset():
 
 def test_a_stage_can_weigh_the_inset():
     fig, ax, dot = _panel()
-    res = ep.follow_zoom(ax, dot)
-    stage = ep.Stage({"zoom": [res.insets[0], res.artists["ellipse"]]})
+    res = ep.motion.follow_zoom(ax, dot)
+    stage = ep.motion.Stage({"zoom": [res.insets[0], res.artists["ellipse"]]})
     stage.weigh({"zoom": 0.0})
     assert fig.canvas.draw() is None
     stage.rest()
@@ -219,26 +219,26 @@ def test_a_stage_can_weigh_the_inset():
 def test_bad_inputs_are_named():
     fig, ax, dot = _panel()
     with pytest.raises(ValueError, match="above 1"):
-        ep.follow_zoom(ax, dot, zoom=1.0)
+        ep.motion.follow_zoom(ax, dot, zoom=1.0)
     with pytest.raises(ValueError, match="size"):
-        ep.follow_zoom(ax, dot, size=0.0)
+        ep.motion.follow_zoom(ax, dot, size=0.0)
     with pytest.raises(ValueError, match="loc"):
-        ep.follow_zoom(ax, dot, loc="middle")
+        ep.motion.follow_zoom(ax, dot, loc="middle")
     with pytest.raises(TypeError, match="target"):
-        ep.follow_zoom(ax, "x")
+        ep.motion.follow_zoom(ax, "x")
     with pytest.raises(TypeError, match="Axes"):
-        ep.follow_zoom(fig, dot)
+        ep.motion.follow_zoom(fig, dot)
     ax.set_yscale("log")
     ax.set_ylim(0.1, 3.0)
     with pytest.raises(ValueError, match="linear"):
-        ep.follow_zoom(ax, dot)
+        ep.motion.follow_zoom(ax, dot)
 
 
 def test_a_patch_and_a_scatter_land_where_the_window_says():
     fig, ax, _ = _panel()
     ax.add_patch(Rectangle((5.0, 1.0), 0.5, 0.4, color="red", lw=0, zorder=5))
     ax.scatter([2.0], [2.0], s=60, color="lime", zorder=5)
-    res = ep.follow_zoom(ax, (5.25, 1.2), zoom=8.0, size=0.4, loc="upper left")
+    res = ep.motion.follow_zoom(ax, (5.25, 1.2), zoom=8.0, size=0.4, loc="upper left")
     fig.canvas.draw()
     inset = res.insets[0]
     img = np.asarray(fig.canvas.buffer_rgba())
@@ -258,7 +258,7 @@ def _orbit_panel(**kw):
     ax.imshow(np.zeros((8, 12)), extent=(-6, 6, -4, 4), cmap="gray")
     ax.set(xlim=(-6, 6), ylim=(-4, 4))
     fig.set_layout_engine("none")
-    return fig, ax, ep.follow_zoom(ax, _orbit, loc="auto", size=0.36, **kw)
+    return fig, ax, ep.motion.follow_zoom(ax, _orbit, loc="auto", size=0.36, **kw)
 
 
 def _corner_of(res, ax):
@@ -295,7 +295,7 @@ def test_auto_does_not_flicker_on_a_target_hovering_where_corners_tie():
     fig, ax = plt.subplots(figsize=(6.0, 4.0), dpi=100)
     ax.set(xlim=(-1, 1), ylim=(-1, 1))
     fig.set_layout_engine("none")
-    res = ep.follow_zoom(
+    res = ep.motion.follow_zoom(
         ax, lambda t: (0.03 * np.sin(40.0 * t), -0.03 * np.cos(40.0 * t)), loc="auto"
     )
     corners = []
@@ -308,7 +308,7 @@ def test_auto_does_not_flicker_on_a_target_hovering_where_corners_tie():
 
 def test_explicit_corners_are_unchanged_by_the_target():
     fig, ax, _ = _panel()
-    res = ep.follow_zoom(ax, _track, loc="lower right", size=0.3)
+    res = ep.motion.follow_zoom(ax, _track, loc="lower right", size=0.3)
     seen = set()
     for t in (0.0, 0.3, 0.7, 1.0):
         res.update(1.0, time=t)
@@ -340,7 +340,7 @@ def test_the_frame_reads_on_a_dark_and_on_a_light_underlay(shade):
     )
     ax.set(xlim=(0, 12), ylim=(0, 8))
     fig.set_layout_engine("none")
-    res = ep.follow_zoom(ax, (4.0, 3.0), loc="upper right", zoom=3.0)
+    res = ep.motion.follow_zoom(ax, (4.0, 3.0), loc="upper right", zoom=3.0)
     img = _pixels(fig)[..., :3].astype(float).mean(axis=-1)
     box = res.artists["ellipse"].get_window_extent()
     top, bottom = int(fig.bbox.height - box.y1), int(fig.bbox.height - box.y0)

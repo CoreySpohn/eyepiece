@@ -8,7 +8,7 @@ the plane is a small inset (a dial) centered on a point of another panel.
 `phase_ring` draws that ring alone, onto any axes. Dashed level circles
 about 0 mark lengths a tip can move along without changing its brightness.
 
-The module is private because a public `eyepiece.phasor` submodule would
+The module is private because a public `eyepiece.plot.phasor` submodule would
 shadow the `phasor` function of the same name once imported.
 """
 
@@ -428,7 +428,7 @@ def phase_ring(ax=None, *, radius=1.0, center=0j, cmap=None, width=None, zorder=
 
         fig, ax = plt.subplots()
         ax.set(xlim=(-1.3, 1.3), ylim=(-1.3, 1.3), aspect="equal")
-        ep.phase_ring(ax, radius=1.0)
+        ep.plot.phase_ring(ax, radius=1.0)
     """
     if ax is None:
         _, ax = plt.subplots(layout="constrained")
@@ -624,12 +624,12 @@ def phasor(
 
         n = 24
         steps = np.exp(2j * np.pi * (np.arange(n) + 0.5) / n) / n
-        result = ep.phasor(steps, chain=True, show_sum=True)
+        result = ep.plot.phasor(steps, chain=True, show_sum=True)
 
-        image = ep.imshow_log(speckles, extent=extent)
-        ep.phasor([field], ax=image.ax, at=(x, y), size=1.0, ring=True)
+        image = ep.plot.imshow_log(speckles, extent=extent)
+        ep.plot.phasor([field], ax=image.ax, at=(x, y), size=1.0, ring=True)
 
-        ep.phasor([1.0, 0.5j], starts=[0j, 1.0], show_sum=True, separate=0.1)
+        ep.plot.phasor([1.0, 0.5j], starts=[0j, 1.0], show_sum=True, separate=0.1)
     """
     if at is not None and ax is None:
         raise ValueError("phasor at= draws a dial into an existing ax; pass ax")

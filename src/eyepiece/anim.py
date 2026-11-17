@@ -66,15 +66,14 @@ The mechanics this module does own, each closing a specific trap:
 `PRESETS` holds fps/dpi pairs for the usual destinations, e.g.
 `record(fig, "talk.mp4", **PRESETS["talk"])`. The ``talk`` preset runs at
 60 fps: the default ease moves fastest at mid-move, and 30 fps still judders
-there on turns and camera moves. ``talk_60`` is the same pair under its old
-name; reading it warns with a `DeprecationWarning`. The documentation presets
+there on turns and camera moves. The documentation presets
 run at 30 fps, which keeps a slow move smooth and costs little in bytes for
 flat graphics. `talk_rc` sizes type and strokes for a talk frame from its
 height; documentation figures keep their own sizes.
 ``doc_hd`` rasterizes at 200 dpi, the resolution of a documentation still,
 so a clip beside its still is not visibly softer on a 2x screen.
 
-mp4 sinks all share one encoder profile, `eyepiece.ENCODER_PROFILE`: BT.709
+mp4 sinks all share one encoder profile, `eyepiece.render.ENCODER_PROFILE`: BT.709
 tagged, crf 18, the animation tune, a keyframe every 2 s and faststart.
 """
 
@@ -84,7 +83,6 @@ import tempfile
 import warnings
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
-from types import MappingProxyType
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -102,45 +100,13 @@ from eyepiece._ffmpeg import (
 from eyepiece._glyph_cache import glyph_cache
 from eyepiece._motion import frame_count
 
-
-class _Presets(dict):
-    """The preset table; reading a deprecated key warns and names its successor."""
-
-    _RENAMED = MappingProxyType({"talk_60": "talk"})
-
-    def __getitem__(self, key):
-        """The preset `key`, with a warning when `key` is a deprecated name."""
-        self._warn(key)
-        return super().__getitem__(key)
-
-    def get(self, key, default=None):
-        """The preset `key`, or `default`; a deprecated name warns as for `[]`."""
-        if key not in self:
-            return default
-        self._warn(key)
-        return super().__getitem__(key)
-
-    def _warn(self, key):
-        # Called directly from each public method, so stacklevel 3 is the caller.
-        if key in self._RENAMED:
-            warnings.warn(
-                f"PRESETS[{key!r}] is deprecated; use PRESETS"
-                f"[{self._RENAMED[key]!r}], the same fps and dpi",
-                DeprecationWarning,
-                stacklevel=3,
-            )
-
-
-PRESETS = _Presets(
-    {
-        "talk": {"fps": 60, "dpi": 120},
-        "talk_60": {"fps": 60, "dpi": 120},
-        "gif": {"fps": 8, "dpi": 85},
-        "jshtml": {"fps": 14, "dpi": 100},
-        "docs": {"fps": 30, "dpi": 100},
-        "doc_hd": {"fps": 30, "dpi": 200},
-    }
-)
+PRESETS = {
+    "talk": {"fps": 60, "dpi": 120},
+    "gif": {"fps": 8, "dpi": 85},
+    "jshtml": {"fps": 14, "dpi": 100},
+    "docs": {"fps": 30, "dpi": 100},
+    "doc_hd": {"fps": 30, "dpi": 200},
+}
 
 # Line ends and corners for video: butt caps, so a line is exactly as long as
 # it is measured (a projecting cap adds half the width at each end), and round
@@ -184,7 +150,7 @@ def talk_rc(height_px=1080, dpi=None):
     after the figure exists, or only around `record`, changes nothing already
     made. The documentation sizes are left alone::
 
-        with matplotlib.rc_context(ep.talk_rc()):
+        with matplotlib.rc_context(ep.style.talk_rc()):
             fig, ax = plt.subplots(figsize=(16, 9), dpi=120)
 
     Args:
@@ -256,7 +222,7 @@ def _make_writer(path, fps, extra_ffmpeg_args, encoder=None):
             honors only the last `-vf`, which brings the odd-dimension h264
             failure back; write the crop into your own filter chain if you
             need one.
-        encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace for an mp4. An
+        encoder: Keys of `eyepiece.render.ENCODER_PROFILE` to replace for an mp4. An
             ``-pix_fmt`` in the extra arguments turns the color conversion
             and tags off, since the caller then owns the pixel format.
 
@@ -680,7 +646,7 @@ def record(
             replaces that crop instead of adding to it (ffmpeg honors the
             last `-vf` only), which reopens the odd-dimension h264 failure;
             include the crop in your own filter chain if you need one.
-        encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace for the mp4
+        encoder: Keys of `eyepiece.render.ENCODER_PROFILE` to replace for the mp4
             sinks, e.g. ``{"crf": 23}``; the rest of the profile stays.
         on_rescale: What to do when a data scale drifts: "warn" (a
             `RuntimeWarning`, once), "raise" (a `ScaleDriftError`, after
@@ -907,7 +873,7 @@ class RawSink:
         fps: Frames per second.
         extra_ffmpeg_args: Extra ffmpeg output arguments, appended last, so
             they override the defaults (``-crf 18`` among them).
-        encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace, e.g.
+        encoder: Keys of `eyepiece.render.ENCODER_PROFILE` to replace, e.g.
             ``{"crf": 23}``; the rest of the profile stays.
 
     Raises:
@@ -1265,8 +1231,10 @@ def animate(fig, draw, frames, *, fps=10, n_frames=None):
 
         result = imshow_log(frames_data[0])
 
+
         def draw(fig, k):
             result.update(frames_data[k])
+
 
         animate(result.fig, draw, len(frames_data), fps=10).save("out.gif")
 

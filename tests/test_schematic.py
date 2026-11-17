@@ -74,8 +74,8 @@ def test_schematic_neutrals_follow_the_mode():
 
 
 def test_glyph_vocabulary_is_exported_at_top_level():
-    assert eyepiece.rail is rail
-    assert eyepiece.GLYPHS is GLYPHS
+    assert eyepiece.plot.rail is rail
+    assert eyepiece.plot.GLYPHS is GLYPHS
     assert "GLYPHS" in eyepiece.plot.__all__
 
 
@@ -608,7 +608,7 @@ def test_lenses_are_returned_under_ellipse_in_optical_order():
     res = rail(_FOUR)
     ellipses = res.artists["ellipse"]
     assert [e.center[0] for e in ellipses] == _lenses(res)
-    assert set(res.artists) <= set(eyepiece.ARTIST_KEYS)
+    assert set(res.artists) <= set(eyepiece.plot.ARTIST_KEYS)
     plt.close(res.fig)
 
 
@@ -840,8 +840,8 @@ def test_flat_mirror_is_the_deformable_mirror_plate_without_its_ripple():
     plate_dm = next(a for a in _glyph_artists(dm.ax, "M") if isinstance(a, Rectangle))
     (plate_flat,) = _glyph_artists(flat.ax, "M")
     assert plate_flat.get_bbox().bounds == pytest.approx(plate_dm.get_bbox().bounds)
-    assert eyepiece.GLYPHS["flat_mirror"] and eyepiece.GLYPHS["beam_splitter"]
-    assert not eyepiece.GLYPHS["field_stop"]
+    assert eyepiece.plot.GLYPHS["flat_mirror"] and eyepiece.plot.GLYPHS["beam_splitter"]
+    assert not eyepiece.plot.GLYPHS["field_stop"]
     plt.close(dm.fig)
     plt.close(flat.fig)
 

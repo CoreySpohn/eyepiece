@@ -40,7 +40,7 @@ def _png_text(path):
 
 
 def test_provenance_text_assembles_only_supplied_fields():
-    text = ep.provenance_text(
+    text = ep.render.provenance_text(
         script="/a/b/make_fig.py",
         seed=3,
         note="simulated",
@@ -53,7 +53,7 @@ def test_provenance_text_assembles_only_supplied_fields():
     assert "2026-08-21" in text
     assert "seed 3" in text
     assert "simulated" in text
-    text = ep.provenance_text(date="2026-08-21")
+    text = ep.render.provenance_text(date="2026-08-21")
     assert text == "2026-08-21"
 
 
@@ -61,7 +61,9 @@ def test_stamp_writes_furniture_not_data():
     """The stamp must never compete with the data it documents."""
     fig, ax = plt.subplots()
     ax.plot([0, 1], [0, 1])
-    text = ep.stamp(fig, script="s.py", seed=1, note="simulated", date="2026-08-21")
+    text = ep.render.stamp(
+        fig, script="s.py", seed=1, note="simulated", date="2026-08-21"
+    )
     assert text in fig.texts
     assert text.get_fontsize() <= 7.0
     assert text.get_zorder() < 1.0
@@ -72,7 +74,7 @@ def test_stamp_writes_furniture_not_data():
 
 def test_stamp_returns_none_with_nothing_to_say():
     fig, _ = plt.subplots()
-    assert ep.stamp(fig, date="") is not None  # date defaults to today
+    assert ep.render.stamp(fig, date="") is not None  # date defaults to today
     plt.close(fig)
 
 
@@ -80,16 +82,16 @@ def test_stamp_returns_none_with_nothing_to_say():
 def test_stamp_carries_the_word_simulated(note):
     """Nothing about a drawing reveals that a generator produced it."""
     fig, _ = plt.subplots()
-    text = ep.stamp(fig, script="s.py", note=note)
+    text = ep.render.stamp(fig, script="s.py", note=note)
     assert "simulated" in text.get_text()
     plt.close(fig)
 
 
 def test_stamp_leaves_a_structured_payload_for_the_file_channel():
     fig = plt.figure()
-    artist = ep.stamp(fig, script="demo.py")
+    artist = ep.render.stamp(fig, script="demo.py")
     assert artist.get_gid() == "eyepiece-provenance"
-    ep.stamp(fig, script="demo.py", seed=3, note="simulated", sha="abc1234")
+    ep.render.stamp(fig, script="demo.py", seed=3, note="simulated", sha="abc1234")
     payload = getattr(fig, eyepiece.provenance.PAYLOAD_ATTR)
     assert payload["script"] == "demo.py"
     assert payload["sha"] == "abc1234"
@@ -99,7 +101,7 @@ def test_stamp_leaves_a_structured_payload_for_the_file_channel():
 
 
 def test_provenance_fields_omits_absent_fields():
-    fields = ep.provenance_fields(script="demo.py", sha="abc1234")
+    fields = ep.render.provenance_fields(script="demo.py", sha="abc1234")
     assert "seed" not in fields
     assert "note" not in fields
     assert fields["date"]
@@ -107,17 +109,17 @@ def test_provenance_fields_omits_absent_fields():
 
 def test_file_metadata_routes_per_format():
     fields = {"script": "demo.py", "sha": "abc1234"}
-    assert set(ep.file_metadata(fields, ".png")) == {"Software", "Comment"}
-    assert set(ep.file_metadata(fields, ".pdf")) == {"Creator", "Subject"}
-    assert set(ep.file_metadata(fields, ".svg")) == {"Creator", "Description"}
+    assert set(ep.render.file_metadata(fields, ".png")) == {"Software", "Comment"}
+    assert set(ep.render.file_metadata(fields, ".pdf")) == {"Creator", "Subject"}
+    assert set(ep.render.file_metadata(fields, ".svg")) == {"Creator", "Description"}
     # An unsupported format loses only the second channel, it does not raise.
-    assert ep.file_metadata(fields, ".jpg") == {}
-    assert ep.file_metadata({}, ".png") == {}
+    assert ep.render.file_metadata(fields, ".jpg") == {}
+    assert ep.render.file_metadata({}, ".png") == {}
 
 
 def test_saved_png_carries_the_provenance_payload(tmp_path):
     fig = plt.figure()
-    ep.stamp(fig, script="demo.py", seed=3, note="simulated", sha="abc1234")
+    ep.render.stamp(fig, script="demo.py", seed=3, note="simulated", sha="abc1234")
     path = ep.save_fig(fig, "stamped.png", dir=tmp_path)
     plt.close(fig)
     payload = json.loads(_png_text(path)["Comment"])
@@ -135,7 +137,7 @@ def test_unstamped_figure_manufactures_no_provenance(tmp_path):
 
 def test_explicit_metadata_override_wins(tmp_path):
     fig = plt.figure()
-    ep.stamp(fig, script="demo.py", sha="abc1234")
+    ep.render.stamp(fig, script="demo.py", sha="abc1234")
     path = ep.save_fig(fig, "over.png", dir=tmp_path, metadata={"Comment": "mine"})
     plt.close(fig)
     assert _png_text(path)["Comment"] == "mine"
@@ -145,7 +147,7 @@ def _mixed_fig(scale=1.0):
     fig, ax = plt.subplots(figsize=(3, 2), layout="constrained")
     ax.plot([0, 1, 2], [0, scale, 4])
     ax.set(xlabel="x", ylabel="y")
-    ep.stamp(fig, note="simulated", seed=1, date="2026-08-21", sha="abc1234")
+    ep.render.stamp(fig, note="simulated", seed=1, date="2026-08-21", sha="abc1234")
     return fig
 
 
@@ -192,7 +194,7 @@ def test_reserved_stamp_does_not_overlap_axes(layout):
     fig, ax = plt.subplots(figsize=(4, 3), layout=layout)
     ax.plot([0, 1], [0, 1])
     ax.set(xlabel="x label", ylabel="y")
-    result = ep.stamp(fig, note="simulated", reserve=True)
+    result = ep.render.stamp(fig, note="simulated", reserve=True)
     assert result.artists["text"].get_gid() == ep.provenance.STAMP_GID
     faults = testing.readability_faults(fig, kinds=("overlap",))
     assert faults == []
@@ -208,7 +210,7 @@ def test_unreserved_stamp_overlaps_a_full_height_axes():
     fig = plt.figure(figsize=(4, 3))
     ax = fig.add_axes((0.1, 0.0, 0.8, 0.9))
     ax.plot([0, 1], [0, 1])
-    text = ep.stamp(fig, note="simulated")
+    text = ep.render.stamp(fig, note="simulated")
     fig.canvas.draw()
     assert ax.get_window_extent().overlaps(text.get_window_extent())
     plt.close(fig)

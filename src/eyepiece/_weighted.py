@@ -108,9 +108,9 @@ def weighted_draws(
 
     Example::
 
-        mark = ep.weighted_draws(xy, likelihood, ax=ax, resample=3)
+        mark = ep.plot.weighted_draws(xy, likelihood, ax=ax, resample=3)
         for u in np.linspace(0.0, 1.0, 60):
-            mark.update(ep.ease(u))
+            mark.update(ep.clock.ease(u))
             rec.frame()
     """
     import matplotlib.pyplot as plt

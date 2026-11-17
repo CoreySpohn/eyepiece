@@ -64,7 +64,7 @@ def save_fig(fig, name, *, dir=None, anchor=None, **overrides):
     a PDF does not change when matplotlib is upgraded. An explicit `metadata=`
     still wins key by key, so a caller can put a date back.
 
-    A figure carrying a provenance stamp (see `eyepiece.stamp`) also gets
+    A figure carrying a provenance stamp (see `eyepiece.render.stamp`) also gets
     that provenance written into the file's own metadata, in whichever key
     vocabulary the format accepts. An explicit `metadata=` override wins.
 

@@ -35,10 +35,10 @@ def _geometry(inset, ax):
 def test_keys_insets_and_tones_in_either_mode(mode):
     hwostyle.use(mode)
     fig, ax = _panel()
-    res = ep.curve_insets(ax, THETA, CURVE, [0.0, 0.5, 1.5])
+    res = ep.plot.curve_insets(ax, THETA, CURVE, [0.0, 0.5, 1.5])
     assert res.ax is ax
     assert set(res.artists) == {"scatter", "lines"}
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     assert len(res.insets) == 3
     assert all(inset in ax.child_axes for inset in res.insets)
     assert all(isinstance(line, Line2D) for line in res.artists["lines"])
@@ -57,7 +57,7 @@ def test_keys_insets_and_tones_in_either_mode(mode):
 def test_insets_stand_on_their_points_through_resizes_and_limit_changes():
     fig, ax = _panel()
     marks = [0.5, 2.0]
-    res = ep.curve_insets(ax, THETA, CURVE, marks, size=0.3, above=0.1)
+    res = ep.plot.curve_insets(ax, THETA, CURVE, marks, size=0.3, above=0.1)
     tops = np.interp(marks, THETA, CURVE)
     for figsize, xlim in (((6.0, 3.0), None), ((4.0, 5.0), None), ((8, 3), (0, 4))):
         fig.set_size_inches(figsize)
@@ -87,12 +87,14 @@ def test_insets_stand_on_their_points_through_resizes_and_limit_changes():
 
 def test_heights_stand_insets_on_a_level_row():
     fig, ax = _panel()
-    res = ep.curve_insets(ax, THETA, CURVE, [0.2, 1.0, 2.5], heights=1.2, above=0.0)
+    res = ep.plot.curve_insets(
+        ax, THETA, CURVE, [0.2, 1.0, 2.5], heights=1.2, above=0.0
+    )
     fig.canvas.draw()
     level = ax.transData.transform((0.0, 1.2))[1]
     for inset in res.insets:
         assert _geometry(inset, ax)[1] == pytest.approx(level, abs=1e-6)
-    staggered = ep.curve_insets(ax, THETA, CURVE, [0.2, 1.0], heights=[1.2, 0.6])
+    staggered = ep.plot.curve_insets(ax, THETA, CURVE, [0.2, 1.0], heights=[1.2, 0.6])
     fig.canvas.draw()
     bottoms = [_geometry(inset, ax)[1] for inset in staggered.insets]
     assert bottoms[0] > bottoms[1]
@@ -101,7 +103,7 @@ def test_heights_stand_insets_on_a_level_row():
 
 def test_data_units_size_the_insets_in_x():
     fig, ax = _panel()
-    res = ep.curve_insets(ax, THETA, CURVE, [1.0], size=0.5, size_units="data")
+    res = ep.plot.curve_insets(ax, THETA, CURVE, [1.0], size=0.5, size_units="data")
     fig.canvas.draw()
     box = res.insets[0].get_window_extent()
     x0, x1 = ax.transData.inverted().transform([(box.x0, 0), (box.x1, 0)])[:, 0]
@@ -117,7 +119,7 @@ def test_build_fills_each_inset_in_mark_order():
         seen.append(i)
         inset.imshow(np.full((4, 4), float(i)))
 
-    res = ep.curve_insets(ax, THETA, CURVE, [0.0, 1.0, 2.0], build=build)
+    res = ep.plot.curve_insets(ax, THETA, CURVE, [0.0, 1.0, 2.0], build=build)
     assert seen == [0, 1, 2]
     assert [len(inset.images) for inset in res.insets] == [1, 1, 1]
     fig.canvas.draw()
@@ -130,7 +132,7 @@ def test_chains_draw_phasor_chains_on_one_shared_frame():
     chains = [
         np.exp(2j * np.pi * t * (np.arange(n) + 0.5) / n) / n for t in (0.0, 0.5, 1.0)
     ]
-    res = ep.curve_insets(
+    res = ep.plot.curve_insets(
         ax, THETA, CURVE, [0.0, 0.5, 1.0], chains=chains, phasor_kw={"head_scale": 0.4}
     )
     limits = {(inset.get_xlim(), inset.get_ylim()) for inset in res.insets}
@@ -149,10 +151,10 @@ def test_chains_draw_phasor_chains_on_one_shared_frame():
 
 def test_toggles_and_routed_kwargs():
     fig, ax = _panel()
-    res = ep.curve_insets(ax, THETA, CURVE, [1.0], points=False, connectors=False)
+    res = ep.plot.curve_insets(ax, THETA, CURVE, [1.0], points=False, connectors=False)
     assert res.artists == {}
     assert len(res.insets) == 1
-    res = ep.curve_insets(
+    res = ep.plot.curve_insets(
         ax,
         THETA,
         CURVE,
@@ -183,5 +185,5 @@ def test_toggles_and_routed_kwargs():
 def test_bad_arguments_raise(args, kwargs, match):
     fig, ax = _panel()
     with pytest.raises(ValueError, match=match):
-        ep.curve_insets(ax, *args, **kwargs)
+        ep.plot.curve_insets(ax, *args, **kwargs)
     plt.close(fig)

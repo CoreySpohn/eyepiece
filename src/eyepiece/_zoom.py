@@ -423,7 +423,7 @@ def follow_zoom(
         color: Color of the box and the inset frame. None uses the text
             color at call time.
         exclude: Artists of the panel to leave out of the inset.
-        ease: An easing kind for `eyepiece.ease`, or a callable, applied to
+        ease: An easing kind for `eyepiece.clock.ease`, or a callable, applied to
             `u`; the opacity is clipped to [0, 1].
         avoid: The artists the connectors must not cross; None audits every
             line, patch, and collection of the panel.
@@ -445,9 +445,9 @@ def follow_zoom(
 
     Example::
 
-        res = ep.follow_zoom(ax, lambda t: (np.cos(t), np.sin(t)), zoom=5.0)
+        res = ep.motion.follow_zoom(ax, lambda t: (np.cos(t), np.sin(t)), zoom=5.0)
         res.update(1.0, time=0.7)  # the window is centered on the target at 0.7
-        ep.audit(fig)
+        ep.testing.audit(fig)
     """
     if not isinstance(ax, Axes):
         raise TypeError(f"follow_zoom needs an Axes, got {type(ax).__name__}")

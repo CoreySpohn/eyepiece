@@ -50,7 +50,7 @@ def _two_panels():
 def test_data_anchor_follows_limits_and_resizes():
     fig, ax = plt.subplots(figsize=(4.0, 3.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
-    anchor = ep.Anchor.from_data(ax, (0.5, 0.5))
+    anchor = ep.motion.Anchor.from_data(ax, (0.5, 0.5))
     fig.canvas.draw()
     np.testing.assert_allclose(anchor.display(), ax.transData.transform((0.5, 0.5)))
     ax.set_xlim(0.0, 2.0)
@@ -64,11 +64,11 @@ def test_artist_anchor_resolves_a_marker_to_its_point_and_follows_new_data():
     _fig, ax = plt.subplots()
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.3], [0.6], "o", ms=9)
-    anchor = ep.Anchor.from_artist(dot)
+    anchor = ep.motion.Anchor.from_artist(dot)
     np.testing.assert_allclose(anchor.display(), ax.transData.transform((0.3, 0.6)))
     dot.set_data([0.7], [0.2])
     np.testing.assert_allclose(anchor.display(), ax.transData.transform((0.7, 0.2)))
-    top = ep.Anchor.from_artist(dot, loc="top").display()
+    top = ep.motion.Anchor.from_artist(dot, loc="top").display()
     assert top[1] > anchor.display()[1]
     assert anchor.axes is ax and anchor.artist is dot
 
@@ -76,11 +76,11 @@ def test_artist_anchor_resolves_a_marker_to_its_point_and_follows_new_data():
 def test_anchor_rejects_bad_inputs():
     fig, ax = plt.subplots()
     with pytest.raises(TypeError):
-        ep.Anchor.from_data(fig, (0.0, 0.0))
+        ep.motion.Anchor.from_data(fig, (0.0, 0.0))
     with pytest.raises(TypeError):
-        ep.Anchor.from_artist("not an artist")
+        ep.motion.Anchor.from_artist("not an artist")
     with pytest.raises(ValueError, match="loc"):
-        ep.Anchor.from_artist(ax.patch, loc="middle")
+        ep.motion.Anchor.from_artist(ax.patch, loc="middle")
 
 
 # Flight
@@ -91,8 +91,8 @@ def test_flight_ghost_is_absent_at_both_ends_and_at_rest(mode):
     hwostyle.use(mode)
     fig, _top, bottom, dot, _landed = _two_panels()
     without = _pixels(fig)
-    carry = ep.flight(
-        dot, ep.Anchor.from_data(bottom, (0.25, _gauss(0.35, 0.25))), fig=fig
+    carry = ep.motion.flight(
+        dot, ep.motion.Anchor.from_data(bottom, (0.25, _gauss(0.35, 0.25))), fig=fig
     )
     np.testing.assert_array_equal(_pixels(fig), without)  # the rest state
     for u in (0.0, 1.0):
@@ -108,9 +108,11 @@ def test_flight_lands_on_its_destination_mark(mode, destination):
     hwostyle.use(mode)
     fig, _top, _bottom, dot, landed = _two_panels()
     if destination == "artist":
-        carry = ep.flight(dot, landed, fig=fig)
+        carry = ep.motion.flight(dot, landed, fig=fig)
     else:
-        carry = ep.flight(dot, ep.Anchor.from_artist(landed), fig=fig, arc=0.2)
+        carry = ep.motion.flight(
+            dot, ep.motion.Anchor.from_artist(landed), fig=fig, arc=0.2
+        )
     ghost = carry.artists["line"]
     for u, target in ((1e-6, dot), (1.0 - 1e-6, landed)):
         carry.update(u)
@@ -132,7 +134,9 @@ def test_flight_lands_on_its_destination_mark(mode, destination):
 
 def test_flight_lands_where_the_destination_is_drawn_now():
     fig, _top, bottom, dot, _landed = _two_panels()
-    carry = ep.flight(dot, ep.Anchor.from_data(bottom, (0.25, 2.0)), fig=fig)
+    carry = ep.motion.flight(
+        dot, ep.motion.Anchor.from_data(bottom, (0.25, 2.0)), fig=fig
+    )
     bottom.set_xlim(0.0, 0.5)  # the destination axis changes after the flight is made
     carry.update(1.0 - 1e-6)
     fig.canvas.draw()
@@ -145,14 +149,14 @@ def test_flight_ghost_belongs_to_the_figure_and_moves_no_limits():
     ax.plot([0.0, 1.0], [0.0, 1.0])
     (dot,) = ax.plot([0.5], [0.5], "o")
     limits = (ax.get_xlim(), ax.get_ylim())
-    carry = ep.flight(dot, ep.Anchor.from_data(ax, (5.0, 5.0)), fig=fig)
+    carry = ep.motion.flight(dot, ep.motion.Anchor.from_data(ax, (5.0, 5.0)), fig=fig)
     ghost = carry.artists["line"]
     assert ghost in fig.artists and ghost not in ax.get_children()
     for u in np.linspace(0.0, 1.0, 7):
         carry.update(u)
         fig.canvas.draw()
     assert (ax.get_xlim(), ax.get_ylim()) == limits
-    assert set(carry.artists) <= ep.ARTIST_KEYS
+    assert set(carry.artists) <= ep.plot.ARTIST_KEYS
     assert list(carry.axes) == [ax]
 
 
@@ -160,8 +164,11 @@ def test_flight_bows_left_of_its_direction_by_arc_of_the_distance():
     fig, ax = plt.subplots()
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.2], [0.5], "o")
-    a, b = ep.Anchor.from_data(ax, (0.2, 0.5)), ep.Anchor.from_data(ax, (0.8, 0.5))
-    carry = ep.flight(a, b, fig=fig, arc=0.25, mark=dot)
+    a, b = (
+        ep.motion.Anchor.from_data(ax, (0.2, 0.5)),
+        ep.motion.Anchor.from_data(ax, (0.8, 0.5)),
+    )
+    carry = ep.motion.flight(a, b, fig=fig, arc=0.25, mark=dot)
     carry.update(0.5)
     fig.canvas.draw()
     p0, p1 = a.display(), b.display()
@@ -177,11 +184,11 @@ def test_flight_into_a_label_crossfades_and_rests_on_the_label(mode):
     hwostyle.use(mode)
     fig, ax = plt.subplots()
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
-    value = ax.text(0.2, 0.8, "2.41", bbox=ep.backing())
-    label = ax.text(0.8, 0.2, "2.41", bbox=ep.backing())
+    value = ax.text(0.2, 0.8, "2.41", bbox=ep.style.backing())
+    label = ax.text(0.8, 0.2, "2.41", bbox=ep.style.backing())
     fig.canvas.draw()
     with_label = _pixels(fig)
-    carry = ep.flight(value, label, fig=fig, crossfade=label, fade=0.4)
+    carry = ep.motion.flight(value, label, fig=fig, crossfade=label, fade=0.4)
     assert "text" in carry.artists
     np.testing.assert_array_equal(_pixels(fig), with_label)  # rest: landed
     carry.update(0.0)
@@ -198,14 +205,18 @@ def test_flight_into_a_label_crossfades_and_rests_on_the_label(mode):
 def test_flight_rejects_what_it_cannot_copy():
     fig, ax = plt.subplots()
     with pytest.raises(ValueError, match="mark"):
-        ep.flight(
-            ep.Anchor.from_data(ax, (0, 0)), ep.Anchor.from_data(ax, (1, 1)), fig=fig
+        ep.motion.flight(
+            ep.motion.Anchor.from_data(ax, (0, 0)),
+            ep.motion.Anchor.from_data(ax, (1, 1)),
+            fig=fig,
         )
     with pytest.raises(TypeError):
-        ep.flight(ax.imshow(np.zeros((2, 2))), ep.Anchor.from_data(ax, (1, 1)), fig=fig)
+        ep.motion.flight(
+            ax.imshow(np.zeros((2, 2))), ep.motion.Anchor.from_data(ax, (1, 1)), fig=fig
+        )
     (dot,) = ax.plot([0.0], [0.0], "o")
     with pytest.raises(ValueError, match="fade"):
-        ep.flight(dot, dot, fig=fig, fade=0.0)
+        ep.motion.flight(dot, dot, fig=fig, fade=0.0)
 
 
 # Leader
@@ -223,7 +234,7 @@ def test_leader_ends_on_its_mark_and_takes_a_neutral(mode):
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.5], [0.5], "o", ms=8)
     note = ax.text(0.62, 0.62, "the dot")
-    res = ep.leader(note, dot)
+    res = ep.motion.leader(note, dot)
     line = res.artists["line"]
     fig.canvas.draw()
     start, end = _leader_ends(line)
@@ -241,7 +252,7 @@ def test_leader_grows_from_the_text():
     fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.5], [0.5], "o")
-    res = ep.leader(ax.text(0.62, 0.62, "the dot"), dot)
+    res = ep.motion.leader(ax.text(0.62, 0.62, "the dot"), dot)
     line = res.artists["line"]
     fig.canvas.draw()
     start, end = _leader_ends(line)
@@ -262,26 +273,26 @@ def test_leader_too_long_or_across_data_is_a_fault():
     ax.plot([0.0, 1.0], [0.3, 0.3], label="baseline")
     (dot,) = ax.plot([0.5], [0.15], "o")
     far = ax.text(0.95, 0.95, "the dot")
-    res = ep.leader(far, dot, strict=False)
+    res = ep.motion.leader(far, dot, strict=False)
     faults = res.artists["line"].faults()
     assert any("quarter" in f for f in faults)
     assert any("crosses data: baseline" in f for f in faults)
     near = ax.text(0.55, 0.22, "the dot")
-    assert ep.leader(near, dot).artists["line"].faults() == []
+    assert ep.motion.leader(near, dot).artists["line"].faults() == []
 
 
 def test_a_broken_leader_draws_and_the_audit_names_it():
     fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.05], [0.05], "o")
-    far = ep.leader(ax.text(0.95, 0.95, "far away"), dot)
+    far = ep.motion.leader(ax.text(0.95, 0.95, "far away"), dot)
     fig.canvas.draw()  # a still or a PDF save is never aborted mid-draw
     assert len(far.artists["line"].get_xydata()) == 2
-    with pytest.raises(ep.AttentionFault, match="quarter") as info:
-        ep.audit(fig)
+    with pytest.raises(ep.testing.AttentionFault, match="quarter") as info:
+        ep.testing.audit(fig)
     assert isinstance(info.value, ValueError)
     assert far.artists["line"] in info.value.faults
-    found = ep.audit(fig, raise_on_fault=False)
+    found = ep.testing.audit(fig, raise_on_fault=False)
     assert any("quarter" in m for m in found[far.artists["line"]])
 
 
@@ -289,24 +300,26 @@ def test_audit_skips_lenient_and_hidden_lines_and_passes_clean_ones():
     fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.05], [0.05], "o")
-    ep.leader(ax.text(0.95, 0.95, "far away"), dot, strict=False)
-    assert ep.audit(fig)  # reported, not raised
-    ep.leader(ax.text(0.1, 0.3, "near"), dot)
+    ep.motion.leader(ax.text(0.95, 0.95, "far away"), dot, strict=False)
+    assert ep.testing.audit(fig)  # reported, not raised
+    ep.motion.leader(ax.text(0.1, 0.3, "near"), dot)
     near_fig, near_ax = plt.subplots(figsize=(6.0, 4.0))
     near_ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (mark,) = near_ax.plot([0.5], [0.5], "o", ms=8)
-    ep.leader(near_ax.text(0.55, 0.22, "the dot"), mark)
-    assert ep.audit(near_fig) == {}
+    ep.motion.leader(near_ax.text(0.55, 0.22, "the dot"), mark)
+    assert ep.testing.audit(near_fig) == {}
 
 
 def test_leader_does_not_run_through_its_mark():
     _fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
-    circle = ep.overlay_circle(ax, (0.5, 0.5), 0.05).artists["ellipse"][-1]
+    circle = ep.plot.overlay_circle(ax, (0.5, 0.5), 0.05).artists["ellipse"][-1]
     note = ax.text(0.5, 0.3, "ring", ha="center", va="top")
     # Anchored on the ring's top while the text sits below it: the leader
     # would cross the ring's box to get there.
-    res = ep.leader(note, ep.Anchor.from_artist(circle, loc="top"), strict=False)
+    res = ep.motion.leader(
+        note, ep.motion.Anchor.from_artist(circle, loc="top"), strict=False
+    )
     assert any("runs through" in f for f in res.artists["line"].faults())
 
 
@@ -315,7 +328,7 @@ def test_leader_in_a_data_color_is_a_fault():
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (curve,) = ax.plot([0.0, 1.0], [0.9, 0.9], color="tab:orange")
     (dot,) = ax.plot([0.5], [0.5], "o")
-    res = ep.leader(
+    res = ep.motion.leader(
         ax.text(0.6, 0.6, "dot"), dot, color=curve.get_color(), strict=False
     )
     assert any("data color" in f for f in res.artists["line"].faults())
@@ -330,7 +343,7 @@ def test_callout_sits_beside_its_subject_on_a_mode_box(mode):
     fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.3], [0.5], "o", ms=8)
-    res = ep.callout(dot, "the measured height", side="right")
+    res = ep.motion.callout(dot, "the measured height", side="right")
     caption = res.artists["text"]
     fig.canvas.draw()
     box, mark = caption.get_window_extent(), dot.get_window_extent()
@@ -353,7 +366,7 @@ def test_callout_auto_side_keeps_the_caption_in_its_panel():
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     fig.canvas.draw()
     (dot,) = ax.plot([0.97], [0.5], "o")
-    caption = ep.callout(dot, "near the right edge").artists["text"]
+    caption = ep.motion.callout(dot, "near the right edge").artists["text"]
     fig.canvas.draw()
     box = caption.get_window_extent()
     assert box.x1 <= ax.bbox.x1 and box.x0 >= ax.bbox.x0
@@ -367,7 +380,9 @@ def test_callout_is_absent_before_its_beat_and_whole_at_rest(mode):
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.3], [0.5], "o")
     without = _pixels(fig)
-    res = ep.callout(dot, "the dot", at=ep.Anchor.from_data(ax, (0.45, 0.62)))
+    res = ep.motion.callout(
+        dot, "the dot", at=ep.motion.Anchor.from_data(ax, (0.45, 0.62))
+    )
     rest = _pixels(fig)
     assert not np.array_equal(rest, without)
     res.update(0.0)
@@ -395,7 +410,9 @@ def test_a_fading_callout_box_is_always_fainter_than_its_words(mode):
     _fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.imshow(np.linspace(0.0, 1.0, 64).reshape(8, 8), extent=(0, 1, 0, 1))
     (dot,) = ax.plot([0.3], [0.5], "o")
-    res = ep.callout(dot, "the dot", at=ep.Anchor.from_data(ax, (0.45, 0.62)))
+    res = ep.motion.callout(
+        dot, "the dot", at=ep.motion.Anchor.from_data(ax, (0.45, 0.62))
+    )
     caption = res.artists["text"]
     box = caption.get_bbox_patch()
     full = to_rgba(box.get_facecolor())[3]
@@ -411,9 +428,9 @@ def test_callout_caps_its_words():
     _fig, ax = plt.subplots()
     (dot,) = ax.plot([0.3], [0.5], "o")
     with pytest.raises(ValueError, match="words"):
-        ep.callout(dot, "one two three four five six seven eight nine")
+        ep.motion.callout(dot, "one two three four five six seven eight nine")
     with pytest.raises(ValueError, match="side"):
-        ep.callout(dot, "short", side="north")
+        ep.motion.callout(dot, "short", side="north")
 
 
 def test_leader_to_a_plotted_data_point_ignores_its_marker_and_the_scenery():
@@ -423,7 +440,7 @@ def test_leader_to_a_plotted_data_point_ignores_its_marker_and_the_scenery():
     ax.axvline(0.55)
     ax.axvspan(0.52, 0.58, alpha=0.2)
     note = ax.text(0.62, 0.62, "the dot")
-    res = ep.leader(note, ep.Anchor.from_data(ax, (0.5, 0.5)))
+    res = ep.motion.leader(note, ep.motion.Anchor.from_data(ax, (0.5, 0.5)))
     assert res.artists["line"].faults() == []
 
 
@@ -432,7 +449,7 @@ def test_leader_across_another_text_is_a_fault():
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.5], [0.5], "o")
     ax.text(0.56, 0.56, "other", ha="center", va="center")
-    res = ep.leader(ax.text(0.62, 0.62, "the dot"), dot, strict=False)
+    res = ep.motion.leader(ax.text(0.62, 0.62, "the dot"), dot, strict=False)
     assert any("crosses text: 'other'" in f for f in res.artists["line"].faults())
 
 
@@ -441,14 +458,14 @@ def test_flight_refuses_a_crossfade_label_drawn_invisible():
     (dot,) = ax.plot([0.2], [0.2], "o")
     label = ax.text(0.8, 0.8, "2.41", alpha=0.0)
     with pytest.raises(ValueError, match="alpha 0"):
-        ep.flight(dot, label, fig=fig, crossfade=label)
+        ep.motion.flight(dot, label, fig=fig, crossfade=label)
 
 
 def test_anchor_on_an_artist_outside_a_figure_says_so():
     from matplotlib.lines import Line2D
 
     with pytest.raises(ValueError, match="not in a figure"):
-        _ = ep.Anchor.from_artist(Line2D([0.0], [0.0])).figure
+        _ = ep.motion.Anchor.from_artist(Line2D([0.0], [0.0])).figure
 
 
 # Indicate
@@ -460,7 +477,7 @@ def _marks(mode):
     fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (line,) = ax.plot([0.1, 0.5, 0.9], [0.2, 0.7, 0.3], "o-", lw=2.0, ms=7, color="C1")
-    note = ax.text(0.15, 0.85, "a note", bbox=ep.backing())
+    note = ax.text(0.15, 0.85, "a note", bbox=ep.style.backing())
     bar = ax.add_patch(plt.Rectangle((0.6, 0.1), 0.2, 0.15, fc="C2", ec="C3", lw=1.5))
     dots = ax.scatter([0.3, 0.5], [0.4, 0.5], s=40, color="C4")
     fig.canvas.draw()
@@ -471,7 +488,7 @@ def _marks(mode):
 def test_indicate_leaves_both_ends_pixel_identical(mode):
     fig, _ax, line, note, bar, dots = _marks(mode)
     without = _pixels(fig)
-    pulse = ep.indicate([line, note, bar, dots])
+    pulse = ep.motion.indicate([line, note, bar, dots])
     np.testing.assert_array_equal(_pixels(fig), without)  # the rest state
     for u in (0.0, 1.0, -3.0, 7.0):
         pulse.update(u)
@@ -492,7 +509,7 @@ def test_indicate_leaves_both_ends_pixel_identical(mode):
 def test_indicate_peaks_mid_way(mode):
     fig, _ax, line, note, bar, dots = _marks(mode)
     without = _pixels(fig).astype(float)
-    pulse = ep.indicate([line, note, bar, dots])
+    pulse = ep.motion.indicate([line, note, bar, dots])
     change = []
     for u in (0.1, 0.25, 0.5, 0.75, 0.9):
         pulse.update(u)
@@ -515,7 +532,7 @@ def test_indicate_swells_by_the_scale_and_tints_toward_the_text_color(mode):
         "color": np.array(to_rgb(line.get_color())),
         "face": np.array(bar.get_facecolor()[:3]),
     }
-    pulse = ep.indicate([line, note, bar, dots], scale=1.15, strength=0.5)
+    pulse = ep.motion.indicate([line, note, bar, dots], scale=1.15, strength=0.5)
     pulse.update(0.5)
     assert line.get_linewidth() == pytest.approx(1.15 * made["lw"])
     assert line.get_markersize() == pytest.approx(1.15 * made["ms"])
@@ -538,7 +555,7 @@ def test_indicate_swells_a_callout_with_its_box_and_pieces():
     fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.5], [0.5], "o", ms=8)
-    call = ep.callout(
+    call = ep.motion.callout(
         dot,
         ["the ", ("dot", "C3", "bold")],
         side="right",
@@ -549,7 +566,7 @@ def test_indicate_swells_a_callout_with_its_box_and_pieces():
     without = _pixels(fig)
     width = text.get_window_extent().width
     sizes = [p.get_fontsize() for p in text._pieces]
-    pulse = ep.indicate(text)
+    pulse = ep.motion.indicate(text)
     pulse.update(0.5)
     fig.canvas.draw()
     assert text.get_window_extent().width > width
@@ -562,9 +579,9 @@ def test_indicate_swells_a_callout_with_its_box_and_pieces():
 @pytest.mark.parametrize("mode", MODES)
 def test_indicate_returns_to_the_stage_level_not_the_made_colors(mode):
     fig, _ax, line, note, bar, dots = _marks(mode)
-    stage = ep.Stage({"group": [line, note, bar, dots]}, dim=0.4)
+    stage = ep.motion.Stage({"group": [line, note, bar, dots]}, dim=0.4)
     made = _pixels(fig)
-    pulse = ep.indicate([line, note, bar, dots])
+    pulse = ep.motion.indicate([line, note, bar, dots])
     # The caller sets the stage, then the pulse, every frame.
     stage.set(dimmed=["group"])
     pulse.update(0.0)
@@ -598,13 +615,13 @@ def test_indicate_rejects_what_it_cannot_pulse():
     fig, ax = plt.subplots()
     image = ax.imshow(np.zeros((2, 2)))
     with pytest.raises(TypeError, match="indicate"):
-        ep.indicate(image)
+        ep.motion.indicate(image)
     with pytest.raises(ValueError, match="scale"):
-        ep.indicate(ax.plot([0], [0])[0], scale=0.9)
+        ep.motion.indicate(ax.plot([0], [0])[0], scale=0.9)
     with pytest.raises(ValueError, match="strength"):
-        ep.indicate(ax.plot([0], [0])[0], strength=1.5)
+        ep.motion.indicate(ax.plot([0], [0])[0], strength=1.5)
     with pytest.raises(ValueError, match="no artist"):
-        ep.indicate([])
+        ep.motion.indicate([])
     assert fig
 
 
@@ -628,7 +645,7 @@ def _ink(fig, without):
 def _labelled_panel():
     fig, ax = plt.subplots(figsize=(6.0, 4.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
-    ax.plot([0.0, 1.0], [0.1, 0.2], color=ep.neutral(0.3))
+    ax.plot([0.0, 1.0], [0.1, 0.2], color=ep.style.neutral(0.3))
     label = ax.text(0.5, 0.6, "this pixel", ha="center", va="center")
     fig.canvas.draw()
     return fig, ax, label
@@ -640,7 +657,7 @@ def test_circumscribe_is_absent_at_both_ends_and_at_rest(mode, shape):
     hwostyle.use(mode)
     fig, _ax, label = _labelled_panel()
     without = _pixels(fig)
-    ring = ep.circumscribe(label, shape=shape)
+    ring = ep.motion.circumscribe(label, shape=shape)
     for u in (None, 0.0, 1.0):
         if u is not None:
             ring.update(u)
@@ -653,7 +670,7 @@ def test_circumscribe_rect_encloses_its_target_at_the_pad():
     fig, _ax, label = _labelled_panel()
     without = _pixels(fig)
     box = label.get_window_extent()
-    ring = ep.circumscribe(label, pad_pt=6.0, lw=1.0)
+    ring = ep.motion.circumscribe(label, pad_pt=6.0, lw=1.0)
     pad = 6.0 * fig.dpi / 72.0
     ring.update(0.6)  # fully drawn, not yet fading
     x0, x1, y0, y1 = _ink_box(fig, without)
@@ -675,7 +692,7 @@ def test_circumscribe_ellipse_passes_outside_the_corners_of_the_box():
     fig, _ax, label = _labelled_panel()
     without = _pixels(fig)
     box = label.get_window_extent()
-    ring = ep.circumscribe(label, shape="ellipse", pad_pt=2.0)
+    ring = ep.motion.circumscribe(label, shape="ellipse", pad_pt=2.0)
     ring.update(0.6)
     x0, x1, y0, y1 = _ink_box(fig, without)
     assert x0 < box.x0 and x1 > box.x1 and y0 < box.y0 and y1 > box.y1
@@ -689,7 +706,7 @@ def test_circumscribe_ellipse_passes_outside_the_corners_of_the_box():
 def test_circumscribe_draws_on_then_fades():
     fig, _ax, label = _labelled_panel()
     without = _pixels(fig)
-    ring = ep.circumscribe(label, draw=0.6)
+    ring = ep.motion.circumscribe(label, draw=0.6)
     inked = []
     for u in (0.1, 0.3, 0.5, 0.6):
         ring.update(u)
@@ -707,7 +724,7 @@ def test_circumscribe_draws_on_then_fades():
 def test_circumscribe_follows_its_target_and_takes_a_given_color():
     fig, _ax, label = _labelled_panel()
     without = _pixels(fig)
-    ring = ep.circumscribe(label, color="C3")
+    ring = ep.motion.circumscribe(label, color="C3")
     ring.update(0.6)
     first = _ink_box(fig, without)
     ring.update(0.0)
@@ -725,14 +742,16 @@ def test_circumscribe_follows_its_target_and_takes_a_given_color():
 def test_circumscribe_belongs_to_the_figure_and_moves_no_limits():
     fig, ax, _label = _labelled_panel()
     limits = (ax.get_xlim(), ax.get_ylim())
-    ring = ep.circumscribe(ep.Anchor.from_data(ax, (0.5, 0.5)), shape="ellipse")
+    ring = ep.motion.circumscribe(
+        ep.motion.Anchor.from_data(ax, (0.5, 0.5)), shape="ellipse"
+    )
     line = ring.artists["line"]
     assert line in fig.artists and line not in ax.get_children()
     for u in np.linspace(0.0, 1.0, 9):
         ring.update(u)
         fig.canvas.draw()
     assert (ax.get_xlim(), ax.get_ylim()) == limits
-    assert set(ring.artists) <= ep.ARTIST_KEYS
+    assert set(ring.artists) <= ep.plot.ARTIST_KEYS
     # A data point has no extent: a ring of the pad around it.
     ring.update(0.6)
     ends = line.outline()
@@ -743,11 +762,11 @@ def test_circumscribe_belongs_to_the_figure_and_moves_no_limits():
 def test_circumscribe_rejects_bad_inputs():
     _fig, ax, label = _labelled_panel()
     with pytest.raises(ValueError, match="shape"):
-        ep.circumscribe(label, shape="star")
+        ep.motion.circumscribe(label, shape="star")
     with pytest.raises(ValueError, match="draw"):
-        ep.circumscribe(label, draw=1.0)
+        ep.motion.circumscribe(label, draw=1.0)
     with pytest.raises(TypeError):
-        ep.circumscribe("label")
+        ep.motion.circumscribe("label")
     assert ax
 
 
@@ -757,7 +776,7 @@ def test_circumscribe_rejects_bad_inputs():
 def _row_panel():
     fig, ax = plt.subplots(figsize=(6.0, 3.0))
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
-    ax.plot([0.0, 1.0], [0.05, 0.1], color=ep.neutral(0.3))
+    ax.plot([0.0, 1.0], [0.05, 0.1], color=ep.style.neutral(0.3))
     return fig, ax
 
 
@@ -773,8 +792,8 @@ def _boxes(row, fig):
 def test_term_row_terms_read_left_to_right_without_overlap_on_one_baseline(mode):
     hwostyle.use(mode)
     fig, ax = _row_panel()
-    start = ep.Anchor.from_data(ax, (0.1, 0.6))
-    row = ep.term_row(start, EQUATION, gap_em=0.5)
+    start = ep.motion.Anchor.from_data(ax, (0.1, 0.6))
+    row = ep.motion.term_row(start, EQUATION, gap_em=0.5)
     boxes = _boxes(row, fig)
     em = plt.rcParams["font.size"] * fig.dpi / 72.0
     for left, right in itertools.pairwise(boxes):
@@ -786,7 +805,9 @@ def test_term_row_terms_read_left_to_right_without_overlap_on_one_baseline(mode)
 
 def test_term_row_shares_a_baseline_in_the_pixels():
     fig, ax = _row_panel()
-    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), ["x", "$x$", "x"])
+    row = ep.motion.term_row(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.6)), ["x", "$x$", "x"]
+    )
     texts = row.artists["text"]
     fig.canvas.draw()
     blank = {}
@@ -806,7 +827,7 @@ def test_term_row_shares_a_baseline_in_the_pixels():
 
 def test_term_row_relays_out_when_a_term_changes():
     fig, ax = _row_panel()
-    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    row = ep.motion.term_row(ep.motion.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
     first = _boxes(row, fig)
     texts = row.artists["text"]
     texts[2].set_text("$\\sum_i^{N} (y_i - m_i)^2 / \\sigma_i^2$")
@@ -825,8 +846,8 @@ def test_term_row_relays_out_when_a_term_changes():
 
 def test_term_row_terms_are_anchors_before_any_draw_and_follow_the_readout():
     fig, ax = _row_panel()
-    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
-    anchor = ep.Anchor.from_artist(row.artists["text"][4], loc="left")
+    row = ep.motion.term_row(ep.motion.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    anchor = ep.motion.Anchor.from_artist(row.artists["text"][4], loc="left")
     first = anchor.display()  # no draw yet
     fig.canvas.draw()
     np.testing.assert_allclose(anchor.display(), first, atol=0.01)
@@ -836,10 +857,10 @@ def test_term_row_terms_are_anchors_before_any_draw_and_follow_the_readout():
 
 def test_term_row_ha_places_the_row_by_its_end():
     fig, ax = _row_panel()
-    at = ep.Anchor.from_data(ax, (0.5, 0.6))
+    at = ep.motion.Anchor.from_data(ax, (0.5, 0.6))
     spans = {}
     for ha in ("left", "center", "right"):
-        row = ep.term_row(at, EQUATION, ha=ha)
+        row = ep.motion.term_row(at, EQUATION, ha=ha)
         boxes = _boxes(row, fig)
         spans[ha] = (boxes[0].x0, boxes[-1].x1)
         for t in row.artists["text"]:
@@ -853,25 +874,25 @@ def test_term_row_ha_places_the_row_by_its_end():
 def test_term_row_moves_no_data_limit_and_belongs_to_the_figure():
     fig, ax = _row_panel()
     limits = (ax.get_xlim(), ax.get_ylim())
-    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    row = ep.motion.term_row(ep.motion.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
     for t in row.artists["text"]:
         assert t in fig.artists and t not in ax.get_children()
     row.artists["text"][4].set_text("12345.67")
     fig.canvas.draw()
     assert (ax.get_xlim(), ax.get_ylim()) == limits
-    assert set(row.artists) <= ep.ARTIST_KEYS
+    assert set(row.artists) <= ep.plot.ARTIST_KEYS
 
 
 @pytest.mark.parametrize("mode", MODES)
 def test_term_row_terms_stage_flight_and_indicate_alone(mode):
     hwostyle.use(mode)
     fig, ax = _row_panel()
-    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    row = ep.motion.term_row(ep.motion.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
     terms = row.artists["text"]
     fig.canvas.draw()
     made = _pixels(fig)
     boxes = [t.get_window_extent() for t in terms]
-    stage = ep.Stage({"lhs": terms[:1], "rest": terms[1:]})
+    stage = ep.motion.Stage({"lhs": terms[:1], "rest": terms[1:]})
     stage.set(shown=["lhs"])
     fig.canvas.draw()
     assert to_rgba(terms[0].get_color())[3] == 1.0
@@ -881,7 +902,7 @@ def test_term_row_terms_stage_flight_and_indicate_alone(mode):
         assert t.get_window_extent().x0 == pytest.approx(b.x0)
     stage.rest()
     np.testing.assert_array_equal(_pixels(fig), made)
-    pulse = ep.indicate(terms[2])
+    pulse = ep.motion.indicate(terms[2])
     pulse.update(0.5)
     fig.canvas.draw()
     swollen = terms[2].get_window_extent()
@@ -890,8 +911,8 @@ def test_term_row_terms_stage_flight_and_indicate_alone(mode):
         assert terms[k].get_window_extent().x0 == pytest.approx(boxes[k].x0)
     pulse.update(1.0)
     np.testing.assert_array_equal(_pixels(fig), made)
-    carry = ep.flight(
-        terms[4], ep.Anchor.from_data(ax, (0.8, 0.3)), fig=fig, mark=terms[4]
+    carry = ep.motion.flight(
+        terms[4], ep.motion.Anchor.from_data(ax, (0.8, 0.3)), fig=fig, mark=terms[4]
     )
     carry.update(1.0 - 1e-6)
     fig.canvas.draw()
@@ -901,7 +922,7 @@ def test_term_row_terms_stage_flight_and_indicate_alone(mode):
 
 def test_term_row_writes_on_term_by_term_and_rests_whole():
     fig, ax = _row_panel()
-    row = ep.term_row(ep.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
+    row = ep.motion.term_row(ep.motion.Anchor.from_data(ax, (0.1, 0.6)), EQUATION)
     texts = row.artists["text"]
     fig.canvas.draw()
     whole = _pixels(fig)
@@ -916,15 +937,15 @@ def test_term_row_writes_on_term_by_term_and_rests_whole():
 
 def test_term_row_rejects_bad_inputs():
     _fig, ax = _row_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.6))
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.6))
     with pytest.raises(ValueError, match="no terms"):
-        ep.term_row(at, [])
+        ep.motion.term_row(at, [])
     with pytest.raises(ValueError, match="ha"):
-        ep.term_row(at, ["x"], ha="top")
+        ep.motion.term_row(at, ["x"], ha="top")
     with pytest.raises(ValueError, match="gap"):
-        ep.term_row(at, ["x"], gap_em=-1.0)
+        ep.motion.term_row(at, ["x"], gap_em=-1.0)
     with pytest.raises(TypeError):
-        ep.term_row("here", ["x"])
+        ep.motion.term_row("here", ["x"])
 
 
 # Words
@@ -972,8 +993,8 @@ def _single_text(string, dpi, fontsize, **kw):
 
 def _words_line(string, dpi, fontsize, **kw):
     fig, ax = _line_panel(dpi)
-    line = ep.words(
-        ep.Anchor.from_data(ax, (0.1, 0.5)), string, fontsize=fontsize, **kw
+    line = ep.motion.words(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.5)), string, fontsize=fontsize, **kw
     )
     return fig, line
 
@@ -1174,36 +1195,38 @@ def test_words_color_by_string_matches_a_math_word_by_its_full_text():
 
 def test_words_color_by_string_mixes_with_an_index_and_agrees_with_it():
     _fig, ax = _line_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
-    line = ep.words(at, "a b a", colors={"a": "C0", 1: "C1", 2: "C0", -1: "#1f77b4"})
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
+    line = ep.motion.words(
+        at, "a b a", colors={"a": "C0", 1: "C1", 2: "C0", -1: "#1f77b4"}
+    )
     got = [to_rgb(t.get_color()) for t in line.artists["text"]]
     assert got[0] == got[2] == to_rgb("C0") and got[1] == to_rgb("C1")
 
 
 def test_words_color_by_string_rejects_a_missing_word_and_a_conflict():
     _fig, ax = _line_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
     with pytest.raises(ValueError, match="'posterior'"):
-        ep.words(at, "the prior", colors={"posterior": "C0"})
+        ep.motion.words(at, "the prior", colors={"posterior": "C0"})
     with pytest.raises(ValueError, match="two colors"):
-        ep.words(at, "the prior", colors={"prior": "C0", 1: "C1"})
+        ep.motion.words(at, "the prior", colors={"prior": "C0", 1: "C1"})
     with pytest.raises(ValueError, match="two colors"):
-        ep.words(at, "the prior", colors={1: "C0", -1: "C1"})
+        ep.motion.words(at, "the prior", colors={1: "C0", -1: "C1"})
 
 
 def test_words_colors_accept_a_sequence_and_reject_a_mismatch():
     _fig, ax = _line_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
-    line = ep.words(at, "a b c", colors=["C0", None, "C1"])
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
+    line = ep.motion.words(at, "a b c", colors=["C0", None, "C1"])
     got = [to_rgb(t.get_color()) for t in line.artists["text"]]
     assert got[0] == to_rgb("C0") and got[2] == to_rgb("C1")
     assert got[1] == to_rgb(plt.rcParams["text.color"])
     with pytest.raises(ValueError, match="entries"):
-        ep.words(at, "a b c", colors=["C0"])
+        ep.motion.words(at, "a b c", colors=["C0"])
     with pytest.raises(ValueError, match="no word"):
-        ep.words(at, "a b c", colors={5: "C0"})
+        ep.motion.words(at, "a b c", colors={5: "C0"})
     with pytest.raises(ValueError, match="no word"):
-        ep.words(at, "a b c", colors={True: "C0"})
+        ep.motion.words(at, "a b c", colors={True: "C0"})
 
 
 def test_words_reveal_by_word_goes_left_to_right_in_place():
@@ -1296,15 +1319,15 @@ def test_words_level_dims_by_opacity_alone_and_rests_exactly(by):
 @pytest.mark.parametrize(
     "how",
     [
-        functools.partial(ep.ease, kind="back_out", strength=0.3),
-        functools.partial(ep.ease, kind="running_start", strength=0.3),
+        functools.partial(ep.clock.ease, kind="back_out", strength=0.3),
+        functools.partial(ep.clock.ease, kind="running_start", strength=0.3),
         "back_out",
         lambda r: r * r,
     ],
 )
 def test_words_take_a_callable_or_overshoot_ease_without_leaving_opacity(how):
     fig, ax = _line_panel()
-    line = ep.words(ep.Anchor.from_data(ax, (0.1, 0.5)), LINE, ease=how)
+    line = ep.motion.words(ep.motion.Anchor.from_data(ax, (0.1, 0.5)), LINE, ease=how)
     texts = line.artists["text"]
     whole = _pixels(fig)
     seen = []
@@ -1326,8 +1349,8 @@ def test_words_take_a_callable_or_overshoot_ease_without_leaving_opacity(how):
 
 def test_words_update_reveals_by_the_chosen_unit():
     _fig, ax = _line_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
-    line = ep.words(at, "ab cd", by="letter")
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
+    line = ep.motion.words(at, "ab cd", by="letter")
     line.update(0.5)
     assert [t.get_text() for t in line.artists["text"]] == ["ab", "cd"]
     assert [t.get_visible() for t in line.artists["text"]] == [True, False]
@@ -1343,7 +1366,7 @@ def test_words_stage_one_word_and_rest_exactly(mode):
     texts = line.artists["text"]
     made = _pixels(fig)
     boxes = [t.get_window_extent() for t in texts]
-    stage = ep.Stage({"key": texts[1:2], "rest": texts[:1] + texts[2:]})
+    stage = ep.motion.Stage({"key": texts[1:2], "rest": texts[:1] + texts[2:]})
     stage.set(shown=["key"])
     fig.canvas.draw()
     assert to_rgba(texts[1].get_color())[3] == 1.0
@@ -1357,13 +1380,13 @@ def test_words_stage_one_word_and_rest_exactly(mode):
 def test_words_are_anchors_and_pulse_alone_without_moving_the_line():
     fig, line = _words_line(LINE, 100, 14)
     texts = line.artists["text"]
-    anchor = ep.Anchor.from_artist(texts[2], loc="bottom")
+    anchor = ep.motion.Anchor.from_artist(texts[2], loc="bottom")
     before = anchor.display()  # no draw yet
     fig.canvas.draw()
     np.testing.assert_allclose(anchor.display(), before, atol=0.01)
     boxes = [t.get_window_extent() for t in texts]
     made = _pixels(fig)
-    pulse = ep.indicate(texts[2])
+    pulse = ep.motion.indicate(texts[2])
     pulse.update(0.5)
     fig.canvas.draw()
     assert texts[2].get_window_extent().width > boxes[2].width
@@ -1382,10 +1405,10 @@ def test_words_relay_out_when_the_figure_dpi_changes():
 
 def test_words_ha_places_the_line_by_its_end():
     fig, ax = _line_panel()
-    at = ep.Anchor.from_data(ax, (0.5, 0.5))
+    at = ep.motion.Anchor.from_data(ax, (0.5, 0.5))
     spans = {}
     for ha in ("left", "center", "right"):
-        line = ep.words(at, LINE, ha=ha)
+        line = ep.motion.words(at, LINE, ha=ha)
         fig.canvas.draw()
         boxes = [t.get_window_extent() for t in line.artists["text"]]
         spans[ha] = (boxes[0].x0, boxes[-1].x1)
@@ -1400,30 +1423,30 @@ def test_words_ha_places_the_line_by_its_end():
 def test_words_belong_to_the_figure_and_move_no_data_limit():
     fig, ax = _line_panel()
     limits = (ax.get_xlim(), ax.get_ylim())
-    line = ep.words(ep.Anchor.from_data(ax, (0.1, 0.5)), LINE)
+    line = ep.motion.words(ep.motion.Anchor.from_data(ax, (0.1, 0.5)), LINE)
     fig.canvas.draw()
     for t in line.artists["text"]:
         assert t in fig.artists and t not in ax.get_children()
     assert (ax.get_xlim(), ax.get_ylim()) == limits
-    assert set(line.artists) <= ep.ARTIST_KEYS
+    assert set(line.artists) <= ep.plot.ARTIST_KEYS
 
 
 def test_words_reject_bad_inputs():
     _fig, ax = _line_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
     with pytest.raises(ValueError, match="no words"):
-        ep.words(at, "   ")
+        ep.motion.words(at, "   ")
     with pytest.raises(ValueError, match="one line"):
-        ep.words(at, "a\nb")
+        ep.motion.words(at, "a\nb")
     with pytest.raises(ValueError, match="ha"):
-        ep.words(at, "a", ha="top")
+        ep.motion.words(at, "a", ha="top")
     with pytest.raises(ValueError, match="by"):
-        ep.words(at, "a", by="syllable")
-    line = ep.words(at, "a b")
+        ep.motion.words(at, "a", by="syllable")
+    line = ep.motion.words(at, "a b")
     with pytest.raises(ValueError, match="by"):
         line.reveal(0.5, by="syllable")
     with pytest.raises(TypeError):
-        ep.words("here", "a")
+        ep.motion.words("here", "a")
 
 
 # Turning flight
@@ -1458,8 +1481,8 @@ def test_turning_flight_is_absent_at_both_ends_and_at_rest(mode):
     fig, _star, speed, stub, bar = _stub_panels()
     without = _pixels(fig)
     for mark in (stub, bar):
-        carry = ep.flight(
-            mark, ep.Anchor.from_data(speed, (0.5, 0.0)), fig=fig, turn_deg=90.0
+        carry = ep.motion.flight(
+            mark, ep.motion.Anchor.from_data(speed, (0.5, 0.0)), fig=fig, turn_deg=90.0
         )
         np.testing.assert_array_equal(_pixels(fig), without)  # the rest state
         for u in (0.0, 1.0):
@@ -1472,8 +1495,8 @@ def test_turning_flight_is_absent_at_both_ends_and_at_rest(mode):
 
 def test_turning_flight_carries_a_segment_and_turns_it_a_quarter_turn():
     fig, _star, speed, stub, _bar = _stub_panels()
-    dest = ep.Anchor.from_data(speed, (0.5, 0.2))
-    carry = ep.flight(stub, dest, fig=fig, turn_deg=90.0)
+    dest = ep.motion.Anchor.from_data(speed, (0.5, 0.2))
+    carry = ep.motion.flight(stub, dest, fig=fig, turn_deg=90.0)
     ghost = carry.artists["line"]
     src = stub.get_transform().transform(stub.get_xydata())
     vec = src[1] - src[0]
@@ -1500,8 +1523,8 @@ def test_turning_flight_carries_a_segment_and_turns_it_a_quarter_turn():
 
 def test_turning_flight_turns_clockwise_for_a_negative_angle():
     fig, _star, speed, stub, _bar = _stub_panels()
-    carry = ep.flight(
-        stub, ep.Anchor.from_data(speed, (0.5, 0.2)), fig=fig, turn_deg=-90.0
+    carry = ep.motion.flight(
+        stub, ep.motion.Anchor.from_data(speed, (0.5, 0.2)), fig=fig, turn_deg=-90.0
     )
     src = stub.get_transform().transform(stub.get_xydata())
     vec = src[1] - src[0]
@@ -1511,7 +1534,9 @@ def test_turning_flight_turns_clockwise_for_a_negative_angle():
 
 def test_flight_without_a_turn_keeps_the_segment_orientation():
     fig, _star, speed, stub, _bar = _stub_panels()
-    carry = ep.flight(stub, ep.Anchor.from_data(speed, (0.5, 0.2)), fig=fig)
+    carry = ep.motion.flight(
+        stub, ep.motion.Anchor.from_data(speed, (0.5, 0.2)), fig=fig
+    )
     src = stub.get_transform().transform(stub.get_xydata())
     a, b, _ = _ghost_geometry(carry, fig, 0.7)
     np.testing.assert_allclose(b - a, src[1] - src[0], atol=0.5)
@@ -1519,10 +1544,10 @@ def test_flight_without_a_turn_keeps_the_segment_orientation():
 
 def test_flight_carries_a_bar_patch_and_turns_it():
     fig, _star, speed, _stub, bar = _stub_panels()
-    dest = ep.Anchor.from_data(speed, (0.5, -0.4))
-    carry = ep.flight(bar, dest, fig=fig, turn_deg=90.0)
+    dest = ep.motion.Anchor.from_data(speed, (0.5, -0.4))
+    carry = ep.motion.flight(bar, dest, fig=fig, turn_deg=90.0)
     ghost = carry.artists["fill"]
-    assert ghost in fig.artists and set(carry.artists) <= ep.ARTIST_KEYS
+    assert ghost in fig.artists and set(carry.artists) <= ep.plot.ARTIST_KEYS
     box = bar.get_window_extent()
 
     def ghost_box(u):
@@ -1551,7 +1576,9 @@ def test_turning_flight_ghost_moves_no_limits_and_is_idempotent():
     fig, star, speed, stub, bar = _stub_panels()
     limits = [(a.get_xlim(), a.get_ylim()) for a in (star, speed)]
     carries = [
-        ep.flight(m, ep.Anchor.from_data(speed, (0.5, 0.0)), fig=fig, turn_deg=90.0)
+        ep.motion.flight(
+            m, ep.motion.Anchor.from_data(speed, (0.5, 0.0)), fig=fig, turn_deg=90.0
+        )
         for m in (stub, bar)
     ]
     for u in np.linspace(0.0, 1.0, 7):
@@ -1572,13 +1599,17 @@ def test_flight_turns_a_text_and_refuses_to_turn_a_marker():
     fig, ax = plt.subplots()
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     note = ax.text(0.2, 0.8, "v")
-    carry = ep.flight(note, ep.Anchor.from_data(ax, (0.8, 0.2)), fig=fig, turn_deg=90.0)
+    carry = ep.motion.flight(
+        note, ep.motion.Anchor.from_data(ax, (0.8, 0.2)), fig=fig, turn_deg=90.0
+    )
     carry.update(1.0 - 1e-6)
     fig.canvas.draw()
     assert carry.artists["text"].get_rotation() == pytest.approx(90.0, abs=0.01)
     (dot,) = ax.plot([0.5], [0.5], "o")
     with pytest.raises(ValueError, match="marker"):
-        ep.flight(dot, ep.Anchor.from_data(ax, (0.8, 0.2)), fig=fig, turn_deg=45.0)
+        ep.motion.flight(
+            dot, ep.motion.Anchor.from_data(ax, (0.8, 0.2)), fig=fig, turn_deg=45.0
+        )
 
 
 # Link
@@ -1604,9 +1635,9 @@ def test_link_is_whole_at_rest_absent_at_zero_and_grows_from_the_source(mode):
     hwostyle.use(mode)
     fig, image, phasor = _image_and_phasor()
     without = _pixels(fig)
-    src = ep.Anchor.from_data(image, (12, 4))
-    dst = ep.Anchor.from_data(phasor, (0.0, 0.0))
-    res = ep.link(src, dst)
+    src = ep.motion.Anchor.from_data(image, (12, 4))
+    dst = ep.motion.Anchor.from_data(phasor, (0.0, 0.0))
+    res = ep.motion.link(src, dst)
     line = res.artists["line"]
     whole = _pixels(fig)
     assert not np.array_equal(whole, without)  # the rest state is drawn
@@ -1636,9 +1667,9 @@ def test_link_is_whole_at_rest_absent_at_zero_and_grows_from_the_source(mode):
 def test_link_audit_reads_titles_and_axis_labels_made_after_it():
     fig, image, phasor = _image_and_phasor()
     # From the image up past the phasor panel's top edge, where its title sits.
-    res = ep.link(
-        ep.Anchor.from_data(image, (8, 8)),
-        ep.Anchor.from_data(phasor, (0.5, 1.6)),
+    res = ep.motion.link(
+        ep.motion.Anchor.from_data(image, (8, 8)),
+        ep.motion.Anchor.from_data(phasor, (0.5, 1.6)),
         strict=False,
     )
     assert not any("crosses text" in f for f in res.artists["line"].faults())
@@ -1651,8 +1682,9 @@ def test_link_audit_reads_titles_and_axis_labels_made_after_it():
 
 def test_link_takes_a_neutral_and_keeps_the_cross_panel_length():
     fig, image, phasor = _image_and_phasor()
-    res = ep.link(
-        ep.Anchor.from_data(image, (12, 4)), ep.Anchor.from_data(phasor, (0.0, 0.0))
+    res = ep.motion.link(
+        ep.motion.Anchor.from_data(image, (12, 4)),
+        ep.motion.Anchor.from_data(phasor, (0.0, 0.0)),
     )
     line = res.artists["line"]
     fig.canvas.draw()
@@ -1660,33 +1692,36 @@ def test_link_takes_a_neutral_and_keeps_the_cross_panel_length():
     assert line.faults() == []  # longer than a quarter panel, and no fault
     xy = line.get_xydata()
     assert np.hypot(*(xy[-1] - xy[0])) > 0.25 * max(image.bbox.width, image.bbox.height)
-    assert ep.audit(fig) == {}
+    assert ep.testing.audit(fig) == {}
 
 
 def test_link_crossing_data_near_either_end_is_a_fault_and_audit_names_it():
     fig, image, phasor = _image_and_phasor()
-    src = ep.Anchor.from_data(image, (12, 4))
+    src = ep.motion.Anchor.from_data(image, (12, 4))
     # A curve across the phasor panel on the way to its origin.
     phasor.plot([-0.3, -0.3], [-1.0, 1.0], color="C1", label="arm")
-    res = ep.link(src, ep.Anchor.from_data(phasor, (0.5, 0.5)))
+    res = ep.motion.link(src, ep.motion.Anchor.from_data(phasor, (0.5, 0.5)))
     fig.canvas.draw()
     assert any("crosses data: arm" in f for f in res.artists["line"].faults())
     # A curve in the source panel's overlay, near the starting end.
     image.autoscale(False)
     image.plot([13.0, 13.0], [0.0, 8.0], color="C2", label="edge")
-    res2 = ep.link(src, ep.Anchor.from_data(phasor, (0.9, -0.9)), strict=False)
+    res2 = ep.motion.link(
+        src, ep.motion.Anchor.from_data(phasor, (0.9, -0.9)), strict=False
+    )
     assert any("crosses data: edge" in f for f in res2.artists["line"].faults())
-    with pytest.raises(ep.AttentionFault, match="arm"):
-        ep.audit(fig)
-    found = ep.audit(fig, raise_on_fault=False)
+    with pytest.raises(ep.testing.AttentionFault, match="arm"):
+        ep.testing.audit(fig)
+    found = ep.testing.audit(fig, raise_on_fault=False)
     assert res.artists["line"] in found and res2.artists["line"] in found
 
 
 def test_link_drawing_never_raises_and_scenery_is_not_data():
     fig, image, phasor = _image_and_phasor()
     # The reference lines through the origin and the image are not data.
-    clean = ep.link(
-        ep.Anchor.from_data(image, (12, 4)), ep.Anchor.from_data(phasor, (0.0, 0.0))
+    clean = ep.motion.link(
+        ep.motion.Anchor.from_data(image, (12, 4)),
+        ep.motion.Anchor.from_data(phasor, (0.0, 0.0)),
     )
     assert clean.artists["line"].faults() == []
     phasor.plot([-0.3, -0.3], [-1.0, 1.0], color="C1")
@@ -1698,11 +1733,11 @@ def test_link_drawing_never_raises_and_scenery_is_not_data():
 def test_link_ending_on_a_marker_or_in_a_data_color_is_judged_as_a_leader_is():
     _fig, image, phasor = _image_and_phasor()
     (dot,) = phasor.plot([0.0], [0.0], "o", color="C4", ms=8)
-    res = ep.link(ep.Anchor.from_data(image, (12, 4)), dot)
+    res = ep.motion.link(ep.motion.Anchor.from_data(image, (12, 4)), dot)
     assert res.artists["line"].faults() == []  # ends on the mark it names
-    other = ep.link(
-        ep.Anchor.from_data(image, (12, 4)),
-        ep.Anchor.from_data(phasor, (0.0, 0.0)),
+    other = ep.motion.link(
+        ep.motion.Anchor.from_data(image, (12, 4)),
+        ep.motion.Anchor.from_data(phasor, (0.0, 0.0)),
         color="C0",
     )
     assert any("data color" in f for f in other.artists["line"].faults())
@@ -1710,8 +1745,8 @@ def test_link_ending_on_a_marker_or_in_a_data_color_is_judged_as_a_leader_is():
 
 def test_link_leaves_an_anchored_artist_at_its_edge():
     fig, image, phasor = _image_and_phasor()
-    ring = ep.overlay_circle(image, (12, 4), 1.5).artists["ellipse"][-1]
-    res = ep.link(ring, ep.Anchor.from_data(phasor, (0.0, 0.0)))
+    ring = ep.plot.overlay_circle(image, (12, 4), 1.5).artists["ellipse"][-1]
+    res = ep.motion.link(ring, ep.motion.Anchor.from_data(phasor, (0.0, 0.0)))
     fig.canvas.draw()
     box = ring.get_window_extent()
     start = res.artists["line"].get_xydata()[0]
@@ -1722,8 +1757,8 @@ def test_link_leaves_an_anchored_artist_at_its_edge():
 def test_link_follows_the_layout_and_moves_no_limits():
     fig, image, phasor = _image_and_phasor()
     limits = [(a.get_xlim(), a.get_ylim()) for a in (image, phasor)]
-    dst = ep.Anchor.from_data(phasor, (0.0, 0.0))
-    res = ep.link(ep.Anchor.from_data(image, (12, 4)), dst)
+    dst = ep.motion.Anchor.from_data(phasor, (0.0, 0.0))
+    res = ep.motion.link(ep.motion.Anchor.from_data(image, (12, 4)), dst)
     line = res.artists["line"]
     assert line in fig.artists and line not in image.get_children()
     phasor.set_xlim(-2.0, 2.0)
@@ -1735,14 +1770,15 @@ def test_link_follows_the_layout_and_moves_no_limits():
         res.update(u)
         fig.canvas.draw()
     assert [(a.get_xlim(), a.get_ylim()) for a in (image, phasor)] == limits
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     assert list(res.axes) == [image, phasor]
 
 
 def test_link_update_is_idempotent_and_rejects_bad_inputs():
     fig, image, phasor = _image_and_phasor()
-    res = ep.link(
-        ep.Anchor.from_data(image, (12, 4)), ep.Anchor.from_data(phasor, (0.0, 0.0))
+    res = ep.motion.link(
+        ep.motion.Anchor.from_data(image, (12, 4)),
+        ep.motion.Anchor.from_data(phasor, (0.0, 0.0)),
     )
     res.update(0.3)
     first = _pixels(fig)
@@ -1750,7 +1786,7 @@ def test_link_update_is_idempotent_and_rejects_bad_inputs():
     res.update(0.3)
     np.testing.assert_array_equal(_pixels(fig), first)
     with pytest.raises(TypeError):
-        ep.link("here", ep.Anchor.from_data(phasor, (0.0, 0.0)))
+        ep.motion.link("here", ep.motion.Anchor.from_data(phasor, (0.0, 0.0)))
 
 
 # Morph
@@ -1810,10 +1846,10 @@ def _data(ax, vertices):
 
 
 def test_morph_is_exported_and_not_shadowed_by_a_module():
-    assert callable(ep.morph)
+    assert callable(ep.motion.morph)
     import eyepiece.attention
 
-    assert ep.morph is eyepiece.attention.morph
+    assert ep.motion.morph is eyepiece.attention.morph
 
 
 def test_morph_endpoints_are_the_resampled_paths():
@@ -1821,7 +1857,7 @@ def test_morph_endpoints_are_the_resampled_paths():
 
     _fig, ax = _morph_axes()
     a, b = _circle(1.0), _square(1.2)
-    move = ep.morph(a, b, ax=ax, closed=True, n=120)
+    move = ep.motion.morph(a, b, ax=ax, closed=True, n=120)
     ghost = move.artists["fill"]
     px = lambda v: ax.transData.transform(v)  # noqa: E731
     ((start, closed0),) = ghost.shape(0.0)
@@ -1839,7 +1875,7 @@ def test_morph_endpoints_are_the_resampled_paths():
 def test_morph_ghost_is_visible_only_between_the_ends(mode):
     hwostyle.use(mode)
     fig, ax = _morph_axes()
-    move = ep.morph(_circle(), _square(), ax=ax)
+    move = ep.motion.morph(_circle(), _square(), ax=ax)
     before = _pixels(fig)
     ghost = move.artists["fill"]
     assert not ghost.get_visible()  # rest state
@@ -1859,7 +1895,7 @@ def test_morph_ghost_is_visible_only_between_the_ends(mode):
 
 def test_morph_circle_to_square_stays_simple():
     _fig, ax = _morph_axes()
-    move = ep.morph(_circle(1.0, 90), _square(0.9), ax=ax, closed=True, n=90)
+    move = ep.motion.morph(_circle(1.0, 90), _square(0.9), ax=ax, closed=True, n=90)
     ghost = move.artists["fill"]
     for u in (0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0):
         ((ring, closed),) = ghost.shape(u)
@@ -1874,7 +1910,7 @@ def test_morph_simple_test_catches_a_crossing():
 
 def test_morph_eased_progress_is_monotone():
     fig, ax = _morph_axes()
-    move = ep.morph(_circle(), _square(), ax=ax, ease="smoothstep")
+    move = ep.motion.morph(_circle(), _square(), ax=ax, ease="smoothstep")
     ghost = move.artists["fill"]
     us = np.linspace(0.0, 1.0, 41)
     eased = []
@@ -1883,7 +1919,7 @@ def test_morph_eased_progress_is_monotone():
         fig.canvas.draw()
         eased.append(ghost.eased if 0.0 < u < 1.0 else u)
     assert np.all(np.diff(eased) >= 0.0)
-    assert np.allclose(eased, ep.ease(us, "smoothstep"))
+    assert np.allclose(eased, ep.clock.ease(us, "smoothstep"))
     # A tracked vertex moves farther from its start as the progress grows.
     first = [ghost.shape(u)[0][0][0] for u in us]
     travel = np.hypot(*(np.array(first) - first[0]).T)
@@ -1893,7 +1929,7 @@ def test_morph_eased_progress_is_monotone():
 def test_morph_interpolates_stroke_fill_and_width():
     fig, ax = _morph_axes()
     a, b = _circle(), _square()
-    move = ep.morph(
+    move = ep.motion.morph(
         a,
         b,
         ax=ax,
@@ -1909,7 +1945,7 @@ def test_morph_interpolates_stroke_fill_and_width():
     assert ghost.get_linewidth() == pytest.approx(3.0)
     move.update(0.25)
     fig.canvas.draw()
-    e = ep.ease(0.25)
+    e = ep.clock.ease(0.25)
     assert np.allclose(ghost.get_edgecolor(), (1.0 - e, 0.0, e, 1.0))
     move.update(0.5, level=0.5)
     fig.canvas.draw()
@@ -1932,7 +1968,7 @@ def test_morph_takes_line_and_pathpatch_artists():
     )
     ax.add_patch(patch)
     fig.canvas.draw()
-    move = ep.morph(line, patch)
+    move = ep.motion.morph(line, patch)
     ghost = move.artists["fill"]
     move.update(0.0)
     assert move.ax is ax
@@ -1952,7 +1988,7 @@ def test_morph_open_path_keeps_its_order():
     x = np.linspace(-1.5, 1.5, 11)
     a = np.c_[x, np.zeros_like(x)]
     b = np.c_[x, np.sin(2.0 * x)]
-    move = ep.morph(a, b, ax=ax, n=60)
+    move = ep.motion.morph(a, b, ax=ax, n=60)
     ghost = move.artists["fill"]
     ((start, closed),) = ghost.shape(0.0)
     ((stop, _),) = ghost.shape(1.0)
@@ -1981,14 +2017,14 @@ def test_morph_closed_alignment_takes_the_short_way():
     a = _circle(1.0, 80)
     # The same circle, drawn the other way round and started a quarter turn on.
     b = np.roll(_circle(1.0, 80, clockwise=True), 20, axis=0)
-    move = ep.morph(a, b, ax=ax, closed=True, n=80)
+    move = ep.motion.morph(a, b, ax=ax, closed=True, n=80)
     ghost = move.artists["fill"]
     ((mid, _),) = ghost.shape(0.5)
     radius = np.hypot(*_data(ax, mid).T)
     # A wrong direction or start would pull the ring through the middle.
     assert radius.min() > 0.99
     # Without alignment the same pair does collapse.
-    raw = ep.morph(a, b, ax=ax, closed=True, n=80, align=False).artists["fill"]
+    raw = ep.motion.morph(a, b, ax=ax, closed=True, n=80, align=False).artists["fill"]
     ((bad, _),) = raw.shape(0.5)
     assert np.hypot(*_data(ax, bad).T).min() < 0.5
 
@@ -1997,7 +2033,7 @@ def test_morph_handles_mismatched_point_counts():
     _fig, ax = _morph_axes()
     a = _circle(1.0, 7)
     b = _circle(1.5, 311)
-    move = ep.morph(a, b, ax=ax, closed=True, n=100)
+    move = ep.motion.morph(a, b, ax=ax, closed=True, n=100)
     ghost = move.artists["fill"]
     for u in (0.0, 0.5, 1.0):
         ((ring, _),) = ghost.shape(u)
@@ -2005,7 +2041,7 @@ def test_morph_handles_mismatched_point_counts():
     radius = np.hypot(*_data(ax, ghost.shape(1.0)[0][0]).T)
     assert np.allclose(radius, 1.5, atol=1e-3)
     with pytest.raises(ValueError, match="at least 3"):
-        ep.morph(a, b, ax=ax, n=2)
+        ep.motion.morph(a, b, ax=ax, n=2)
 
 
 def test_morph_pairs_subpaths_by_size_and_grows_the_missing_one():
@@ -2013,7 +2049,7 @@ def test_morph_pairs_subpaths_by_size_and_grows_the_missing_one():
     big, small = _circle(1.0, 40), _circle(0.3, 40) + np.array([1.2, 1.2])
     two = np.vstack([small, [[np.nan, np.nan]], big])
     one = _square(1.0)
-    move = ep.morph(two, one, ax=ax, n=48, closed=True)
+    move = ep.motion.morph(two, one, ax=ax, n=48, closed=True)
     ghost = move.artists["fill"]
     # NaN split makes two closed parts; the larger pairs with the square.
     parts_start = ghost.shape(0.0)
@@ -2023,23 +2059,23 @@ def test_morph_pairs_subpaths_by_size_and_grows_the_missing_one():
     last = _data(ax, parts_stop[1][0])
     assert np.allclose(last, [1.2, 1.2], atol=1e-6)
     # And the other way round it grows from that point.
-    back = ep.morph(one, two, ax=ax, n=48, closed=True)
+    back = ep.motion.morph(one, two, ax=ax, n=48, closed=True)
     grown = _data(ax, back.artists["fill"].shape(0.0)[1][0])
     assert np.allclose(grown, grown[0], atol=1e-6)
-    ((ring_one, _),) = ep.morph(one, one, ax=ax).artists["fill"].shape(0.5)[:1]
+    ((ring_one, _),) = ep.motion.morph(one, one, ax=ax).artists["fill"].shape(0.5)[:1]
     assert len(ring_one) == 200
 
 
 def test_morph_rejects_bad_ends():
     _fig, ax = _morph_axes()
     with pytest.raises(ValueError, match="ax="):
-        ep.morph(_circle(), _square())
+        ep.motion.morph(_circle(), _square())
     with pytest.raises(TypeError, match="PathPatch"):
-        ep.morph(ax.text(0, 0, "x"), _square(), ax=ax)
+        ep.motion.morph(ax.text(0, 0, "x"), _square(), ax=ax)
     with pytest.raises(ValueError, match="no finite"):
-        ep.morph(np.full((4, 2), np.nan), _square(), ax=ax)
+        ep.motion.morph(np.full((4, 2), np.nan), _square(), ax=ax)
     with pytest.raises(TypeError, match="unknown morph style"):
-        ep.morph(_circle(), _square(), ax=ax, a_kw={"color": "r"})
+        ep.motion.morph(_circle(), _square(), ax=ax, a_kw={"color": "r"})
 
 
 # Readout
@@ -2091,7 +2127,7 @@ def test_readout_end_frames_show_the_exact_formatted_values(
     fmt, first, last, first_text, last_text
 ):
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), first, fmt=fmt)
+    res = ep.motion.readout(ep.motion.Anchor.from_data(ax, (0.1, 0.5)), first, fmt=fmt)
     assert _shown(res) == first_text
     res.set(last)
     res.update(0.0)
@@ -2103,8 +2139,12 @@ def test_readout_end_frames_show_the_exact_formatted_values(
 
 def test_readout_prefix_suffix_and_unit_are_laid_beside_the_number():
     fig, ax = _readout_panel()
-    res = ep.readout(
-        ep.Anchor.from_data(ax, (0.1, 0.5)), 3.2, prefix="t = ", suffix="~", unit="h"
+    res = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.5)),
+        3.2,
+        prefix="t = ",
+        suffix="~",
+        unit="h",
     )
     texts = res.artists["text"]
     assert [t.role for t in texts] == ["prefix", "int", "frac", "tail"]
@@ -2112,7 +2152,7 @@ def test_readout_prefix_suffix_and_unit_are_laid_beside_the_number():
     boxes = _boxes(res, fig)
     for left, right in itertools.pairwise(boxes):
         assert right.x0 == pytest.approx(left.x1, abs=1e-6)
-    start = ep.Anchor.from_data(ax, (0.1, 0.5)).display()[0]
+    start = ep.motion.Anchor.from_data(ax, (0.1, 0.5)).display()[0]
     assert boxes[0].x0 == pytest.approx(start)
 
 
@@ -2120,8 +2160,8 @@ def test_readout_prefix_suffix_and_unit_are_laid_beside_the_number():
 def test_readout_box_does_not_move_more_than_half_a_pixel_through_a_count(mode):
     hwostyle.use(mode)
     fig, ax = _readout_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
-    res = ep.readout(at, -9.96, prefix="t = ", unit="h")
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
+    res = ep.motion.readout(at, -9.96, prefix="t = ", unit="h")
     res.set(1234.5)  # one digit up to four, and across a sign change
     boxes = []
     for u in np.linspace(0.0, 1.0, 81):
@@ -2133,7 +2173,9 @@ def test_readout_box_does_not_move_more_than_half_a_pixel_through_a_count(mode):
 
 def test_readout_point_is_pixel_steady_while_the_integer_digits_change():
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 1.5, prefix="x = ", digits=3)
+    res = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.5)), 1.5, prefix="x = ", digits=3
+    )
     frac = next(t for t in res.artists["text"] if t.role == "frac")
     fig.canvas.draw()
     point = frac.get_window_extent().x0
@@ -2163,7 +2205,7 @@ def test_readout_point_is_pixel_steady_while_the_integer_digits_change():
 )
 def test_readout_count_is_monotone_up_and_down(start, fmt):
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), start, fmt=fmt)
+    res = ep.motion.readout(ep.motion.Anchor.from_data(ax, (0.1, 0.5)), start, fmt=fmt)
     res.set(start + 7.3)
     us = np.linspace(0.0, 1.0, 301)
     up = []
@@ -2183,7 +2225,9 @@ def test_readout_count_is_monotone_up_and_down(start, fmt):
 
 def test_readout_shows_no_negative_zero_and_keeps_alignment_through_a_sign_change():
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), -1.0, prefix="v = ")
+    res = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.5)), -1.0, prefix="v = "
+    )
     res.set(1.0)
     point = None
     right = None
@@ -2203,13 +2247,17 @@ def test_readout_shows_no_negative_zero_and_keeps_alignment_through_a_sign_chang
         assert int_box.x1 == pytest.approx(right, abs=0.5)
     assert {"\u22121.0", "0.0", "1.0"} <= seen
     # With a sign flag the rounded zero keeps the plus.
-    plus = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.3)), -0.04, fmt="+.1f")
+    plus = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.3)), -0.04, fmt="+.1f"
+    )
     assert _shown(plus) == "+0.0"
 
 
 def test_readout_with_a_sign_slot_holds_its_box_across_zero():
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), -25.0, signed=True)
+    res = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.5)), -25.0, signed=True
+    )
     box = _union(res, fig)
     for value in (-3.0, 0.0, 3.0, 25.0):
         res.set(value)
@@ -2219,7 +2267,7 @@ def test_readout_with_a_sign_slot_holds_its_box_across_zero():
 
 def test_readout_set_chains_moves_from_the_last_value_and_rests_on_it():
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 1.0)
+    res = ep.motion.readout(ep.motion.Anchor.from_data(ax, (0.1, 0.5)), 1.0)
     fig.canvas.draw()
     rest = _pixels(fig)
     res.update(1.0)
@@ -2243,24 +2291,24 @@ def test_readout_set_chains_moves_from_the_last_value_and_rests_on_it():
 
 def test_readout_ease_kind_shapes_the_count():
     _fig, ax = _readout_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
-    linear = ep.readout(at, 0.0, ease="linear")
-    smooth = ep.readout(at, 0.0)
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
+    linear = ep.motion.readout(at, 0.0, ease="linear")
+    smooth = ep.motion.readout(at, 0.0)
     for res in (linear, smooth):
         res.set(10.0)
         res.update(0.25)
     assert _shown(linear) == "2.5"
     assert _shown(smooth) == "0.7"
     with pytest.raises(ValueError, match="easing"):
-        ep.readout(at, 0.0, ease="bounce")
+        ep.motion.readout(at, 0.0, ease="bounce")
 
 
 def test_readout_ha_places_it_by_its_end_or_its_point():
     fig, ax = _readout_panel()
-    at = ep.Anchor.from_data(ax, (0.5, 0.5))
+    at = ep.motion.Anchor.from_data(ax, (0.5, 0.5))
     x = float(at.display()[0])
     for ha in ("left", "center", "right", "point"):
-        res = ep.readout(at, 12.5, prefix="p ", unit="h", ha=ha)
+        res = ep.motion.readout(at, 12.5, prefix="p ", unit="h", ha=ha)
         box = _union(res, fig)
         fig.canvas.draw()
         frac = next(t for t in res.artists["text"] if t.role == "frac")
@@ -2278,14 +2326,14 @@ def test_readout_is_a_figure_level_stage_member_and_dims_with_level():
     fig, ax = _readout_panel()
     ax.plot([0.0, 1.0], [0.2, 0.8])
     limits = (ax.get_xlim(), ax.get_ylim())
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 1.0, digits=2)
+    res = ep.motion.readout(ep.motion.Anchor.from_data(ax, (0.1, 0.5)), 1.0, digits=2)
     parts = res.artists["text"]
     assert all(t.get_figure() is fig and t not in ax.texts for t in parts)
     res.set(4.0)
     res.update(0.5)
     fig.canvas.draw()
     assert (ax.get_xlim(), ax.get_ylim()) == limits
-    stage = ep.Stage({"row": parts})
+    stage = ep.motion.Stage({"row": parts})
     stage.set(shown=[])
     # A running value leaves the stage's levels alone.
     res.update(0.7)
@@ -2300,7 +2348,7 @@ def test_readout_is_a_figure_level_stage_member_and_dims_with_level():
     res.update(1.0)
     assert all(t.get_visible() for t in parts)
     # The parts are anchors that stay put while the value runs.
-    anchor = ep.Anchor.from_artist(parts[1], "right")
+    anchor = ep.motion.Anchor.from_artist(parts[1], "right")
     first = anchor.display().copy()
     res.set(99.0)
     res.update(0.6)
@@ -2311,7 +2359,9 @@ def test_readout_rest_state_is_the_figure_as_drawn_in_both_modes():
     for mode in MODES:
         hwostyle.use(mode)
         fig, ax = _readout_panel()
-        res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 2.41, fmt=".2f")
+        res = ep.motion.readout(
+            ep.motion.Anchor.from_data(ax, (0.1, 0.5)), 2.41, fmt=".2f"
+        )
         rest = _pixels(fig)
         res.set(7.0)
         res.update(0.5)
@@ -2324,13 +2374,13 @@ def test_readout_rest_state_is_the_figure_as_drawn_in_both_modes():
 
 def test_readout_grows_its_slots_only_when_set_and_can_reserve_in_advance():
     fig, ax = _readout_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
-    small = ep.readout(at, 1.0)
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
+    small = ep.motion.readout(at, 1.0)
     narrow = _union(small, fig)
     small.set(1000.0)
     wide = _union(small, fig)
     assert wide[2] - wide[0] > narrow[2] - narrow[0] + 1.0
-    reserved = ep.readout(at, 1.0, digits=4, signed=True)
+    reserved = ep.motion.readout(at, 1.0, digits=4, signed=True)
     box = _union(reserved, fig)
     reserved.set(-1000.0)
     reserved.update(1.0)
@@ -2339,19 +2389,19 @@ def test_readout_grows_its_slots_only_when_set_and_can_reserve_in_advance():
 
 def test_readout_rejects_bad_inputs():
     _fig, ax = _readout_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
     for bad in (".2g", "e", "5.1f", "x", ".1fz"):
         with pytest.raises(ValueError, match="fixed-point"):
-            ep.readout(at, 1.0, fmt=bad)
+            ep.motion.readout(at, 1.0, fmt=bad)
     with pytest.raises(ValueError, match="ha"):
-        ep.readout(at, 1.0, ha="top")
+        ep.motion.readout(at, 1.0, ha="top")
     with pytest.raises(ValueError, match="finite"):
-        ep.readout(at, float("nan"))
-    res = ep.readout(at, 1.0)
+        ep.motion.readout(at, float("nan"))
+    res = ep.motion.readout(at, 1.0)
     with pytest.raises(ValueError, match="finite"):
         res.set(float("inf"))
     with pytest.raises(TypeError, match="Anchor"):
-        ep.readout("here", 1.0)
+        ep.motion.readout("here", 1.0)
 
 
 def _ink_columns(res, fig, roles):
@@ -2380,8 +2430,12 @@ def _ink_gap(res, fig):
 def test_readout_integer_ink_ends_at_the_decimal_point(mode):
     hwostyle.use(mode)
     fig, ax = _readout_panel()
-    res = ep.readout(
-        ep.Anchor.from_data(ax, (0.1, 0.5)), 1.5, prefix="x = ", unit="h", digits=3
+    res = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.5)),
+        1.5,
+        prefix="x = ",
+        unit="h",
+        digits=3,
     )
     prefix_cols = None
     for value in (1.5, 12.5, 123.5, -4.5):
@@ -2397,7 +2451,9 @@ def test_readout_integer_ink_ends_at_the_decimal_point(mode):
 
 def test_readout_ink_test_catches_a_left_justified_integer():
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), 123.5, prefix="x = ")
+    res = ep.motion.readout(
+        ep.motion.Anchor.from_data(ax, (0.1, 0.5)), 123.5, prefix="x = "
+    )
     assert 0 <= _ink_gap(res, fig) <= 4
     # Positive control: justify the integer part left, as a broken layout would.
     integer = next(t for t in res.artists["text"] if t.role == "int")
@@ -2411,7 +2467,7 @@ def test_readout_count_stays_between_its_values_under_the_real_overshoot_eases(
     kind, old, new
 ):
     fig, ax = _readout_panel()
-    res = ep.readout(ep.Anchor.from_data(ax, (0.1, 0.5)), old, ease=kind)
+    res = ep.motion.readout(ep.motion.Anchor.from_data(ax, (0.1, 0.5)), old, ease=kind)
     res.set(new)
     shown = []
     for u in np.linspace(0.0, 1.0, 201):
@@ -2426,10 +2482,10 @@ def test_readout_count_stays_between_its_values_under_the_real_overshoot_eases(
 
 def test_readout_signed_false_rejects_a_negative_value():
     _fig, ax = _readout_panel()
-    at = ep.Anchor.from_data(ax, (0.1, 0.5))
+    at = ep.motion.Anchor.from_data(ax, (0.1, 0.5))
     with pytest.raises(ValueError, match="signed=False"):
-        ep.readout(at, -1.0, signed=False)
-    res = ep.readout(at, 1.0, signed=False)
+        ep.motion.readout(at, -1.0, signed=False)
+    res = ep.motion.readout(at, 1.0, signed=False)
     with pytest.raises(ValueError, match="signed=False"):
         res.set(-2.0)
     res.set(0.0)  # a value that is not negative is fine
@@ -2442,8 +2498,11 @@ def test_flight_with_back_out_overshoots_its_destination_and_lands_exactly():
     fig, ax = plt.subplots()
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.2], [0.5], "o")
-    a, b = ep.Anchor.from_data(ax, (0.2, 0.5)), ep.Anchor.from_data(ax, (0.8, 0.5))
-    carry = ep.flight(a, b, fig=fig, mark=dot, ease="back_out")
+    a, b = (
+        ep.motion.Anchor.from_data(ax, (0.2, 0.5)),
+        ep.motion.Anchor.from_data(ax, (0.8, 0.5)),
+    )
+    carry = ep.motion.flight(a, b, fig=fig, mark=dot, ease="back_out")
     ghost = carry.artists["line"]
     reach = b.display()[0]
     xs = []
@@ -2466,9 +2525,9 @@ def test_flight_with_back_out_overshoots_its_destination_and_lands_exactly():
 @pytest.mark.parametrize("kind", ["back_out", "running_start"])
 def test_link_never_draws_past_its_ends_under_an_overshoot_ease(kind):
     fig, image, phasor = _image_and_phasor()
-    src = ep.Anchor.from_data(image, (12, 4))
-    dst = ep.Anchor.from_data(phasor, (0.0, 0.0))
-    tie = ep.link(src, dst, ease=kind)
+    src = ep.motion.Anchor.from_data(image, (12, 4))
+    dst = ep.motion.Anchor.from_data(phasor, (0.0, 0.0))
+    tie = ep.motion.link(src, dst, ease=kind)
     line = tie.artists["line"]
     p, q = src.display(), dst.display()
     along = q - p
@@ -2485,7 +2544,7 @@ def test_link_never_draws_past_its_ends_under_an_overshoot_ease(kind):
 @pytest.mark.parametrize("kind", ["back_out", "running_start"])
 def test_circumscribe_draws_a_part_of_its_outline_under_an_overshoot_ease(kind):
     fig, _ax, label = _labelled_panel()
-    ring = ep.circumscribe(label, ease=kind)
+    ring = ep.motion.circumscribe(label, ease=kind)
     outline = ring.artists["line"]
     full = outline.outline(fig.canvas.get_renderer())
     total = np.hypot(*np.diff(full, axis=0).T).sum()
@@ -2505,11 +2564,14 @@ def test_a_move_takes_a_callable_ease_to_choose_a_strength():
     fig, ax = plt.subplots()
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.2], [0.5], "o")
-    a, b = ep.Anchor.from_data(ax, (0.2, 0.5)), ep.Anchor.from_data(ax, (0.8, 0.5))
+    a, b = (
+        ep.motion.Anchor.from_data(ax, (0.2, 0.5)),
+        ep.motion.Anchor.from_data(ax, (0.8, 0.5)),
+    )
     reach = {}
     for strength in (0.1, 0.3):
-        how = functools.partial(ep.ease, kind="back_out", strength=strength)
-        carry = ep.flight(a, b, fig=fig, mark=dot, ease=how)
+        how = functools.partial(ep.clock.ease, kind="back_out", strength=strength)
+        carry = ep.motion.flight(a, b, fig=fig, mark=dot, ease=how)
         ghost = carry.artists["line"]
         xs = []
         for u in np.linspace(0.0, 1.0, 201)[1:-1]:
@@ -2538,7 +2600,7 @@ def test_morph_keeps_colors_and_widths_valid_under_an_overshoot_ease(kind):
     )
     for patch in (a, b):
         ax.add_patch(patch)
-    move = ep.morph(a, b, ax=ax, closed=True, n=40, ease=kind)
+    move = ep.motion.morph(a, b, ax=ax, closed=True, n=40, ease=kind)
     ghost = move.artists["fill"]
     for u in np.linspace(0.0, 1.0, 21):
         move.update(u)
@@ -2569,14 +2631,14 @@ def _length(lines):
 def test_write_is_exported():
     import eyepiece.attention
 
-    assert ep.write is eyepiece.attention.write
+    assert ep.motion.write is eyepiece.attention.write
 
 
 @pytest.mark.parametrize("string", ["Write ij", r"$E=\frac{m}{2}v^2$", "two\nlines"])
 def test_write_rest_state_is_pixel_exact(string):
     fig, text = _write_fig(string)
     before = _pixels(fig)
-    move = ep.write(text)
+    move = ep.motion.write(text)
     assert np.array_equal(_pixels(fig), before)
     for u in (0.0, 0.4, 0.8):
         move.update(u)
@@ -2589,7 +2651,7 @@ def test_write_rest_state_is_pixel_exact(string):
 def test_write_start_draws_nothing_and_the_ghost_leaves_at_the_end():
     fig, text = _write_fig()
     blank = _pixels(plt.figure(figsize=(5.0, 2.0), dpi=100))
-    move = ep.write(text)
+    move = ep.motion.write(text)
     ghost = move.artists["fill"]
     move.update(0.0)
     assert not text.get_visible()
@@ -2605,7 +2667,7 @@ def test_write_start_draws_nothing_and_the_ghost_leaves_at_the_end():
 
 def test_write_stroke_length_is_monotone_and_reaches_the_outline():
     fig, text = _write_fig()
-    move = ep.write(text)
+    move = ep.motion.write(text)
     ghost = move.artists["fill"]
     us = np.linspace(0.0, 1.0, 41)
     lengths = [_length(ghost.strokes(u)) for u in us]
@@ -2620,7 +2682,7 @@ def test_write_stroke_length_is_monotone_and_reaches_the_outline():
 
 def test_write_glyphs_are_in_reading_order():
     fig, text = _write_fig("abc def")
-    ghost = ep.write(text).artists["fill"]
+    ghost = ep.motion.write(text).artists["fill"]
     glyphs = ghost.glyphs()
     assert len(glyphs) == 6
     lefts = [min(v[:, 0].min() for v, _ in g) for g in glyphs]
@@ -2633,7 +2695,7 @@ def test_write_glyphs_are_in_reading_order():
 
 def test_write_fraction_bar_is_written_in_reading_order():
     fig, text = _write_fig(r"Contrast $C = \frac{F_p}{F_s}$", size=30)
-    ghost = ep.write(text, lag=0.6).artists["fill"]
+    ghost = ep.motion.write(text, lag=0.6).artists["fill"]
     glyphs = ghost.glyphs()
     lefts = [min(v[:, 0].min() for v, _ in g) for g in glyphs]
     assert lefts == sorted(lefts)
@@ -2651,7 +2713,7 @@ def test_write_fraction_bar_is_written_in_reading_order():
 
 def test_write_lines_go_top_down():
     fig, text = _write_fig("one\ntwo")
-    glyphs = ep.write(text).artists["fill"].glyphs()
+    glyphs = ep.motion.write(text).artists["fill"].glyphs()
     tops = [max(v[:, 1].max() for v, _ in g) for g in glyphs]
     assert min(tops[:3]) > max(tops[3:])
     plt.close(fig)
@@ -2659,7 +2721,7 @@ def test_write_lines_go_top_down():
 
 def test_write_mathtext_gives_glyphs_and_rules():
     fig, text = _write_fig(r"$\frac{a}{b}$")
-    ghost = ep.write(text).artists["fill"]
+    ghost = ep.motion.write(text).artists["fill"]
     # a, b and the fraction bar.
     assert len(ghost.glyphs()) == 3
     plt.close(fig)
@@ -2667,7 +2729,7 @@ def test_write_mathtext_gives_glyphs_and_rules():
 
 def test_write_glyphs_sit_on_the_text():
     fig, text = _write_fig("Hxl", rotation=20)
-    ghost = ep.write(text).artists["fill"]
+    ghost = ep.motion.write(text).artists["fill"]
     pts = np.vstack([v for g in ghost.glyphs() for v, _ in g])
     box = text.get_window_extent()
     assert pts[:, 0].min() >= box.x0 - 2.0 and pts[:, 0].max() <= box.x1 + 2.0
@@ -2678,7 +2740,7 @@ def test_write_glyphs_sit_on_the_text():
 def test_write_fill_covers_the_text_just_before_the_end():
     fig, text = _write_fig()
     final = _pixels(fig)
-    move = ep.write(text)
+    move = ep.motion.write(text)
     move.update(0.999)
     near = _pixels(fig)
     ink = final[..., 0] < 128
@@ -2691,7 +2753,7 @@ def test_write_fill_covers_the_text_just_before_the_end():
 def test_write_has_no_jump_into_the_rest_state():
     fig, text = _write_fig(r"Write the $p(\theta | d)$ out", size=34)
     final = _pixels(fig).astype(float)
-    move = ep.write(text)
+    move = ep.motion.write(text)
     frames = []
     for u in np.linspace(0.0, 1.0, 61):
         move.update(u)
@@ -2711,7 +2773,7 @@ def test_write_has_no_jump_into_the_rest_state():
 def test_write_restores_the_texts_own_alpha():
     fig, text = _write_fig()
     text.set_alpha(0.6)
-    move = ep.write(text)
+    move = ep.motion.write(text)
     for u in (0.2, 0.85, 0.95, 1.0):
         move.update(u)
         _pixels(fig)
@@ -2721,7 +2783,7 @@ def test_write_restores_the_texts_own_alpha():
 
 def test_write_level_is_opacity_only():
     fig, text = _write_fig()
-    move = ep.write(text)
+    move = ep.motion.write(text)
     move.update(0.5)
     full = _pixels(fig)
     move.update(0.5, level=0.0)
@@ -2735,7 +2797,7 @@ def test_write_level_is_opacity_only():
 def test_write_keeps_a_hidden_text_hidden():
     fig, text = _write_fig()
     text.set_visible(False)
-    move = ep.write(text)
+    move = ep.motion.write(text)
     move.update(0.5)
     assert not move.artists["fill"].get_visible()
     move.update(1.0)
@@ -2745,7 +2807,7 @@ def test_write_keeps_a_hidden_text_hidden():
 
 def test_write_follows_the_text_when_it_moves():
     fig, text = _write_fig()
-    ghost = ep.write(text).artists["fill"]
+    ghost = ep.motion.write(text).artists["fill"]
     before = ghost.glyphs()[0][0][0].copy()
     text.set_position((0.3, 0.4))
     after = ghost.glyphs()[0][0][0]
@@ -2757,7 +2819,7 @@ def test_write_follows_the_text_when_it_moves():
 
 def test_write_overshooting_ease_is_clamped():
     fig, text = _write_fig()
-    move = ep.write(text, ease=lambda r: 1.4 * r - 0.2)
+    move = ep.motion.write(text, ease=lambda r: 1.4 * r - 0.2)
     traced, fill = move.artists["fill"].times(0.3)
     assert all(0.0 <= t <= 1.0 for t in [*traced, *fill])
     plt.close(fig)
@@ -2766,7 +2828,7 @@ def test_write_overshooting_ease_is_clamped():
 def test_write_is_readable_at_every_beat():
     ept = pytest.importorskip("eyepiece.testing")
     fig, text = _write_fig()
-    move = ep.write(text)
+    move = ep.motion.write(text)
     for u in (0.0, 0.5, 1.0):
         move.update(u)
         ept.assert_readable(fig)
@@ -2776,13 +2838,13 @@ def test_write_is_readable_at_every_beat():
 def test_write_rejects_bad_input():
     fig, text = _write_fig()
     with pytest.raises(TypeError):
-        ep.write(fig)
+        ep.motion.write(fig)
     with pytest.raises(ValueError):
-        ep.write(text, draw=1.0)
+        ep.motion.write(text, draw=1.0)
     with pytest.raises(ValueError):
-        ep.write(text, draw=0.0)
+        ep.motion.write(text, draw=0.0)
     with pytest.raises(ValueError):
-        ep.write(text, lag=2.0)
+        ep.motion.write(text, lag=2.0)
     with pytest.raises(ValueError):
-        ep.write(fig.text(0.5, 0.5, "   "))
+        ep.motion.write(fig.text(0.5, 0.5, "   "))
     plt.close(fig)

@@ -16,7 +16,7 @@ def _grid(nx=9, ny=5):
     return values, x, y
 
 
-@pytest.mark.parametrize("show", [ep.imshow_log, ep.imshow_diverging])
+@pytest.mark.parametrize("show", [ep.plot.imshow_log, ep.plot.imshow_diverging])
 def test_centers_give_the_pixel_edge_extent(show):
     values, x, y = _grid()
     res = show(values, centers=(x, y), colorbar=False)
@@ -31,12 +31,12 @@ def test_centers_give_the_pixel_edge_extent(show):
 def test_centers_match_the_hand_built_extent_pixel_for_pixel():
     values, x, y = _grid()
     dx, dy = x[1] - x[0], y[1] - y[0]
-    by_hand = ep.imshow_log(
+    by_hand = ep.plot.imshow_log(
         values,
         extent=(x[0] - dx / 2, x[-1] + dx / 2, y[0] - dy / 2, y[-1] + dy / 2),
         colorbar=False,
     )
-    by_centers = ep.imshow_log(values, centers=(x, y), colorbar=False)
+    by_centers = ep.plot.imshow_log(values, centers=(x, y), colorbar=False)
     for res in (by_hand, by_centers):
         res.ax.set_aspect("auto")
         res.fig.canvas.draw()
@@ -49,7 +49,7 @@ def test_centers_match_the_hand_built_extent_pixel_for_pixel():
 
 def test_centers_with_origin_upper_keep_row_zero_at_y0():
     values, x, y = _grid()
-    res = ep.imshow_log(
+    res = ep.plot.imshow_log(
         values, centers=(x, y), colorbar=False, imshow_kw={"origin": "upper"}
     )
     _, _, bottom, top = res.artists["image"].get_extent()
@@ -71,14 +71,14 @@ def test_centers_with_origin_upper_keep_row_zero_at_y0():
 def test_bad_centers_raise(centers, match):
     values, _, _ = _grid()
     with pytest.raises(ValueError, match=match):
-        ep.imshow_log(values, centers=centers)
+        ep.plot.imshow_log(values, centers=centers)
     plt.close("all")
 
 
 def test_centers_and_extent_together_raise():
     values, x, y = _grid()
     with pytest.raises(ValueError, match="not both"):
-        ep.imshow_log(values, centers=(x, y), extent=(0, 1, 0, 1))
+        ep.plot.imshow_log(values, centers=(x, y), extent=(0, 1, 0, 1))
     plt.close("all")
 
 
@@ -86,7 +86,7 @@ def test_centers_and_extent_together_raise():
 def test_kymograph_is_a_log_image_on_an_auto_aspect(mode):
     hwostyle.use(mode)
     values, x, y = _grid()
-    res = ep.kymograph(values, x, y, vmin=1e-3, vmax=1.0, cbar_label="brightness")
+    res = ep.plot.kymograph(values, x, y, vmin=1e-3, vmax=1.0, cbar_label="brightness")
     image = res.artists["image"]
     assert set(res.artists) == {"image", "cbar"}
     assert isinstance(image.norm, LogNorm)
@@ -101,7 +101,7 @@ def test_kymograph_is_a_log_image_on_an_auto_aspect(mode):
 
 def test_kymograph_update_reuses_the_floor_and_norm():
     values, x, y = _grid()
-    res = ep.kymograph(values, x, y, floor=1e-4, colorbar=False)
+    res = ep.plot.kymograph(values, x, y, floor=1e-4, colorbar=False)
     norm = res.artists["image"].norm
     res.update(np.zeros_like(values))
     assert res.artists["image"].norm is norm
@@ -111,6 +111,6 @@ def test_kymograph_update_reuses_the_floor_and_norm():
 
 def test_kymograph_imshow_kw_wins_over_the_auto_aspect():
     values, x, y = _grid()
-    res = ep.kymograph(values, x, y, colorbar=False, imshow_kw={"aspect": "equal"})
+    res = ep.plot.kymograph(values, x, y, colorbar=False, imshow_kw={"aspect": "equal"})
     assert res.ax.get_aspect() == 1.0
     plt.close(res.fig)

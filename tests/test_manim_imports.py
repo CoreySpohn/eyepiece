@@ -48,9 +48,7 @@ def test_manim_namespace_never_imports_manim_slides():
         "sys.meta_path.insert(0, _Blocker())\n"
         "import eyepiece.manim as em\n"
         "from eyepiece.manim import Units, ensure_font\n"
-        "from eyepiece.manim._render import _ensure_font\n"
         "assert callable(ensure_font)\n"
-        "assert _ensure_font is ensure_font\n"
         "assert Units().font_size(24.0) == 24.0\n"
         "print(sorted(em.__all__))\n"
     )

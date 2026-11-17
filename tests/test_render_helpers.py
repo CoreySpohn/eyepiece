@@ -78,7 +78,7 @@ def build_style_variant(venue, mode):
 
     fig = plt.figure(figsize=(0.96, 0.54))
     ax = fig.add_axes((0.25, 0.25, 0.5, 0.5))
-    ax.set_facecolor(ep.role("planet"))
+    ax.set_facecolor(ep.style.role("planet"))
     ax.set(xticks=[], yticks=[])
     return fig, draw_style_variant
 
@@ -94,7 +94,7 @@ def setup_video_style():
     import eyepiece as ep
 
     hwostyle.use("dark")
-    ep.use_video(True)
+    ep.style.use_video(True)
 
 
 def draw_variant_clip(fig, frame, *, failure_dir=None):

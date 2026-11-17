@@ -20,7 +20,7 @@ def _text_fig(string=STRING, size=30):
 
 def test_progress_is_linear_inside_each_glyph_window():
     _, text = _text_fig()
-    ghost = ep.write(text).artists["fill"]
+    ghost = ep.motion.write(text).artists["fill"]
     assert ghost.times(1.0)[1] == [1.0] * len(ghost.glyphs())
     n = len(ghost.glyphs())
     us = np.linspace(0.0, 0.9, 901)
@@ -47,7 +47,7 @@ def test_progress_is_linear_inside_each_glyph_window():
 def test_glyphs_finish_one_by_one_in_reading_order():
     fig, text = _text_fig()
     final = _pixels(fig)
-    move = ep.write(text)
+    move = ep.motion.write(text)
     ghost = move.artists["fill"]
     glyphs = ghost.glyphs()
     move.update(0.2)
@@ -72,7 +72,7 @@ def test_handoff_never_lightens_the_finished_ink():
     fig, text = _text_fig()
     final = _pixels(fig)
     ink = final.min(axis=-1) < 40
-    move = ep.write(text)
+    move = ep.motion.write(text)
     move.update(0.9)
     start = _pixels(fig)
     # The filled glyphs cross-fade into the text: no hand-off frame is lighter
@@ -87,7 +87,7 @@ def test_handoff_never_lightens_the_finished_ink():
 
 def test_write_clip_has_no_motion_fault():
     fig, text = _text_fig()
-    move = ep.write(text)
+    move = ep.motion.write(text)
     assert (
         ept.motion_faults(fig, move.update, np.linspace(0, 1, 61), moves=[move]) == []
     )
@@ -96,7 +96,9 @@ def test_write_clip_has_no_motion_fault():
 def _equation_fig():
     fig, ax = plt.subplots(figsize=(6.0, 2.0), dpi=100, facecolor="white")
     ax.set_axis_off()
-    eq = ep.equation(ax, r"${{lhs:C}} = \frac{{num:F_p}}{{den:F_s}}$", fontsize=34)
+    eq = ep.motion.equation(
+        ax, r"${{lhs:C}} = \frac{{num:F_p}}{{den:F_s}}$", fontsize=34
+    )
     fig.canvas.draw()
     return fig, eq
 

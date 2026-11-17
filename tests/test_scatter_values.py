@@ -16,7 +16,7 @@ from eyepiece import _style
 def test_inset_right_of_caller_slot():
     fig, axes = plt.subplots(1, 2)
     before = [ax.get_position(original=True).bounds for ax in axes]
-    result = ep.scatter_values(
+    result = ep.plot.scatter_values(
         [0, 1], [2, 3], [0.2, 0.8], ax=axes[0], vmin=0, vmax=1, cbar_label="probability"
     )
     assert isinstance(result, ep.PlotResult)
@@ -42,7 +42,7 @@ def test_inset_right_of_caller_slot():
 @pytest.mark.parametrize("mode", ["light", "dark"])
 def test_probability_uses_current_hwostyle(mode):
     hwostyle.use(mode)
-    result = ep.scatter_values([0], [1], [0.5], cmap="probability", colorbar=False)
+    result = ep.plot.scatter_values([0], [1], [0.5], cmap="probability", colorbar=False)
     expected = hwostyle.cmaps.probability
     if isinstance(expected, str):
         expected = matplotlib.colormaps[expected]
@@ -61,7 +61,7 @@ def test_statistic_fallback_and_future_role(monkeypatch):
     ]:
         monkeypatch.setattr(_style, "_light_cmaps", lambda source=source: source)
         monkeypatch.setattr(hwostyle, "current_mode", lambda: None)
-        result = ep.scatter_values([0], [1], [3], cmap="statistic")
+        result = ep.plot.scatter_values([0], [1], [3], cmap="statistic")
         assert result.artists["scatter"].cmap.name == expected
         plt.close(result.fig)
 
@@ -69,7 +69,7 @@ def test_statistic_fallback_and_future_role(monkeypatch):
 def test_installed_statistic_fallback():
     hwostyle.use("light")
     expected = getattr(hwostyle.cmaps, "statistic", "PuOr")
-    result = ep.scatter_values([0], [1], [3], cmap="statistic")
+    result = ep.plot.scatter_values([0], [1], [3], cmap="statistic")
     assert result.artists["scatter"].cmap.name == (
         expected if isinstance(expected, str) else expected.name
     )
@@ -81,7 +81,7 @@ def test_colormap_overrides_and_keyword_routing(cmap):
     norm = Normalize(-1, 2)
     scatter_kw = {"s": 49, "norm": norm}
     cbar_kw = {"label": "override", "ticks": [0, 1]}
-    result = ep.scatter_values(
+    result = ep.plot.scatter_values(
         [0, 1], [2, 3], [0.2, 0.8], cmap=cmap, scatter_kw=scatter_kw, cbar_kw=cbar_kw
     )
     assert result.artists["scatter"].cmap.name == "viridis"
@@ -96,4 +96,4 @@ def test_colormap_overrides_and_keyword_routing(cmap):
 
 def test_shape_error():
     with pytest.raises(ValueError, match=r"expected.*received"):
-        ep.scatter_values([0, 1], [2], [3])
+        ep.plot.scatter_values([0, 1], [2], [3])

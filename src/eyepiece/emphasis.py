@@ -113,7 +113,7 @@ def blend(color, level, background=None):
 
     Example::
 
-        hatch = ep.blend(accent, 0.45, background=ax.get_facecolor())
+        hatch = ep.style.blend(accent, 0.45, background=ax.get_facecolor())
     """
     level = _check_level(level)
     if background is None:
@@ -392,10 +392,10 @@ def fade(target, level, *, background=None, keep=None, by="color"):
     handle before each new fade, which keeps every step relative to the
     alpha the artists were drawn with::
 
-        faded = ep.fade(group, 0.0, by="alpha")
+        faded = ep.motion.fade(group, 0.0, by="alpha")
         for u in np.linspace(0.0, 1.0, 12):
             faded.restore()
-            faded = ep.fade(group, u, by="alpha")
+            faded = ep.motion.fade(group, u, by="alpha")
 
     Args:
         target: What to fade. An Artist; an Axes, which fades everything it
@@ -429,10 +429,10 @@ def fade(target, level, *, background=None, keep=None, by="color"):
 
     Example::
 
-        with ep.capture(ax) as earlier:
+        with ep.motion.capture(ax) as earlier:
             ax.plot(x, y)
         ax.plot(x, y2)  # the new element, at full strength
-        ep.fade(earlier, 0.3)
+        ep.motion.fade(earlier, 0.3)
     """
     level = _check_level(level)
     if by not in _FADE_BY:
@@ -465,10 +465,10 @@ def capture(container):
 
     Example::
 
-        with ep.capture(ax) as scene:
+        with ep.motion.capture(ax) as scene:
             ax.plot(x, y)
             ax.text(0.5, 0.5, "star")
-        ep.fade(scene, 0.3)
+        ep.motion.fade(scene, 0.3)
     """
     before = {id(child) for child in container.get_children()}
     added = []
@@ -551,8 +551,10 @@ def step_list(
 
     Example::
 
-        res = ep.step_list([("Steer", "hold the star on the mask"),
-                            ("Correct", "dig the dark hole")], current=-1)
+        res = ep.plot.step_list(
+            [("Steer", "hold the star on the mask"), ("Correct", "dig the dark hole")],
+            current=-1,
+        )
         for step in range(2):
             res.update(step)
     """

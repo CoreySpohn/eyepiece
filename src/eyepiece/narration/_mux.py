@@ -394,7 +394,7 @@ def mux(
     its dynamics. The default, -16 LUFS with a -1 dBTP ceiling, is the usual
     target for spoken
     web audio; broadcast uses -23 LUFS. A silent track is left as it is. The
-    container follows the shared encoder profile (`eyepiece.ENCODER_PROFILE`):
+    container follows the shared encoder profile (`eyepiece.render.ENCODER_PROFILE`):
     the BT.709 tags are written into the copied stream and the index moves to
     the front.
 
@@ -418,7 +418,7 @@ def mux(
             ``loudness=None`` too, so a track that already has a bed from
             `audio_track` should pass None here.
         seed: Seed of the noise bed.
-        encoder: Keys of `eyepiece.ENCODER_PROFILE` to replace; only the
+        encoder: Keys of `eyepiece.render.ENCODER_PROFILE` to replace; only the
             color tags and ``faststart`` apply to a copied picture.
         duck: Windows ``[(t0, t1), ...]`` in seconds where the bed drops to
             ``duck_floor_db``, as in `audio_track`; None ducks nothing.
@@ -643,7 +643,7 @@ def captions(
 
     These are subtitle cues for a caption track (`write_vtt`, `write_srt`),
     not on-screen text: `eyepiece.Timeline.caption` places a caption in the
-    picture, and `eyepiece.callout` labels a subject.
+    picture, and `eyepiece.motion.callout` labels a subject.
 
     A sentence becomes one cue. A sentence that does not fit in `max_lines`
     lines of `max_chars` characters, or that lasts longer than `max_cue_s`,

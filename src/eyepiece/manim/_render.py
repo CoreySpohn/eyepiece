@@ -298,10 +298,6 @@ def ensure_font(family):
         )
 
 
-# The private name earlier releases defined, kept for callers that import it.
-_ensure_font = ensure_font
-
-
 def _text(text, profile, font_size):
     return manim.Text(
         text,

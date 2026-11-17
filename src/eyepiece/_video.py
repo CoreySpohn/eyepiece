@@ -25,11 +25,10 @@ with a color-vision deficiency: `alert` keeps a cap of 85, and `disk` and
 
 A color already inside both limits is returned unchanged. The dark, light
 and paper palettes are untouched; the table is used only while
-`eyepiece.use_video` is on in dark mode, or when a check names the mode.
+`eyepiece.style.use_video` is on in dark mode, or when a check names the mode.
 """
 
 import functools
-import warnings
 
 import numpy as np
 from matplotlib.colors import to_hex, to_rgb
@@ -174,18 +173,15 @@ def _tables():
 
     roles = Roles(VIDEO_BASE)
     back = hwostyle.styles.MODE_RC[VIDEO_BASE]["axes.facecolor"]
-    with warnings.catch_warnings():
-        # Deprecated roles still need an entry while hwostyle carries them.
-        warnings.simplefilter("ignore", DeprecationWarning)
-        marks, labels = {}, {}
-        for name in ALL_ROLE_NAMES:
-            cap, floor = RELAXED.get(name, (None, None))
-            limits = {
-                "cap": CHROMA_CAP if cap is None else cap,
-                "floor": MIN_CONTRAST if floor is None else floor,
-            }
-            marks[name] = derive(roles[name], back, **limits)
-            labels[name] = derive(roles.label_ink(name), back, **limits)
+    marks, labels = {}, {}
+    for name in ALL_ROLE_NAMES:
+        cap, floor = RELAXED.get(name, (None, None))
+        limits = {
+            "cap": CHROMA_CAP if cap is None else cap,
+            "floor": MIN_CONTRAST if floor is None else floor,
+        }
+        marks[name] = derive(roles[name], back, **limits)
+        labels[name] = derive(roles.label_ink(name), back, **limits)
     return marks, labels
 
 
@@ -198,7 +194,8 @@ def video_roles():
     Example::
 
         import eyepiece as ep
-        ep.video_roles()["planet"]  # the dark cyan, chroma capped for 4:2:0
+
+        ep.style.video_roles()["planet"]  # the dark cyan, chroma capped for 4:2:0
     """
     return dict(_tables()[0])
 

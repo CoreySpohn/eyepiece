@@ -22,14 +22,14 @@ def test_line_keeps_level_of_its_contrast_and_its_opacity():
     fig, ax = plt.subplots()
     ax.set_facecolor("white")
     (line,) = ax.plot([0, 1], [0, 1], color=(0.0, 0.2, 0.8, 0.6))
-    ep.fade(line, 0.25)
+    ep.motion.fade(line, 0.25)
     np.testing.assert_allclose(to_rgba(line.get_color()), [0.75, 0.8, 0.95, 0.6])
     ax.set_facecolor("#203040")
     line.set_color("#e0a020")
-    ep.fade(line, 0.45)
+    ep.motion.fade(line, 0.45)
     np.testing.assert_allclose(
         to_rgba(line.get_color()),
-        ep.blend("#e0a020", 0.45, background=ax.get_facecolor()),
+        ep.style.blend("#e0a020", 0.45, background=ax.get_facecolor()),
     )
     plt.close(fig)
 
@@ -38,7 +38,7 @@ def test_dark_mode_fades_toward_the_dark_face():
     hwostyle.use("dark")
     fig, ax = plt.subplots()
     (line,) = ax.plot([0, 1], [0, 1], color="white")
-    ep.fade(line, 0.0)
+    ep.motion.fade(line, 0.0)
     np.testing.assert_allclose(to_rgba(line.get_color()), to_rgba(ax.get_facecolor()))
     plt.close(fig)
 
@@ -54,7 +54,7 @@ def test_axes_fade_reaches_every_kind_but_its_own_face():
     )
     text.set_bbox({"facecolor": "yellow", "edgecolor": "black"})
     image = ax.imshow(np.ones((2, 2)), extent=(0, 1, 0, 1))
-    handle = ep.fade(ax, 0.5)
+    handle = ep.motion.fade(ax, 0.5)
 
     bg = face
     np.testing.assert_allclose(to_rgba(line.get_color()), _blend("red", 0.5, bg))
@@ -92,7 +92,7 @@ def test_restore_puts_every_original_back():
         tuple(patch.get_edgecolor()),
         scatter.get_array().copy(),
     )
-    handle = ep.fade(ax, 0.3)
+    handle = ep.motion.fade(ax, 0.3)
     assert scatter.get_array() is None
     handle.restore()
     handle.restore()  # a second restore is a no-op
@@ -110,7 +110,7 @@ def test_colormapped_collection_draws_blended():
     scatter = ax.scatter([0, 1], [0, 1], c=[0.0, 1.0], cmap="viridis")
     fig.canvas.draw()
     mapped = scatter.get_facecolor().copy()
-    ep.fade(scatter, 0.4)
+    ep.motion.fade(scatter, 0.4)
     fig.canvas.draw()
     expected = [_blend(c, 0.4, "white") for c in mapped]
     np.testing.assert_allclose(scatter.get_facecolor(), expected)
@@ -121,8 +121,8 @@ def test_fading_twice_compounds():
     fig, ax = plt.subplots()
     ax.set_facecolor("white")
     (line,) = ax.plot([0, 1], [0, 1], color="black")
-    ep.fade(line, 0.5)
-    ep.fade(line, 0.5)
+    ep.motion.fade(line, 0.5)
+    ep.motion.fade(line, 0.5)
     np.testing.assert_allclose(to_rgba(line.get_color()), _blend("black", 0.25, "w"))
     plt.close(fig)
 
@@ -131,7 +131,7 @@ def test_keep_leaves_matching_artists_untouched():
     fig, ax = plt.subplots()
     (kept,) = ax.plot([0, 1], [0, 1], color="red", gid="disk/ring")
     (faded,) = ax.plot([0, 1], [1, 0], color="red")
-    ep.fade(ax, 0.2, keep=lambda a: (a.get_gid() or "").startswith("disk/"))
+    ep.motion.fade(ax, 0.2, keep=lambda a: (a.get_gid() or "").startswith("disk/"))
     assert to_rgba(kept.get_color()) == to_rgba("red")
     assert to_rgba(faded.get_color()) != to_rgba("red")
     plt.close(fig)
@@ -144,7 +144,7 @@ def test_unframed_inset_fades_toward_the_face_it_sits_on():
     inset = ax.inset_axes([0.1, 0.1, 0.4, 0.4])
     inset.axis("off")
     (line,) = inset.plot([0, 1], [0, 1], color="white")
-    ep.fade(ax, 0.0)
+    ep.motion.fade(ax, 0.0)
     np.testing.assert_allclose(to_rgba(line.get_color()), to_rgba("#202020"))
     plt.close(fig)
 
@@ -152,7 +152,7 @@ def test_unframed_inset_fades_toward_the_face_it_sits_on():
 def test_explicit_background_wins():
     fig, ax = plt.subplots()
     (line,) = ax.plot([0, 1], [0, 1], color="white")
-    ep.fade([line], 0.0, background="red")
+    ep.motion.fade([line], 0.0, background="red")
     assert to_rgba(line.get_color()) == to_rgba("red")
     plt.close(fig)
 
@@ -164,7 +164,7 @@ def test_hatch_color_fades():
         Rectangle((0, 0), 1, 1, facecolor="none", edgecolor="k", hatch="//")
     )
     patch.set_hatchcolor("black")
-    ep.fade(patch, 0.5)
+    ep.motion.fade(patch, 0.5)
     np.testing.assert_allclose(
         to_rgba(patch.get_hatchcolor()), _blend("black", 0.5, "white")
     )
@@ -175,24 +175,24 @@ def test_hatch_color_fades():
 def test_level_outside_unit_interval_raises(level):
     fig, ax = plt.subplots()
     with pytest.raises(ValueError, match="level"):
-        ep.fade(ax, level)
+        ep.motion.fade(ax, level)
     with pytest.raises(ValueError, match="level"):
-        ep.blend("red", level, background="white")
+        ep.style.blend("red", level, background="white")
     plt.close(fig)
 
 
 def test_blend_keeps_level_of_the_contrast_and_the_color_alpha():
-    out = ep.blend((0.0, 0.2, 0.8, 0.6), 0.25, background=(1.0, 1.0, 1.0, 0.1))
+    out = ep.style.blend((0.0, 0.2, 0.8, 0.6), 0.25, background=(1.0, 1.0, 1.0, 0.1))
     np.testing.assert_allclose(out, [0.75, 0.8, 0.95, 0.6])
-    assert ep.blend("red", 1.0, background="blue") == to_rgba("red")
-    assert ep.blend("red", 0.0, background="blue") == to_rgba("blue")
+    assert ep.style.blend("red", 1.0, background="blue") == to_rgba("red")
+    assert ep.style.blend("red", 0.0, background="blue") == to_rgba("blue")
 
 
 def test_blend_without_background_reads_the_face_color_at_call_time():
     with matplotlib.rc_context({"axes.facecolor": "black"}):
-        dark = ep.blend("white", 0.25)
+        dark = ep.style.blend("white", 0.25)
     with matplotlib.rc_context({"axes.facecolor": "white"}):
-        light = ep.blend("black", 0.25)
+        light = ep.style.blend("black", 0.25)
     np.testing.assert_allclose(dark, [0.25, 0.25, 0.25, 1.0])
     np.testing.assert_allclose(light, [0.75, 0.75, 0.75, 1.0])
 
@@ -200,7 +200,7 @@ def test_blend_without_background_reads_the_face_color_at_call_time():
 def test_capture_collects_only_what_the_block_added():
     fig, ax = plt.subplots()
     (earlier,) = ax.plot([0, 1], [0, 1])
-    with ep.capture(ax) as added:
+    with ep.motion.capture(ax) as added:
         (line,) = ax.plot([0, 1], [1, 0])
         text = ax.text(0.5, 0.5, "star")
         inset = ax.inset_axes([0.6, 0.6, 0.3, 0.3])
@@ -213,10 +213,10 @@ def test_capture_collects_only_what_the_block_added():
 
 def test_capture_then_fade_leaves_the_new_element_at_full_strength():
     fig, ax = plt.subplots()
-    with ep.capture(ax) as seen:
+    with ep.motion.capture(ax) as seen:
         (old,) = ax.plot([0, 1], [0, 1], color="red")
     (new,) = ax.plot([0, 1], [1, 0], color="red")
-    ep.fade(seen, 0.3)
+    ep.motion.fade(seen, 0.3)
     assert to_rgba(new.get_color()) == to_rgba("red")
     assert to_rgba(old.get_color()) != to_rgba("red")
     plt.close(fig)
@@ -228,7 +228,7 @@ def test_fade_by_alpha_scales_each_drawn_alpha_and_restores():
     patch = ax.add_patch(Rectangle((0, 0), 1, 1, alpha=None))
     text = ax.text(0.5, 0.5, "label", bbox={"facecolor": "w", "alpha": 0.8})
     face_before = to_rgba(patch.get_facecolor())
-    faded = ep.fade([line, patch, text], 0.5, by="alpha")
+    faded = ep.motion.fade([line, patch, text], 0.5, by="alpha")
     assert line.get_alpha() == pytest.approx(0.3)
     assert patch.get_alpha() == pytest.approx(0.5)
     assert text.get_alpha() == pytest.approx(0.5)
@@ -249,12 +249,12 @@ def test_fade_by_alpha_at_zero_hides_and_restore_shows_again():
     (line,) = ax.plot([0, 1], [0, 1], alpha=0.7)
     (hidden,) = ax.plot([0, 1], [1, 0])
     hidden.set_visible(False)
-    faded = ep.fade([line, hidden], 0.0, by="alpha")
+    faded = ep.motion.fade([line, hidden], 0.0, by="alpha")
     assert not line.get_visible() and not hidden.get_visible()
     faded.restore()
     assert line.get_visible() and line.get_alpha() == 0.7
     # A level above zero never unhides what the caller had hidden.
-    ep.fade(hidden, 1.0, by="alpha")
+    ep.motion.fade(hidden, 1.0, by="alpha")
     assert not hidden.get_visible()
     plt.close(fig)
 
@@ -262,10 +262,10 @@ def test_fade_by_alpha_at_zero_hides_and_restore_shows_again():
 def test_fade_by_alpha_steps_relative_to_the_drawn_alpha_through_restore():
     fig, ax = plt.subplots()
     group = [ax.plot([0, 1], [0, 1], alpha=a)[0] for a in (0.2, 1.0)]
-    faded = ep.fade(group, 0.0, by="alpha")
+    faded = ep.motion.fade(group, 0.0, by="alpha")
     for u in (0.25, 0.5, 1.0):
         faded.restore()
-        faded = ep.fade(group, u, by="alpha")
+        faded = ep.motion.fade(group, u, by="alpha")
         assert [ln.get_alpha() for ln in group] == pytest.approx([0.2 * u, u])
     plt.close(fig)
 
@@ -274,7 +274,7 @@ def test_fade_by_alpha_reaches_an_axes_and_its_images():
     fig, ax = plt.subplots()
     image = ax.imshow(np.ones((3, 3)), alpha=0.8)
     (line,) = ax.plot([0, 1], [0, 1])
-    ep.fade(ax, 0.5, by="alpha")
+    ep.motion.fade(ax, 0.5, by="alpha")
     assert image.get_alpha() == pytest.approx(0.4)
     assert line.get_alpha() == pytest.approx(0.5)
     plt.close(fig)
@@ -284,7 +284,7 @@ def test_fade_rejects_an_unknown_by():
     fig, ax = plt.subplots()
     (line,) = ax.plot([0, 1], [0, 1])
     with pytest.raises(ValueError, match="by"):
-        ep.fade(line, 0.5, by="size")
+        ep.motion.fade(line, 0.5, by="size")
     plt.close(fig)
 
 
@@ -292,7 +292,7 @@ def test_fade_rejects_an_unknown_by():
 def test_step_list_current_bright_finished_dim_later_hidden(mode):
     hwostyle.use(mode)
     rows = [("Steer", "hold the star"), "Correct", ("Block", "stop the light")]
-    res = ep.step_list(rows, text_kw={"fontsize": 9})
+    res = ep.plot.step_list(rows, text_kw={"fontsize": 9})
     assert set(res.artists) == {"text"}
     texts = res.artists["text"]
     assert [t.get_text() for t in texts] == [
@@ -324,7 +324,7 @@ def test_step_list_current_bright_finished_dim_later_hidden(mode):
 
 def test_step_list_layout_and_initial_current():
     _, ax = plt.subplots()
-    res = ep.step_list(
+    res = ep.plot.step_list(
         [("a", "b"), ("c", "d")],
         ax=ax,
         current=-1,
@@ -341,7 +341,7 @@ def test_step_list_layout_and_initial_current():
     assert not any(t.get_visible() for t in res.artists["text"])
     assert not ax.axison
     with pytest.raises(ValueError, match="at least one"):
-        ep.step_list([])
+        ep.plot.step_list([])
     plt.close("all")
 
 
@@ -356,7 +356,7 @@ def test_fading_a_mesh_preserves_the_colormap_alpha_ratio(by):
         edgecolors=(0, 0, 0, 0.6),
         linewidth=1,
     )
-    faded = ep.fade(mesh, 0.5, by=by)
+    faded = ep.motion.fade(mesh, 0.5, by=by)
     fig.canvas.draw()
     want = [0.1, 0.4] if by == "alpha" else [0.2, 0.8]
     np.testing.assert_allclose(mesh.get_facecolors()[:, 3], want)
@@ -375,9 +375,9 @@ def test_rgb_mesh_opacity_does_not_depend_on_its_colormap(controller):
     fig, ax = plt.subplots()
     mesh = ax.pcolormesh(np.array([[[1.0, 0, 0], [0, 0, 1.0]]]))
     if controller == "fade":
-        ep.fade(mesh, 0.5, by="alpha")
+        ep.motion.fade(mesh, 0.5, by="alpha")
     else:
-        ep.Stage({"mesh": mesh}).weigh({"mesh": (0.5, 1.0)})
+        ep.motion.Stage({"mesh": mesh}).weigh({"mesh": (0.5, 1.0)})
     fig.canvas.draw()
     np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.5, 0.5])
     plt.close(fig)
@@ -394,7 +394,7 @@ def test_fading_only_a_mesh_leaves_its_colorbar_unchanged():
     colorbar = fig.colorbar(mesh, ax=ax)
     fig.canvas.draw()
     bar_colors = colorbar.solids.get_facecolors().copy()
-    faded = ep.fade(mesh, 0.5, by="alpha")
+    faded = ep.motion.fade(mesh, 0.5, by="alpha")
     fig.canvas.draw()
     np.testing.assert_allclose(mesh.get_facecolors()[:, 3], [0.1, 0.4])
     np.testing.assert_allclose(colorbar.solids.get_facecolors(), bar_colors)

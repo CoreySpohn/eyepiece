@@ -60,7 +60,9 @@ quads = ep.motion.pixel_quads(corners, keep)
 # straddling the cut at 180 degrees are not torn across the panel.
 center_angle = theta[keep][:, None]
 qr = np.hypot(quads[..., 0], quads[..., 1])
-qt = center_angle + np.angle(np.exp(1j * (np.arctan2(quads[..., 1], quads[..., 0]) - center_angle)))
+qt = center_angle + np.angle(
+    np.exp(1j * (np.arctan2(quads[..., 1], quads[..., 0]) - center_angle))
+)
 
 
 def unroll(t):
@@ -69,7 +71,7 @@ def unroll(t):
     remaining = 1.0 - t
     phi = qt * remaining
     # sinc takes its limiting value at zero, including at the origin and rest.
-    xs = qr * (1.0 - 0.5 * qt**2 * remaining * np.sinc(phi / (2.0 * np.pi))**2)
+    xs = qr * (1.0 - 0.5 * qt**2 * remaining * np.sinc(phi / (2.0 * np.pi)) ** 2)
     ys = qt * np.sinc(phi / np.pi) * (qr * remaining + t * 13.0 / np.pi)
     return np.stack([xs, ys], axis=-1)
 
@@ -88,8 +90,7 @@ plt.show()
 
 `ep.motion.brush(veil_alpha=0.72)` controls the veil opacity applied to unselected
 objects. `ep.motion.Stage(dim=...)` instead controls contrast retained. The old
-`ep.motion.brush(dim=...)` spelling keeps its opacity meaning and warns to use
-`veil_alpha`.
+`ep.motion.brush(veil_alpha=...)` sets the veil opacity.
 
 `brush` is how the image and its unrolled copy show that they hold the same
 pixels without an arrow drawn between them. It veils both panels in their
@@ -98,8 +99,15 @@ ring lights as a circle on the left and as a column on the right.
 
 ```{code-cell} python
 fig, (left, right) = plt.subplots(1, 2, figsize=(6.0, 3.0), layout="constrained")
-ep.plot.imshow_log(FIELD, ax=left, extent=EXTENT, vmin=NORM.vmin, vmax=NORM.vmax,
-              floor=NORM.vmin, colorbar=False)
+ep.plot.imshow_log(
+    FIELD,
+    ax=left,
+    extent=EXTENT,
+    vmin=NORM.vmin,
+    vmax=NORM.vmax,
+    floor=NORM.vmin,
+    colorbar=False,
+)
 unrolled = ep.motion.quad_image(FIELD, corners, ax=right, keep=keep, norm=NORM)
 unrolled.update(quads=unroll(1.0))
 right.set_xlim(0, 13)
@@ -109,7 +117,9 @@ right.set_ylabel("angle around the star")
 right.set_yticks([])
 ep.plot.label_lod(left)
 
-linked = ep.motion.brush([left, right], [quads, unroll(1.0)], FIELD[keep], norm=NORM, veil_alpha=0.72)
+linked = ep.motion.brush(
+    [left, right], [quads, unroll(1.0)], FIELD[keep], norm=NORM, veil_alpha=0.72
+)
 linked.update(np.abs(r[keep] - 8.0) <= half)
 plt.show()
 ```
@@ -205,9 +215,7 @@ BAYES_A = (
     r"${{lhs:\mathrm{Pr}(H|E)=}}\frac{{num:\mathrm{Pr}(E|H)\,\mathrm{Pr}(H)}}"
     r"{{den:\mathrm{Pr}(E)}}$"
 )
-BAYES_B = (
-    r"${{lhs:\mathrm{Pr}(H|E)=}}\frac{{num:0.24}}{{den:0.24+0.07}}{{res:=0.77}}$"
-)
+BAYES_B = r"${{lhs:\mathrm{Pr}(H|E)=}}\frac{{num:0.24}}{{den:0.24+0.07}}{{res:=0.77}}$"
 
 fig = plt.figure(figsize=(7.6, 2.4))
 board = fig.add_axes([0, 0, 1, 1])

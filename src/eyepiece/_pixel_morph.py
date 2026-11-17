@@ -15,8 +15,6 @@ once, so a ring of pixels lights in the image, in its unrolled column, and
 in the cloud of its values together.
 """
 
-import warnings
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.collections import PolyCollection
@@ -137,11 +135,8 @@ def quad_image(values, corners, *, ax=None, keep=None, cmap=None, norm=None,
     return PlotResult(ax=ax, artists={"collection": coll}, update=update)
 
 
-_UNSET = object()
-
-
 def brush(axes, quads, values, *, cmap=None, norm=None, veil_alpha=0.72,
-          color=None, dim=_UNSET):  # fmt: skip
+          color=None):  # fmt: skip
     """Light the same objects in several panels at once, dimming the rest.
 
     Each panel gets a veil in its background color and an overlay holding
@@ -163,7 +158,6 @@ def brush(axes, quads, values, *, cmap=None, norm=None, veil_alpha=0.72,
             values.
         veil_alpha: Veil opacity while brushing. This is opacity applied,
             while `Stage` uses `dim` for contrast retained.
-        dim: Deprecated alias for `veil_alpha`. If supplied, overrides it.
         color: Veil color for every panel. None uses each panel's own
             background, or the figure's where the panel is transparent.
 
@@ -178,13 +172,6 @@ def brush(axes, quads, values, *, cmap=None, norm=None, veil_alpha=0.72,
         ValueError: If the panels, quads and values do not agree.
         TypeError: From `update`, if the mask is not boolean.
     """
-    if dim is not _UNSET:
-        warnings.warn(
-            "brush(dim=) is deprecated; use brush(veil_alpha=)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        veil_alpha = dim
     axes = list(np.ravel(np.asarray(axes, dtype=object)))
     values = np.asarray(values, dtype=float).ravel()
     n = values.size

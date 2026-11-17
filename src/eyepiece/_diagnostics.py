@@ -62,7 +62,10 @@ def calibration(
     Example::
 
         import eyepiece as ep
-        result = ep.calibration([0.1, 0.5, 0.9], [0.12, 0.48, 0.88], scale="linear")
+
+        result = ep.plot.calibration(
+            [0.1, 0.5, 0.9], [0.12, 0.48, 0.88], scale="linear"
+        )
     """
     stated, realized = np.asarray(stated, float), np.asarray(realized, float)
     if stated.ndim != 1 or realized.shape != stated.shape:
@@ -203,7 +206,8 @@ def strip(
     Example::
 
         import eyepiece as ep
-        result = ep.strip({"a": [0.1, 0.2], "b": [0.3, 2.0]}, capped=1.0)
+
+        result = ep.plot.strip({"a": [0.1, 0.2], "b": [0.3, 2.0]}, capped=1.0)
     """
     if isinstance(groups, Mapping):
         if labels is None:

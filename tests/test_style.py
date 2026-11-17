@@ -2,7 +2,6 @@
 
 import subprocess
 import sys
-import warnings
 
 import hwostyle
 import pytest
@@ -113,8 +112,8 @@ def test_public_neutral_endpoints():
 
     for mode in ("light", "dark"):
         hwostyle.use(mode)
-        assert ep.neutral(0.0) == to_rgb(matplotlib.rcParams["axes.facecolor"])
-        assert ep.neutral(1.0) == to_rgb(matplotlib.rcParams["text.color"])
+        assert ep.style.neutral(0.0) == to_rgb(matplotlib.rcParams["axes.facecolor"])
+        assert ep.style.neutral(1.0) == to_rgb(matplotlib.rcParams["text.color"])
 
 
 def test_public_backing_tracks_background_and_opacity():
@@ -125,29 +124,17 @@ def test_public_backing_tracks_background_and_opacity():
 
     for mode in ("light", "dark"):
         hwostyle.use(mode)
-        box = ep.backing(alpha=0.4)
+        box = ep.style.backing(alpha=0.4)
         assert box["facecolor"] == to_rgba(matplotlib.rcParams["axes.facecolor"], 0.4)
         assert box["edgecolor"] == "none"
-        assert box is not ep.backing(alpha=0.4)
+        assert box is not ep.style.backing(alpha=0.4)
 
 
 def test_role_equals_hwostyle_roles_under_each_mode():
     for mode in ("dark", "light"):
         hwostyle.use(mode)
         for name in hwostyle.roles.names:
-            # Newer hwostyle deprecates envelope; the compatibility path must
-            # still return the same color and expose that upstream warning.
-            with warnings.catch_warnings(record=True) as caught:
-                warnings.filterwarnings(
-                    "always", r"roles\.envelope is deprecated", DeprecationWarning
-                )
-                assert _style.role(name).lower() == hwostyle.roles[name].lower()
-            assert all(
-                name == "envelope"
-                and item.category is DeprecationWarning
-                and "roles.envelope is deprecated" in str(item.message)
-                for item in caught
-            )
+            assert _style.role(name).lower() == hwostyle.roles[name].lower()
 
 
 def test_role_without_mode_uses_light_roles():

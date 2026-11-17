@@ -339,7 +339,7 @@ def warp(
     patches, arrows, line, polygon and point collections, and the positions
     of texts. Nothing is created or replaced, so the artists keep their
     place in the axes, their style, their zorder, and their membership in a
-    `Stage`. Arrows made by ``ep.arrow`` are supported as soon as that
+    `Stage`. Arrows made by ``ep.motion.arrow`` are supported as soon as that
     function is merged; they are `FancyArrowPatch` artists, which are
     handled here, as is any other patch that is a path or a polygon.
 
@@ -377,8 +377,8 @@ def warp(
         about: The fixed point of a matrix, ``(x, y)``; default the origin.
             Not for a callable map.
         n: Subdivision of a path under a callable map, at least 1.
-        ease: An easing kind for `eyepiece.ease`, applied to the progress; a callable
-            from progress to eased progress also works, for a strength.
+        ease: An easing kind for `eyepiece.clock.ease`, applied to progress;
+            a callable from progress to eased progress also works, for a strength.
 
     Returns:
         A `PlotResult` on the axes of the first artist, whose ``artists``
@@ -400,9 +400,9 @@ def warp(
 
     Example::
 
-        grid = ep.warp_grid(ax)
+        grid = ep.motion.warp_grid(ax)
         arrow = ax.arrow(0, 0, 1, 0, ...)
-        shear = ep.warp([grid, arrow], [[1.0, 1.0], [0.0, 1.0]])
+        shear = ep.motion.warp([grid, arrow], [[1.0, 1.0], [0.0, 1.0]])
         for u in np.linspace(0.0, 1.0, 40):
             shear.update(u)
             rec.frame()

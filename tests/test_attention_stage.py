@@ -27,7 +27,7 @@ def _scene():
     x = np.linspace(0.0, 1.0, 50)
     (line,) = ax.plot(x, 0.5 + 0.0 * x, lw=12, color="tab:blue", solid_capstyle="butt")
     (dot,) = ax.plot([0.2], [0.8], "o", ms=10, color="tab:red")
-    note = ax.text(0.6, 0.8, "the dot", bbox=ep.backing())
+    note = ax.text(0.6, 0.8, "the dot", bbox=ep.style.backing())
     mesh = ax.pcolormesh(
         np.linspace(0.0, 1.0, 6), [0.05, 0.25], np.arange(5.0)[None, :], cmap="viridis"
     )
@@ -51,7 +51,7 @@ def test_stage_rest_is_the_figure_as_drawn_and_never_compounds(mode):
     hwostyle.use(mode)
     fig, _ax, groups = _scene()
     plain = _pixels(fig)
-    stage = ep.Stage(groups)
+    stage = ep.motion.Stage(groups)
     np.testing.assert_array_equal(_pixels(fig), plain)  # made at rest
     for _ in range(3):
         stage.set(shown=["line"], dimmed=["marks", "mesh"])
@@ -77,7 +77,7 @@ def test_stage_rest_is_the_figure_as_drawn_and_never_compounds(mode):
 def test_a_dimmed_group_keeps_its_level_of_contrast(mode, level):
     hwostyle.use(mode)
     fig, ax, groups = _scene()
-    stage = ep.Stage(groups, dim=level)
+    stage = ep.motion.Stage(groups, dim=level)
     bg = np.asarray(to_rgba(ax.get_facecolor()))[:3]
     probe = ax.transData.transform((0.5, 0.5)).astype(int)
     row, col = fig.bbox.height - probe[1], probe[0]
@@ -94,7 +94,7 @@ def test_a_dimmed_group_keeps_its_level_of_contrast(mode, level):
 
 def test_stage_moves_between_states_and_checks_names():
     _fig, _ax, groups = _scene()
-    stage = ep.Stage(groups)
+    stage = ep.motion.Stage(groups)
     start = stage.state(shown=["line"])
     half = stage.set(shown=["line", "marks"], start=start, u=0.5)
     assert half["line"] == (1.0, 1.0)
@@ -103,13 +103,13 @@ def test_stage_moves_between_states_and_checks_names():
     with pytest.raises(KeyError):
         stage.state(shown=["nothing"])
     with pytest.raises(ValueError, match="dim"):
-        ep.Stage(groups, dim=1.5)
+        ep.motion.Stage(groups, dim=1.5)
 
 
 def test_weigh_sets_only_the_groups_it_names():
     fig, _ax, groups = _scene()
     plain = _pixels(fig)
-    stage = ep.Stage(groups)
+    stage = ep.motion.Stage(groups)
     stage.weigh({"line": (1.0, 0.35)})
     line_only = _pixels(fig)
     stage.weigh({"marks": 0.0})
@@ -133,7 +133,7 @@ def test_axis_build_ends_on_the_finished_axes_and_only_adds_ink(mode, log):
     fig, ax = _axes(log)
     plain = _pixels(fig)
     limits = (ax.get_xlim(), ax.get_ylim())
-    build = ep.build_axes(ax)
+    build = ep.motion.build_axes(ax)
     np.testing.assert_array_equal(_pixels(fig), plain)  # made at rest
     face = fig.get_facecolor()
     inks = []
@@ -151,7 +151,7 @@ def test_axis_build_ends_on_the_finished_axes_and_only_adds_ink(mode, log):
 
 def test_axis_build_draws_one_axis_at_a_time():
     fig, ax = _axes()
-    build = ep.build_axes(ax, axis="x")
+    build = ep.motion.build_axes(ax, axis="x")
     build.update(1.0)
     plain = _pixels(fig)
     build.update(0.0)
@@ -162,12 +162,12 @@ def test_axis_build_draws_one_axis_at_a_time():
     assert 0 < _ink(hidden, face) < _ink(plain, face)
     assert not ax.xaxis.get_major_ticks()[1].label1.get_alpha()
     with pytest.raises(ValueError, match="axis"):
-        ep.build_axes(ax, axis="z")
+        ep.motion.build_axes(ax, axis="z")
 
 
 def test_axis_label_writes_on_after_the_spine():
     fig, ax = _axes()
-    build = ep.build_axes(ax, axis="x", spine_end=0.6)
+    build = ep.motion.build_axes(ax, axis="x", spine_end=0.6)
     face = fig.get_facecolor()
     label = ax.xaxis.label
     box = label.get_window_extent()
@@ -192,7 +192,7 @@ def _assert_axis_build_titles(mode, axis, before_label, during_label, title, lab
     titles = (center, left, right)
     alphas = [text.get_alpha() for text in titles]
     plain = _pixels(fig)
-    build = ep.build_axes(ax, axis=axis, label=label, spine_end=0.6, title=title)
+    build = ep.motion.build_axes(ax, axis=axis, label=label, spine_end=0.6, title=title)
     np.testing.assert_array_equal(_pixels(fig), plain)
 
     for u in (0.0, before_label):
@@ -249,8 +249,8 @@ def test_axis_build_includes_a_plain_title_set_after_the_call(loc):
     for axes in (ax, reference):
         axes.plot([0.0, 1.0], [0.0, 1.0])
     made = reference.set_title("late", loc=loc)
-    reference_build = ep.build_axes(reference, title=True)
-    build = ep.build_axes(ax, title=True)
+    reference_build = ep.motion.build_axes(reference, title=True)
+    build = ep.motion.build_axes(ax, title=True)
     text = ax.set_title("late", loc=loc)
     position = text.get_position()
     for u in np.linspace(0.0, 1.0, 11):
@@ -267,7 +267,7 @@ def test_axis_build_includes_a_plain_title_set_after_the_call(loc):
 def test_axis_build_includes_a_styled_title_set_after_the_call(loc):
     _fig, ax = _axes()
     ax.plot([0.0, 1.0], [0.5, 2.0])
-    build = ep.build_axes(ax, title=True)
+    build = ep.motion.build_axes(ax, title=True)
     text = ax.set_title("late", loc=loc, alpha=0.6)
     position = text.get_position()
     for u in np.linspace(0.0, 1.0, 11):
@@ -283,7 +283,7 @@ def test_axis_build_adopts_a_title_restyled_between_frames(loc):
     _fig, ax = _axes()
     text = ax.set_title("old", loc=loc)
     position = text.get_position()
-    build = ep.build_axes(ax, title=True)
+    build = ep.motion.build_axes(ax, title=True)
     build.update(0.5)
     assert text.get_position() == position
     ax.set_title("new", loc=loc, alpha=0.5)
@@ -300,7 +300,7 @@ def test_axis_build_preserves_a_title_set_before_the_call(loc, alpha):
     _fig, ax = _axes()
     text = ax.set_title("made", loc=loc, alpha=alpha)
     position = text.get_position()
-    build = ep.build_axes(ax, title=True)
+    build = ep.motion.build_axes(ax, title=True)
     for u in np.linspace(0.0, 1.0, 11):
         build.update(u)
         assert text.get_position() == position
@@ -319,7 +319,7 @@ def test_axis_build_preserves_a_title_set_before_the_call(loc, alpha):
 @pytest.mark.parametrize("alpha", [None, 0.6])
 def test_axis_build_leaves_late_titles_untouched_when_not_requested(loc, alpha):
     _fig, ax = _axes()
-    build = ep.build_axes(ax, title=False)
+    build = ep.motion.build_axes(ax, title=False)
     text = ax.set_title("late", loc=loc, alpha=alpha)
     position = text.get_position()
     for u in np.linspace(0.0, 1.0, 11):
@@ -331,7 +331,7 @@ def test_axis_build_leaves_late_titles_untouched_when_not_requested(loc, alpha):
 def test_axis_build_preserves_title_clipping_changed_between_frames():
     _fig, ax = _axes()
     text = ax.set_title("made")
-    build = ep.build_axes(ax, title=True)
+    build = ep.motion.build_axes(ax, title=True)
     build.update(0.5)
     text.set_clip_on(not text.get_clip_on())
     clip_on = text.get_clip_on()
@@ -367,13 +367,13 @@ def test_collapse_is_absent_at_rest_and_lands_on_its_bar(mode):
     fig, left, right = _two_panels()
     plain = _pixels(fig)
     weights = np.array([0, 0, 1, 3, 4, 2, 0, 0, 0, 0], dtype=float)
-    start = ep.Anchor.from_data(left, (0.1, 0.5))
-    end = ep.Anchor.from_data(left, (0.4, 0.5))
+    start = ep.motion.Anchor.from_data(left, (0.1, 0.5))
+    end = ep.motion.Anchor.from_data(left, (0.4, 0.5))
     land = (
-        ep.Anchor.from_data(right, (0.0, 0.5)),
-        ep.Anchor.from_data(right, (0.3, 0.5)),
+        ep.motion.Anchor.from_data(right, (0.0, 0.5)),
+        ep.motion.Anchor.from_data(right, (0.3, 0.5)),
     )
-    move = ep.collapse(
+    move = ep.motion.collapse(
         left,
         _cells(),
         weights,
@@ -412,13 +412,13 @@ def test_collapse_is_absent_at_rest_and_lands_on_its_bar(mode):
 
 def test_collapse_rejects_bad_weights():
     fig, left, _right = _two_panels()
-    a = ep.Anchor.from_data(left, (0.1, 0.5))
+    a = ep.motion.Anchor.from_data(left, (0.1, 0.5))
     with pytest.raises(ValueError, match="sum to zero"):
-        ep.collapse(left, _cells(), np.zeros(10), a, a, fig=fig, colors="k")
+        ep.motion.collapse(left, _cells(), np.zeros(10), a, a, fig=fig, colors="k")
     with pytest.raises(ValueError, match="negative"):
-        ep.collapse(left, _cells(), -np.ones(10), a, a, fig=fig, colors="k")
+        ep.motion.collapse(left, _cells(), -np.ones(10), a, a, fig=fig, colors="k")
     with pytest.raises(ValueError, match="shape"):
-        ep.collapse(left, _cells(), np.ones(3), a, a, fig=fig, colors="k")
+        ep.motion.collapse(left, _cells(), np.ones(3), a, a, fig=fig, colors="k")
 
 
 # Callout pieces and rise
@@ -430,7 +430,7 @@ def test_callout_pieces_draw_each_term_in_its_color_on_one_line(mode):
     fig, ax = plt.subplots(figsize=(4.0, 3.0), dpi=100)
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.2], [0.5], "o")
-    res = ep.callout(
+    res = ep.motion.callout(
         dot, ["add up the ", ("row", "tab:red"), " of cells"], side="right"
     )
     caption = res.artists["text"]
@@ -447,7 +447,9 @@ def test_callout_pieces_draw_each_term_in_its_color_on_one_line(mode):
     assert abs(boxes[0].x0 - whole.x0) <= 1.0
     assert abs(boxes[-1].x1 - whole.x1) <= 2.0
     with pytest.raises(ValueError, match="words"):
-        ep.callout(dot, ["one two three ", ("four five six seven eight nine", "k")])
+        ep.motion.callout(
+            dot, ["one two three ", ("four five six seven eight nine", "k")]
+        )
 
 
 @pytest.mark.parametrize("mode", MODES)
@@ -458,7 +460,7 @@ def test_a_heavier_key_term_grows_the_caption_away_from_its_subject(mode, side):
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.5], [0.5], "o")
     text = "the posterior: planets the data allow"
-    res = ep.callout(
+    res = ep.motion.callout(
         dot,
         [(text[:13], None, "bold"), text[13:]],
         side=side,
@@ -488,7 +490,7 @@ def test_callout_rises_into_place_as_it_fades_in():
     fig, ax = plt.subplots(figsize=(4.0, 3.0), dpi=100)
     ax.set(xlim=(0.0, 1.0), ylim=(0.0, 1.0))
     (dot,) = ax.plot([0.2], [0.5], "o")
-    res = ep.callout(dot, "the dot", side="right", leader=False, rise_pt=6.0)
+    res = ep.motion.callout(dot, "the dot", side="right", leader=False, rise_pt=6.0)
     caption = res.artists["text"]
     fig.canvas.draw()
     rest = caption.get_window_extent().y0
@@ -510,7 +512,7 @@ def _line_contrast(fig, ax, bg):
 def test_an_eased_weigh_fades_gently_and_keeps_both_ends(mode):
     hwostyle.use(mode)
     fig, ax, groups = _scene()
-    stage = ep.Stage(groups, dim=0.35)
+    stage = ep.motion.Stage(groups, dim=0.35)
     bg = np.asarray(to_rgba(ax.get_facecolor()))[:3]
     full = _line_contrast(fig, ax, bg)
 
@@ -530,7 +532,7 @@ def test_an_eased_weigh_fades_gently_and_keeps_both_ends(mode):
 def test_an_eased_weigh_takes_a_contrast_as_given(contrast):
     hwostyle.use("light")
     fig, ax, groups = _scene()
-    stage = ep.Stage(groups, dim=0.35)
+    stage = ep.motion.Stage(groups, dim=0.35)
     bg = np.asarray(to_rgba(ax.get_facecolor()))[:3]
     full = _line_contrast(fig, ax, bg)
     tol = 2.0 / 255.0 / full
@@ -540,7 +542,7 @@ def test_an_eased_weigh_takes_a_contrast_as_given(contrast):
 
 def test_weigh_refuses_an_unknown_easing():
     _fig, _ax, groups = _scene()
-    stage = ep.Stage(groups, dim=0.35)
+    stage = ep.motion.Stage(groups, dim=0.35)
     with pytest.raises(ValueError, match="unknown easing"):
         stage.weigh({"line": 0.5}, ease="bouncy")
 
@@ -548,7 +550,7 @@ def test_weigh_refuses_an_unknown_easing():
 @pytest.mark.parametrize("kind", ["back_out", "running_start"])
 def test_stage_set_levels_never_pass_their_ends_under_an_overshoot_ease(kind):
     _fig, _ax, groups = _scene()
-    stage = ep.Stage(groups, dim=0.35)
+    stage = ep.motion.Stage(groups, dim=0.35)
     for u in np.linspace(0.0, 1.0, 41):
         levels = stage.set(dimmed=["line"], u=u, ease=kind)
         for name, (presence, contrast) in levels.items():
@@ -563,12 +565,12 @@ def test_stage_set_levels_never_pass_their_ends_under_an_overshoot_ease(kind):
 def test_collapse_colors_stay_between_the_cells_and_the_target(kind):
     fig, left, _right = _two_panels()
     weights = np.array([0, 0, 1, 3, 4, 2, 0, 0, 0, 0], dtype=float)
-    move = ep.collapse(
+    move = ep.motion.collapse(
         left,
         _cells(),
         weights,
-        ep.Anchor.from_data(left, (0.1, 0.5)),
-        ep.Anchor.from_data(left, (0.4, 0.5)),
+        ep.motion.Anchor.from_data(left, (0.1, 0.5)),
+        ep.motion.Anchor.from_data(left, (0.4, 0.5)),
         fig=fig,
         colors="tab:gray",
         color="tab:pink",
@@ -598,7 +600,7 @@ def test_a_staged_mesh_scales_each_colormap_alpha_and_restores(level):
         edgecolors=(0, 0, 0, 0.6),
         linewidth=1,
     )
-    stage = ep.Stage({"mesh": mesh})
+    stage = ep.motion.Stage({"mesh": mesh})
     for _ in range(2):
         stage.weigh({"mesh": level})
         fig.canvas.draw()
@@ -625,7 +627,7 @@ def test_mesh_edges_that_follow_faces_keep_following_changed_data():
         edgecolors="face",
     )
     fig.canvas.draw()
-    stage = ep.Stage({"mesh": mesh})
+    stage = ep.motion.Stage({"mesh": mesh})
     stage.weigh({"mesh": (0.5, 1.0)})
     fig.canvas.draw()
     np.testing.assert_allclose(mesh.get_edgecolors()[:, 3], [0.1, 0.4])
@@ -650,7 +652,7 @@ def test_staging_only_a_mesh_leaves_its_colorbar_unchanged(level):
     colorbar = fig.colorbar(mesh, ax=ax)
     fig.canvas.draw()
     bar_colors = colorbar.solids.get_facecolors().copy()
-    stage = ep.Stage({"mesh": mesh})
+    stage = ep.motion.Stage({"mesh": mesh})
     for _ in range(2):
         stage.weigh({"mesh": level})
         fig.canvas.draw()

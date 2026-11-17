@@ -439,9 +439,8 @@ error), `statistic` (signed statistics and SNR maps), `phase` (cyclic phase),
 the page, with low values at the page end: dark on a dark page, and pale on a
 white page for `probability` and `pupil`. `pupil` and `probability` share their
 colors, so they never appear in the same figure: pupil belongs to optics figures
-and probability to inference figures. `cmaps.high_dynamic_range` and
-`roles.envelope` are deprecated and warn, so new code uses `intensity` or
-`readouts`. When the installed hwostyle predates a role, eyepiece falls back to a
+and probability to inference figures. Use `intensity` for model images and
+`readouts` for detector data; a band takes its parent series color at low alpha. When the installed hwostyle predates a role, eyepiece falls back to a
 plain matplotlib map for `statistic` and `pupil`, and nothing else.
 
 Video gets one derived variant of the dark roles. `eyepiece.style.use_video()`, after

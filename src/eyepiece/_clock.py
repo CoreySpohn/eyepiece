@@ -27,11 +27,9 @@ This module imports only the standard library, NumPy and `eyepiece._motion`.
 
 import bisect
 import difflib
-import functools
 import itertools
 import math
 import struct
-import warnings
 from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from types import MappingProxyType
@@ -71,14 +69,9 @@ _MARKS = {
     "indicate": ("indicate", 0.5 * PULSE_S),
     "circumscribe": ("circumscribe", 0.0),
     "underline": ("underline", 0.0),
-    "pulse": ("indicate", 0.5 * PULSE_S),
-    "ring": ("circumscribe", 0.0),
     "move": ("move", 0.0),
 }
-# Kind names before 0.16: the deprecated `Timeline.pulse` and `Timeline.ring`
-# still make them, and `Timeline.span` accepts them with a warning.
-_OLD_KINDS = {"pulse": "indicate", "ring": "circumscribe"}
-_ATTENTION = ("indicate", "circumscribe", "underline", *_OLD_KINDS)
+_ATTENTION = ("indicate", "circumscribe", "underline")
 _MOTION = ("enter", "move", "run")
 _ARRIVAL = ("text", "caption")
 _KINDS = (
@@ -94,7 +87,7 @@ _KINDS = (
     "underline",
     "line",
 )
-_ATTENTION_KNOBS = ("indicate.", "circumscribe.", "underline.", "pulse.", "ring.")
+_ATTENTION_KNOBS = ("indicate.", "circumscribe.", "underline.")
 _UNPACED = ("text", "caption", *_ATTENTION, "run")
 _LINEAR = ("hold", *_ATTENTION, "run")
 
@@ -314,21 +307,6 @@ class _Together:
         _base, latest = self._clock._together.pop()
         self._clock._now = max(self._clock._now, latest)
         return False
-
-
-def _deprecated_verb(old, new):
-    """Warn that `Timeline.<old>` is now `Timeline.<new>`.
-
-    Called directly from the method the user called, so stacklevel 3 is the
-    user's line.
-    """
-    warnings.warn(
-        f"Timeline.{old} is deprecated; use Timeline.{new}, named for the "
-        f"eyepiece.{new} move it places. The knob keeps the name {old}.<target>; "
-        f"Timeline.{new} writes {new}.<target>",
-        DeprecationWarning,
-        stacklevel=3,
-    )
 
 
 def _no_colon(name):
@@ -1071,7 +1049,7 @@ class Timeline:
 
         This places on-screen caption text on the clock. Two other names
         differ: `eyepiece.narration.captions` builds the subtitle cues of the
-        narration for a caption track, and `eyepiece.callout` draws a short
+        narration for a caption track, and `eyepiece.motion.callout` draws a short
         label beside the subject it names.
 
         It leaves once read (arrival plus `Tempo.read_s`), when the next
@@ -1235,7 +1213,7 @@ class Timeline:
         )  # fmt: skip
 
     def indicate(self, target, *, at=None, cue=None):
-        """Place an `eyepiece.indicate` pulse on `target`.
+        """Place an `eyepiece.motion.indicate` pulse on `target`.
 
         Knob ``indicate.<target>`` runs 0 to 1 in 0.9 s; drive the move with
         it, ``move.update(plan.value(k, "indicate.<target>"))``. It is
@@ -1253,7 +1231,7 @@ class Timeline:
         return self._attention("indicate", target, PULSE_S, at, cue)
 
     def circumscribe(self, target, *, at=None, cue=None):
-        """Place an `eyepiece.circumscribe` outline on `target`.
+        """Place an `eyepiece.motion.circumscribe` outline on `target`.
 
         Knob ``circumscribe.<target>`` runs 0 to 1 in 1.3 s. It starts on its
         word, never holds a section open, and in a silent clip is skipped
@@ -1270,7 +1248,7 @@ class Timeline:
         return self._attention("circumscribe", target, RING_S, at, cue)
 
     def underline(self, target, *, at=None, cue=None):
-        """Place an `eyepiece.underline` on its cue for 1.3 seconds.
+        """Place an `eyepiece.motion.underline` on its cue for 1.3 seconds.
 
         Knob ``underline.<target>`` runs from 0 to 1. The span does not
         extend its section and a silent clip needs an explicit `at`.
@@ -1281,44 +1259,6 @@ class Timeline:
             tl.hold(2)
         """
         return self._attention("underline", target, RING_S, at, cue)
-
-    def pulse(self, target, *, at=None, cue=None):
-        """Deprecated: use `indicate`.
-
-        The span is placed as `indicate` places it, but keeps its names from
-        before 0.16: knob ``pulse.<target>`` and kind ``pulse``.
-
-        Args:
-            target: What it acts on; the cue target (``indicate:<target>``).
-            at: Start time in seconds or a `Time`.
-            cue: A full ``"kind:target"`` mark that overrides the default.
-
-        Returns:
-            The `Span`.
-        """
-        _deprecated_verb("pulse", "indicate")
-        return self._legacy_attention("pulse", target, at=at, cue=cue)
-
-    def ring(self, target, *, at=None, cue=None):
-        """Deprecated: use `circumscribe`.
-
-        The span is placed as `circumscribe` places it, but keeps its names
-        from before 0.16: knob ``ring.<target>`` and kind ``ring``.
-
-        Args:
-            target: What it acts on; the cue target (``circumscribe:<target>``).
-            at: Start time in seconds or a `Time`.
-            cue: A full ``"kind:target"`` mark that overrides the default.
-
-        Returns:
-            The `Span`.
-        """
-        _deprecated_verb("ring", "circumscribe")
-        return self._legacy_attention("ring", target, at=at, cue=cue)
-
-    def _legacy_attention(self, kind, target, *, at=None, cue=None):
-        seconds = PULSE_S if kind == "pulse" else RING_S
-        return self._attention(kind, target, seconds, at, cue)
 
     def click(self, target, *, at=None):
         """A click on `target`: knob ``click.<target>`` runs 0 to 1 in 0.6 s.
@@ -1364,8 +1304,7 @@ class Timeline:
             seconds: Seconds (paced by the tempo when `paced`).
             kind: One of ``hold``, ``enter``, ``leave``, ``text``,
                 ``caption``, ``move``, ``run``, ``indicate``,
-                ``circumscribe``, ``underline``. ``pulse`` and ``ring``, their
-                names before 0.16, still work and warn.
+                ``circumscribe``, ``underline``.
             to: A number for knob `name`, or a dict of knob targets; None is a
                 progress-only span. A ``hold`` steps its targets at the start.
             paced: Pace by the tempo; None follows the kind.
@@ -1378,13 +1317,7 @@ class Timeline:
         Returns:
             The `Span`.
         """
-        if kind in _OLD_KINDS:
-            warnings.warn(
-                f"span kind {kind!r} is deprecated; use {_OLD_KINDS[kind]!r}",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        elif kind not in _KINDS or kind == "line":
+        if kind not in _KINDS or kind == "line":
             raise ValueError(f"unknown span kind {kind!r}; use one of {_KINDS[:-1]}")
         paced = (kind not in _UNPACED) if paced is None else paced
         ease = ("linear" if kind in _LINEAR else DEFAULT_EASE) if ease is None else ease
@@ -1406,7 +1339,7 @@ class Timeline:
     def stagger(self, verb, targets, *, each_s, **kwargs):
         """Call `verb` on each target, each one `each_s` seconds after the last.
 
-        This staggers whole spans on the clock; `eyepiece.stagger` staggers
+        This staggers whole spans on the clock; `eyepiece.clock.stagger` staggers
         the items of one move within its progress.
 
         Every call is placed with ``at=``, so none of them moves ``now``
@@ -1434,12 +1367,7 @@ class Timeline:
             ValueError: If staggered ``enter`` spans overlap in time.
         """
         base = self._now
-        if verb in _OLD_KINDS:
-            # Warn once, at the caller of stagger, not once per target.
-            _deprecated_verb(verb, _OLD_KINDS[verb])
-            fn = functools.partial(self._legacy_attention, verb)
-        else:
-            fn = getattr(self, verb)
+        fn = getattr(self, verb)
         out = [
             fn(t, at=base + i * float(each_s), **kwargs) for i, t in enumerate(targets)
         ]
@@ -1883,8 +1811,7 @@ class Plan:
 
         Reads are those made through `value`, `reached`, `frames` and `progress` since
         the plan was built (or since `record` began). The ``indicate.*`` and
-        ``circumscribe.*`` knobs (and ``pulse.*`` and ``ring.*``, their names
-        before 0.16) are left out of both lists: every indication or outline
+        ``circumscribe.*`` knobs are left out of both lists: every indication or outline
         target has one, and in a silent clip they stay at 0 by design.
 
         Returns:

@@ -199,7 +199,7 @@ is an argument, so it defaults the x label to a lambda over D separation
 label. Everything else is handed straight to `plot_radial`, and the same
 `PlotResult` comes back.
 
-`radial_profile_plot` remains a deprecated alias for `plot_radial_image`.
+Use `ep.plot.plot_radial_image` to compute and draw the radial profile.
 It accepts the same arguments and warns to use the new name.
 
 ## Separate curve-end labels

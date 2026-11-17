@@ -53,7 +53,7 @@ def scrub(plan, samples=(0.0, 0.5, 1.0), **kwargs):
         dot.set_ydata([plan.value(k, "u")])
 
     try:
-        return ep.to_scrubber(fig, draw, plan, "u", samples, dpi=DPI, **kwargs)
+        return ep.render.to_scrubber(fig, draw, plan, "u", samples, dpi=DPI, **kwargs)
     finally:
         plt.close(fig)
 
@@ -111,7 +111,9 @@ def test_each_sample_shows_its_nearest_frame_latest_on_a_tie(tmp_path):
     expected = [(tmp_path / f"{k}.png").read_bytes() for k in range(plan.n_frames)]
     assert len(set(expected)) == plan.n_frames
     try:
-        page = ep.to_scrubber(fig, draw, plan, "u", [0.0, 0.2, 0.6, 1.0], dpi=DPI)
+        page = ep.render.to_scrubber(
+            fig, draw, plan, "u", [0.0, 0.2, 0.6, 1.0], dpi=DPI
+        )
     finally:
         plt.close(fig)
     shown = [base64.b64decode(u.split(",", 1)[1]) for u in page_data(page)["strip"]]
@@ -125,7 +127,9 @@ def test_chapters_jump_to_their_cue_and_transcript_follows_the_line():
     samples = [0.0, 0.7, 1.3, 1.4, 1.8, 2.6]
     fig, dot = tiny_figure()
     try:
-        page = ep.to_scrubber(fig, moving_draw(plan, dot), plan, "t", samples, dpi=DPI)
+        page = ep.render.to_scrubber(
+            fig, moving_draw(plan, dot), plan, "t", samples, dpi=DPI
+        )
     finally:
         plt.close(fig)
     buttons = re.findall(r'<button[^>]*data-sample="(\d+)"[^>]*>([^<]*)</button>', page)
@@ -203,7 +207,7 @@ def test_bad_arguments_are_refused():
     plan = silent_plan()
     fig, _ = tiny_figure()
     with pytest.raises(KeyError, match="did you mean"):
-        ep.to_scrubber(fig, lambda k: None, plan, "uu", (0.0,))
+        ep.render.to_scrubber(fig, lambda k: None, plan, "uu", (0.0,))
     plt.close(fig)
     with pytest.raises(ValueError, match="empty"):
         scrub(plan, samples=())

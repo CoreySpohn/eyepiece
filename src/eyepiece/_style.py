@@ -82,8 +82,8 @@ def use_video(on=True):
     Example::
 
         hwostyle.use("dark")
-        ep.use_video()
-        ep.role("planet")  # the capped cyan
+        ep.style.use_video()
+        ep.style.role("planet")  # the capped cyan
     """
     global _VIDEO
     was, _VIDEO = _VIDEO, bool(on)
@@ -215,7 +215,8 @@ def role(name, override=None, *, mode=None):
     Example::
 
         import eyepiece as ep
-        ax.axvline(0.5, color=ep.role("alert"))
+
+        ax.axvline(0.5, color=ep.style.role("alert"))
     """
     if override is not None:
         return override
@@ -348,7 +349,8 @@ def neutral(level):
     Example::
 
         import eyepiece as ep
-        ax.axhline(0, color=ep.neutral(0.5))
+
+        ax.axhline(0, color=ep.style.neutral(0.5))
     """
     back = to_rgb(matplotlib.rcParams["axes.facecolor"])
     front = to_rgb(matplotlib.rcParams["text.color"])
@@ -377,7 +379,8 @@ def backing(alpha=0.85):
     Example::
 
         import eyepiece as ep
-        ax.text(0.5, 0.5, "reference", bbox=ep.backing())
+
+        ax.text(0.5, 0.5, "reference", bbox=ep.style.backing())
     """
     face = to_rgba(matplotlib.rcParams["axes.facecolor"], alpha)
     return {
@@ -400,7 +403,7 @@ def quiet_spines(ax, *, keep=("left", "bottom"), level=None):
 
     Example::
 
-        ep.quiet_spines(ax, level=0.4)
+        ep.style.quiet_spines(ax, level=0.4)
     """
     keep = set(keep)
     unknown = keep.difference(ax.spines)

@@ -33,8 +33,8 @@ def _slit_steps(n=24):
 
 
 def test_keys_are_drawn_from_the_vocabulary():
-    res = ep.phasor([1 + 1j, -0.5j], show_sum=True, ring=True)
-    assert set(res.artists) <= ep.ARTIST_KEYS
+    res = ep.plot.phasor([1 + 1j, -0.5j], show_sum=True, ring=True)
+    assert set(res.artists) <= ep.plot.ARTIST_KEYS
     assert set(res.artists) == {"arrow", "lines", "collection", "text"}
     assert all(isinstance(a, FancyArrowPatch) for a in res.artists["arrow"])
     assert isinstance(res.artists["collection"], LineCollection)
@@ -42,7 +42,7 @@ def test_keys_are_drawn_from_the_vocabulary():
 
 
 def test_ax_none_creates_a_constrained_figure():
-    res = ep.phasor([1j])
+    res = ep.plot.phasor([1j])
     assert res.fig.get_layout_engine() is not None
     assert type(res.fig.get_layout_engine()).__name__ == "ConstrainedLayoutEngine"
     assert res.ax.get_aspect() == 1.0
@@ -51,7 +51,7 @@ def test_ax_none_creates_a_constrained_figure():
 
 def test_separate_arrows_share_the_origin():
     values = np.array([1 + 2j, -1j, 0.5])
-    res = ep.phasor(values, origin=0.25 + 0.25j)
+    res = ep.plot.phasor(values, origin=0.25 + 0.25j)
     for patch, value in zip(res.artists["arrow"], values, strict=True):
         start, end = _ends(patch)
         assert start == pytest.approx(0.25 + 0.25j)
@@ -63,7 +63,7 @@ def test_chain_tips_are_the_cumulative_sum():
     rng = np.random.default_rng(0)
     values = rng.normal(size=10) + 1j * rng.normal(size=10)
     origin = 1.0 - 2.0j
-    res = ep.phasor(values, origin=origin, chain=True)
+    res = ep.plot.phasor(values, origin=origin, chain=True)
     patches = res.artists["arrow"]
     tips = np.array([_ends(p)[1] for p in patches])
     np.testing.assert_allclose(tips, origin + np.cumsum(values), atol=1e-12)
@@ -74,7 +74,7 @@ def test_chain_tips_are_the_cumulative_sum():
 
 def test_the_resultant_is_drawn_last_to_the_sum():
     values = np.array([1.0, 1j, -0.25 + 0.5j])
-    res = ep.phasor(values, chain=True, show_sum=True, origin=0.5j)
+    res = ep.plot.phasor(values, chain=True, show_sum=True, origin=0.5j)
     arrows = res.artists["arrow"]
     assert len(arrows) == len(values) + 1
     start, end = _ends(arrows[-1])
@@ -90,7 +90,7 @@ def test_the_resultant_is_drawn_last_to_the_sum():
 
 
 def test_update_moves_the_same_patches_and_keeps_styles():
-    res = ep.phasor(
+    res = ep.plot.phasor(
         [1.0, 1j],
         chain=True,
         show_sum=True,
@@ -115,14 +115,14 @@ def test_update_moves_the_same_patches_and_keeps_styles():
 
 
 def test_update_with_a_different_count_raises():
-    res = ep.phasor([1.0, 1j], chain=True)
+    res = ep.plot.phasor([1.0, 1j], chain=True)
     with pytest.raises(ValueError, match="3 vectors for 2 arrows"):
         res.update([1.0, 1j, -1.0])
     plt.close(res.fig)
 
 
 def test_per_arrow_colors_and_linestyles_are_applied():
-    res = ep.phasor(
+    res = ep.plot.phasor(
         [1.0, 1j, -1.0],
         colors=["red", "green", "blue"],
         linestyles=["-", "--", ":"],
@@ -140,12 +140,12 @@ def test_per_arrow_colors_and_linestyles_are_applied():
 
 
 def test_a_single_color_and_the_default_color():
-    res = ep.phasor([1.0, 1j], colors=(1.0, 0.0, 0.0))
+    res = ep.plot.phasor([1.0, 1j], colors=(1.0, 0.0, 0.0))
     assert all(
         to_rgba(a.get_edgecolor()) == to_rgba("red") for a in res.artists["arrow"]
     )
     plt.close(res.fig)
-    res = ep.phasor([1.0, 1j])
+    res = ep.plot.phasor([1.0, 1j])
     for patch in res.artists["arrow"]:
         assert to_rgba(patch.get_edgecolor()) == to_rgba(_style.color(0))
     plt.close(res.fig)
@@ -153,7 +153,7 @@ def test_a_single_color_and_the_default_color():
 
 def test_a_per_arrow_sequence_of_the_wrong_length_raises():
     with pytest.raises(ValueError, match="colors has 2 entries for 3 vectors"):
-        ep.phasor([1.0, 1j, -1.0], colors=["red", "blue"])
+        ep.plot.phasor([1.0, 1j, -1.0], colors=["red", "blue"])
 
 
 def test_dial_is_centered_and_leaves_the_parent_in_place():
@@ -162,7 +162,7 @@ def test_dial_is_centered_and_leaves_the_parent_in_place():
     fig.canvas.draw()
     position = ax.get_position().bounds
     limits = ax.get_xlim(), ax.get_ylim()
-    res = ep.phasor([0.5 + 0.5j], ax=ax, at=(1.5, -1.0), size=2.0, ring=True)
+    res = ep.plot.phasor([0.5 + 0.5j], ax=ax, at=(1.5, -1.0), size=2.0, ring=True)
     fig.canvas.draw()
     assert res.ax is not ax
     assert res.ax in ax.child_axes
@@ -188,11 +188,11 @@ def test_dial_is_centered_and_leaves_the_parent_in_place():
 
 def test_dial_needs_a_parent():
     with pytest.raises(ValueError, match="pass ax"):
-        ep.phasor([1j], at=(0.0, 0.0))
+        ep.plot.phasor([1j], at=(0.0, 0.0))
 
 
 def test_small_heads_thin_their_default_shafts():
-    res = ep.phasor([1.0, 1j, -1.0], head_scale=[1.0, 0.5, 0.0])
+    res = ep.plot.phasor([1.0, 1j, -1.0], head_scale=[1.0, 0.5, 0.0])
     lw = matplotlib.rcParams["lines.linewidth"]
     widths = [a.get_linewidth() for a in res.artists["arrow"]]
     assert widths == pytest.approx([lw, 0.7 * lw, 0.4 * lw])
@@ -203,7 +203,7 @@ def test_head_size_scales_linearly_with_the_marker_size():
     scales = []
     for ms in (6.0, 12.0):
         with matplotlib.rc_context({"lines.markersize": ms}):
-            res = ep.phasor([1.0], head_scale=0.5, lim=1.5)
+            res = ep.plot.phasor([1.0], head_scale=0.5, lim=1.5)
         scales.append(res.artists["arrow"][0].get_mutation_scale())
         plt.close(res.fig)
     assert scales[0] == pytest.approx(HEAD_PER_MARKER * 6.0 * 0.5)
@@ -211,7 +211,7 @@ def test_head_size_scales_linearly_with_the_marker_size():
 
 
 def test_a_short_arrow_shrinks_its_head_to_fit():
-    res = ep.phasor([1.0, 1e-3], lim=1.5)
+    res = ep.plot.phasor([1.0, 1e-3], lim=1.5)
     long_arrow, short_arrow = res.artists["arrow"]
     nominal = HEAD_PER_MARKER * matplotlib.rcParams["lines.markersize"]
     assert long_arrow.get_mutation_scale() == pytest.approx(nominal)
@@ -227,9 +227,9 @@ def test_a_short_arrow_shrinks_its_head_to_fit():
 def test_style_switch_between_calls_is_honored(mode):
     other = "dark" if mode == "light" else "light"
     hwostyle.use(other)
-    plt.close(ep.phasor([1.0]).fig)
+    plt.close(ep.plot.phasor([1.0]).fig)
     hwostyle.use(mode)
-    res = ep.phasor([1.0, 1j], show_sum=True)
+    res = ep.plot.phasor([1.0, 1j], show_sum=True)
     *pieces, total = res.artists["arrow"]
     for patch in pieces:
         assert to_rgba(patch.get_edgecolor()) == to_rgba(hwostyle.palette[0])
@@ -238,7 +238,7 @@ def test_style_switch_between_calls_is_honored(mode):
 
 
 def test_ring_is_colored_by_the_phase_colormap():
-    res = ep.phasor([1.0], ring=True, ring_radius=2.0)
+    res = ep.plot.phasor([1.0], ring=True, ring_radius=2.0)
     ring = res.artists["collection"]
     segments = ring.get_segments()
     mid = np.array([0.5 * (s[0] + s[1]) for s in segments])
@@ -250,14 +250,14 @@ def test_ring_is_colored_by_the_phase_colormap():
 
 
 def test_limits_symmetric_explicit_and_automatic():
-    res = ep.phasor([1j], lim=2.0)
+    res = ep.plot.phasor([1j], lim=2.0)
     assert res.ax.get_xlim() == (-2.0, 2.0)
     assert res.ax.get_ylim() == (-2.0, 2.0)
     plt.close(res.fig)
-    res = ep.phasor([1j], lim=(-1, 3, -2, 2))
+    res = ep.plot.phasor([1j], lim=(-1, 3, -2, 2))
     assert res.ax.get_xlim() == (-1.0, 3.0)
     plt.close(res.fig)
-    res = ep.phasor(_slit_steps(), chain=True, cross=False)
+    res = ep.plot.phasor(_slit_steps(), chain=True, cross=False)
     tips = np.cumsum(_slit_steps())
     x0, x1 = res.ax.get_xlim()
     y0, y1 = res.ax.get_ylim()
@@ -268,7 +268,7 @@ def test_limits_symmetric_explicit_and_automatic():
 
 
 def test_axis_labels_and_routed_kwargs():
-    res = ep.phasor(
+    res = ep.plot.phasor(
         [1j],
         axis_labels=("Re E", "Im E"),
         arrow_kw={"zorder": 9, "gid": "field"},
@@ -281,17 +281,17 @@ def test_axis_labels_and_routed_kwargs():
         to_rgba(line.get_color()) == to_rgba("red") for line in res.artists["lines"]
     )
     plt.close(res.fig)
-    res = ep.phasor([1j], axis_labels=False)
+    res = ep.plot.phasor([1j], axis_labels=False)
     assert "text" not in res.artists
     plt.close(res.fig)
-    res = ep.phasor([1j], cross=False)
+    res = ep.plot.phasor([1j], cross=False)
     assert "lines" not in res.artists and "text" not in res.artists
     plt.close(res.fig)
 
 
 @pytest.mark.parametrize("n, show_sum", [(24, False), (200, True)])
 def test_a_closed_chain_draws_without_error_and_skips_the_zero_resultant(n, show_sum):
-    res = ep.phasor(_slit_steps(n), chain=True, show_sum=show_sum)
+    res = ep.plot.phasor(_slit_steps(n), chain=True, show_sum=show_sum)
     last_link = res.artists["arrow"][-2 if show_sum else -1]
     assert abs(_ends(last_link)[1]) < 1e-12
     if show_sum:
@@ -318,7 +318,7 @@ def test_a_closed_chain_raises_no_warning_built_or_updated():
     """
     fig, axes = plt.subplots(1, 3, figsize=(9, 3.2), layout="constrained")
     results = [
-        ep.phasor(
+        ep.plot.phasor(
             _centered_steps(turns),
             ax=ax,
             chain=True,
@@ -346,7 +346,9 @@ _PIN_RC = {"lines.linewidth": 1.5, "lines.markersize": 6.0}
 def test_default_geometry_matches_the_released_layout():
     """The default path, pinned as numbers, so new options cannot move it."""
     with matplotlib.rc_context(_PIN_RC):
-        res = ep.phasor([1 + 2j, -1j], show_sum=True, head_scale=[1.0, 0.5], ring=True)
+        res = ep.plot.phasor(
+            [1 + 2j, -1j], show_sum=True, head_scale=[1.0, 0.5], ring=True
+        )
     arrows = res.artists["arrow"]
     assert [_ends(a) for a in arrows] == [(0j, 1 + 2j), (0j, -1j), (0j, 1 + 1j)]
     assert [a.get_linewidth() for a in arrows] == pytest.approx([1.5, 1.05, 2.25])
@@ -381,7 +383,7 @@ def test_default_geometry_matches_the_released_layout():
 
 
 def test_starts_place_each_arrow_and_the_resultant_keeps_the_origin():
-    res = ep.phasor([1.0, 0.5j], starts=[0j, 1.0], show_sum=True, origin=0j)
+    res = ep.plot.phasor([1.0, 0.5j], starts=[0j, 1.0], show_sum=True, origin=0j)
     e1, e2, total = res.artists["arrow"]
     assert _ends(e1) == pytest.approx((0j, 1.0))
     assert _ends(e2) == pytest.approx((1.0, 1.0 + 0.5j))
@@ -390,7 +392,7 @@ def test_starts_place_each_arrow_and_the_resultant_keeps_the_origin():
 
 
 def test_automatic_limits_include_the_starts():
-    res = ep.phasor([0.5], starts=[3.0 + 3.0j], cross=False)
+    res = ep.plot.phasor([0.5], starts=[3.0 + 3.0j], cross=False)
     x0, x1 = res.ax.get_xlim()
     y0, y1 = res.ax.get_ylim()
     assert x0 < 3.0 and x1 > 3.5 and y0 < 3.0 < y1
@@ -399,13 +401,13 @@ def test_automatic_limits_include_the_starts():
 
 def test_starts_on_a_chain_or_of_the_wrong_length_raise():
     with pytest.raises(ValueError, match="not chained"):
-        ep.phasor([1.0, 1j], starts=[0j, 1.0], chain=True)
+        ep.plot.phasor([1.0, 1j], starts=[0j, 1.0], chain=True)
     with pytest.raises(ValueError, match="1 starts for 2 vectors"):
-        ep.phasor([1.0, 1j], starts=[0j])
+        ep.plot.phasor([1.0, 1j], starts=[0j])
 
 
 def test_update_takes_new_starts_and_otherwise_keeps_the_last():
-    res = ep.phasor([1.0, 1j], starts=[0j, 1.0], show_sum=True)
+    res = ep.plot.phasor([1.0, 1j], starts=[0j, 1.0], show_sum=True)
     arrows = res.artists["arrow"]
     res.update([2.0, -1j], starts=[1j, 2.0 + 1j])
     assert _ends(arrows[0]) == pytest.approx((1j, 2.0 + 1j))
@@ -421,11 +423,11 @@ def test_update_takes_new_starts_and_otherwise_keeps_the_last():
 
 
 def test_update_can_place_arrows_drawn_from_the_origin_but_not_a_chain():
-    res = ep.phasor([1.0, 1j])
+    res = ep.plot.phasor([1.0, 1j])
     res.update([1.0, 1j], starts=[0j, 1.0])
     assert _ends(res.artists["arrow"][1]) == pytest.approx((1.0, 1.0 + 1j))
     plt.close(res.fig)
-    res = ep.phasor([1.0, 1j], chain=True)
+    res = ep.plot.phasor([1.0, 1j], chain=True)
     with pytest.raises(ValueError, match="not chained"):
         res.update([1.0, 1j], starts=[0j, 1.0])
     plt.close(res.fig)
@@ -443,7 +445,9 @@ def _dial_box(dial, parent):
 def test_axes_units_size_the_dial_by_the_parents_shorter_side():
     fig, ax = plt.subplots(figsize=(6.0, 3.0), layout="constrained")
     ax.set(xlim=(0, 10), ylim=(0, 2))
-    res = ep.phasor([1j], ax=ax, at=(7.0, 1.5), size=0.4, size_units="axes", ring=True)
+    res = ep.plot.phasor(
+        [1j], ax=ax, at=(7.0, 1.5), size=0.4, size_units="axes", ring=True
+    )
     for figsize in ((6.0, 3.0), (4.0, 5.0), (8.0, 2.5)):
         fig.set_size_inches(figsize)
         fig.canvas.draw()
@@ -465,12 +469,12 @@ def test_axes_units_size_the_dial_by_the_parents_shorter_side():
 def test_unknown_size_units_raise():
     fig, ax = plt.subplots()
     with pytest.raises(ValueError, match="size_units"):
-        ep.phasor([1j], ax=ax, at=(0.5, 0.5), size_units="inches")
+        ep.plot.phasor([1j], ax=ax, at=(0.5, 0.5), size_units="inches")
     plt.close(fig)
 
 
 def test_separate_draws_a_folded_back_link_beside_the_one_before_it():
-    res = ep.phasor([1.0, -0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
+    res = ep.plot.phasor([1.0, -0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
     e1, e2, total = res.artists["arrow"]
     assert _ends(e1) == pytest.approx((0j, 1.0))
     # Leftward, so clockwise from its direction is up.
@@ -481,8 +485,8 @@ def test_separate_draws_a_folded_back_link_beside_the_one_before_it():
 
 def test_separate_leaves_arrows_that_only_touch_or_cross_alone():
     values = [1.0, -1.0, 1j, 1 + 1j]
-    plain = ep.phasor(values, lim=2.0)
-    moved = ep.phasor(values, lim=2.0, separate=0.3)
+    plain = ep.plot.phasor(values, lim=2.0)
+    moved = ep.plot.phasor(values, lim=2.0, separate=0.3)
     assert [_ends(a) for a in moved.artists["arrow"]] == [
         _ends(a) for a in plain.artists["arrow"]
     ]
@@ -491,7 +495,7 @@ def test_separate_leaves_arrows_that_only_touch_or_cross_alone():
 
 
 def test_separate_moves_a_shorter_arrow_along_a_longer_one_from_the_origin():
-    res = ep.phasor([1j, 0.5j], lim=(-1.0, 3.0, -1.0, 1.0), separate=0.1)
+    res = ep.plot.phasor([1j, 0.5j], lim=(-1.0, 3.0, -1.0, 1.0), separate=0.1)
     first, second = res.artists["arrow"]
     assert _ends(first) == pytest.approx((0j, 1j))
     # Half the larger span of the limits is 2.0; upward, so clockwise is right.
@@ -500,7 +504,7 @@ def test_separate_moves_a_shorter_arrow_along_a_longer_one_from_the_origin():
 
 
 def test_update_separates_with_the_first_draws_offset():
-    res = ep.phasor([1.0, 0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
+    res = ep.plot.phasor([1.0, 0.5], chain=True, show_sum=True, lim=1.0, separate=0.14)
     e1, e2, total = res.artists["arrow"]
     # Consecutive links touch at a point only and stay on the line.
     assert _ends(e1) == pytest.approx((0j, 1.0))
@@ -516,7 +520,7 @@ def test_update_separates_with_the_first_draws_offset():
 
 def test_text_kw_reaches_both_axis_labels():
     bbox = {"facecolor": "white", "edgecolor": "none", "pad": 1.0}
-    res = ep.phasor(
+    res = ep.plot.phasor(
         [1j],
         text_kw={"fontsize": 15.0, "zorder": 9, "color": "red", "bbox": bbox},
     )
@@ -529,8 +533,8 @@ def test_text_kw_reaches_both_axis_labels():
 
 
 def test_phase_ring_alone_draws_one_collection():
-    res = ep.phase_ring(radius=0.5, center=1.0 - 2.0j)
-    assert set(res.artists) == {"collection"} <= ep.ARTIST_KEYS
+    res = ep.plot.phase_ring(radius=0.5, center=1.0 - 2.0j)
+    assert set(res.artists) == {"collection"} <= ep.plot.ARTIST_KEYS
     assert res.update is None
     assert res.ax.get_aspect() == 1.0
     assert type(res.fig.get_layout_engine()).__name__ == "ConstrainedLayoutEngine"
@@ -553,7 +557,7 @@ def test_phase_ring_options_and_no_side_effects_on_a_given_axes():
     fig, ax = plt.subplots()
     ax.set(xlim=(-3, 3), ylim=(-2, 2))
     ticks = list(ax.get_xticks()), list(ax.get_yticks())
-    res = ep.phase_ring(ax, cmap="twilight", width=2.5, zorder=7)
+    res = ep.plot.phase_ring(ax, cmap="twilight", width=2.5, zorder=7)
     assert res.ax is ax
     assert ax.get_xlim() == (-3.0, 3.0) and ax.get_ylim() == (-2.0, 2.0)
     assert ax.get_aspect() == "auto"
@@ -570,8 +574,8 @@ def test_phase_ring_options_and_no_side_effects_on_a_given_axes():
 
 
 def test_phasor_ring_is_the_phase_ring():
-    res = ep.phasor([1.0], ring=True, ring_radius=0.8, ring_cmap="twilight")
-    alone = ep.phase_ring(radius=0.8, cmap="twilight")
+    res = ep.plot.phasor([1.0], ring=True, ring_radius=0.8, ring_cmap="twilight")
+    alone = ep.plot.phase_ring(radius=0.8, cmap="twilight")
     ring, ref = res.artists["collection"], alone.artists["collection"]
     np.testing.assert_array_equal(
         np.asarray(ring.get_segments()), np.asarray(ref.get_segments())
@@ -584,7 +588,7 @@ def test_phasor_ring_is_the_phase_ring():
 
 @pytest.mark.filterwarnings("error::RuntimeWarning")
 def test_a_zero_head_draws_a_plain_shaft_without_warning():
-    res = ep.phasor(
+    res = ep.plot.phasor(
         [1.0, 1j, -1.0],
         head_scale=[1.0, 0.0, 0.0],
         show_sum=True,
@@ -604,7 +608,7 @@ def test_a_zero_head_draws_a_plain_shaft_without_warning():
 
 def test_resultant_head_and_width_overrides_survive_update():
     with matplotlib.rc_context(_PIN_RC):
-        res = ep.phasor(
+        res = ep.plot.phasor(
             [1.0, 1j],
             chain=True,
             show_sum=True,
@@ -624,7 +628,7 @@ def test_resultant_head_and_width_overrides_survive_update():
 
 def test_resultant_head_alone_sets_its_default_width():
     with matplotlib.rc_context(_PIN_RC):
-        res = ep.phasor([1.0, 1j], show_sum=True, sum_head_scale=0.5)
+        res = ep.plot.phasor([1.0, 1j], show_sum=True, sum_head_scale=0.5)
     total = res.artists["arrow"][-1]
     assert total.get_linewidth() == pytest.approx(1.5 * 1.5 * 0.7)
     plt.close(res.fig)
@@ -632,7 +636,7 @@ def test_resultant_head_alone_sets_its_default_width():
 
 def test_colors_may_mix_names_hex_and_rgba_tuples():
     mixed = ["red", (0.0, 0.0, 1.0, 0.5), "#00ff00", (1.0, 1.0, 0.0)]
-    res = ep.phasor([1, 1j, -1, -1j], colors=mixed)
+    res = ep.plot.phasor([1, 1j, -1, -1j], colors=mixed)
     got = [patch.get_edgecolor() for patch in res.artists["arrow"]]
     expected = [to_rgba(c) for c in mixed]
     np.testing.assert_allclose(got, expected)
@@ -641,43 +645,43 @@ def test_colors_may_mix_names_hex_and_rgba_tuples():
 
 def test_a_single_rgba_tuple_colors_every_arrow():
     # Four arrows and a four-number tuple: one RGBA color, not four colors.
-    res = ep.phasor([1, 1j, -1, -1j], colors=(0.2, 0.4, 0.6, 0.8))
+    res = ep.plot.phasor([1, 1j, -1, -1j], colors=(0.2, 0.4, 0.6, 0.8))
     for patch in res.artists["arrow"]:
         np.testing.assert_allclose(patch.get_edgecolor(), (0.2, 0.4, 0.6, 0.8))
-    rgb = ep.phasor([1, 1j, -1], colors=(0.2, 0.4, 0.6))
+    rgb = ep.plot.phasor([1, 1j, -1], colors=(0.2, 0.4, 0.6))
     for patch in rgb.artists["arrow"]:
         np.testing.assert_allclose(patch.get_edgecolor(), (0.2, 0.4, 0.6, 1.0))
     plt.close("all")
 
 
 def test_a_two_color_tuple_is_two_colors_not_a_dash_pattern():
-    res = ep.phasor([1, 1j], colors=("red", (0.0, 0.0, 1.0)))
+    res = ep.plot.phasor([1, 1j], colors=("red", (0.0, 0.0, 1.0)))
     got = [patch.get_edgecolor() for patch in res.artists["arrow"]]
     np.testing.assert_allclose(got, [to_rgba("red"), to_rgba((0.0, 0.0, 1.0))])
     plt.close(res.fig)
 
 
 def test_linestyles_may_mix_names_and_dash_patterns():
-    res = ep.phasor([1, 1j], linestyles=["--", (0, (3, 2))])
+    res = ep.plot.phasor([1, 1j], linestyles=["--", (0, (3, 2))])
     first, second = res.artists["arrow"]
     assert first.get_linestyle() == "--"
     assert second.get_linestyle() == (0, (3, 2))
-    single = ep.phasor([1, 1j], linestyles=(0, (3, 2)))
+    single = ep.plot.phasor([1, 1j], linestyles=(0, (3, 2)))
     assert all(p.get_linestyle() == (0, (3, 2)) for p in single.artists["arrow"])
     plt.close("all")
 
 
 def test_widths_and_head_scales_take_numpy_scalars_and_sequences():
-    res = ep.phasor([1, 1j], widths=np.float64(2.5), head_scale=np.array(0.5))
+    res = ep.plot.phasor([1, 1j], widths=np.float64(2.5), head_scale=np.array(0.5))
     assert all(p.get_linewidth() == pytest.approx(2.5) for p in res.artists["arrow"])
-    per = ep.phasor([1, 1j], widths=np.array([1.0, 3.0]), head_scale=[0.5, 1.0])
+    per = ep.plot.phasor([1, 1j], widths=np.array([1.0, 3.0]), head_scale=[0.5, 1.0])
     widths = [p.get_linewidth() for p in per.artists["arrow"]]
     assert widths == pytest.approx([1.0, 3.0])
     plt.close("all")
 
 
 def test_levels_draw_dashed_neutral_circles_about_zero_with_labels():
-    res = ep.phasor(
+    res = ep.plot.phasor(
         [1.0, 0.3j],
         levels=[1.0, 0.5],
         level_labels=["same brightness", None],
@@ -701,7 +705,7 @@ def test_levels_draw_dashed_neutral_circles_about_zero_with_labels():
 
 
 def test_levels_accept_a_scalar_and_level_kw_and_leave_update_alone():
-    res = ep.phasor(
+    res = ep.plot.phasor(
         [0.5],
         levels=0.8,
         level_labels="ring",
@@ -732,5 +736,5 @@ def test_levels_accept_a_scalar_and_level_kw_and_leave_update_alone():
 )
 def test_bad_levels_raise(kwargs, match):
     with pytest.raises(ValueError, match=match):
-        ep.phasor([1.0], **kwargs)
+        ep.plot.phasor([1.0], **kwargs)
     plt.close("all")

@@ -39,7 +39,7 @@ def _display(ax, patch):
 def test_scaled_growth_is_the_drawn_arrow_scaled_about_its_origin(kind):
     fig, ax = _board()
     tail, head = (0.5, 0.5), (3.5, 2.0)
-    grown = ep.arrow(tail, head, ax=ax, kind=kind, lw=3.0, grow="scaled")
+    grown = ep.motion.arrow(tail, head, ax=ax, kind=kind, lw=3.0, grow="scaled")
     patch = grown.artists["arrow"]
     fig.canvas.draw()
     rest = _display(ax, patch)
@@ -57,12 +57,12 @@ def test_scaled_growth_is_the_drawn_arrow_scaled_about_its_origin(kind):
 def test_scaled_growth_rests_on_the_arrow_as_made():
     fig, ax = _board()
     still = _pixels(fig)
-    plain = ep.arrow((0.5, 0.5), (3.5, 2.0), ax=ax, label="v")
+    plain = ep.motion.arrow((0.5, 0.5), (3.5, 2.0), ax=ax, label="v")
     made = _pixels(fig)
     plain.artists["arrow"].remove()
     plain.artists["text"].remove()
     np.testing.assert_array_equal(_pixels(fig), still)
-    grown = ep.arrow((0.5, 0.5), (3.5, 2.0), ax=ax, label="v", grow="scaled")
+    grown = ep.motion.arrow((0.5, 0.5), (3.5, 2.0), ax=ax, label="v", grow="scaled")
     np.testing.assert_array_equal(_pixels(fig), made)
     for u in np.linspace(0.0, 1.0, 13):
         grown.update(u)
@@ -76,14 +76,14 @@ def test_scaled_growth_rests_on_the_arrow_as_made():
 
 def test_length_growth_is_unchanged_by_default():
     _, ax = _board()
-    plain = ep.arrow((0.5, 0.5), (3.5, 2.0), ax=ax, lw=3.0)
+    plain = ep.motion.arrow((0.5, 0.5), (3.5, 2.0), ax=ax, lw=3.0)
     patch = plain.artists["arrow"]
     nominal = FancyArrowPatch.get_mutation_scale(patch)
     plain.update(0.4)
     assert patch.get_linewidth() == 3.0
     assert FancyArrowPatch.get_mutation_scale(patch) == nominal
     with pytest.raises(ValueError, match="grow"):
-        ep.arrow((0, 0), (1, 1), ax=ax, grow="tips")
+        ep.motion.arrow((0, 0), (1, 1), ax=ax, grow="tips")
 
 
 # Axis build
@@ -94,7 +94,7 @@ def test_length_growth_is_unchanged_by_default():
 def test_staccato_build_starts_bare_and_rests_on_the_axes_as_made(axis, log):
     fig, ax = _axes(log)
     plain = _pixels(fig)
-    build = ep.build_axes(ax, axis=axis, style="staccato")
+    build = ep.motion.build_axes(ax, axis=axis, style="staccato")
     np.testing.assert_array_equal(_pixels(fig), plain)
     for u in np.linspace(0.0, 1.0, 41):
         build.update(u)
@@ -113,7 +113,7 @@ def _levels(parts):
 
 def test_staccato_is_one_beat_at_a_time_in_order_along_the_axis():
     _, ax = _axes()
-    build = ep.build_axes(ax, axis="x", style="staccato", spine_end=0.7)
+    build = ep.motion.build_axes(ax, axis="x", style="staccato", spine_end=0.7)
     beats = ax.xaxis  # the build reads the axis' own ticks
     ticks = [t for t in beats.get_major_ticks() if 0.0 <= t.get_loc() <= 1.0]
     first = {}
@@ -140,7 +140,7 @@ def test_staccato_draws_the_whole_spine_before_the_first_tick():
     (x0, y0), (x1, _) = ax.transAxes.transform([[0, 0], [1, 1]])
     row = round(fig.bbox.height - y0)
     cols = slice(int(x0) + 2, int(x1) - 2)
-    build = ep.build_axes(ax, axis="x", style="staccato")
+    build = ep.motion.build_axes(ax, axis="x", style="staccato")
     tick = ax.xaxis.get_major_ticks()[0].tick1line
     for u in np.linspace(0.0, 0.7, 141):
         build.update(u)
@@ -156,7 +156,7 @@ def test_staccato_draws_the_whole_spine_before_the_first_tick():
 @pytest.mark.parametrize("which", ["x", "y"])
 def test_staccato_writes_the_axis_label_after_the_numbers(which):
     fig, ax = _axes()
-    build = ep.build_axes(ax, axis=which, style="staccato", spine_end=0.6)
+    build = ep.motion.build_axes(ax, axis=which, style="staccato", spine_end=0.6)
     label = getattr(ax, f"{which}axis").label
     face = fig.get_facecolor()
     box = label.get_window_extent()
@@ -180,19 +180,19 @@ def test_staccato_without_a_label_writes_nothing_and_style_is_checked():
     fig, ax = _axes()
     ax.set_xlabel("")
     plain = _pixels(fig)
-    build = ep.build_axes(ax, axis="x", style="staccato")
+    build = ep.motion.build_axes(ax, axis="x", style="staccato")
     build.update(0.9)
     build.update(1.0)
     np.testing.assert_array_equal(_pixels(fig), plain)
     with pytest.raises(ValueError, match="style"):
-        ep.build_axes(ax, style="legato")
+        ep.motion.build_axes(ax, style="legato")
 
 
 @pytest.mark.parametrize("seconds", [1.0, 3.0])
 def test_staccato_clip_has_no_motion_fault(seconds):
     # An equal beat for the spine swept it across in a frame or two (a jump).
     fig, ax = _axes()
-    build = ep.build_axes(ax, style="staccato")
+    build = ep.motion.build_axes(ax, style="staccato")
     faults = ept.motion_faults(
         fig, lambda t: build.update(t / seconds), ept.Window(0, seconds), moves=[build]
     )
@@ -206,9 +206,9 @@ def _pair():
     fig, ax = plt.subplots(figsize=(5, 2), dpi=100, facecolor="white")
     ax.set(xlim=(0, 1), ylim=(0, 1))
     ax.set_axis_off()
-    at = ep.Anchor.from_data(ax, (0.5, 0.5))
-    a = ep.equation(at, r"${{l:x}}+{{r:y}}-c$", fontsize=28)
-    b = ep.equation(at, r"${{l:x}}+{{r:y}}=d^2$", fontsize=28)
+    at = ep.motion.Anchor.from_data(ax, (0.5, 0.5))
+    a = ep.motion.equation(at, r"${{l:x}}+{{r:y}}-c$", fontsize=28)
+    b = ep.motion.equation(at, r"${{l:x}}+{{r:y}}=d^2$", fontsize=28)
     fig.canvas.draw()
     return fig, a, b
 
@@ -219,7 +219,7 @@ def _centers(glyphs):
 
 def test_unmatched_glyphs_drift_toward_their_counterpart_while_fading():
     fig, a, b = _pair()
-    move = ep.transform(a, b, fade_toward=True)
+    move = ep.motion.transform(a, b, fade_toward=True)
     assert move.gone and move.new and not move.replaced
     leaving = [a.artists["glyphs"][i] for i in move.gone]
     arriving = [b.artists["glyphs"][j] for j in move.new]
@@ -248,24 +248,24 @@ def test_unmatched_glyphs_drift_toward_their_counterpart_while_fading():
 
 def test_drift_runs_with_the_motion_not_after_it():
     _, a, b = _pair()
-    plain = ep.transform(a, b)
+    plain = ep.motion.transform(a, b)
     plain.update(0.3)
     new = b.artists["glyphs"][plain.new[0]]
     assert not new.get_visible()
     _, a2, b2 = _pair()
-    drift = ep.transform(a2, b2, fade_toward=True)
+    drift = ep.motion.transform(a2, b2, fade_toward=True)
     drift.update(0.3)
     assert b2.artists["glyphs"][drift.new[0]].get_visible()
 
 
 def test_drift_rests_where_the_plain_transform_rests():
     fig, a, b = _pair()
-    plain = ep.transform(a, b)
+    plain = ep.motion.transform(a, b)
     plain_rest = _pixels(fig)
     plain.update(0.0)
     eq_a = _pixels(fig)
     fig2, a2, b2 = _pair()
-    drift = ep.transform(a2, b2, fade_toward=True)
+    drift = ep.motion.transform(a2, b2, fade_toward=True)
     np.testing.assert_array_equal(_pixels(fig2), plain_rest)
     drift.update(0.0)
     np.testing.assert_array_equal(_pixels(fig2), eq_a)
@@ -282,7 +282,7 @@ def test_drift_rests_where_the_plain_transform_rests():
 @pytest.mark.parametrize("fade_toward", [False, True])
 def test_stagger_one_moves_every_group_on_one_curve(fade_toward):
     fig, a, b = _pair()
-    move = ep.transform(a, b, stagger=1.0, fade_toward=fade_toward)
+    move = ep.motion.transform(a, b, stagger=1.0, fade_toward=fade_toward)
     sources = a.artists["glyphs"]
     for u in np.linspace(0.05, 0.95, 10):
         move.update(u)

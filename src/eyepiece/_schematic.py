@@ -1039,15 +1039,19 @@ def rail_panels(
 
     Example::
 
-        train = ep.rail(
-            [("Pupil", "pupil"), ("FPM", "fpm"), ("Lyot", "lyot"),
-             ("Image", "detector")],
+        train = ep.plot.rail(
+            [
+                ("Pupil", "pupil"),
+                ("FPM", "fpm"),
+                ("Lyot", "lyot"),
+                ("Image", "detector"),
+            ],
             ax=ax,
             coords="data",
             positions=(1.0, 4.0, 7.0, 10.0),
         )
         ax.set(xlim=(-0.5, 11.5), ylim=(-6.0, 2.5), aspect="equal")
-        strip = ep.rail_panels(train, width=2.4, bottom=-5.5, height=2.4)
+        strip = ep.plot.rail_panels(train, width=2.4, bottom=-5.5, height=2.4)
         for panel, image in zip(strip.insets, images):
             panel.imshow(image)
     """

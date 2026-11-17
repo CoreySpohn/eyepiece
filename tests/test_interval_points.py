@@ -10,7 +10,7 @@ import eyepiece as ep
 
 @pytest.mark.parametrize("hollow_zero", [False, True])
 def test_zero_faces_and_original_offsets(hollow_zero):
-    result = ep.interval_points([1, 2, 3], [0, 2, 0], hollow_zero=hollow_zero)
+    result = ep.plot.interval_points([1, 2, 3], [0, 2, 0], hollow_zero=hollow_zero)
     assert isinstance(result, ep.PlotResult)
     assert set(result.artists) == {"scatter", "lines"}
     scatter = result.artists["scatter"]
@@ -31,7 +31,7 @@ def test_zero_faces_and_original_offsets(hollow_zero):
     ],
 )
 def test_absolute_bounds_and_orientation(orient, bounds, expected):
-    result = ep.interval_points([10, 20], [1, 4], orient=orient, **bounds)
+    result = ep.plot.interval_points([10, 20], [1, 4], orient=orient, **bounds)
     xy = np.array([[10, 1], [20, 4]])
     if orient == "h":
         xy = xy[:, ::-1]
@@ -52,7 +52,7 @@ def test_handed_axes_styles_and_scalar_bounds():
     position = ax.get_position(original=True).bounds
     point_kw = {"s": 81, "alpha": 0.4}
     interval_kw = {"lw": 3, "linestyle": ":"}
-    result = ep.interval_points(
+    result = ep.plot.interval_points(
         [0, 1],
         [0, 2],
         lo=-1,
@@ -82,11 +82,11 @@ def test_handed_axes_styles_and_scalar_bounds():
 @pytest.mark.parametrize("x,y", [([[1]], [2]), ([1, 2], [3])])
 def test_shape_errors(x, y):
     with pytest.raises(ValueError, match=r"expected.*received"):
-        ep.interval_points(x, y)
+        ep.plot.interval_points(x, y)
 
 
 def test_mapped_point_colors_keep_holes_after_draw():
-    result = ep.interval_points(
+    result = ep.plot.interval_points(
         [0, 1], [0, 2], point_kw={"c": [0.1, 0.9], "cmap": "viridis"}
     )
     result.fig.canvas.draw()

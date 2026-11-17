@@ -35,9 +35,6 @@ explicitly), so it defaults the x label to a lambda/D separation label,
 still overridable by an explicit `xlabel`.
 """
 
-import warnings
-from functools import wraps
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.patches import Rectangle
@@ -475,14 +472,3 @@ def plot_radial_image(
         xlabel=resolved_xlabel,
         ylabel=ylabel,
     )
-
-
-@wraps(plot_radial_image)
-def radial_profile_plot(*args, **kwargs):
-    """Deprecated alias for `plot_radial_image`, with the same arguments."""
-    warnings.warn(
-        "radial_profile_plot is deprecated; use plot_radial_image",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return plot_radial_image(*args, **kwargs)
