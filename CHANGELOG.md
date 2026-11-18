@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0](https://github.com/CoreySpohn/eyepiece/compare/v0.17.0...v1.0.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* draw rasters from the grid extent and retire the unit-specific extent helpers
+* remove deprecated root exports and verb aliases; task namespaces only
+
+### Code Refactoring
+
+* draw rasters from the grid extent and retire the unit-specific extent helpers ([2338cbf](https://github.com/CoreySpohn/eyepiece/commit/2338cbfce5bdb56018d95973ec1d0953e556340c))
+* remove deprecated root exports and verb aliases; task namespaces only ([ec3f9d7](https://github.com/CoreySpohn/eyepiece/commit/ec3f9d748cbcc017b38a6a21829969eee0561b47))
+
 ## [0.17.0](https://github.com/CoreySpohn/eyepiece/compare/v0.16.0...v0.17.0) (2026-11-04)
 
 
