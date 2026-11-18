@@ -8,25 +8,19 @@ import pytest
 
 import eyepiece as ep
 import eyepiece.testing as ept
-from eyepiece import motifs as motif_module
 
 MODES = ("dark", "light", "paper")
 
 
 @pytest.fixture
 def table_set():
-    """The default set built from the hwostyle table; skipped when it is absent."""
-    pytest.importorskip("hwostyle.motifs")
+    """The default set built from the hwostyle table."""
     return ep.motifs.MotifSet.default()
 
 
-@pytest.fixture(params=["table", "fallback"])
-def default_set(request, monkeypatch):
-    """The default set from the hwostyle table, and from the stand-in table."""
-    if request.param == "table":
-        pytest.importorskip("hwostyle.motifs")
-    else:
-        monkeypatch.setattr(motif_module, "_hwostyle_table", lambda: None)
+@pytest.fixture
+def default_set():
+    """The default set built from the hwostyle table."""
     return ep.motifs.MotifSet.default()
 
 
@@ -518,22 +512,6 @@ def test_the_dim_level_falls_back_when_hwostyle_has_no_motifs(monkeypatch):
     assert ep._style.dim_level("paper") == 0.5
 
 
-def test_the_stand_in_table_matches_the_hwostyle_table_row_for_row():
-    table = pytest.importorskip("hwostyle.motifs")
-    standin = [ep.motifs.Motif(**r) for r in motif_module._FALLBACK_ROWS]
-    real = ep.motifs.MotifSet.default()
-    assert [m.key for m in standin] == list(real)
-    for mine in standin:
-        assert mine == real[mine.key], mine.key
-    assert motif_module._FALLBACK_RANKS == dict(table.NEUTRAL_RANKS)
-    assert motif_module._FALLBACK_SHARING == tuple(table.SHARING_SETS)
-    assert motif_module._FALLBACK_EXCLUSIONS == tuple(table.EXCLUSION_PAIRS)
-    assert motif_module._FALLBACK_ACCEPTED == tuple(
-        motif_module.AcceptedPair(r.a, r.b, r.modes, r.channels, r.de)
-        for r in table.ACCEPTED_PAIRS
-    )
-
-
 def test_step_list_finished_steps_use_the_mode_dim_level():
     for mode, level in (("dark", 0.35), ("light", 0.5)):
         hwostyle.use(mode)
@@ -555,14 +533,6 @@ def test_a_label_reads_the_ink_where_hwostyle_has_one_and_the_mark_elsewhere(
     assert zodi.resolve_label("paper") == zodi.resolve("paper")
     assert table_set["star"].label_kw()["color"] == table_set["star"].color
     assert table_set["reference_plane"].label_kw()["fontstyle"] == "italic"
-
-
-def test_a_label_falls_back_to_the_mark_without_a_table(monkeypatch):
-    monkeypatch.setattr(motif_module, "_hwostyle_table", lambda: None)
-    zodi = ep.motifs.MotifSet.default()["local_zodi"]
-    hwostyle.use("dark")
-    assert zodi.label_color == "zodi"
-    assert zodi.label in (zodi.color, "#15903e")
 
 
 def test_an_accepted_pair_passes_only_with_its_second_channels(table_set):

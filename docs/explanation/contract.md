@@ -478,8 +478,7 @@ marker, line style, hatch, arrow style and font style: the non-color channels
 that tell it apart when its color is shared, dimmed or lost to color vision.
 `signature()` returns them, `line_kw`, `marker_kw` and `patch_kw` turn the
 motif into matplotlib arguments, and `derive(**changes)` makes a chapter's own
-variant. `MotifSet.default()` reads the table from `hwostyle.motifs`, and an
-older hwostyle gets a smaller stand-in table, as a missing role does.
+variant. `MotifSet.default()` reads the table from `hwostyle.motifs`.
 
 A figure spends at most four hues, and hwostyle owns that budget with the
 table. A fifth or sixth hue needs a second channel, a seventh is never used,

@@ -11,8 +11,7 @@ else a set lists.
 A motif never stores a hex value. Its color resolves at call time through
 `eyepiece.style.role`, so a mode switch is seen, and a saved figure state keeps the
 motif key and not a color that would go stale. `MotifSet.default()` reads the
-default table from `hwostyle.motifs`; an older hwostyle without it gets a
-smaller stand-in table, as `eyepiece.style.role` does for a missing role.
+default table from `hwostyle.motifs`.
 
 A set describes the vocabulary a figure or clip draws with, so check the
 subset it uses (`MotifSet.only`) with `eyepiece.testing.motif_faults`, not the
@@ -32,6 +31,7 @@ import dataclasses
 from collections.abc import Mapping
 
 import hwostyle
+import hwostyle.motifs as hwostyle_motifs
 from matplotlib.colors import to_hex, to_rgba
 
 from eyepiece import _style
@@ -53,180 +53,6 @@ _FIELDS = (
     "fill_alpha_dark",
     "on_image",
     "label_color",
-)
-
-# Stand-ins when hwostyle lacks `motifs`: a row-for-row copy of its table.
-# The hwostyle table is the source of truth; a parity test keeps this copy
-# equal to it, and it exists only so an older hwostyle still works.
-_FALLBACK_RANKS = {
-    "background": 0.0,
-    "furniture": 0.2,
-    "scenery": 0.45,
-    "threshold": 0.6,
-    "data_flow": 0.6,
-    "hardware": 0.7,
-    "integration": 0.8,
-    "text": 1.0,
-    "truth": None,
-}
-_FALLBACK_SHARING = (
-    ("disk", "prior"),
-    ("local_zodi", "reference"),
-    ("local_zodi", "alert"),
-    ("local_zodi", "posterior"),
-)
-_FALLBACK_EXCLUSIONS = (("pupil", "probability"), ("pupil", "statistic"))
-_FALLBACK_ROWS = (
-    {
-        "key": "star",
-        "noun": "star",
-        "role": "star",
-        "marker": "*",
-        "linestyle": "none",
-        "on_image": ("+", "text"),
-    },
-    {
-        "key": "starlight",
-        "noun": "starlight",
-        "role": "star",
-        "marker": ".",
-        "linestyle": "none",
-        "hatch": "..",
-    },
-    {
-        "key": "planet",
-        "noun": "planet",
-        "role": "planet",
-        "marker": "o",
-        "linestyle": "none",
-        "on_image": ("o", "text"),
-    },
-    {
-        "key": "disk",
-        "noun": "exozodiacal dust",
-        "role": "disk",
-        "hatch": "///",
-        "linewidth": 0.8,
-        "fill_alpha": 0.12,
-        "fill_alpha_dark": 0.22,
-        "label_color": "disk",
-    },
-    {
-        "key": "local_zodi",
-        "noun": "local zodiacal dust",
-        "role": "zodi",
-        "hatch": "..",
-        "linewidth": 0.8,
-        "fill_alpha": 0.10,
-        "fill_alpha_dark": 0.18,
-        "label_color": "zodi",
-    },
-    {
-        "key": "aperture",
-        "noun": "aperture",
-        "role": "hardware",
-        "marker": "|",
-        "linewidth": 3.0,
-    },
-    {
-        "key": "optics",
-        "noun": "instrument optics",
-        "role": "hardware",
-        "marker": "d",
-        "fill_alpha": 0.15,
-    },
-    {
-        "key": "detector",
-        "noun": "detector",
-        "role": "hardware",
-        "marker": "s",
-        "hatch": "xx",
-        "fill_alpha": 0.10,
-    },
-    {
-        "key": "pixel",
-        "noun": "pixel",
-        "role": "planet",
-        "marker": "s",
-        "fill_alpha": 0.30,
-        "on_image": ("s", "text"),
-    },
-    {"key": "ray", "noun": "light ray", "role": "star", "arrowstyle": "-|>"},
-    {
-        "key": "integration",
-        "noun": "integration direction",
-        "role": "integration",
-        "linestyle": "--",
-        "arrowstyle": "]->",
-    },
-    {
-        "key": "data_flow",
-        "noun": "data flow",
-        "role": "data_flow",
-        "arrowstyle": "simple",
-        "linewidth": 0.8,
-        "fill_alpha": 0.18,
-    },
-    {
-        "key": "reference_plane",
-        "noun": "reference plane",
-        "role": "scenery",
-        "linestyle": "-.",
-        "fontstyle": "italic",
-        "linewidth": 0.8,
-        "fill_alpha": 0.10,
-        "fill_alpha_dark": 0.25,
-    },
-    {
-        "key": "speckle",
-        "noun": "speckle",
-        "role": "star",
-        "marker": "x",
-        "linestyle": "none",
-        "on_image": ("x", "text"),
-    },
-    {
-        "key": "data",
-        "noun": "measurement",
-        "role": "data",
-        "marker": "|",
-        "linestyle": "none",
-        "on_image": ("|", "text"),
-    },
-    {"key": "model", "noun": "model", "role": "model"},
-    {"key": "truth", "noun": "true value", "role": "truth", "linestyle": "--"},
-    {"key": "prior", "noun": "prior", "role": "prior", "label_color": "prior"},
-    {"key": "posterior", "noun": "posterior", "role": "posterior", "linewidth": 1.6},
-    {
-        "key": "threshold",
-        "noun": "threshold",
-        "role": "threshold",
-        "linestyle": ":",
-        "fontstyle": "italic",
-    },
-    {
-        "key": "alert",
-        "noun": "alert",
-        "role": "alert",
-        "marker": "X",
-        "linestyle": "none",
-        "on_image": ("X", "text"),
-    },
-    {
-        "key": "positive",
-        "noun": "certified claim",
-        "role": "positive",
-        "marker": "o",
-        "linestyle": "none",
-    },
-    {
-        "key": "negative",
-        "noun": "rejected claim",
-        "role": "negative",
-        "marker": "s",
-        "linestyle": "none",
-    },
-    {"key": "cue", "noun": "cue", "role": "text", "linewidth": 2.0, "fill_alpha": 0.25},
 )
 
 
@@ -251,29 +77,8 @@ class AcceptedPair:
     de: float
 
 
-# Row-for-row copy of hwostyle's ``ACCEPTED_PAIRS``, kept equal by the parity test.
-_FALLBACK_ACCEPTED = (
-    AcceptedPair("reference", "alert", ("dark",), ("linestyle", "marker"), 7.3),
-    AcceptedPair("model", "negative", ("dark",), ("linestyle", "marker"), 9.6),
-    AcceptedPair("reference", "negative", ("paper",), ("marker",), 6.6),
-    AcceptedPair("disk", "positive", ("paper",), ("marker",), 7.7),
-    AcceptedPair("zodi", "negative", ("paper",), ("marker",), 6.6),
-    AcceptedPair("prior", "positive", ("paper",), ("marker",), 7.7),
-)
-
-
-def _hwostyle_table():
-    """The `hwostyle.motifs` module, or None when hwostyle predates it."""
-    try:
-        import hwostyle.motifs as table
-    except ImportError:
-        return None
-    return table
-
-
 def _ranks():
-    table = _hwostyle_table()
-    return dict(table.NEUTRAL_RANKS if table is not None else _FALLBACK_RANKS)
+    return dict(hwostyle_motifs.NEUTRAL_RANKS)
 
 
 def _role_in(name, mode):
@@ -594,20 +399,11 @@ class MotifSet(Mapping):
     def default(cls):
         """The default table from `hwostyle.motifs`.
 
-        Falls back to a row-for-row copy of the table when the installed hwostyle
-        predates it. The table is the whole vocabulary, not one figure's: it
-        holds hue pairs that never share a clip, so check `only(...)` the
-        keys a clip uses.
+        The table is the whole vocabulary, not one figure's: it holds hue
+        pairs that never share a clip, so check `only(...)` the keys a clip
+        uses.
         """
-        table = _hwostyle_table()
-        if table is None:
-            rows = [Motif(**r) for r in _FALLBACK_ROWS]
-            return cls(
-                rows,
-                sharing=_FALLBACK_SHARING,
-                exclusions=_FALLBACK_EXCLUSIONS,
-                accepted=_FALLBACK_ACCEPTED,
-            )
+        table = hwostyle_motifs
         return cls(
             [_motif_from_row(row) for row in table.MOTIFS.values()],
             sharing=table.SHARING_SETS,
@@ -615,7 +411,7 @@ class MotifSet(Mapping):
             hue_budget=table.HUE_BUDGET,
             accepted=[
                 AcceptedPair(r.a, r.b, tuple(r.modes), tuple(r.channels), r.de)
-                for r in getattr(table, "ACCEPTED_PAIRS", ())
+                for r in table.ACCEPTED_PAIRS
             ],
         )
 
