@@ -25,7 +25,7 @@ hand, and it breaks quietly. A panel that takes the next palette color gets
 a different color as soon as a panel is added ahead of it, a panel that
 derives its own half width from its own array disagrees with its neighbor by
 half a pixel or by the whole field, and an animation whose panels each hold
-their own time base drifts apart over a long run. `SourceStyles` and `Frame`
+their own time base drifts apart over a long run. `SourceStyles` and `PixelGrid`
 exist so that none of those are per-panel decisions: the caller makes each
 one once and hands the result to every panel.
 
@@ -36,6 +36,7 @@ import numpy as np
 from IPython.display import HTML
 
 import eyepiece as ep
+from hwoutils.grids import Frame, PixelGrid
 
 hwostyle.use("dark")
 # Docs-build only, to keep the baked page images small. A real figure script
@@ -110,11 +111,8 @@ built from this object. The star is declared even though it is drawn with a
 star marker, because it is the declaration order that fixes the assignment,
 and dropping it would shift both companions by one color.
 
-`Frame` holds one field-of-view choice and hands out the extent that goes
-with it. It is frozen, so a panel cannot widen the field for its neighbors,
-and it carries the pixel scale alongside the half width, so the panel that
-maps an array index onto the sky reads it from the same object that gave the
-image panel its extent.
+One frozen `PixelGrid` defines the scene sampling and pixel-edge extent.
+Each panel reads its limits from that grid.
 
 The clock is an ordinary array. Nothing in the library owns it, and that is
 the point: a frame index means the same instant in every panel because every
@@ -122,11 +120,11 @@ panel indexes the same array.
 
 ```{code-cell} python
 STYLES = ep.style.SourceStyles(["star", "b", "c"])
-FRAME = ep.plot.Frame(half_fov_lod=HALF_FOV_LOD, pixscale_lod=2.0 * HALF_FOV_LOD / N)
+GRID = PixelGrid.focal(N, 2.0 * HALF_FOV_LOD / N, Frame(500, 1, "circumscribed"))
 EPOCHS = np.linspace(0.0, 1.0, 20)
 
 print("b:", STYLES["b"], " c:", STYLES["c"])
-print("extent:", FRAME.extent_lod(), " pixel scale:", round(FRAME.pixscale_lod, 4))
+print("extent:", GRID.extent(), " pixel scale:", round(GRID.step, 4))
 ```
 
 ## Building the views
@@ -146,7 +144,7 @@ require every panel to be drawn by this library.
 def build_views(fig, styles, frame, epochs):
     """Three views of the scene, all reading the same styles, frame, and clock."""
     ax_sky, ax_image, ax_sep = fig.subplots(1, 3)
-    extent = frame.extent_lod()
+    extent = frame.extent()
     markers = {"sky": {}, "image": {}, "sep": {}}
 
     for name in ORBITS:
@@ -184,7 +182,7 @@ def build_views(fig, styles, frame, epochs):
             [], [], ls="none", marker=style["marker"], color=style["color"], ms=7
         )
     ax_sep.set_xlim(epochs[0], epochs[-1])
-    ax_sep.set_ylim(0.0, frame.half_fov_lod)
+    ax_sep.set_ylim(0.0, extent[1])
     ax_sep.set_xlabel("time [orbits of b]")
     ax_sep.set_ylabel(r"separation [$\lambda/D$]")
     ax_sep.set_title("separation")
@@ -210,11 +208,11 @@ Building the figure and advancing it to a single epoch gives the static
 version. The companion drawn as a square in the sky panel is the square ring
 in the focal plane and the square on the separation curve, and the two
 spatial panels reach the same fourteen lambda over D in every direction
-because both took their limits from `FRAME`.
+because both took their limits from `GRID`.
 
 ```{code-cell} python
 fig = plt.figure(figsize=(9.2, 3.0), layout="constrained")
-views = build_views(fig, STYLES, FRAME, EPOCHS)
+views = build_views(fig, STYLES, GRID, EPOCHS)
 show(views, EPOCHS, 8)
 ```
 
@@ -260,7 +258,7 @@ because they are refreshed at the same rate.
 
 ```{code-cell} python
 fig = plt.figure(figsize=(7.2, 2.4), layout="constrained")
-views = build_views(fig, STYLES, FRAME, EPOCHS)
+views = build_views(fig, STYLES, GRID, EPOCHS)
 
 anim = ep.render.animate(fig, lambda fig, k: show(views, EPOCHS, k), len(EPOCHS), fps=8)
 HTML(anim.jshtml(dpi=100))

@@ -66,11 +66,6 @@ if TYPE_CHECKING:
         curve_insets,
     )
     from eyepiece.layout import (
-        Frame,
-        extent_arcsec,
-        extent_au,
-        extent_lod,
-        extent_lod_from_pixels,
         label_arcsec,
         label_au,
         label_lod,
@@ -104,7 +99,6 @@ if TYPE_CHECKING:
 __all__ = [
     "ARTIST_KEYS",
     "GLYPHS",
-    "Frame",
     "MosaicResult",
     "PlotResult",
     "bracket",
@@ -117,10 +111,6 @@ __all__ = [
     "cov_ellipse",
     "curve_insets",
     "display_limits",
-    "extent_arcsec",
-    "extent_au",
-    "extent_lod",
-    "extent_lod_from_pixels",
     "fading_track",
     "hist_fill",
     "hist_vs_pdf",

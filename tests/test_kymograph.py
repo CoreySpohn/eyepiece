@@ -47,15 +47,16 @@ def test_centers_match_the_hand_built_extent_pixel_for_pixel():
     plt.close(by_centers.fig)
 
 
-def test_centers_with_origin_upper_keep_row_zero_at_y0():
-    values, x, y = _grid()
+def test_grid_with_origin_upper_keeps_row_zero_at_declared_y():
+    """Fails if grid display drops the origin, offset or rectangular shape."""
+    from hwoutils.grids import PixelGrid
+
+    grid = PixelGrid((3, 6), 1, 0.5, ((0.5, 0), (0, 2)), "arcsec")
     res = ep.plot.imshow_log(
-        values, centers=(x, y), colorbar=False, imshow_kw={"origin": "upper"}
+        np.ones(grid.shape), grid=grid, colorbar=False, imshow_kw={"origin": "upper"}
     )
-    _, _, bottom, top = res.artists["image"].get_extent()
-    dy = y[1] - y[0]
-    assert top == pytest.approx(y[0] - dy / 2)
-    assert bottom == pytest.approx(y[-1] + dy / 2)
+    assert tuple(res.artists["image"].get_extent()) == (-0.75, 2.25, 4.0, -2.0)
+    res.fig.canvas.draw()
     plt.close(res.fig)
 
 
@@ -77,7 +78,7 @@ def test_bad_centers_raise(centers, match):
 
 def test_centers_and_extent_together_raise():
     values, x, y = _grid()
-    with pytest.raises(ValueError, match="not both"):
+    with pytest.raises(ValueError, match="only one"):
         ep.plot.imshow_log(values, centers=(x, y), extent=(0, 1, 0, 1))
     plt.close("all")
 

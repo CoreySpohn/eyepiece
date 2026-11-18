@@ -112,33 +112,15 @@ def display_limits(image, *, low=1.0, high=99.5, low_scale=1.0, positive=False):
     return (vmin, vmax)
 
 
-def _centers_extent(centers, extent, shape, origin):
-    """The pixel-edge extent of an image sampled at 1D pixel centers.
+def _grid_from_centers(centers, shape):
+    """Describe two evenly spaced plotting axes in row and column order."""
+    from hwoutils.grids import PixelGrid
 
-    `centers` is `(x, y)`: the horizontal coordinate of each column and the
-    vertical coordinate of each row, in row order. Each axis must be evenly
-    spaced, because `imshow` draws one uniform grid; an uneven axis belongs
-    in `pcolormesh`. The extent runs half a step past the first and last
-    center, and with `origin="upper"` its bottom and top swap, so row 0
-    sits at `y[0]` either way.
-
-    Returns:
-        `extent` unchanged when `centers` is None, else the extent tuple.
-
-    Raises:
-        ValueError: If both are given, an axis is not 1D, holds fewer than
-            two centers, does not match the image's shape, or is unevenly
-            spaced.
-    """
-    if centers is None:
-        return extent
-    if extent is not None:
-        raise ValueError("pass extent or centers, not both")
     if len(centers) != 2:
         raise ValueError("centers must be (x, y): column centers, row centers")
-    n_rows, n_cols = shape[0], shape[1]
-    edges = []
-    for name, values, count in (("x", centers[0], n_cols), ("y", centers[1], n_rows)):
+    steps = []
+    zeros = []
+    for name, values, count in zip(("x", "y"), centers, shape[:2][::-1], strict=True):
         values = np.asarray(values, dtype=float)
         if values.ndim != 1 or values.size < 2:
             raise ValueError(f"centers {name} must be 1D with at least two entries")
@@ -146,18 +128,36 @@ def _centers_extent(centers, extent, shape, origin):
             raise ValueError(
                 f"centers {name} has {values.size} entries for {count} pixels"
             )
-        steps = np.diff(values)
-        if not np.allclose(steps, steps[0], rtol=1e-6, atol=0.0):
+        delta = np.diff(values)
+        step = float(delta[0])
+        if step == 0 or not np.allclose(delta, step, rtol=1e-6, atol=0.0):
             raise ValueError(
                 f"centers {name} must be evenly spaced for imshow; use "
                 "pcolormesh for an uneven grid"
             )
-        half = 0.5 * float(steps[0])
-        edges.append((float(values[0]) - half, float(values[-1]) + half))
-    (left, right), (bottom, top) = edges
+        steps.append(step)
+        zeros.append(-float(values[0]) / step)
+    dx, dy = steps
+    # These plotting coordinates can have unrelated units, as in a kymograph.
+    return PixelGrid(shape[:2], *zeros, ((dx, 0.0), (0.0, dy)), "pixel")
+
+
+def _image_extent(grid, centers, extent, shape, origin):
+    """Resolve display edges, keeping row zero registered for either origin."""
+    if sum(value is not None for value in (grid, centers, extent)) > 1:
+        raise ValueError("pass only one of grid, centers, and extent")
+    if centers is not None:
+        grid = _grid_from_centers(centers, shape)
+    if grid is None:
+        return extent
+    if grid.shape != shape[:2]:
+        raise ValueError("grid.shape must match the image shape")
+    left, right, bottom, top = grid.extent()
+    if origin is None:
+        origin = matplotlib.rcParams["image.origin"]
     if origin == "upper":
         bottom, top = top, bottom
-    return (left, right, bottom, top)
+    return left, right, bottom, top
 
 
 def imshow_log(
@@ -166,6 +166,7 @@ def imshow_log(
     ax=None,
     extent=None,
     centers=None,
+    grid=None,
     floor=1e-20,
     vmin=None,
     vmax=None,
@@ -196,6 +197,8 @@ def imshow_log(
             a step past the outer centers). An alternative to `extent`, for
             data sampled on known coordinates, such as a cut against time
             or wavelength.
+        grid: PixelGrid supplying physical coordinates, exclusive with
+            extent and centers. Row zero stays at its declared coordinate.
         floor: Minimum value the data is clipped to before norm/display.
         vmin: Norm lower bound. None uses `max(data.min(), floor)`.
         vmax: Norm upper bound. None uses `data.max()`.
@@ -216,14 +219,13 @@ def imshow_log(
         `.update(new_image)` callable.
 
     Raises:
-        ValueError: If `colorbar` is not a known mode, or `centers` is given
-            with `extent`, or does not match the image (see `centers`).
+        ValueError: If `colorbar` is unknown or display coordinates are invalid.
     """
     _check_colorbar(colorbar)
     img = np.asarray(image, dtype=float)
     data = np.clip(img, floor, None)
     kw = {"interpolation": "nearest", "origin": "lower", **(imshow_kw or {})}
-    extent = _centers_extent(centers, extent, data.shape, kw["origin"])
+    extent = _image_extent(grid, centers, extent, data.shape, kw["origin"])
     created = ax is None
     if created:
         _, ax = plt.subplots(layout="constrained")
@@ -300,6 +302,7 @@ def imshow_diverging(
     ax=None,
     extent=None,
     centers=None,
+    grid=None,
     vlim=None,
     cmap=None,
     colorbar=True,
@@ -316,6 +319,7 @@ def imshow_diverging(
         centers: `(x, y)` 1D arrays of the column and row pixel centers,
             evenly spaced, from which the pixel-edge extent is built, as in
             `imshow_log`. An alternative to `extent`.
+        grid: PixelGrid, with the same display convention as `imshow_log`.
         vlim: Symmetric norm bound; the norm spans `(-vlim, vlim)`. None
             uses `max(abs(data.min()), abs(data.max()))`.
         cmap: Colormap override; None uses the semantic "residual" cmap.
@@ -337,13 +341,12 @@ def imshow_diverging(
         keeps one zero and one scale across frames.
 
     Raises:
-        ValueError: If `colorbar` is not a known mode, or `centers` is given
-            with `extent`, or does not match the image.
+        ValueError: If `colorbar` is unknown or display coordinates are invalid.
     """
     _check_colorbar(colorbar)
     data = np.asarray(image, dtype=float)
     origin = (imshow_kw or {}).get("origin", "lower")
-    extent = _centers_extent(centers, extent, data.shape, origin)
+    extent = _image_extent(grid, centers, extent, data.shape, origin)
     created = ax is None
     if created:
         _, ax = plt.subplots(layout="constrained")

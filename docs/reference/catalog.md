@@ -149,8 +149,7 @@ namespace. Render checks are in `testing`; caption helpers are in `narration`.
 | quiet the frame of a line or scatter panel | `style.quiet_spines(ax, keep=, level=)` | Hides unkept spines and optionally softens the rest | [stats](../gallery/stats.md) |
 | a neutral scenery tone | `style.neutral(level)` | Gray between background and text ink | [stats](../gallery/stats.md) |
 | the brand color of a role | `style.role(name, mode=)` | Hex color for a named role or a neutral rank, in the active or a given mode | [stats](../gallery/stats.md) |
-| a pixel-edge extent and matching axis labels | `plot.extent_lod_from_pixels`, `plot.extent_lod`, `plot.extent_arcsec`, `plot.extent_au`, `plot.label_lod`, `plot.label_arcsec`, `plot.label_au` | Extents and labels for image axes | [images](../gallery/images.md) (`plot.extent_lod_from_pixels`, `plot.label_lod`), [profiles](../gallery/profiles.md) (prose: `plot.extent_arcsec`, `plot.extent_au`); the rest API reference |
-| one field of view across panels | `plot.Frame(half_fov_lod, pixscale_lod=)` | Shared extent for panels of one scene | [one-scene-n-views](../gallery/one-scene-n-views.md) |
+| axis labels for physical grids | `plot.label_lod`, `plot.label_arcsec`, `plot.label_au` | Draw with a hwoutils `PixelGrid` or pass its pixel-edge extent | [images](../gallery/images.md) |
 
 ## 8. Cameras, morphs and warps
 

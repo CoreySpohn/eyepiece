@@ -29,7 +29,6 @@ from eyepiece.prepared import (
 matplotlib.use("Agg")
 
 # Released hwoutils versions may not include the optional budget plugin yet.
-# The hwo extra itself is optional, so its parent package may also be absent.
 pytest_plugins = []
 try:
     if importlib.util.find_spec("hwoutils.testbudget") is not None:

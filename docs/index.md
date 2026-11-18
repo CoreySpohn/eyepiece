@@ -50,16 +50,7 @@ The base install pulls in matplotlib, NumPy, and
 supplies the colormaps, palettes, and savefig policy that primitives read at
 call time.
 
-```bash
-pip install eyepiece[hwo]
-```
-
-The `[hwo]` extra adds
-[hwoutils](https://github.com/CoreySpohn/hwoutils), which provides the unit
-conversions behind `extent_arcsec`, `extent_au`, and `Frame.extent_arcsec`,
-and the profile computation behind `plot_radial_image`. Those four are the
-only names that need it, and each raises an `ImportError` naming the extra
-when it is missing. Everything else works on the base install.
+The base install includes hwoutils for raster geometry and radial statistics.
 
 ```bash
 pip install "eyepiece[manim]"
@@ -73,16 +64,14 @@ pkg-config, and ffmpeg. Nothing outside `eyepiece.manim` imports either.
 ## Quickstart
 
 A primitive called with no axes creates its own figure, draws into it, and
-hands back both. Layout helpers supply the pixel-edge extent and the
-matching axis labels, and `save_fig` writes the result using the active
+hands back both. Pass the PSF array and its focal grid, then label the axes.
+`save_fig` writes the result using the active
 mode's savefig policy.
 
 ```python
 import eyepiece as ep
 
-result = ep.plot.imshow_log(
-    psf, extent=ep.plot.extent_lod_from_pixels(psf.shape[0], 0.25)
-)
+result = ep.plot.imshow_log(psf, grid=focal_grid)
 ep.plot.label_lod(result.ax)
 ep.render.save_fig(result.fig, "psf")
 ```
@@ -153,13 +142,13 @@ and the API reference documents every signature.
   `ep.plot.interval_points` (including one-sided intervals), `ep.plot.calibration`, `ep.plot.strip`,
   and `ep.plot.scatter_values`.
 - **Profiles.** `ep.plot.plot_radial`, `ep.plot.plot_contrast_curve`, and
-  `ep.plot.plot_radial_image` (under the `[hwo]` extra).
+  `ep.plot.plot_radial_image`.
 - **Scenes, schematics and phasors.** `ep.plot.trail`, `ep.plot.sky_fan`, `ep.plot.fading_track`,
   `ep.plot.step_list`; `ep.plot.rail`, `ep.plot.rail_panels`, `ep.plot.schematic` and the `ep.plot.GLYPHS`
   vocabulary for optical trains; `ep.plot.phasor`, `ep.plot.phase_ring`, and `ep.plot.curve_insets`.
-- **Layout and color.** `ep.plot.extent_lod`, `ep.plot.extent_lod_from_pixels`,
-  `ep.plot.extent_arcsec`, `ep.plot.extent_au`, the matching `ep.plot.label_lod`, `ep.plot.label_arcsec`,
-  and `ep.plot.label_au`, `ep.plot.Frame` and `ep.style.SourceStyles` for panels of one scene, and
+- **Layout and color.** Draw on a hwoutils `PixelGrid` and label the axes with
+  `ep.plot.label_lod`, `ep.plot.label_arcsec`, or `ep.plot.label_au`. Use
+  `ep.style.SourceStyles` for panels of one scene, and
   `ep.style.role` (a named role or neutral rank, in any mode) and `ep.style.neutral` for
   brand and scenery colors.
 

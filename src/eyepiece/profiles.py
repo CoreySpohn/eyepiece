@@ -5,7 +5,7 @@ recomputes a profile itself; the computation belongs to `hwoutils.radial`
 (or whichever library produced the arrays), not to a plotting primitive.
 `plot_radial_image`, at the bottom of this module, is the one function
 here that reaches outside that rule: it calls `hwoutils.radial.radial_profile`
-directly, under the `eyepiece[hwo]` extra, then hands the result to
+directly, then hands the result to
 `plot_radial` unchanged.
 
 `plot_contrast_curve` is the same idea with the annotations that make a
@@ -30,9 +30,8 @@ the calls that did not.
 Axis labels: `plot_radial` and `plot_contrast_curve` are unit-agnostic --
 `r` may be lambda/D, arcsec, AU, or pixels, and neither function can know
 which, so both only take an optional `xlabel`/`ylabel` and never guess one.
-`plot_radial_image` DOES know its units (it takes `pixscale_lod`
-explicitly), so it defaults the x label to a lambda/D separation label,
-still overridable by an explicit `xlabel`.
+`plot_radial_image` labels separation in the image grid's units. Pass
+`xlabel` to override that label.
 """
 
 import matplotlib.pyplot as plt
@@ -389,14 +388,19 @@ def plot_contrast_curve(
     return PlotResult(ax=ax, artists=artists)
 
 
-_LOD_SEPARATION_XLABEL = r"$r$ [$\lambda/D$]"
+_RADIAL_XLABELS = {
+    "lod": r"$r$ [$\lambda/D$]",  # codespell:ignore lod
+    "arcsec": r"$r$ [arcsec]",
+    "au": r"$r$ [AU]",
+    "meter": r"$r$ [m]",
+    "pixel": r"$r$ [pixel]",
+    "pupil_diameter": r"$r$ [D]",
+}
 
 
 def plot_radial_image(
     image,
-    pixscale_lod,
     *,
-    center=None,
     nbins=None,
     ax=None,
     label=None,
@@ -406,61 +410,26 @@ def plot_radial_image(
     xlabel=None,
     ylabel=None,
 ):
-    """Compute a radial profile of `image` via hwoutils, then plot it.
-
-    Computation is `hwoutils.radial.radial_profile`, never reimplemented
-    here. That function's parameter is named `pixel_scale_arcsec`, but its
-    own docstring describes it as a generic pixels-to-physical-units
-    factor and names lambda/D-per-pixel as a use case, so passing
-    `pixscale_lod` through it is correct despite the upstream name.
-
-    Unlike `plot_radial`, this function DOES know its units -- the caller
-    hands it a lambda/D pixel scale explicitly -- so it defaults the x
-    label to a lambda/D separation label in LaTeX mathtext, matching
-    `layout.py`'s mathtext style (`layout.label_lod` labels a 2D image's
-    x/y spatial axes the same way; this is the equivalent for a 1D
-    separation axis, which `label_lod` does not fit). An explicit `xlabel`
-    still overrides it.
+    """Plot the radial mean of a 2D hwoutils Image in its grid units.
 
     Args:
-        image: 2D array-like image to profile.
-        pixscale_lod: Pixel scale in lambda/D per pixel, forwarded to
-            `hwoutils.radial.radial_profile`'s `pixel_scale_arcsec`
-            argument.
-        center: Center coordinates `(cy, cx)`. None uses the geometric
-            center.
-        nbins: Number of radial bins. None uses `hwoutils`' own default.
+        image: Image with a PixelGrid declaring the sampling and optical axis.
+        nbins: Number of radial bins. None uses the hwoutils default.
         ax: Axes to draw into. None creates a new figure and axes.
         label: Optional legend label for the curve.
-        color: Line color override, forwarded to `plot_radial`; None takes
-            the next color of the axes' palette cycle.
+        color: Line color override. None takes the next palette color.
         log: Whether to set a log y-scale.
-        line_kw: Extra kwargs passed to `ax.plot`, applied last.
-        xlabel: Optional x-axis label override. None uses the default
-            lambda/D separation label described above.
-        ylabel: Optional y-axis label. None sets no label -- the profile's
-            value units are the caller's to know, not this function's to
-            guess.
+        line_kw: Extra kwargs passed to ax.plot, applied last.
+        xlabel: Optional x-axis label override.
+        ylabel: Optional y-axis label.
 
     Returns:
-        A `PlotResult` with artist `"line"` (the `Line2D`); see
-        `plot_radial`.
-
-    Raises:
-        ImportError: If `hwoutils` is not installed. Install the
-            `eyepiece[hwo]` extra to enable this function.
+        A PlotResult with artist "line".
     """
-    try:
-        from hwoutils import radial
-    except ImportError:
-        raise ImportError(
-            "plot_radial_image needs hwoutils: pip install eyepiece[hwo]"
-        ) from None
+    from hwoutils.radial import radial_profile
 
-    separations, profile = radial.radial_profile(
-        np.asarray(image), pixscale_lod, center=center, nbins=nbins
-    )
-    resolved_xlabel = _LOD_SEPARATION_XLABEL if xlabel is None else xlabel
+    separations, profile, _ = radial_profile(image, nbins=nbins)
+    resolved_xlabel = _RADIAL_XLABELS[image.grid.unit] if xlabel is None else xlabel
     return plot_radial(
         separations,
         profile,

@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import eyepiece as ep
+from hwoutils.grids import Frame, PixelGrid
 
 hwostyle.use("dark")
 n = 96
@@ -36,7 +37,7 @@ planet = 3e-9 * np.exp(-0.5 * (np.hypot(x - planet_x, y - planet_y) / 0.6) ** 2)
 
 result = ep.plot.imshow_log(
     halo + planet,
-    extent=ep.plot.extent_lod_from_pixels(n, pixel_scale),
+    grid=PixelGrid.focal(n, pixel_scale, Frame(500, 1, "circumscribed")),
     vmin=1e-12,
     vmax=1e-7,
     floor=1e-12,

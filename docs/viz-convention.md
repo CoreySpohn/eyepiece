@@ -157,14 +157,14 @@ import numpy as np
 from mylib._require import eyepiece
 
 
-def plot_psf(psf, *, ax=None, pixscale_lod=0.25, imshow_kw=None, cbar_kw=None):
+def plot_psf(psf, *, grid=None, ax=None, imshow_kw=None, cbar_kw=None):
     """Draw a PSF, log-scaled, on a lambda/D grid."""
     ep = eyepiece()
     arr = np.asarray(getattr(psf, "intensity", psf), dtype=float)
     result = ep.plot.imshow_log(
         arr,
         ax=ax,
-        extent=ep.plot.extent_lod_from_pixels(arr.shape[-1], pixscale_lod),
+        grid=getattr(psf, "grid", grid),
         imshow_kw=imshow_kw,
         cbar_kw=cbar_kw,
     )
@@ -172,10 +172,8 @@ def plot_psf(psf, *, ax=None, pixscale_lod=0.25, imshow_kw=None, cbar_kw=None):
     return result
 ```
 
-Note where the units live. eyepiece stays unit-agnostic and takes an extent
-tuple; knowing that this array is sampled at a given number of lambda over D
-per pixel is your library's job, expressed as a plain float in a
-unit-suffixed argument name.
+Pass the sampling grid to eyepiece so it draws on the declared pixel edges.
+Your library owns the axis labels and the meaning of their units.
 
 **Declare the axes shape you accept.** A function drawing a regular grid
 takes `axes=` of exactly one documented shape, and a mismatch raises

@@ -5,6 +5,7 @@ import math
 import hwostyle
 import matplotlib.pyplot as plt
 import numpy as np
+from hwoutils.grids import Frame, PixelGrid
 from matplotlib.patches import Rectangle
 
 import eyepiece as ep
@@ -70,7 +71,7 @@ class Scene:
         self.result = ep.plot.imshow_log(
             field,
             ax=image_ax,
-            extent=ep.plot.extent_lod_from_pixels(n, 24.0 / (n - 1)),
+            grid=PixelGrid.focal(n, 24.0 / (n - 1), Frame(500, 1, "circumscribed")),
             vmin=1e-12,
             vmax=1e-7,
             floor=1e-12,

@@ -29,6 +29,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import eyepiece as ep
+from hwoutils.grids import Frame, PixelGrid
 
 hwostyle.use("dark")
 # Docs-build only, to keep the baked page images small. A real figure script
@@ -37,7 +38,7 @@ plt.rcParams["savefig.dpi"] = 120
 
 N = 128
 PIXSCALE_LOD = 0.25
-EXTENT = ep.plot.extent_lod_from_pixels(N, PIXSCALE_LOD)
+EXTENT = PixelGrid.focal(N, PIXSCALE_LOD, Frame(500, 1, "circumscribed")).extent()
 
 u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
 x, y = np.meshgrid(u, u)
@@ -75,7 +76,7 @@ The floor therefore sets the displayed dynamic range as well, which the two
 panels below demonstrate on the identical array. A low floor shows the
 faint halo down to the level where the speckle field runs out, and a floor
 raised five decades keeps only the core and the brightest speckles. Both
-panels carry the extent from `extent_lod_from_pixels` and the axis labels
+panels carry the extent from the shared `PixelGrid` and the axis labels
 from `label_lod`, so the reader sees separations rather than pixel indices.
 
 ```{code-cell} python

@@ -29,6 +29,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import eyepiece as ep
+from hwoutils.grids import Frame, Image, PixelGrid
+from hwoutils.radial import radial_profile
 
 hwostyle.use("dark")
 # Docs-build only, to keep the baked page images small. A real figure script
@@ -38,23 +40,13 @@ plt.rcParams["savefig.dpi"] = 120
 N = 128
 PIXSCALE_LOD = 0.25
 
-u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
-x, y = np.meshgrid(u, u)
-r = np.hypot(x, y)
+grid = PixelGrid.focal(N, PIXSCALE_LOD, Frame(500, 1, "circumscribed"))
+r = np.asarray(grid.radius())
 
 rng = np.random.default_rng(19)
 core = np.exp(-0.5 * (r / 0.35) ** 2)
 halo = 3e-6 * (1.0 + r) ** -2.5
-image = core + halo * rng.chisquare(2, size=r.shape)
-
-
-def radial_profile(values, radius, nbins=48):
-    """Mean of `values` in `nbins` equal-width annuli, as (centers, means)."""
-    edges = np.linspace(0.0, radius.max(), nbins + 1)
-    index = np.clip(np.digitize(radius.ravel(), edges) - 1, 0, nbins - 1)
-    total = np.bincount(index, weights=values.ravel(), minlength=nbins)
-    count = np.bincount(index, minlength=nbins)
-    return 0.5 * (edges[:-1] + edges[1:]), total / count
+image = Image(core + halo * rng.chisquare(2, size=r.shape), grid, (), "per_pixel", "intensity")
 ```
 
 ## A radial profile
@@ -65,13 +57,11 @@ are in lambda over D, arcseconds, astronomical units, or pixels. The labels
 below are therefore passed explicitly, and the log scale is asked for
 through `log=True` rather than set afterward.
 
-The profile itself is the azimuthal mean of the image, computed above in
-eight lines of NumPy, which is the division of labor the library keeps
-everywhere: the caller owns the reduction, and the primitive owns the
-drawing.
+The profile is the azimuthal mean of the image. hwoutils assigns samples to
+rings on the image grid and eyepiece draws the resulting curve.
 
 ```{code-cell} python
-sep, profile = radial_profile(image, r)
+sep, profile, _ = radial_profile(image, nbins=48)
 
 fig, ax = plt.subplots(figsize=(5.4, 3.2), layout="constrained")
 prof = ep.plot.plot_radial(
@@ -179,28 +169,13 @@ print("floor curves:", len(first.artists["lines"]))
 
 ## Profiling an image directly
 
-`plot_radial_image` is the one function in this module that computes
-anything, and it does so by calling `hwoutils.radial.radial_profile` rather
-than reimplementing the reduction. It lives behind the `eyepiece[hwo]`
-extra, which supplies `hwoutils` and, with it, the unit conversions behind
-`extent_arcsec`, `extent_au`, and `Frame.extent_arcsec`. Because that extra
-is not part of the documentation environment, the call below is shown rather
-than executed, and without `hwoutils` installed it raises an `ImportError`
-naming the extra.
+`plot_radial_image` calls the same hwoutils function and labels the
+horizontal axis in the grid's units.
 
-```python
-result = ep.plot.plot_radial_image(
-    image, PIXSCALE_LOD, log=True, label="azimuthal mean"
-)
+```{code-cell} python
+result = ep.plot.plot_radial_image(image, log=True, label="azimuthal mean")
+plt.show()
 ```
-
-Unlike `plot_radial`, this function is told its units, since the pixel scale
-is an argument, so it defaults the x label to a lambda over D separation
-label. Everything else is handed straight to `plot_radial`, and the same
-`PlotResult` comes back.
-
-Use `ep.plot.plot_radial_image` to compute and draw the radial profile.
-It accepts the same arguments and warns to use the new name.
 
 ## Separate curve-end labels
 

@@ -19,6 +19,7 @@ import numpy as np
 from IPython.display import HTML
 
 import eyepiece as ep
+from hwoutils.grids import Frame, PixelGrid
 
 hwostyle.use("dark")
 # Docs-build only, to keep the baked page images small.
@@ -26,7 +27,7 @@ plt.rcParams["savefig.dpi"] = 110
 
 N = 96
 PIXSCALE_LOD = 0.3
-EXTENT = ep.plot.extent_lod_from_pixels(N, PIXSCALE_LOD)
+EXTENT = PixelGrid.focal(N, PIXSCALE_LOD, Frame(500, 1, "circumscribed")).extent()
 u = (np.arange(N) - (N - 1) / 2.0) * PIXSCALE_LOD
 x, y = np.meshgrid(u, u)
 

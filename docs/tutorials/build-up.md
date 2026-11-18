@@ -28,6 +28,7 @@ import numpy as np
 from IPython.display import HTML
 
 import eyepiece as ep
+from hwoutils.grids import Frame, PixelGrid
 
 hwostyle.use("dark")
 plt.rcParams.update({
@@ -48,7 +49,7 @@ fig, (image_ax, profile_ax) = plt.subplots(
     1, 2, figsize=(7.5, 4.2), dpi=80, layout="constrained"
 )
 result = ep.plot.imshow_log(
-    field, ax=image_ax, extent=ep.plot.extent_lod_from_pixels(n, 24.0 / (n - 1)),
+    field, ax=image_ax, grid=PixelGrid.focal(n, 24.0 / (n - 1), Frame(500, 1, "circumscribed")),
     vmin=1e-12, vmax=1e-7, floor=1e-12, colorbar=False,
 )
 image_ax.set(xlabel="x [lambda/D]", ylabel="y [lambda/D]", title="Field",

@@ -365,73 +365,32 @@ def test_plot_contrast_curve_handed_ax_only_draws_into_its_own_axes():
     plt.close(fig)
 
 
-def _image(n=16):
-    rng = np.random.default_rng(0)
-    return rng.uniform(1e-10, 1e-6, (n, n))
+def test_plot_radial_image_computes_off_center_profile():
+    """Fails if drawing ignores the image grid, requested bins, or grid units."""
+    from hwoutils.grids import Image, PixelGrid
 
-
-# The profile is a float32 scatter-add whose summation order is not fixed on
-# every backend (GPU atomics reorder it), so two equal calls can differ by a
-# few ulps; a reordered sum of n positive terms moves by under n eps relative.
-def _assert_same_profile(res, expected_sep, expected_profile, n):
-    expected_sep = np.asarray(expected_sep)
-    expected_profile = np.asarray(expected_profile)
-    np.testing.assert_allclose(
-        res.artists["line"].get_xdata(),
-        expected_sep,
-        rtol=4 * np.finfo(expected_sep.dtype).eps,
-    )
-    np.testing.assert_allclose(
-        res.artists["line"].get_ydata(),
-        expected_profile,
-        rtol=n * np.finfo(expected_profile.dtype).eps,
-    )
-
-
-def test_plot_radial_image_computes_and_plots():
-    try:
-        import hwoutils  # noqa: F401
-    except ImportError:
-        img = _image()
-        with pytest.raises(ImportError, match=r"eyepiece\[hwo\]"):
-            plot_radial_image(img, 1.0)
-    else:
-        from hwoutils import radial
-
-        img = _image()
-        expected_sep, expected_profile = radial.radial_profile(img, 1.0)
-        res = plot_radial_image(img, 1.0)
-        _assert_same_profile(res, expected_sep, expected_profile, img.size)
-        assert res.ax.get_xlabel() == r"$r$ [$\lambda/D$]"
-        plt.close(res.fig)
-
-
-def test_plot_radial_image_forwards_plot_kwargs():
-    try:
-        import hwoutils  # noqa: F401
-    except ImportError:
-        pytest.skip("hwoutils not installed")
-    img = _image()
-    res = plot_radial_image(img, 1.0, color="red", log=True, xlabel="custom")
-    assert res.artists["line"].get_color() == "red"
-    assert res.ax.get_yscale() == "log"
-    assert res.ax.get_xlabel() == "custom"
+    grid = PixelGrid.regular((1, 5), 0.5, "arcsec", center=(0, 0))
+    image = Image([[1, 3, 5, 7, 9]], grid, (), "per_pixel", "test")
+    res = plot_radial_image(image, nbins=2)
+    line = res.artists["line"]
+    np.testing.assert_allclose(line.get_xdata(), [0.5, 1.5])
+    np.testing.assert_allclose(line.get_ydata(), [2, 7])
+    assert res.ax.get_xlabel() == r"$r$ [arcsec]"
+    res.fig.canvas.draw()
     plt.close(res.fig)
 
 
-def test_plot_radial_image_forwards_center_and_nbins():
-    try:
-        import hwoutils  # noqa: F401
-    except ImportError:
-        pytest.skip("hwoutils not installed")
-    from hwoutils import radial
+def test_plot_radial_image_forwards_plot_kwargs():
+    """Fails if the image bridge loses the caller's line or axes options."""
+    from hwoutils.grids import Image, PixelGrid
 
-    img = _image()
-    expected_sep, expected_profile = radial.radial_profile(
-        img, 1.0, center=(3.0, 3.0), nbins=5
+    image = Image(
+        np.ones((4, 4)), PixelGrid.regular((4, 4), 1, "pixel"), (), "per_pixel", "test"
     )
-    res = plot_radial_image(img, 1.0, center=(3.0, 3.0), nbins=5)
-    _assert_same_profile(res, expected_sep, expected_profile, img.size)
+    res = plot_radial_image(image, color="red", log=True, xlabel="custom")
+    assert res.artists["line"].get_color() == "red"
+    assert res.ax.get_yscale() == "log"
+    assert res.ax.get_xlabel() == "custom"
     plt.close(res.fig)
 
 
