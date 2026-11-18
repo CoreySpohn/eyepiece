@@ -13,6 +13,9 @@ def test_wav_regression_runs_without_video_tools(tmp_path, monkeypatch):
             sys.executable,
             "-m",
             "pytest",
+            # The outer process runs the repository guard with Git on PATH.
+            "-p",
+            "no:hwoutils.internal_refs",
             f"{test}::test_silent_audio_writes_pcm_under_a_new_nested_path",
             "-q",
         ],

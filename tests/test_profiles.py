@@ -367,10 +367,10 @@ def test_plot_contrast_curve_handed_ax_only_draws_into_its_own_axes():
 
 def test_plot_radial_image_computes_off_center_profile():
     """Fails if drawing ignores the image grid, requested bins, or grid units."""
-    from hwoutils.grids import Image, PixelGrid
+    from hwoutils.grids import Image, Measure, PixelGrid
 
     grid = PixelGrid.regular((1, 5), 0.5, "arcsec", center=(0, 0))
-    image = Image([[1, 3, 5, 7, 9]], grid, (), "per_pixel", "test")
+    image = Image([[1, 3, 5, 7, 9]], grid, (), Measure.integral(), "test")
     res = plot_radial_image(image, nbins=2)
     line = res.artists["line"]
     np.testing.assert_allclose(line.get_xdata(), [0.5, 1.5])
@@ -382,10 +382,14 @@ def test_plot_radial_image_computes_off_center_profile():
 
 def test_plot_radial_image_forwards_plot_kwargs():
     """Fails if the image bridge loses the caller's line or axes options."""
-    from hwoutils.grids import Image, PixelGrid
+    from hwoutils.grids import Image, Measure, PixelGrid
 
     image = Image(
-        np.ones((4, 4)), PixelGrid.regular((4, 4), 1, "pixel"), (), "per_pixel", "test"
+        np.ones((4, 4)),
+        PixelGrid.regular((4, 4), 1, "pixel"),
+        (),
+        Measure.integral(),
+        "test",
     )
     res = plot_radial_image(image, color="red", log=True, xlabel="custom")
     assert res.artists["line"].get_color() == "red"

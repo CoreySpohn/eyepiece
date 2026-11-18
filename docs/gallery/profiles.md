@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import eyepiece as ep
-from hwoutils.grids import Frame, Image, PixelGrid
+from hwoutils.grids import Frame, Image, Measure, PixelGrid
 from hwoutils.radial import radial_profile
 
 hwostyle.use("dark")
@@ -46,7 +46,8 @@ r = np.asarray(grid.radius())
 rng = np.random.default_rng(19)
 core = np.exp(-0.5 * (r / 0.35) ** 2)
 halo = 3e-6 * (1.0 + r) ** -2.5
-image = Image(core + halo * rng.chisquare(2, size=r.shape), grid, (), "per_pixel", "intensity")
+intensity = core + halo * rng.chisquare(2, size=r.shape)
+image = Image(intensity, grid, (), Measure.intensive(), "intensity")
 ```
 
 ## A radial profile
@@ -57,8 +58,9 @@ are in lambda over D, arcseconds, astronomical units, or pixels. The labels
 below are therefore passed explicitly, and the log scale is asked for
 through `log=True` rather than set afterward.
 
-The profile is the azimuthal mean of the image. hwoutils assigns samples to
-rings on the image grid and eyepiece draws the resulting curve.
+The profile is the azimuthal mean of the intensity sampled at the pixel
+centers. hwoutils assigns samples to rings on the image grid and eyepiece
+draws the resulting curve.
 
 ```{code-cell} python
 sep, profile, _ = radial_profile(image, nbins=48)
