@@ -29,8 +29,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import eyepiece as ep
-from hwoutils.grids import Frame, Image, Measure, PixelGrid
-from hwoutils.radial import radial_profile
+from optixstuff.grids import Frame, Image, Measure, PixelGrid
+from optixstuff.radial import radial_profile
 
 hwostyle.use("dark")
 # Docs-build only, to keep the baked page images small. A real figure script
@@ -59,7 +59,7 @@ below are therefore passed explicitly, and the log scale is asked for
 through `log=True` rather than set afterward.
 
 The profile is the azimuthal mean of the intensity sampled at the pixel
-centers. hwoutils assigns samples to rings on the image grid and eyepiece
+centers. optixstuff assigns samples to rings on the image grid and eyepiece
 draws the resulting curve.
 
 ```{code-cell} python
@@ -167,16 +167,6 @@ always finds it on the call that actually made it.
 print("first call:", sorted(first.artists))
 print("second call:", sorted(second.artists))
 print("floor curves:", len(first.artists["lines"]))
-```
-
-## Profiling an image directly
-
-`plot_radial_image` calls the same hwoutils function and labels the
-horizontal axis in the grid's units.
-
-```{code-cell} python
-result = ep.plot.plot_radial_image(image, log=True, label="azimuthal mean")
-plt.show()
 ```
 
 ## Separate curve-end labels

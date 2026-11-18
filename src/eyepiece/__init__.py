@@ -136,7 +136,6 @@ _EXPORT_TARGETS = {
     "save_fig": ("eyepiece.output", "save_fig"),
     "plot_contrast_curve": ("eyepiece.profiles", "plot_contrast_curve"),
     "plot_radial": ("eyepiece.profiles", "plot_radial"),
-    "plot_radial_image": ("eyepiece.profiles", "plot_radial_image"),
     "file_metadata": ("eyepiece.provenance", "file_metadata"),
     "provenance_fields": ("eyepiece.provenance", "provenance_fields"),
     "provenance_text": ("eyepiece.provenance", "provenance_text"),

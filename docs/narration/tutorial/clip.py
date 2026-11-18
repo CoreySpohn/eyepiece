@@ -5,8 +5,8 @@ import math
 import hwostyle
 import matplotlib.pyplot as plt
 import numpy as np
-from hwoutils.grids import Frame, PixelGrid
 from matplotlib.patches import Rectangle
+from optixstuff.grids import Frame, PixelGrid
 
 import eyepiece as ep
 

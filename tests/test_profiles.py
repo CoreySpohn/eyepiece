@@ -1,4 +1,4 @@
-"""Radial-profile line plot, contrast curve, and the hwoutils convenience."""
+"""Radial-profile line plot and contrast curve."""
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,7 +7,7 @@ from matplotlib.colors import to_rgba
 from matplotlib.layout_engine import ConstrainedLayoutEngine
 
 from eyepiece import _style
-from eyepiece.profiles import plot_contrast_curve, plot_radial, plot_radial_image
+from eyepiece.profiles import plot_contrast_curve, plot_radial
 
 
 def _profile(n=20):
@@ -363,39 +363,6 @@ def test_plot_contrast_curve_handed_ax_only_draws_into_its_own_axes():
     assert len(axes[1].texts) == 0
     assert len(axes[1].lines) == 0
     plt.close(fig)
-
-
-def test_plot_radial_image_computes_off_center_profile():
-    """Fails if drawing ignores the image grid, requested bins, or grid units."""
-    from hwoutils.grids import Image, Measure, PixelGrid
-
-    grid = PixelGrid.regular((1, 5), 0.5, "arcsec", center=(0, 0))
-    image = Image([[1, 3, 5, 7, 9]], grid, (), Measure.integral(), "test")
-    res = plot_radial_image(image, nbins=2)
-    line = res.artists["line"]
-    np.testing.assert_allclose(line.get_xdata(), [0.5, 1.5])
-    np.testing.assert_allclose(line.get_ydata(), [2, 7])
-    assert res.ax.get_xlabel() == r"$r$ [arcsec]"
-    res.fig.canvas.draw()
-    plt.close(res.fig)
-
-
-def test_plot_radial_image_forwards_plot_kwargs():
-    """Fails if the image bridge loses the caller's line or axes options."""
-    from hwoutils.grids import Image, Measure, PixelGrid
-
-    image = Image(
-        np.ones((4, 4)),
-        PixelGrid.regular((4, 4), 1, "pixel"),
-        (),
-        Measure.integral(),
-        "test",
-    )
-    res = plot_radial_image(image, color="red", log=True, xlabel="custom")
-    assert res.artists["line"].get_color() == "red"
-    assert res.ax.get_yscale() == "log"
-    assert res.ax.get_xlabel() == "custom"
-    plt.close(res.fig)
 
 
 @pytest.mark.parametrize("scale", [1e-8, 1.0, 1e10])

@@ -49,9 +49,17 @@ def test_centers_match_the_hand_built_extent_pixel_for_pixel():
 
 def test_grid_with_origin_upper_keeps_row_zero_at_declared_y():
     """Fails if grid display drops the origin, offset or rectangular shape."""
-    from hwoutils.grids import PixelGrid
 
-    grid = PixelGrid((3, 6), 1, 0.5, ((0.5, 0), (0, 2)), "arcsec")
+    class Grid:
+        """Read by attributes only: a 3 by 6 grid with 0.5 by 2 arcsec pixels."""
+
+        shape = (3, 6)
+
+        @staticmethod
+        def extent():
+            return (-0.75, 2.25, -2.0, 4.0)
+
+    grid = Grid()
     res = ep.plot.imshow_log(
         np.ones(grid.shape), grid=grid, colorbar=False, imshow_kw={"origin": "upper"}
     )

@@ -196,7 +196,6 @@ OLD_ROOT = (
     "pixel_quads",
     "plot_contrast_curve",
     "plot_radial",
-    "plot_radial_image",
     "provenance_fields",
     "provenance_text",
     "pulse_shape",

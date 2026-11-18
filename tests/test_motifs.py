@@ -496,22 +496,6 @@ def test_derive_on_an_unknown_key_raises():
         motifs.derive("b", marker="o")
 
 
-def test_the_dim_level_falls_back_when_hwostyle_has_no_motifs(monkeypatch):
-    import builtins
-
-    real = builtins.__import__
-
-    def refuse(name, *args, **kwargs):
-        if name == "hwostyle.motifs":
-            raise ImportError(name)
-        return real(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", refuse)
-    assert ep._style.dim_level("dark") == 0.35
-    assert ep._style.dim_level("light") == 0.5
-    assert ep._style.dim_level("paper") == 0.5
-
-
 def test_step_list_finished_steps_use_the_mode_dim_level():
     for mode, level in (("dark", 0.35), ("light", 0.5)):
         hwostyle.use(mode)

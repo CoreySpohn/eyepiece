@@ -95,8 +95,7 @@ def dim_level(mode_name=None):
 
     Dimmed hues lose separation faster on a white page than on black, so the
     light and paper levels dim less. hwostyle owns the numbers
-    (`hwostyle.motifs.DIM_LEVELS`); an older hwostyle without them gets the
-    same values from here.
+    (`hwostyle.motifs.DIM_LEVELS`).
 
     Args:
         mode_name: A mode name, or None for the active mode.
@@ -104,14 +103,12 @@ def dim_level(mode_name=None):
     Returns:
         A float in [0, 1].
     """
+    from hwostyle.motifs import DIM_LEVELS
+
     from eyepiece._video import base_mode
 
     name = base_mode(mode_name or mode())
-    try:
-        from hwostyle.motifs import DIM_LEVELS as levels
-    except ImportError:
-        levels = {"dark": 0.35}
-    return levels.get(name, 0.5)
+    return DIM_LEVELS.get(name, 0.5)
 
 
 def _light_cmaps():

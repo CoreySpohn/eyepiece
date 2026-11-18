@@ -46,7 +46,7 @@ function.
 The convention has one consequence worth stating plainly: eyepiece does not
 convert units it was not asked to convert. `plot_radial` takes `r` and
 values with no unit suffix at all, and it deliberately sets no axis label,
-because the separation units belong to the caller. For calibrated rasters, use a hwoutils
+because the separation units belong to the caller. For calibrated rasters, use an optixstuff
 `PixelGrid` in the desired units and pass it to the image primitive.
 
 ## Who owns the figure

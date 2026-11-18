@@ -20,7 +20,7 @@ from IPython.display import HTML
 from matplotlib.colors import LogNorm
 
 import eyepiece as ep
-from hwoutils.grids import Frame, PixelGrid
+from optixstuff.grids import Frame, PixelGrid
 
 hwostyle.use("dark")
 # Docs-build only, to keep the baked page images small.

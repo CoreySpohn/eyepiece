@@ -78,7 +78,6 @@ if TYPE_CHECKING:
     from eyepiece.profiles import (
         plot_contrast_curve,
         plot_radial,
-        plot_radial_image,
     )
     from eyepiece.scene import (
         fading_track,
@@ -129,7 +128,6 @@ __all__ = [
     "phasor",
     "plot_contrast_curve",
     "plot_radial",
-    "plot_radial_image",
     "rail",
     "rail_panels",
     "ref_line",

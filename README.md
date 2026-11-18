@@ -91,12 +91,11 @@ lists every public name with its canonical path and a worked example.
   `ep.plot.hist_vs_pdf`, `ep.plot.cov_ellipse`, `ep.plot.convergence`, `ep.plot.signed_trace`, `ep.plot.hist_fill`,
   `ep.plot.interval_points` (including one-sided intervals), `ep.plot.calibration`, `ep.plot.strip`,
   and `ep.plot.scatter_values`.
-- **Profiles.** `ep.plot.plot_radial`, `ep.plot.plot_contrast_curve`, and
-  `ep.plot.plot_radial_image`.
+- **Profiles.** `ep.plot.plot_radial`, `ep.plot.plot_contrast_curve`.
 - **Scenes, schematics and phasors.** `ep.plot.trail`, `ep.plot.sky_fan`, `ep.plot.fading_track`,
   `ep.plot.step_list`; `ep.plot.rail`, `ep.plot.rail_panels`, `ep.plot.schematic` and the `ep.plot.GLYPHS`
   vocabulary for optical trains; `ep.plot.phasor`, `ep.plot.phase_ring`, and `ep.plot.curve_insets`.
-- **Layout and color.** Draw on a hwoutils `PixelGrid` and label the axes with
+- **Layout and color.** Draw on a `PixelGrid` from optixstuff and label the axes with
   `ep.plot.label_lod`, `ep.plot.label_arcsec`, or `ep.plot.label_au`. Use
   `ep.style.SourceStyles` for panels of one scene, and
   `ep.style.role` (a named role or neutral rank, in any mode) and `ep.style.neutral` for
@@ -367,8 +366,6 @@ records each change.
 ```bash
 pip install eyepiece
 ```
-
-The base install includes hwoutils for raster geometry and radial statistics.
 
 mp4 export needs ffmpeg; `pip install "eyepiece[video]"` adds the
 `imageio-ffmpeg` package, which ships a binary, if none is on PATH.

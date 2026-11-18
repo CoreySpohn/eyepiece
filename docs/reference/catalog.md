@@ -186,7 +186,7 @@ namespace. Render checks are in `testing`; caption helpers are in `narration`.
 | A, B and their ratio or residual | `plot.triptych(a, b, mode=)` | Three panels | [images](../gallery/images.md) |
 | a complex field | `plot.show_field(field)` | Real, imaginary, amplitude, phase | [images](../gallery/images.md) |
 | a cut against a second variable | `plot.kymograph(values, x, y)` | Stacked cuts | [images](../gallery/images.md) |
-| radial and contrast profiles | `plot.plot_radial`, `plot.plot_radial_image`, `plot.plot_contrast_curve` | `plot.plot_radial` plots existing arrays; `plot.plot_radial_image` computes a profile from an image; contrast profiles add working angles and floors | [profiles](../gallery/profiles.md) |
+| radial and contrast profiles | `plot.plot_radial`, `plot.plot_contrast_curve` | `plot.plot_radial` plots existing arrays; contrast profiles add working angles and floors | [profiles](../gallery/profiles.md) |
 | points colored by value | `plot.scatter_values(x, y, values)` | Inset colorbar | [values](../gallery/values.md) |
 | an optical train with chosen planes lit | `plot.rail`, `plot.rail_panels`, `plot.schematic(kind)`, `plot.GLYPHS` | Miniature train, panels under planes | [scene](../gallery/scene.md) |
 | complex numbers as arrows | `plot.phasor`, `plot.phase_ring`, `plot.curve_insets` | Phasors, phase key, insets over a curve | [phasor](../gallery/phasor.md) |

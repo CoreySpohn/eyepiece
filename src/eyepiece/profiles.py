@@ -1,12 +1,8 @@
-"""Radial-profile line plot, contrast curve, and a hwoutils-backed convenience.
+"""Radial-profile line plot and contrast curve.
 
 `plot_radial` takes precomputed `(r, values)` arrays -- this library never
-recomputes a profile itself; the computation belongs to `hwoutils.radial`
-(or whichever library produced the arrays), not to a plotting primitive.
-`plot_radial_image`, at the bottom of this module, is the one function
-here that reaches outside that rule: it calls `hwoutils.radial.radial_profile`
-directly, then hands the result to
-`plot_radial` unchanged.
+recomputes a profile itself; the computation belongs to the library that
+produced the arrays, not to a plotting primitive.
 
 `plot_contrast_curve` is the same idea with the annotations that make a
 contrast curve readable: shaded IWA/OWA exclusion regions and labeled
@@ -30,8 +26,6 @@ the calls that did not.
 Axis labels: `plot_radial` and `plot_contrast_curve` are unit-agnostic --
 `r` may be lambda/D, arcsec, AU, or pixels, and neither function can know
 which, so both only take an optional `xlabel`/`ylabel` and never guess one.
-`plot_radial_image` labels separation in the image grid's units. Pass
-`xlabel` to override that label.
 """
 
 import matplotlib.pyplot as plt
@@ -386,58 +380,3 @@ def plot_contrast_curve(
         ax.set_ylabel(ylabel)
 
     return PlotResult(ax=ax, artists=artists)
-
-
-_RADIAL_XLABELS = {
-    "lod": r"$r$ [$\lambda/D$]",  # codespell:ignore lod
-    "arcsec": r"$r$ [arcsec]",
-    "au": r"$r$ [AU]",
-    "meter": r"$r$ [m]",
-    "pixel": r"$r$ [pixel]",
-    "pupil_diameter": r"$r$ [D]",
-}
-
-
-def plot_radial_image(
-    image,
-    *,
-    nbins=None,
-    ax=None,
-    label=None,
-    color=None,
-    log=False,
-    line_kw=None,
-    xlabel=None,
-    ylabel=None,
-):
-    """Plot the radial mean of a 2D hwoutils Image in its grid units.
-
-    Args:
-        image: Image with a PixelGrid declaring the sampling and optical axis.
-        nbins: Number of radial bins. None uses the hwoutils default.
-        ax: Axes to draw into. None creates a new figure and axes.
-        label: Optional legend label for the curve.
-        color: Line color override. None takes the next palette color.
-        log: Whether to set a log y-scale.
-        line_kw: Extra kwargs passed to ax.plot, applied last.
-        xlabel: Optional x-axis label override.
-        ylabel: Optional y-axis label.
-
-    Returns:
-        A PlotResult with artist "line".
-    """
-    from hwoutils.radial import radial_profile
-
-    separations, profile, _ = radial_profile(image, nbins=nbins)
-    resolved_xlabel = _RADIAL_XLABELS[image.grid.unit] if xlabel is None else xlabel
-    return plot_radial(
-        separations,
-        profile,
-        ax=ax,
-        label=label,
-        color=color,
-        log=log,
-        line_kw=line_kw,
-        xlabel=resolved_xlabel,
-        ylabel=ylabel,
-    )

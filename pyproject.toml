@@ -16,13 +16,14 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
-dependencies = ["matplotlib>=3.11", "numpy>=2.1.2", "hwostyle>=1.7.0", "pillow>=11.3", "hwoutils>=1.10"]
+dependencies = ["matplotlib>=3.11", "numpy>=2.1.2", "hwostyle>=1.7.0", "pillow>=11.3"]
 
 [project.optional-dependencies]
 # mp4 export; supplies the ffmpeg binary when none is on PATH.
 video = ["imageio-ffmpeg>=0.6"]
-docs = ["sphinx>=8.0.2", "myst-nb>=1.2", "sphinx-book-theme>=1.1.4", "sphinx-autoapi>=3.3", "sphinx_autodoc_typehints>=2.4", "ipython>=8.18", "imageio-ffmpeg>=0.6", "colorspacious>=1.1.2", "physicaloptix>=2.3", "orbix>=4.0.0"]
+docs = ["sphinx>=8.0.2", "myst-nb>=1.2", "sphinx-book-theme>=1.1.4", "sphinx-autoapi>=3.3", "sphinx_autodoc_typehints>=2.4", "ipython>=8.18", "imageio-ffmpeg>=0.6", "colorspacious>=1.1.2", "physicaloptix>=2.3", "orbix>=4.0.0", "optixstuff>=5.0.0"]
 test = [
+    "hwoutils[jax]>=1.10",
     "pytest>=8.0",
     "pytest-xdist>=2.5",
     "pytest-testmon>=2.1.1",

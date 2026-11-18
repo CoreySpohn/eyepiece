@@ -112,14 +112,11 @@ def display_limits(image, *, low=1.0, high=99.5, low_scale=1.0, positive=False):
     return (vmin, vmax)
 
 
-def _grid_from_centers(centers, shape):
-    """Describe two evenly spaced plotting axes in row and column order."""
-    from hwoutils.grids import PixelGrid
-
+def _extent_from_centers(centers, shape):
+    """Outer pixel edges (left, right, bottom, top) of two evenly spaced axes."""
     if len(centers) != 2:
         raise ValueError("centers must be (x, y): column centers, row centers")
-    steps = []
-    zeros = []
+    edges = []
     for name, values, count in zip(("x", "y"), centers, shape[:2][::-1], strict=True):
         values = np.asarray(values, dtype=float)
         if values.ndim != 1 or values.size < 2:
@@ -135,11 +132,9 @@ def _grid_from_centers(centers, shape):
                 f"centers {name} must be evenly spaced for imshow; use "
                 "pcolormesh for an uneven grid"
             )
-        steps.append(step)
-        zeros.append(-float(values[0]) / step)
-    dx, dy = steps
-    # These plotting coordinates can have unrelated units, as in a kymograph.
-    return PixelGrid(shape[:2], *zeros, ((dx, 0.0), (0.0, dy)), "pixel")
+        first = float(values[0])
+        edges.extend((first - 0.5 * step, first + (count - 0.5) * step))
+    return tuple(edges)
 
 
 def _image_extent(grid, centers, extent, shape, origin):
@@ -147,12 +142,13 @@ def _image_extent(grid, centers, extent, shape, origin):
     if sum(value is not None for value in (grid, centers, extent)) > 1:
         raise ValueError("pass only one of grid, centers, and extent")
     if centers is not None:
-        grid = _grid_from_centers(centers, shape)
-    if grid is None:
+        left, right, bottom, top = _extent_from_centers(centers, shape)
+    elif grid is None:
         return extent
-    if grid.shape != shape[:2]:
-        raise ValueError("grid.shape must match the image shape")
-    left, right, bottom, top = grid.extent()
+    else:
+        if grid.shape != shape[:2]:
+            raise ValueError("grid.shape must match the image shape")
+        left, right, bottom, top = grid.extent()
     if origin is None:
         origin = matplotlib.rcParams["image.origin"]
     if origin == "upper":
