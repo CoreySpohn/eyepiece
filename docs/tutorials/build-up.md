@@ -28,7 +28,7 @@ import numpy as np
 from IPython.display import HTML
 
 import eyepiece as ep
-from hwoutils.grids import Frame, PixelGrid
+from optixstuff.grids import Frame, PixelGrid
 
 hwostyle.use("dark")
 plt.rcParams.update({

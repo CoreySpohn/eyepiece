@@ -149,7 +149,7 @@ namespace. Render checks are in `testing`; caption helpers are in `narration`.
 | quiet the frame of a line or scatter panel | `style.quiet_spines(ax, keep=, level=)` | Hides unkept spines and optionally softens the rest | [stats](../gallery/stats.md) |
 | a neutral scenery tone | `style.neutral(level)` | Gray between background and text ink | [stats](../gallery/stats.md) |
 | the brand color of a role | `style.role(name, mode=)` | Hex color for a named role or a neutral rank, in the active or a given mode | [stats](../gallery/stats.md) |
-| axis labels for physical grids | `plot.label_lod`, `plot.label_arcsec`, `plot.label_au` | Draw with a hwoutils `PixelGrid` or pass its pixel-edge extent | [images](../gallery/images.md) |
+| axis labels for physical grids | `plot.label_lod`, `plot.label_arcsec`, `plot.label_au` | Draw with an optixstuff `PixelGrid` or pass its pixel-edge extent | [images](../gallery/images.md) |
 
 ## 8. Cameras, morphs and warps
 
