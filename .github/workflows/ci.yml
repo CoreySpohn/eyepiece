@@ -116,7 +116,7 @@ jobs:
         run: |
           uv venv .venv --python 3.12
           echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
-          uv pip install --python .venv/bin/python -e ".[docs,manim]"
+          uv pip install --python .venv/bin/python -e ".[docs,manim]" --override .github/sibling-pins.txt
 
       # Preserve the Sphinx build and execute every gallery cell on each run.
       - name: Build the documentation
