@@ -475,7 +475,8 @@ from hwoutils.epoch import Epoch
 from matplotlib.text import Text
 from matplotlib.transforms import Bbox
 from orbix.equations.orbit import mean_motion, period_n
-from orbix.system import FrameOrbit, Grid, offset_arcsec
+from orbix.kepler import Grid
+from orbix.system import FrameOrbit, offset_arcsec
 
 jax.config.update("jax_enable_x64", True)
 DEG = np.pi / 180.0
