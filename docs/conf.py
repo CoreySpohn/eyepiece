@@ -51,6 +51,7 @@ napoleon_use_ivar = True
 suppress_warnings = ["autoapi.python_import_resolution"]
 
 myst_enable_extensions = ["amsmath", "dollarmath"]
+myst_heading_anchors = 3
 
 html_theme = "sphinx_book_theme"
 html_static_path = ["_static"]
