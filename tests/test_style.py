@@ -134,6 +134,8 @@ def test_role_equals_hwostyle_roles_under_each_mode():
     for mode in ("dark", "light"):
         hwostyle.use(mode)
         for name in hwostyle.roles.names:
+            if name == "envelope":  # deprecated in hwostyle 1.7, removed later
+                continue
             assert _style.role(name).lower() == hwostyle.roles[name].lower()
 
 

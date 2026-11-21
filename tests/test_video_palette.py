@@ -1,7 +1,6 @@
 """The video-safe dark roles: derived from dark, capped for 4:2:0, read on black."""
 
 import itertools
-import warnings
 
 import hwostyle
 import numpy as np
@@ -19,9 +18,8 @@ def _dark_roles():
     from hwostyle.palettes import ALL_ROLE_NAMES, Roles
 
     roles = Roles("dark")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        return {name: roles[name] for name in ALL_ROLE_NAMES}
+    # "envelope" is deprecated in hwostyle 1.7 and gone from later releases.
+    return {name: roles[name] for name in ALL_ROLE_NAMES if name != "envelope"}
 
 
 def _limits(name):

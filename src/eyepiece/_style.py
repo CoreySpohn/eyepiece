@@ -33,7 +33,6 @@ _ROLE_FALLBACKS = {
     "predicted": 1,
     "reference": 3,
     "zodi": 3,
-    "envelope": 5,
     "alert": 4,
     "highlight": 1,
     "prior": 5,

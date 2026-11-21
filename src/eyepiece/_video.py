@@ -174,7 +174,9 @@ def _tables():
     roles = Roles(VIDEO_BASE)
     back = hwostyle.styles.MODE_RC[VIDEO_BASE]["axes.facecolor"]
     marks, labels = {}, {}
-    for name in ALL_ROLE_NAMES:
+    # hwostyle 1.7 deprecates "envelope" (a band takes its series color at low
+    # alpha) and a later release removes it, so the table leaves it out.
+    for name in (n for n in ALL_ROLE_NAMES if n != "envelope"):
         cap, floor = RELAXED.get(name, (None, None))
         limits = {
             "cap": CHROMA_CAP if cap is None else cap,
