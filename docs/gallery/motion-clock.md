@@ -485,7 +485,7 @@ MEAN = np.array([1.2, 0.15, 40 * DEG, 55 * DEG, 110 * DEG, 200 * DEG])
 SIGMA = np.array([0.04, 0.04, 4 * DEG, 4 * DEG, 12 * DEG, 10 * DEG])
 MU, DIST_PC = G * Msun2kg, 10.0
 T0 = Epoch(2461000.0)
-EPOCH_D = T0.days(2461365.25)  # t, one year after T0, in days from T0
+EPOCH_D = T0.days(jd=2461365.25)  # t, one year after T0, in days from T0
 SOLVER = Grid()
 # Seed 2: of seeds 0 to 11, the first whose final fraction is within one draw
 # of the 20,000-draw answer and whose interval holds it at every draw (the
