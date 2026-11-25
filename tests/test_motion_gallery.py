@@ -102,12 +102,15 @@ def test_gallery_quad_image_unroll_settles_continuously():
 
 
 @pytest.fixture(scope="module")
-def orbit_gallery_data():
+def orbit_gallery_data(precision):
     """Compute the gallery's font-independent orbit arrays once for both faces."""
     pytest.importorskip("orbix")
     jax = pytest.importorskip("jax")
-    ns = {"np": np, "plt": plt, "ep": ep, "jax": jax, "jnp": jax.numpy}
-    exec(_gallery_cell("motion-clock", "FrameOrbit.from_classical"), ns)
+    ns = {"np": np, "plt": plt, "ep": ep, "jnp": jax.numpy}
+    source = _gallery_cell("motion-clock", "FrameOrbit.from_classical")
+    # Let pytest select the lane when running the standalone gallery cell.
+    exec(source.replace('jax.config.update("jax_enable_x64", True)\n', ""), ns)
+    assert jax.numpy.asarray(0.0).dtype == precision
     return ns
 
 
