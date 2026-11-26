@@ -80,7 +80,7 @@ def _background(fig, ax):
 
 
 def _rgb(pixels, background):
-    rgba = pixels.astype(float) / 255
+    rgba = pixels.astype(float) / 255  # precision-ok: normalize host Agg RGBA bytes
     return rgba[..., :3] * rgba[..., 3:] + background * (1 - rgba[..., 3:])
 
 

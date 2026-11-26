@@ -28,13 +28,15 @@ from eyepiece.prepared import (
 
 matplotlib.use("Agg")
 
-# Released hwoutils versions may not include the optional budget plugin yet.
+# Released hwoutils versions may lack some of these plugins.
 pytest_plugins = []
 try:
     if importlib.util.find_spec("hwoutils.testbudget") is not None:
         pytest_plugins.append("hwoutils.testbudget.plugin")
     if importlib.util.find_spec("hwoutils.internal_refs") is not None:
         pytest_plugins.append("hwoutils.internal_refs")
+    if importlib.util.find_spec("hwoutils.precision_guard") is not None:
+        pytest_plugins.append("hwoutils.precision_guard")
 except ModuleNotFoundError as err:
     if err.name != "hwoutils":
         raise

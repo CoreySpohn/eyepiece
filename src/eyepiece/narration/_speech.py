@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from ._script import Pause, Script
 
+_TIME_BOUNDARY_TOL_S = 1e-9  # tol: algorithm, 1e-9 seconds
+
 _UNITS = {
     "um": "microns",
     "nm": "nanometers",
@@ -562,7 +564,7 @@ def check_number_sync(
         values = sorted(
             (float(t), float(v))
             for t, v in binding["values"]
-            if lo - 1e-9 <= t <= hi + 1e-9
+            if lo - _TIME_BOUNDARY_TOL_S <= t <= hi + _TIME_BOUNDARY_TOL_S
         )
         if not values:
             raise ValueError(
@@ -586,7 +588,7 @@ def check_number_sync(
         else:
             wrong = [t for t, v in values if off(v, spoken)]
             settled = values[0][0] if not wrong else _next_time(values, wrong[-1])
-            if settled - start > settle_tol_s + 1e-9:
+            if settled - start > settle_tol_s + _TIME_BOUNDARY_TOL_S:
                 faults.append(
                     NumberSyncFault(
                         "late-settle",
@@ -791,7 +793,10 @@ def check_silence(
         )
     for b in speech:
         for h0, h1 in windows:
-            if b.speech_start_s < h1 - 1e-9 and b.speech_end_s > h0 + 1e-9:
+            if (
+                b.speech_start_s < h1 - _TIME_BOUNDARY_TOL_S
+                and b.speech_end_s > h0 + _TIME_BOUNDARY_TOL_S
+            ):
                 out.append(
                     SilenceFault(
                         "speech-in-hero",

@@ -182,7 +182,8 @@ _LOG_FLOOR = 0.5
 
 # Tolerance on u * n, so a knob landing on a window edge in floating point
 # shows the new sample on the frame the edge falls on.
-_WINDOW_TOL = 1e-9
+_WINDOW_TOL = 1e-9  # tol: algorithm, 1e-9 of a sample window
+_LEAK_RATE_RTOL = 1e-12  # tol: algorithm, 1e-12 of the total aperture rate
 
 
 @dataclasses.dataclass(frozen=True, eq=False)
@@ -489,7 +490,7 @@ def aperture_counts(mark, aperture, *, leak, sample=None) -> ApertureCounts:
         raise ValueError("aperture_counts leak must be finite and non-negative")
     rate_in = float(channel.rate[aperture].sum())
     leak_in = float(leak[aperture].sum())
-    if leak_in > rate_in * (1.0 + 1e-12):
+    if leak_in > rate_in * (1.0 + _LEAK_RATE_RTOL):
         raise ValueError(
             "aperture_counts leak exceeds the rate in the aperture; pass the "
             "rate without the signal"

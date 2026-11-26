@@ -27,6 +27,7 @@ from ._script import Pause, split_sentences
 # A rough English speaking rate, checked against the cached narration fixture.
 _LETTERS_PER_S = 12.0
 _PAUSE_S = 0.25
+_BEAT_BOUNDARY_TOL_S = 1e-9  # tol: algorithm, 1e-9 seconds
 _NUMBER = re.compile(r"(?<!\w)[+-]?(?:\d+\.\d+|\.\d+|\d+)(?!\w)")
 _SMALL = (
     "zero one two three four five six seven eight nine ten eleven twelve "
@@ -271,7 +272,7 @@ class Narration:
         clock = 0.0
         for line in script.lines:
             start = starts.get(line.key, clock)
-            if start < clock - 1e-9:
+            if start < clock - _BEAT_BOUNDARY_TOL_S:
                 raise ValueError(
                     f"line {line.key!r} starts at {start} s, before the line "
                     f"before it ends at {clock} s"
@@ -457,6 +458,6 @@ class Narration:
         """
         key = self.beats[0].key
         for b in self.beats:
-            if b.start_s <= t + 1e-9:
+            if b.start_s <= t + _BEAT_BOUNDARY_TOL_S:
                 key = b.key
         return key

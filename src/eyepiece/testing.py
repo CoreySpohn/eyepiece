@@ -1323,6 +1323,10 @@ _OVERLAP_INK = 0.3  # overlap is a fault once both artists are this opaque
 _HOP_RATIO = 0.5  # a hop reaches this fraction of the way out, relative to net travel
 _KINK_RATIO = 6.0  # a kink is this many median speeds in one frame
 _KINK_FLOOR_PX = 4.0
+_CONTOUR_AREA_TOL_PX2 = 1e-12  # tol: algorithm, 1e-12 display pixels squared
+_NET_AREA_TOL_PX2 = 1e-9  # tol: algorithm, 1e-9 display pixels squared
+_ZERO_LENGTH_TOL_PX = 1e-9  # tol: algorithm, 1e-9 display pixels
+_TIME_BOUNDARY_TOL_S = 1e-9  # tol: algorithm, 1e-9 seconds
 
 
 class Window(NamedTuple):
@@ -1818,11 +1822,11 @@ def _polygon_centroid(path):
         x1, y1 = np.roll(x, -1), np.roll(y, -1)
         cross = x * y1 - x1 * y
         area = cross.sum() / 2.0
-        if abs(area) < 1e-12:
+        if abs(area) < _CONTOUR_AREA_TOL_PX2:
             continue
         total += area
         weighted += np.array([((x + x1) * cross).sum(), ((y + y1) * cross).sum()]) / 6.0
-    if abs(total) > 1e-9:
+    if abs(total) > _NET_AREA_TOL_PX2:
         return weighted / total
     vertices = path.vertices[np.isfinite(path.vertices).all(axis=1)]
     return vertices.mean(axis=0)
@@ -1842,7 +1846,7 @@ def _ink_centroid(artist, box):
                 return _center(box)
             seg = np.linalg.norm(np.diff(xy, axis=0), axis=1)
             if artist.get_linestyle() not in ("None", "none", "", " ") and (
-                seg.sum() > 1e-9
+                seg.sum() > _ZERO_LENGTH_TOL_PX
             ):
                 mid = (xy[1:] + xy[:-1]) / 2.0  # resampling a line keeps its centroid
                 return (mid * seg[:, None]).sum(axis=0) / seg.sum()
@@ -2052,7 +2056,7 @@ class _Trace:
             j = k + direction
             while 0 <= j < len(self.times):
                 dt = abs(self.times[j] - self.times[k])
-                if dt > _WINDOW_S + 1e-9 and abs(j - k) > 1:
+                if dt > _WINDOW_S + _TIME_BOUNDARY_TOL_S and abs(j - k) > 1:
                     break
                 there = self.box(artist, j, collision=collision)
                 if (
@@ -2435,7 +2439,7 @@ def _check_tear(trace, groups, tol):
         for k in common[1:]:
             d = dists(k)
             s = 1.0
-            live = base > 1e-9
+            live = base > _ZERO_LENGTH_TOL_PX
             if scales and live.any():
                 s = float(np.median(d[live] / base[live]))
             dev = np.abs(d - s * base)
@@ -2715,7 +2719,7 @@ def _spike_run(trace, artist, run, spike_px):
     chord = c[-1] - c[0]
     length = float(np.linalg.norm(chord))
     rel = c - c[0]
-    if length > 1e-9:
+    if length > _ZERO_LENGTH_TOL_PX:
         t = np.clip(rel @ chord / length**2, 0.0, 1.0)
         off = np.linalg.norm(rel - t[:, None] * chord, axis=1)
     else:
@@ -2785,7 +2789,7 @@ def _sample_times(times, fps):
     if isinstance(times, Window):
         n = max(math.floor((times.stop - times.start) * fps + 1e-9), 0)
         out = [times.start + k / fps for k in range(n + 1)]
-        if abs(out[-1] - times.stop) <= 1e-9:
+        if abs(out[-1] - times.stop) <= _TIME_BOUNDARY_TOL_S:
             out[-1] = float(times.stop)
         elif out[-1] < times.stop:
             out.append(float(times.stop))
@@ -3233,7 +3237,7 @@ def _check_hop_rate(trace, hop_groups, hop_cuts):
         end = 0
         windows = []
         for i, t in enumerate(times):
-            while end < len(times) and times[end] < t + 1.0 - 1e-9:
+            while end < len(times) and times[end] < t + 1.0 - _TIME_BOUNDARY_TOL_S:
                 end += 1
             measured = float(end - i)
             if measured > _MAX_HOP_RATE or measured > rate + 1.0:
@@ -4162,7 +4166,10 @@ def _timing_still(narration, source, plan, still_s, still_change, ignore_bottom,
         if span.kind in {"enter", "text", "caption", "write", "place", "set", "readout"}
         or (span.kind == "hold" and span.writes)
         if any(
-            cue.line == span.section and -1e-9 <= cue.at_s - span.start_s <= 0.1 + 1e-9
+            cue.line == span.section
+            and -_TIME_BOUNDARY_TOL_S
+            <= cue.at_s - span.start_s
+            <= 0.1 + _TIME_BOUNDARY_TOL_S
             for cue in cues
         )
     ]

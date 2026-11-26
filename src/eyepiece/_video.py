@@ -39,6 +39,7 @@ CHROMA_CAP = 75.0  # BT.709 |(Cb, Cr)| in 8-bit studio code values
 MIN_CONTRAST = 5.0  # WCAG contrast against the background
 _MARGIN = 0.02  # contrast headroom so the rounded hex still clears the floor
 _CAP_MARGIN = 0.5  # chroma headroom so the rounded hex stays under the cap
+_GAMUT_TOL = 1e-9  # tol: algorithm, 1e-9 in normalized sRGB channel units
 # Roles whose cap or floor `motif_faults` forces open: at the plain limits the
 # capped red falls within 10 CAM02-UCS of the brown posterior, and the lifted
 # purple within 10 of the positive blue, under a color-vision deficiency.
@@ -93,7 +94,7 @@ def _rgb(lightness, chroma, hue):
 
 
 def _in_gamut(rgb):
-    return bool(np.all(rgb >= -1e-9) and np.all(rgb <= 1.0 + 1e-9))
+    return bool(np.all(rgb >= -_GAMUT_TOL) and np.all(rgb <= 1.0 + _GAMUT_TOL))
 
 
 def ycc_chroma(rgb):

@@ -27,6 +27,8 @@ from eyepiece import _style
 from eyepiece._phasor import _is_linestyle, _is_number
 from eyepiece._result import MosaicResult, PlotResult
 
+_BIN_WIDTH_RTOL = 1e-6  # tol: algorithm, 1e-6 of the first bin width
+
 
 def _hollow_points(scatter, mask):
     """Remove selected marker faces while retaining their edge colors."""
@@ -1080,7 +1082,9 @@ def hist_fill(
     edges = _bin_edges(values, bins)
     widths = np.diff(edges)
     n_bins = widths.size
-    if law is not None and not np.allclose(widths, widths[0], rtol=1e-6, atol=0.0):
+    if law is not None and not np.allclose(
+        widths, widths[0], rtol=_BIN_WIDTH_RTOL, atol=0.0
+    ):
         raise ValueError("hist_fill law= draws expected counts and needs equal bins")
     index = np.digitize(values, edges) - 1
     # A sample exactly on the last edge belongs to the last bin, as in hist.

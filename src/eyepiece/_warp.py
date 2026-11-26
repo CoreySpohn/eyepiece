@@ -24,7 +24,13 @@ from matplotlib.text import Annotation, Text
 from eyepiece._motion import DEFAULT_EASE, _Unsnap
 from eyepiece._motion import _apply_ease as _ease
 from eyepiece._result import MotionContract, PlotResult
-from eyepiece.attention import _check_u, _line_parts, _path_parts, _resample
+from eyepiece.attention import (
+    _check_u,
+    _line_parts,
+    _path_endpoints_match,
+    _path_parts,
+    _resample,
+)
 
 _WARP_POINTS = 200
 
@@ -135,7 +141,7 @@ def _line_target(line, dense, n):
 def _polygon_target(patch, dense, n):
     xy = np.array(patch.get_xy(), dtype=float)
     closed = patch.get_closed()
-    if closed and len(xy) > 1 and np.allclose(xy[0], xy[-1]):
+    if closed and len(xy) > 1 and _path_endpoints_match(xy):
         ring = xy[:-1]
     else:
         ring = xy

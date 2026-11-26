@@ -25,7 +25,8 @@ from functools import lru_cache
 
 import numpy as np
 
-_SNAP = 1e-9
+_SNAP = 1e-9  # tol: algorithm, 1e-9 doubled frames at unit scale
+_ZOOM_PAN_RTOL = 1e-12  # tol: algorithm, 1e-12 of the larger view width
 _EASINGS = (
     "linear",
     "smooth",
@@ -453,7 +454,7 @@ def zoom_path(view0, view1, *, rho=_SQRT2):
     d2 = dx * dx + dy * dy
     rho2 = rho * rho
     rho4 = rho2 * rho2
-    if math.sqrt(d2) <= 1e-12 * max(w0, w1):
+    if math.sqrt(d2) <= _ZOOM_PAN_RTOL * max(w0, w1):
         length = abs(math.log(w1 / w0)) / rho
         k = math.copysign(1.0, w1 - w0)
 
