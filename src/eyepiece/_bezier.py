@@ -28,7 +28,7 @@ from dataclasses import dataclass
 import numpy as np
 from matplotlib.path import Path
 
-_CLOSE_TOL = 1e-9
+_CLOSE_TOL = 1e-9  # tol: algorithm, 1e-9 path units at unit scale
 
 
 def _line(p0, p1):

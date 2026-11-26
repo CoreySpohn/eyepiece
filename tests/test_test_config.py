@@ -12,7 +12,13 @@ CONFTEST = Path(__file__).with_name("conftest.py")
 
 
 @pytest.mark.parametrize(
-    "available", ["hwoutils.testbudget", "hwoutils.internal_refs", "no-parent"]
+    "available",
+    [
+        "hwoutils.testbudget",
+        "hwoutils.internal_refs",
+        "hwoutils.precision_guard",
+        "no-parent",
+    ],
 )
 @pytest.mark.parametrize("profile", [None, "nightly"])
 def test_optional_plugins_and_hypothesis_profiles(available, profile):
@@ -26,6 +32,7 @@ original = importlib.util.find_spec
 plugins = {
     "hwoutils.testbudget": "hwoutils.testbudget.plugin",
     "hwoutils.internal_refs": "hwoutils.internal_refs",
+    "hwoutils.precision_guard": "hwoutils.precision_guard",
 }
 def find_spec(name, *args, **kwargs):
     if name in plugins:

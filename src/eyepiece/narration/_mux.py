@@ -173,7 +173,7 @@ def _write_wav(path, data, rate):
 def _fade(data, n):
     """The line with a raised-cosine fade of ``n`` samples at each end."""
     n = min(n, len(data) // 2)
-    out = data.astype(float)
+    out = data.astype(float)  # precision-ok: blend fractional fades on host PCM
     if n > 0:
         ramp = 0.5 - 0.5 * np.cos(np.pi * np.arange(n) / n)
         out[:n] *= ramp

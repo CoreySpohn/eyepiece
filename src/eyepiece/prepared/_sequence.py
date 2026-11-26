@@ -49,12 +49,12 @@ _ARRAY_CHANNEL_FIELDS = ("data", "valid", "xy")
 _STRIP_LABEL_XY = (0.02, 0.95)
 
 # Relative tolerance for treating `run_time * fps` as a whole frame count.
-_FRAME_COUNT_RTOL = 1e-9
+_FRAME_COUNT_RTOL = 1e-9  # tol: algorithm, 1e-9 of the frame count
 
 # Relative tolerance, against max(|physical_time|, times span), for treating
 # a seek request as landing exactly on the next sample time rather than
 # just before it. See `Sequence._sample_index`.
-_SAMPLE_SNAP_RTOL = 1e-9
+_SAMPLE_SNAP_RTOL = 1e-9  # tol: algorithm, 1e-9 of the seek time scale
 
 
 _CLOCK_FORMAT = "{value:g} {unit}"

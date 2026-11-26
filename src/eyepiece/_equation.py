@@ -68,6 +68,11 @@ _PARSE_PT = 100.0
 # units) counts as a layout change.
 _PHANTOM_TOL = 0.05
 
+_MIN_GLYPH_SPAN_PX = 1e-9  # tol: algorithm, 1e-9 display pixels
+# Rigid groups require all outline vertices to agree on one translation.
+_RIGID_SHIFT_RTOL = 1e-5  # tol: algorithm, 1e-5 of the local translation
+_RIGID_SHIFT_ATOL = 1e-8  # tol: algorithm, 1e-8 typographic points
+
 _RULE_POINTS = 64
 
 _OPEN = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*):")
@@ -577,7 +582,7 @@ class _Replacement:
         lo = (1.0 - e) * a_lo + e * b_lo
         hi = (1.0 - e) * a_hi + e * b_hi
         src_lo, src_hi = (a_lo, a_hi) if side == "a" else (b_lo, b_hi)
-        size = np.where(src_hi - src_lo > 1e-9, src_hi - src_lo, 1.0)
+        size = np.where(src_hi - src_lo > _MIN_GLYPH_SPAN_PX, src_hi - src_lo, 1.0)
         own = glyph.eq.place(glyph.piece.draw_local, renderer)
         return lo + (own - src_lo) * (hi - lo) / size
 
@@ -1398,7 +1403,12 @@ def transform(
         shift = members[0][1].piece.local[0] - members[0][0].piece.local[0]
         if all(
             a.piece.local.shape == b.piece.local.shape
-            and np.allclose(b.piece.local - a.piece.local, shift)
+            and np.allclose(
+                b.piece.local - a.piece.local,
+                shift,
+                rtol=_RIGID_SHIFT_RTOL,
+                atol=_RIGID_SHIFT_ATOL,
+            )
             for a, b in members
         ):
             rigid.append(tuple(a for a, _ in members))

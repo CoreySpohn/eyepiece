@@ -35,6 +35,9 @@ from eyepiece._phasor import (
 )
 from eyepiece._result import MosaicResult, PlotResult
 
+_PIXEL_SPACING_RTOL = 1e-6  # tol: algorithm, 1e-6 of the first center spacing
+_PHASE_MASK_RATIO = 1e-8  # tol: algorithm, 1e-8 of the peak field amplitude
+
 
 def _hide_index_ticks(axes, extent):
     """Drop the tick labels when the axes carry no physical coordinates.
@@ -127,7 +130,9 @@ def _extent_from_centers(centers, shape):
             )
         delta = np.diff(values)
         step = float(delta[0])
-        if step == 0 or not np.allclose(delta, step, rtol=1e-6, atol=0.0):
+        if step == 0 or not np.allclose(
+            delta, step, rtol=_PIXEL_SPACING_RTOL, atol=0.0
+        ):
             raise ValueError(
                 f"centers {name} must be evenly spaced for imshow; use "
                 "pcolormesh for an uneven grid"
@@ -838,7 +843,7 @@ def show_field(
     amp = np.abs(field)
     peak = float(amp.max())
     if mask is None:
-        mask = amp > max(peak * 1e-8, np.finfo(float).tiny)
+        mask = amp > max(peak * _PHASE_MASK_RATIO, np.finfo(float).tiny)
     mask = np.asarray(mask).astype(bool)
 
     if axes is not None:

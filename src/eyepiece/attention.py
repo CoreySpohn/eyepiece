@@ -103,6 +103,10 @@ _ALIGN = {
 # a mark sitting on a curve does not count as the leader crossing the curve.
 _END_CLEAR_PX = 2.0
 
+# Connector audits compare the visible colors channel by channel.
+_AUDIT_RGB_ATOL = 2e-3  # tol: algorithm, 2e-3 in normalized RGB channel units
+_AUDIT_RGB_RTOL = 1e-5  # tol: algorithm, 1e-5 of the data color channel value
+
 
 def _check_u(u):
     u = float(u)
@@ -915,7 +919,9 @@ class _Leader(Line2D):
                 name = artist.get_label() or type(artist).__name__
                 out.append(f"leader crosses data: {name}")
             for rgba in _data_colors(artist):
-                if rgba[3] > 0.0 and np.allclose(own, rgba[:3], atol=2e-3):
+                if rgba[3] > 0.0 and np.allclose(
+                    own, rgba[:3], rtol=_AUDIT_RGB_RTOL, atol=_AUDIT_RGB_ATOL
+                ):
                     name = artist.get_label() or type(artist).__name__
                     out.append(f"leader takes a data color of its panel: {name}")
                     break
@@ -1758,6 +1764,7 @@ def _looks(target, background, seen, out):
 
 # The farthest an attached label drifts into place, in display pixels.
 _LIFT_MAX_PX = 10.0
+_LIFT_LIMIT_TOL_PX = 1e-9  # tol: algorithm, 1e-9 display pixels
 
 
 class _Lift:
@@ -2026,7 +2033,7 @@ class Stage:
             ]
         for lift in self._lifts[name]:
             dpi = lift.text.get_figure(root=True).dpi
-            if lift_pt * dpi / 72.0 > _LIFT_MAX_PX + 1e-9:
+            if lift_pt * dpi / 72.0 > _LIFT_MAX_PX + _LIFT_LIMIT_TOL_PX:
                 raise ValueError(
                     f"lift_pt={lift_pt} is {lift_pt * dpi / 72.0:.1f} px at "
                     f"{dpi:g} dpi; a label drifts at most {_LIFT_MAX_PX:g} px"
@@ -2126,6 +2133,7 @@ _SPINES = {"x": ("bottom", "top"), "y": ("left", "right")}
 # Share of a staccato axis build the spine takes, before the tick and number
 # beats: an equal beat would sweep the spine across in a frame or two.
 _STACCATO_SPINE = 0.4
+_TICK_EDGE_TOL = 1e-9  # tol: algorithm, 1e-9 of the axes span
 
 
 class _AxisBuild:
@@ -2193,7 +2201,7 @@ class _AxisBuild:
                     for f, (_loc, marks, texts, grid) in (
                         (self._fraction(t[0]), t) for t in self.ticks
                     )
-                    if -1e-9 <= f <= 1.0 + 1e-9
+                    if -_TICK_EDGE_TOL <= f <= 1.0 + _TICK_EDGE_TOL
                 ),
                 key=lambda event: event[0],
             )
@@ -3628,6 +3636,9 @@ def underline(
 # Morph
 
 _MORPH_POINTS = 200
+_PATH_CLOSE_RTOL = 1e-5  # tol: algorithm, 1e-5 of the final vertex coordinate
+_PATH_CLOSE_ATOL = 1e-8  # tol: algorithm, 1e-8 path coordinate units
+_ALIGN_COST_RTOL = 1e-12  # tol: algorithm, 1e-12 of the best squared-distance cost
 
 
 def _path_parts(path):
@@ -3650,6 +3661,13 @@ def _path_parts(path):
     return parts
 
 
+def _path_endpoints_match(vertices):
+    """Whether a path repeats its first vertex at the end."""
+    return np.allclose(
+        vertices[0], vertices[-1], rtol=_PATH_CLOSE_RTOL, atol=_PATH_CLOSE_ATOL
+    )
+
+
 def _line_parts(vertices, closed):
     """The runs of finite points in `vertices`, split at NaN rows."""
     vertices = np.asarray(vertices, dtype=float).reshape(-1, 2)
@@ -3660,9 +3678,9 @@ def _line_parts(vertices, closed):
             start = i
         elif not ok and start is not None:
             run = vertices[start:i]
-            ring = closed is None and len(run) > 2 and np.allclose(run[0], run[-1])
+            ring = closed is None and len(run) > 2 and _path_endpoints_match(run)
             if ring or (closed and len(run) > 2):
-                run = run[:-1] if np.allclose(run[0], run[-1]) else run
+                run = run[:-1] if _path_endpoints_match(run) else run
                 parts.append((run, True))
             else:
                 parts.append((run, False))
@@ -3760,7 +3778,7 @@ def _align(a, b):
     for ring in (b, b[::-1]):
         cost = ((a[None, :, :] - ring[shifts]) ** 2).sum(axis=(1, 2))
         k = int(np.argmin(cost))
-        if cost[k] < best * (1.0 - 1e-12):
+        if cost[k] < best * (1.0 - _ALIGN_COST_RTOL):
             best, pick = float(cost[k]), ring[shifts[k]]
     return pick
 
@@ -5810,7 +5828,9 @@ class _Link(Line2D):
                 if not ends_on and _crosses(artist, a, b, renderer):
                     out.append(f"link crosses data: {name}")
                 for rgba in _data_colors(artist):
-                    if rgba[3] > 0.0 and np.allclose(own, rgba[:3], atol=2e-3):
+                    if rgba[3] > 0.0 and np.allclose(
+                        own, rgba[:3], rtol=_AUDIT_RGB_RTOL, atol=_AUDIT_RGB_ATOL
+                    ):
                         out.append(f"link takes a data color of its panel: {name}")
                         break
         pool = list(figure.texts) + [x for x in figure.artists if isinstance(x, Text)]

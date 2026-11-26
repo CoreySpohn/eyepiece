@@ -100,6 +100,8 @@ from eyepiece._ffmpeg import (
 from eyepiece._glyph_cache import glyph_cache
 from eyepiece._motion import frame_count
 
+_PLAN_FPS_TOL = 1e-9  # tol: algorithm, 1e-9 frames per second
+
 PRESETS = {
     "talk": {"fps": 60, "dpi": 120},
     "gif": {"fps": 8, "dpi": 85},
@@ -793,7 +795,7 @@ def _resolve_stills(stills, plan, fps):
     """Map each still's frame index to its paths, failing before anything opens."""
     if not stills:
         return {}
-    if plan is not None and abs(plan.fps - fps) > 1e-9:
+    if plan is not None and abs(plan.fps - fps) > _PLAN_FPS_TOL:
         raise ValueError(f"plan was resolved at {plan.fps} fps but record has {fps}")
     frames = {}
     for path, when in dict(stills).items():
