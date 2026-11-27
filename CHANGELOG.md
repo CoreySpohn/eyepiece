@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.0.0](https://github.com/CoreySpohn/eyepiece/compare/v0.17.0...v1.0.0) (2026-11-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* drop plot_radial_image and the grid-type import, compute the centers extent directly
+* draw rasters from the grid extent and retire the unit-specific extent helpers
+* remove deprecated root exports and verb aliases; task namespaces only
+
+### Bug Fixes
+
+* **style:** leave the deprecated hwostyle envelope role out of the role tables ([dd4b97d](https://github.com/CoreySpohn/eyepiece/commit/dd4b97dd4469b9b6280609c8f11626ef10a2a2c3))
+
+
+### Code Refactoring
+
+* draw rasters from the grid extent and retire the unit-specific extent helpers ([2338cbf](https://github.com/CoreySpohn/eyepiece/commit/2338cbfce5bdb56018d95973ec1d0953e556340c))
+* drop plot_radial_image and the grid-type import, compute the centers extent directly ([1cd97db](https://github.com/CoreySpohn/eyepiece/commit/1cd97db4b69def7e87470fe4cb457cfcb2915a14))
+* remove deprecated root exports and verb aliases; task namespaces only ([ec3f9d7](https://github.com/CoreySpohn/eyepiece/commit/ec3f9d748cbcc017b38a6a21829969eee0561b47))
+
 ## [0.17.0](https://github.com/CoreySpohn/eyepiece/compare/v0.16.0...v0.17.0) (2026-11-04)
 
 
