@@ -35,7 +35,7 @@ test = [
     "colorspacious>=1.1.2",
     "ipython>=8.18",
     # The narrated tutorial builds calibrated grids.
-    "optixstuff>=7.0.0",  # unreleased: next release, see .github/sibling-pins.txt
+    "optixstuff>=7.0.0",
 ]
 # Pillow 13 removes the Image.fromarray mode argument that manim 0.21 uses for
 # every image mobject, so both Manim extras cap it until manim adapts.
